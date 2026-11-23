@@ -35,12 +35,13 @@ async function newChat(): Promise<void> {
 
 <template>
   <!-- A chat dropped on the folder or what is in it works in this folder (see Sidebar). -->
-  <div :data-drop-folder="node.path" :class="cn('flex flex-col gap-px rounded-lg', drag?.isTarget(project.id, node.path) && 'bg-primary/10 ring-1 ring-primary/50')">
+  <div :data-drop-folder="node.path" data-list-group :class="cn('flex flex-col gap-px rounded-lg', drag?.isTarget(project.id, node.path) && 'bg-primary/10 ring-1 ring-primary/50')">
     <ContextMenu>
       <ContextMenuTrigger as-child>
         <div class="group/folder flex items-center rounded-lg hover:bg-sidebar-accent/60">
           <button
             type="button"
+            data-list-row
             class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-[0.85rem] text-muted-foreground hover:text-foreground"
             :title="node.path"
             :aria-expanded="open"
@@ -74,6 +75,7 @@ async function newChat(): Promise<void> {
       <button
         v-if="node.sessions.length > limit"
         type="button"
+        data-list-row
         class="rounded-lg px-2 py-1 text-left text-xs text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
         @click="showAll = !showAll"
       >

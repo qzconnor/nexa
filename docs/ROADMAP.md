@@ -104,6 +104,11 @@
 - [x] Suche im offenen Chat: Strg+F (auch im Menü des Chats und in der Befehlsliste), Enter und F3 zum
       nächsten Treffer, Umschalt dazu zum vorigen; alle Treffer markiert, der aktuelle stärker. Ältere
       Nachrichten, die noch nicht geladen sind, lädt „Alle laden“ für die Suche nach
+- [x] Tastenkürzel: Strg+Tab und Strg+Umschalt+Tab zum nächsten und vorigen Chat der Seitenleiste,
+      Strg+1–8 zu diesem, Strg+9 zum letzten, Strg+Umschalt+T neuer Chat im Projekt des offenen. In der
+      Seitenleiste gehen die Pfeiltasten von Zeile zu Zeile und klappen Trenner, Projekte und Ordner auf
+      und zu, Pos1 und Ende springen an den Anfang und ans Ende, die Menütaste und Umschalt+F10 öffnen das
+      Kontextmenü
 
 ## Als Nächstes
 
@@ -149,8 +154,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] **Neuer Chat in einem Worktree** (`claude --worktree <name>`): Dialog mit Repository, Name (geprüft
       wie ein Branch) und vorhandenen Worktrees (`WorktreeDialog.vue`, `lib/worktree.ts`); `worktreeCheck`
       in `files/git-service.ts` ist schon da, aber nicht in Preload und UI.
-- [ ] **Tastenkürzel**: Strg+Tab und Strg+1–9 zwischen Chats, Strg+Umschalt+T neuer Chat, Pfeiltasten in
-      Listen (`shared/shortcuts.ts`, `useShortcuts.ts`, `useListKeys.ts`).
 - [ ] **Löschen samt Transkript der CLI** (in den Papierkorb, mit Subagents und Checkpoints), mehrere auf
       einmal und 8 s rückgängig; Filter nach Alter und Größe (`useSessionRemoval.ts`, `SessionFilterChip.vue`).
       Heute löscht Nexa nur den eigenen Verlauf.

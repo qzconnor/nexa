@@ -46,8 +46,13 @@ function endDrag(): void {
   <ContextMenu>
     <ContextMenuTrigger as-child>
       <!-- While its CLI works, the chat stays where it is: it can't be dragged then. -->
+      <!-- A row for the arrow keys (useListKeys); its place counts for Ctrl+1–9 (useShortcuts). -->
       <button
         type="button"
+        data-list-row
+        data-chat-row
+        :data-session-id="meta.id"
+        :aria-current="sessions.activeId === meta.id && ui.view === 'chat' ? 'page' : undefined"
         :draggable="!!drag && !chat.working(meta.id)"
         :class="
           cn(
