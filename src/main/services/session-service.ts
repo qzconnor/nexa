@@ -402,7 +402,18 @@ export class SessionService extends TypedEmitter<Events> {
     const unseen = s.items.slice(link?.seenItems ?? 0).filter((i) => i.provider !== provider || !link)
     const context = unseen.length && s.items.length ? handoffContext(unseen, provider) : null
 
-    const user: UserItem = { kind: 'user', id: randomUUID(), ts: Date.now(), provider, text, images: input.images?.length ? input.images : undefined }
+    // Into a turn of the same CLI that still runs: it doesn't wait for the answer to end.
+    const status = s.runtime.status
+    const steer = !!s.run?.alive && s.runProvider === provider && (status === 'running' || status === 'waiting')
+    const user: UserItem = {
+      kind: 'user',
+      id: randomUUID(),
+      ts: Date.now(),
+      provider,
+      text,
+      images: input.images?.length ? input.images : undefined,
+      ...(steer ? { steer: true } : {}),
+    }
     this.put(s, user)
     if (meta.titleSource === 'auto' && s.items.filter((i) => i.kind === 'user').length === 1) meta.title = firstLine(text, 60) || 'Bild'
     meta.preview = firstLine(text, 100)

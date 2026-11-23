@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUpIcon, ChevronDownIcon, PaperclipIcon, SettingsIcon, SquareIcon, XIcon } from '@lucide/vue'
+import { ArrowUpIcon, ChevronDownIcon, CornerDownRightIcon, PaperclipIcon, SettingsIcon, SquareIcon, XIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { ContextUsage, PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
@@ -345,6 +345,7 @@ defineExpose({ focus: () => input.value?.focus() })
       cn(
         'relative flex flex-col rounded-2xl border transition-colors focus-within:border-ring/60',
         floating ? 'bg-card/40 shadow-lg shadow-black/15 backdrop-blur-lg' : 'bg-card shadow-lg shadow-black/5',
+        busy && canSend && 'border-dashed border-primary/60 focus-within:border-primary/80',
         dragging && 'border-primary bg-primary/5',
       )
     "
@@ -431,6 +432,20 @@ defineExpose({ focus: () => input.value?.focus() })
         <Button v-if="busy && !canSend" size="icon-sm" variant="secondary" aria-label="Anhalten" @click="emit('stop')">
           <SquareIcon class="size-3 fill-current" />
         </Button>
+        <!-- Into the running answer: it doesn't wait for the turn to end, so it looks unlike a new prompt. -->
+        <template v-else-if="busy">
+          <span class="hidden text-[0.75rem] font-medium text-primary sm:inline">In die laufende Antwort</span>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            aria-label="In die laufende Antwort schicken"
+            class="rounded-full border-dashed border-primary/70 text-primary hover:bg-primary/10 hover:text-primary"
+            v-tooltip="'Schickt die Nachricht in die laufende Antwort; der Agent nimmt sie beim nächsten Schritt auf'"
+            @click="send"
+          >
+            <CornerDownRightIcon />
+          </Button>
+        </template>
         <Button v-else size="icon-sm" :disabled="!canSend" aria-label="Senden" class="rounded-full" @click="send">
           <ArrowUpIcon />
         </Button>

@@ -113,6 +113,11 @@ export class ClaudeRun implements AgentRun {
   private compactingSince: number | null = null
   /** The model's context window from the last result, for the context after a compaction. */
   private contextWindow: number | undefined
+  /**
+   * What the main thread's last API call took up: the context. The turn's result can't tell, its
+   * usage adds up every call of the turn (each tool call is one), many times the context.
+   */
+  private lastContext: number | undefined
   private interrupting = false
   private model: string | undefined
   private stopping = false
@@ -311,6 +316,11 @@ export class ClaudeRun implements AgentRun {
     const messageId = str(message.id) ?? randomUUID()
     const parentId = this.parentOf(m)
     if (typeof message.model === 'string' && !parentId) this.model = message.model
+    if (!parentId && isPlainObject(message.usage)) {
+      const used = contextOf(message.usage)
+      // Claude Code's own messages (`<synthetic>`) come without usage.
+      if (used > 0) this.lastContext = used
+    }
     for (const raw of message.content) {
       if (!isPlainObject(raw)) continue
       if (raw.type === 'text') {
@@ -489,6 +499,7 @@ export class ClaudeRun implements AgentRun {
         this.sink.item(compactionNotice({ id: str(m.uuid) ?? randomUUID(), ts: Date.now(), provider: 'claude' }, compaction))
         // The result of a /compact reports no usage: the context shrinks here or not until the next turn.
         const after = compaction.after
+        if (after !== undefined) this.lastContext = after
         this.compactingSince = null
         this.sink.runtime({ compactingSince: undefined, ...(after !== undefined && this.contextWindow ? { context: { used: after, window: this.contextWindow } } : {}) })
         return
@@ -629,12 +640,13 @@ export class ClaudeRun implements AgentRun {
     this.compactingSince = null
     this.interrupting = false
     if (window) this.contextWindow = window
+    const used = this.lastContext
     this.sink.runtime({
       status: 'idle',
       turnStartedAt: undefined,
       compactingSince: undefined,
       model: this.model,
-      ...(window && input ? { context: { used: input + output, window } } : {}),
+      ...(this.contextWindow && used ? { context: { used, window: this.contextWindow } } : {}),
     })
   }
 
@@ -864,6 +876,12 @@ function shellStatusOf(status: unknown): ShellStatus | undefined {
     default:
       return undefined
   }
+}
+
+/** The tokens of one API call in the context: everything sent (cached or not) and the answer. */
+export function contextOf(usage: Json): number {
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  return num(usage.input_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens) + num(usage.output_tokens)
 }
 
 function lastLines(text: string, count = 6): string {

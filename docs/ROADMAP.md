@@ -55,17 +55,110 @@
 
 ## Als Nächstes
 
+- [ ] **Keine Pause vor der Antwort**: „Arbeitet …“ verschwindet, sobald die CLI einen Antwort- oder
+      Gedankenblock beginnt, auch wenn er noch leer ist; danach steht 1–2 s nichts da. Ursache: `working`
+      in `ChatView.vue` blendet sich bei jedem streamenden `assistant`/`thinking`-Item aus, aber ein leerer
+      Antwortblock zeigt nichts (der Cursor hängt an `:last-child`), und `chatBlocks()` lässt leere oder
+      (bei „Gedanken anzeigen“ aus) alle Gedanken weg. Die Anzeige soll bleiben, bis wirklich etwas zu
+      sehen ist.
+- [ ] **„+“-Menü an der Eingabe** wie in Claude Desktop, statt der Büroklammer: „Dateien oder Fotos
+      hinzufügen“ (Strg+U; andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude `--add-dir`),
+      „Slash-Befehle“ (öffnet die Vervollständigung), „Konnektoren ›“ und „Plugins ›“ als Untermenüs.
+- [ ] **Einzelne MCP-Server an- und ausschalten** im Untermenü „Konnektoren“: jeder Server mit Schalter,
+      Suche, „Verwalten“ führt zu den Einstellungen. Gilt je Chat, vorbelegt je Projekt. Claude Code im
+      laufenden Prozess: `mcp_status` (Server mit Zustand), `mcp_toggle { serverName, enabled }`,
+      `mcp_reconnect`, `mcp_authenticate`. Codex: `mcpServerStatus/list`, ausschalten über
+      `mcp_servers.<name>.enabled = false` in der `config` von `thread/start`/`thread/resume`. Nexas eigene
+      Werkzeuge bleiben Teil der App (eigene Schalter in den Einstellungen).
+- [ ] **Kontext aufgeschlüsselt beim Hover über den Kontextring** wie das Kontext-Panel von Claude
+      Desktop: Balken nach Art (System-Werkzeuge, Nachrichten, MCP-Werkzeuge, Systemprompt, Skills,
+      MCP-Anweisungen, eigene Agents, Puffer fürs Zusammenfassen, frei, verzögert geladene Werkzeuge),
+      aufklappbar die MCP-Werkzeuge und Agents einzeln. Claude Code: `get_context_usage { detail }`
+      (`summary` aus der letzten Usage und Schätzungen, `full` zählt jede Art über die Token-Count-API und
+      dauert); `full` nach dem Turn holen und bis zum nächsten halten, solange einer läuft „wird geladen,
+      sobald die Antwort fertig ist“. Codex hat nur Summe und Fenster (`thread/tokenUsage/updated`). Den
+      Ring an der Grenze fürs automatische Zusammenfassen messen statt am ganzen Fenster (wie
+      „Kontext bis Auto-Compact“ im Claude Manager, `lib/auto-compact.ts`).
+- [ ] **Chats mit der CLI abgleichen**: Wird ein Chat außerhalb von Nexa weitergeführt (`claude --resume`,
+      die Codex-TUI), fehlen Nexa die neuen Nachrichten. Transkript bzw. Rollout der verknüpften Sitzung
+      beobachten (wie der Claude Manager: Watcher auf `projects/`, nur Angehängtes lesen) und Neues über
+      `claude-transcript.ts` als Items nachtragen; dazu „Aktualisieren“ im Menü des Chats. Vor dem
+      Fortsetzen warnen, wenn die Sitzung gerade in einer CLI außerhalb offen ist (Claude:
+      `<config>/sessions/<pid>.json`). Codex: `thread/read`, `thread/turns/list`.
+- [ ] **System-Prompt je Projekt und Trenner** wie der Workspace-Prompt im Claude Manager: Dialog
+      „Prompt von …“ im Kontextmenü, der Text steht als Datei im Ordner (vorhandene `cm_prompts.md` gelten
+      mit). Jede Session darunter bekommt ihn zusätzlich, der äußerste zuerst (Claude
+      `--append-system-prompt`, Codex `developerInstructions`); gilt für neu startende CLIs.
+- [ ] **Artefakte und Sites** als eigener Eintrag unter „Neuer Chat“ in der Sidebar: Claudes Artefakte
+      (claude.ai, je Account; die Seite „Artefakte“ des Claude Managers, `artifact-service.ts`) und die
+      Sites von Codex in einer Liste mit Suche, Vorschau im Browser-Panel und Sprung in den Chat, aus dem
+      sie kamen. Offen: wie Codex seine Sites herausgibt (der App-Server 0.169 hat keine Methode dafür).
 - [ ] **Automatischer Account-Wechsel bei erreichtem Limit** (wie „Account wechseln“ im Claude Manager):
-      Chat mit dem nächsten freien Account derselben CLI fortsetzen, Reihenfolge einstellbar.
+      Chat mit dem nächsten freien Account derselben CLI fortsetzen, Reihenfolge einstellbar. Ein
+      verlassener Account bleibt bis zu seinem Reset gesperrt; ohne freien Account wartet der Chat mit
+      Countdown; „Am Reset fortsetzen“ auch ohne Wechsel; nach dem Wechsel eine einstellbare Nachricht
+      („Mach weiter“). Dateien dort: `auto-switch.ts`, `session-handoff.ts`, `account-choice.ts`.
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
 - [ ] **Bestehende CLI-Sessions importieren** ohne Claude Manager (`~/.claude/projects`, `~/.codex/sessions`);
   aus dem Claude Manager geht es schon (siehe oben), der Transkript-Leser für Claude ist da.
 - [ ] **Modellnamen**: „Default“ durch das tatsächliche Standardmodell der CLI ersetzen.
 - [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
 - [ ] **Systemfarben**: `nativeTheme` folgt dem Modus des Themes (hell/dunkel).
-- [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten.
+- [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
+      führt „Konnektoren verwalten“.
+
+## Aus dem Claude Manager
+
+Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/src/`).
+
+- [ ] **Benachrichtigungen**: Windows-Meldung, wenn ein Chat fertig ist, eine Rückfrage hat oder an ein
+      Limit stößt, auf Wunsch mit Vorschau; ein Klick öffnet den Chat. Mindestdauer für „fertig“, Ton,
+      blinkende Taskleiste, Warnung ab einer Schwelle je Account (80 %), „Login abgelaufen“, Glocke in der
+      Titelleiste zum Stummschalten (`notification-service.ts`, `near-limit.ts`, `TitleBarNotifications.vue`).
+- [ ] **Im Infobereich weiterlaufen** und **mit Windows starten** (versteckt): Schließen blendet das
+      Fenster nur aus, Chats und API laufen weiter (`window/tray.ts`, `lib/login-item.ts`).
+- [ ] **Übersicht aller Chats nach Zustand** (wartet auf dich, arbeitet, fertig) mit der offenen Frage,
+      dem laufenden Werkzeug, Kontext und Limit je Karte; Strg+Umschalt+J springt zum nächsten wartenden
+      Chat (`OverviewView.vue`, `lib/overview.ts`, `lib/attention.ts`).
+- [ ] **Logins frisch halten**: abgelaufene Zugangs-Token ruhender Accounts erneuern (unter der Sperre von
+      Claude Code), damit ihre Usage stimmt und ein Wechsel sofort geht; Tabelle mit Ablauf und
+      „Jetzt erneuern“ (`oauth-renewal.ts`, `LoginOverviewCard.vue`).
+- [ ] **Neuer Chat in einem Worktree** (`claude --worktree <name>`): Dialog mit Repository, Name (geprüft
+      wie ein Branch) und vorhandenen Worktrees (`WorktreeDialog.vue`, `lib/worktree.ts`); `worktreeCheck`
+      in `files/git-service.ts` ist schon da, aber nicht in Preload und UI.
+- [ ] **Chat abzweigen** als neuen Chat ab hier (Claude `--fork-session`, Codex `thread/fork`).
+- [ ] **Suche im offenen Chat** (Strg+F, F3 / Umschalt+F3, alle Treffer markiert, lädt ältere Nachrichten
+      nach; `composables/useDomFind.ts`).
+- [ ] **Chat als Markdown exportieren** (Ordner, Branch, Modell, Zeitraum, Nachrichten nach Tagen) und
+      **letzte Antwort kopieren** im Kontextmenü und in der Befehlsliste (`shared/session-markdown.ts`).
+- [ ] **Tastenkürzel**: Strg+Tab und Strg+1–9 zwischen Chats, Strg+Umschalt+T neuer Chat, Pfeiltasten in
+      Listen (`shared/shortcuts.ts`, `useShortcuts.ts`, `useListKeys.ts`).
+- [ ] **Löschen samt Transkript der CLI** (in den Papierkorb, mit Subagents und Checkpoints), mehrere auf
+      einmal und 8 s rückgängig; Filter nach Alter und Größe (`useSessionRemoval.ts`, `SessionFilterChip.vue`).
+      Heute löscht Nexa nur den eigenen Verlauf.
+- [ ] **Werkzeuge der App für die Agents** im Nexa-MCP-Server: `limits` (eigene Limits und die der anderen
+      Accounts), `sessions_search` / `session_read` (frühere Chats durchsuchen und lesen)
+      (`browser/app-tools/*`).
+- [ ] **`nx` wie `cm`**: `-a <account>`, `-r [id]`, `-n`, `-- <args>` für die CLI, offenen Chat
+      wiederverwenden, Befehl in den Einstellungen an- und abmelden (`cli/launch.ts`, `SettingsCommand.vue`).
+- [ ] **Startbefehle je Projekt** (wie die Tab-Sets, z. B. `npm run dev`) als Shells neben dem Chat
+      (`tab-set-service.ts`).
+- [ ] **API-Beschreibung**: OpenAPI unter `/openapi.json` und eine Doku-Seite unter `/docs`
+      (`api/openapi.ts`, `api/docs-page.ts`).
 
 ## Später
 
 - [ ] Weitere CLIs (z. B. Gemini CLI) über das Provider-System.
-- [ ] Mehrere Fenster bzw. Session in eigenem Fenster.
+- [ ] Mehrere Fenster bzw. Session in eigenem Fenster; mehrere Chats nebeneinander (`GroupShell.vue` im
+      Claude Manager).
+- [ ] Verbrauchs-Dashboard: Tokens je Tag, Modell und Ordner, Verlauf der Limits mit Prognose („Limit
+      ≈ 16:40“), ohne Dollar (`DashboardView.vue`, `usage-forecast.ts` im Claude Manager).
+- [ ] Änderungen je Prompt aus den Checkpoints von Claude Code, Zurückspulen mit Vorschau (Claude
+      `rewind_files`, Codex `thread/revert`; `SessionChangesView.vue` im Claude Manager).
+- [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).
+- [ ] Terminal für den Nutzer neben dem Chat (xterm, node-pty) mit der Umgebung des Accounts.
+- [ ] Einstellungen exportieren und importieren mit Vergleich (`SettingsTransfer.vue` im Claude Manager).
+- [ ] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager).
+- [ ] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude
+      `mcp_read_resource`, Codex `mcpServer/resource/read`).
+- [ ] Remote Control wie in Claude Desktop (Claude Code `remote-control`, Codex `remoteControl/*`).

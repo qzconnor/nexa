@@ -28,6 +28,11 @@ export interface UserItem extends ItemBase {
   images?: string[]
   /** Set on the hidden context Nexa sends when a session moves to another CLI. */
   handoff?: boolean
+  /**
+   * Sent while the agent was at work: it joins the running turn instead of starting one (Codex
+   * steers it, Claude Code takes it up at its next step).
+   */
+  steer?: boolean
 }
 
 export interface AssistantItem extends ItemBase {

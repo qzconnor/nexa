@@ -2,7 +2,7 @@
 import { ArrowDownIcon, BotIcon, ChevronRightIcon, FolderOpenIcon, MoreHorizontalIcon, PanelLeftIcon, PencilIcon, PowerIcon, Trash2Icon } from '@lucide/vue'
 import { useElementSize, useEventListener } from '@vueuse/core'
 import { computed, nextTick, ref, watch } from 'vue'
-import type { AgentItem, TodoItem } from '@shared/chat'
+import type { AgentItem, ChatItem, TodoItem } from '@shared/chat'
 import type { SessionUpdateInput } from '@shared/types'
 import { PROVIDERS } from '@shared/providers'
 import BrowserPanel from '@/components/browser/BrowserPanel.vue'
@@ -188,20 +188,30 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   ui.agentId = viewed.value.parentId ?? null
 })
 
+/**
+ * Text streams where the timeline shows it. A block begins empty (and a thought is left out with the
+ * thoughts off), and its first words can take a second or two: until then the agent is still at work.
+ */
+function streamsVisibly(item: ChatItem | undefined): boolean {
+  if (!item || (item.kind !== 'assistant' && item.kind !== 'thinking') || !item.streaming) return false
+  if (item.kind === 'thinking' && !settings.settings.chat.showThinking) return false
+  return item.text.trim().length > 0
+}
+
 /** What the agent is doing, under the timeline while a turn runs and no text streams. */
 const working = computed(() => {
   const agent = viewed.value
   if (agent) {
     if (agent.status !== 'running') return null
     const last = items.value.findLast((i) => i.parentId === agent.id)
-    if (last && (last.kind === 'assistant' || last.kind === 'thinking') && last.streaming) return null
+    if (streamsVisibly(last)) return null
     return last ? 'Arbeitet …' : 'Startet …'
   }
   if (!busy.value) return null
   // Compacting takes a while and nothing streams meanwhile; the CLI says what it waits for, Nexa too.
   if (runtime.value.compactingSince) return 'Kontext wird zusammengefasst …'
   const last = items.value[items.value.length - 1]
-  if (last && (last.kind === 'assistant' || last.kind === 'thinking') && last.streaming) return null
+  if (streamsVisibly(last)) return null
   if (runtime.value.status === 'waiting') return 'Wartet auf deine Antwort'
   if (runtime.value.status === 'starting') return `${PROVIDERS[meta.value?.provider ?? 'claude'].name} startet …`
   return 'Arbeitet …'
