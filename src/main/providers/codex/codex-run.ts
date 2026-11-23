@@ -16,7 +16,8 @@ import { renderSpecOf } from '@shared/render'
 import type { CommandOption, SendInput } from '@shared/types'
 import { firstLine, isPlainObject } from '@shared/utils'
 import { codexToolApprovals } from '../../mcp/tool-grant'
-import type { AgentRun, RunOptions, RunSink } from '../provider'
+import { codexMcpServers } from '../mcp-servers'
+import type { AgentRun, McpServerState, RunOptions, RunSink } from '../provider'
 import type { CodexClient, CodexServerRequest } from './codex-client'
 
 type Json = Record<string, unknown>
@@ -49,14 +50,25 @@ export function codexMcpConfig(mcp: NonNullable<RunOptions['mcp']>, mode: Permis
   }
 }
 
-function sandboxPolicy(mode: PermissionMode, cwd: string): Json {
+/**
+ * The user's MCP servers switched off for the project, for the thread's config: Codex starts a
+ * thread's servers from its config, so they stay off for this thread only. Names that aren't a plain
+ * key would split the dotted path and are left out.
+ */
+export function codexMcpOffConfig(off: readonly string[] | undefined): Json {
+  const config: Json = {}
+  for (const name of off ?? []) if (/^[\w-]+$/.test(name)) config[`mcp_servers.${name}.enabled`] = false
+  return config
+}
+
+function sandboxPolicy(mode: PermissionMode, cwd: string, dirs: readonly string[] = []): Json {
   switch (CODEX_POLICY[mode].sandbox) {
     case 'read-only':
       return { type: 'readOnly', networkAccess: false }
     case 'danger-full-access':
       return { type: 'dangerFullAccess' }
     default:
-      return { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
+      return { type: 'workspaceWrite', writableRoots: [cwd, ...dirs], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
   }
 }
 
@@ -156,6 +168,8 @@ export class CodexRun implements AgentRun {
   private effort: string | undefined
   private mode: PermissionMode
   private modeChanged = false
+  /** The added folders went with a turn's sandbox policy; the thread keeps it from then on. */
+  private dirsSent = false
   private lastTokens: { input: number; output: number } | null = null
   /** What the conversation took up in the context at the last request, for the size before a compaction. */
   private contextUsed: number | undefined
@@ -184,7 +198,10 @@ export class CodexRun implements AgentRun {
   async connect(): Promise<void> {
     this.sink.runtime({ status: 'starting', connected: false })
     const policy = CODEX_POLICY[this.mode]
-    const config: Json = this.options.mcp ? codexMcpConfig(this.options.mcp, this.mode) : {}
+    const config: Json = {
+      ...(this.options.mcp ? codexMcpConfig(this.options.mcp, this.mode) : {}),
+      ...codexMcpOffConfig(this.options.mcpOff),
+    }
     const common: Json = {
       cwd: this.options.cwd,
       approvalPolicy: policy.approvalPolicy,
@@ -226,10 +243,12 @@ export class CodexRun implements AgentRun {
     const params: Json = { threadId: this.threadId, input: items }
     if (this.model) params.model = this.model
     if (this.effort) params.effort = this.effort
-    if (this.modeChanged) {
+    // The thread's start knows only the sandbox's mode; added folders need the whole policy, once.
+    if (this.modeChanged || (this.options.dirs?.length && !this.dirsSent)) {
       params.approvalPolicy = CODEX_POLICY[this.mode].approvalPolicy
-      params.sandboxPolicy = sandboxPolicy(this.mode, this.options.cwd)
+      params.sandboxPolicy = sandboxPolicy(this.mode, this.options.cwd, this.options.dirs)
       this.modeChanged = false
+      this.dirsSent = true
     }
     this.turnStartedAt = Date.now()
     this.sink.runtime({ status: 'running', turnStartedAt: this.turnStartedAt, error: undefined })
@@ -266,6 +285,16 @@ export class CodexRun implements AgentRun {
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.mode = mode
     this.modeChanged = true
+  }
+
+  /** The app-server's servers (one server for all threads of the account). */
+  async mcpServers(): Promise<McpServerState[]> {
+    return codexMcpServers(await this.client.request('mcpServerStatus/list', {}))
+  }
+
+  /** A thread takes its servers from the config it was started with: the next prompt resumes it anew. */
+  async setMcpEnabled(): Promise<boolean> {
+    return false
   }
 
   async stop(): Promise<void> {

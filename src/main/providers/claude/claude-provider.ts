@@ -4,9 +4,15 @@ import type { CommandOption, ModelDefaults, ModelOption, ProviderSettings, Provi
 import { isPlainObject } from '@shared/utils'
 import { fetchClaudeUsage } from '../../accounts/claude-usage'
 import { CliBinary, cliEnv, type ResolvedCommand } from '../cli-binary'
-import type { AccountContext, AgentProvider, AgentRun, RunOptions, RunSink, RunUsage } from '../provider'
+import { claudeMcpServers } from '../mcp-servers'
+import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { claudeCommands, probeClaude } from './claude-probe'
 import { ClaudeRun } from './claude-run'
+
+/** The MCP servers of a folder without a running chat are asked again after this. */
+const MCP_TTL_MS = 60_000
+/** How long the asking process gives the servers to connect before it asks for their state. */
+const MCP_CONNECT_MS = 2500
 
 /** The commands of a folder are asked again after this; skills added meanwhile come then. */
 const COMMANDS_TTL_MS = 5 * 60_000
@@ -38,6 +44,8 @@ export class ClaudeProvider implements AgentProvider {
   private readonly defaultsCache = new Map<string, { defaults: ModelDefaults; at: number }>()
   /** The usage API answered 429: not asked again for this account before then. */
   private readonly backoff = new Map<string, number>()
+  /** By account and folder. */
+  private readonly mcpCache = new Map<string, { servers: McpServerState[]; at: number }>()
 
   constructor(private readonly settings: () => ProviderSettings) {
     this.binary = new CliBinary(
@@ -148,6 +156,21 @@ export class ClaudeProvider implements AgentProvider {
     return defaults
   }
 
+  /**
+   * The MCP servers Claude Code starts in a folder, from a short process of its own (no prompt, no
+   * tokens) that waits a moment for them to connect. Kept a minute: each one starts the servers.
+   */
+  async mcpServers(account: AccountContext, cwd: string): Promise<McpServerState[]> {
+    const key = `${account.accountId}\0${cwd}`
+    const cached = this.mcpCache.get(key)
+    if (cached && Date.now() - cached.at < MCP_TTL_MS) return cached.servers
+    const answers = await probeClaude(this.binary, account, { cwd, delayMs: MCP_CONNECT_MS, requests: [{ subtype: 'mcp_status' }] })
+    if (!answers) return cached?.servers ?? []
+    const servers = claudeMcpServers(answers[1])
+    this.mcpCache.set(key, { servers, at: Date.now() })
+    return servers
+  }
+
   async start(options: RunOptions, sink: RunSink): Promise<AgentRun> {
     return new ClaudeRun(this.binary, { ...options, extraArgs: [...this.settings().extraArgs, ...options.extraArgs] }, sink)
   }
@@ -172,7 +195,7 @@ export class ClaudeProvider implements AgentProvider {
 
   async forget(accountId: string): Promise<void> {
     this.modelCache.delete(accountId)
-    for (const cache of [this.commandCache, this.defaultsCache]) {
+    for (const cache of [this.commandCache, this.defaultsCache, this.mcpCache]) {
       for (const key of cache.keys()) if (key.startsWith(`${accountId}\0`)) cache.delete(key)
     }
   }

@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ArrowUpIcon, ChevronDownIcon, CornerDownRightIcon, PaperclipIcon, SettingsIcon, SquareIcon, XIcon } from '@lucide/vue'
+import { ArrowUpIcon, ChevronDownIcon, CornerDownRightIcon, FolderIcon, SettingsIcon, SquareIcon, XIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { ContextUsage, PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { CommandOption, ModelDefaults } from '@shared/types'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useProjectPath } from '@/composables/useProjectPath'
 import { applySuggestion, filterCommands, findPaths, triggerAt, type Suggestion, type SuggestTrigger } from '@/lib/composer-suggest'
 import { effortLabel, effortTone } from '@/lib/effort'
@@ -16,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { useComposerStore } from '@/stores/composer'
 import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
+import ComposerAddMenu from './ComposerAddMenu.vue'
 import ComposerControls from './ComposerControls.vue'
 import ContextCard from './ContextCard.vue'
 import ComposerSettings from './ComposerSettings.vue'
@@ -40,6 +40,8 @@ const props = defineProps<{
   context?: ContextUsage
   /** The open chat (none on the start page): its context in detail, its MCP servers. */
   sessionId?: string
+  /** More folders the chat's agent works in (`SessionMeta.dirs`). */
+  dirs?: string[]
   /** Kept per chat while it isn't sent. */
   draftKey?: string
   autofocus?: boolean
@@ -58,6 +60,7 @@ const emit = defineEmits<{
   'update:effort': [string]
   'update:mode': [PermissionMode]
   'update:ultracode': [boolean]
+  'update:dirs': [string[]]
 }>()
 const settings = useSettingsStore()
 const providers = useProvidersStore()
@@ -294,6 +297,11 @@ function onInput(): void {
 
 function onKeydown(event: KeyboardEvent): void {
   if (suggestKey(event)) return
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'u') {
+    event.preventDefault()
+    void pickFiles()
+    return
+  }
   if (event.key !== 'Enter' || event.isComposing) return
   const enterSends = settings.settings.chat.enterSends
   if ((enterSends && !event.shiftKey) || (!enterSends && (event.ctrlKey || event.metaKey))) {
@@ -331,10 +339,47 @@ function onDrop(event: DragEvent): void {
   for (const file of files) void addImageFile(file)
 }
 
-async function pickImages(): Promise<void> {
-  const picked = await attempt(() => window.api.app.pickImages())
-  if (picked) images.value.push(...picked)
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp)$/i
+
+/** Files from the dialog: pictures are attached, the others mentioned (relative to the project, where they are in it). */
+async function pickFiles(): Promise<void> {
+  const picked = await attempt(() => window.api.app.pickFiles(projectRoot.value ?? undefined))
+  if (!picked?.length) return
+  const others: string[] = []
+  for (const path of picked) {
+    if (IMAGE_EXTENSIONS.test(path)) images.value.push(path)
+    else others.push(path)
+  }
+  if (others.length) insertText(others.map((p) => mentionOf(relative(p)).trimEnd()).join(' ') + ' ')
+  else void nextTick(() => input.value?.focus())
 }
+
+/** Another folder for the agent to work in (the chat's, kept with it). */
+async function addFolder(): Promise<void> {
+  const dir = await attempt(() => window.api.app.pickDirectory(projectRoot.value ?? undefined))
+  if (!dir || props.dirs?.includes(dir)) return
+  emit('update:dirs', [...(props.dirs ?? []), dir])
+}
+
+function removeFolder(dir: string): void {
+  emit(
+    'update:dirs',
+    (props.dirs ?? []).filter((d) => d !== dir),
+  )
+}
+
+/** The commands' list, as if `/` was typed at the start. */
+function startCommand(): void {
+  if (!text.value.startsWith('/')) text.value = `/${text.value}`
+  void nextTick(() => {
+    resize()
+    input.value?.focus()
+    input.value?.setSelectionRange(1, 1)
+    updateSuggest()
+  })
+}
+
+const folderName = (dir: string) => dir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || dir
 
 defineExpose({ focus: () => input.value?.focus() })
 </script>
@@ -363,6 +408,21 @@ defineExpose({ focus: () => input.value?.focus() })
       @hover="active = $event"
       @pick="pickSuggestion"
     />
+    <!-- Folders added to the chat: the agent works in them too, until they are taken out. -->
+    <div v-if="dirs?.length" class="flex flex-wrap gap-1.5 px-3 pt-3">
+      <span
+        v-for="dir in dirs"
+        :key="dir"
+        class="flex max-w-60 items-center gap-1.5 rounded-md border bg-background/40 py-0.5 pr-1 pl-2 text-[0.78rem]"
+        v-tooltip="`${dir} – der Agent arbeitet auch in diesem Ordner`"
+      >
+        <FolderIcon class="size-3.5 shrink-0 text-muted-foreground" />
+        <span class="truncate">{{ folderName(dir) }}</span>
+        <button type="button" class="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" :aria-label="`${folderName(dir)} entfernen`" @click="removeFolder(dir)">
+          <XIcon class="size-3" />
+        </button>
+      </span>
+    </div>
     <div v-if="images.length" class="flex flex-wrap gap-2 px-3 pt-3">
       <div v-for="(image, i) in images" :key="image" class="group/img relative">
         <img :src="fileImageUrl(image)" alt="" class="size-16 rounded-lg border object-cover" />
@@ -393,14 +453,7 @@ defineExpose({ focus: () => input.value?.focus() })
       @paste="onPaste"
     />
     <div class="flex items-center gap-1 px-2 pb-2">
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon-sm" class="text-muted-foreground" aria-label="Bild anhängen" @click="pickImages">
-            <PaperclipIcon />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Bild anhängen (oder einfügen / hineinziehen)</TooltipContent>
-      </Tooltip>
+      <ComposerAddMenu :session-id="sessionId" :provider="provider" :disabled="disabled" @files="pickFiles" @folder="addFolder" @commands="startCommand" />
       <ComposerControls
         :provider="provider"
         :account="account"

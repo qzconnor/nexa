@@ -149,6 +149,13 @@ export function registerIpc(ctx: AppContext): void {
     })
     return result.canceled ? [] : result.filePaths
   })
+  handle(IpcInvoke.appPickFiles, async (event, defaultPath: unknown) => {
+    const result = await dialog.showOpenDialog(windowOf(event), {
+      properties: ['openFile', 'multiSelections'],
+      defaultPath: typeof defaultPath === 'string' ? defaultPath : undefined,
+    })
+    return result.canceled ? [] : result.filePaths
+  })
   handle(IpcInvoke.appSaveImage, async (_e, data: unknown, mime: unknown) => {
     if (!(data instanceof Uint8Array)) throw new Error('Das Bild fehlt.')
     if (data.byteLength > MAX_IMAGE_BYTES) throw new Error('Das Bild ist zu groß (höchstens 20 MB).')
@@ -283,6 +290,10 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsShellOutput, (_e, id: unknown, itemId: unknown) => sessions.shellOutput(str(id, 'Die Session'), str(itemId, 'Die Shell')))
   handle(IpcInvoke.sessionsStopShell, (_e, id: unknown, itemId: unknown) => sessions.stopShell(str(id, 'Die Session'), str(itemId, 'Die Shell')))
   handle(IpcInvoke.sessionsContext, (_e, id: unknown) => sessions.contextDetail(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsMcpServers, (_e, id: unknown) => sessions.mcpServers(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsSetMcp, (_e, id: unknown, name: unknown, enabled: unknown) =>
+    sessions.setMcpEnabled(str(id, 'Die Session'), str(name, 'Der Server'), enabled === true),
+  )
   handle(IpcInvoke.sessionsUpdate, (_e, id: unknown, patch: unknown) => sessions.update(str(id, 'Die Session'), (patch ?? {}) as never))
   handle(IpcInvoke.sessionsRemove, (_e, id: unknown) => sessions.remove(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))

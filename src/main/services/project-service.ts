@@ -14,6 +14,7 @@ import {
   sectionIdOf,
   type SectionLayout,
 } from '@shared/sections'
+import type { ProviderId } from '@shared/chat'
 import type { Project, ProjectSection } from '@shared/types'
 import { baseName } from '@shared/utils'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
@@ -116,6 +117,21 @@ export class ProjectService extends TypedEmitter<{ changed: [Project[]]; section
     if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
     if (patch.name !== undefined && patch.name.trim()) project.name = patch.name.trim()
     if (patch.collapsed !== undefined) project.collapsed = patch.collapsed
+    await this.save()
+    return project
+  }
+
+  /** Switches an MCP server of a CLI on or off for the project's chats. */
+  async setMcpEnabled(id: string, provider: ProviderId, name: string, enabled: boolean): Promise<Project> {
+    const project = this.get(id)
+    if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
+    const off = new Set(project.mcpOff?.[provider] ?? [])
+    if (enabled) off.delete(name)
+    else off.add(name)
+    const mcpOff = { ...project.mcpOff, [provider]: [...off].sort() }
+    if (!off.size) delete mcpOff[provider]
+    if (Object.keys(mcpOff).length) project.mcpOff = mcpOff
+    else delete project.mcpOff
     await this.save()
     return project
   }

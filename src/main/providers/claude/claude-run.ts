@@ -22,7 +22,8 @@ import type { CliBinary } from '../cli-binary'
 import { cliEnv } from '../cli-binary'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
-import type { AgentRun, RunOptions, RunSink } from '../provider'
+import { claudeMcpServers } from '../mcp-servers'
+import type { AgentRun, McpServerState, RunOptions, RunSink } from '../provider'
 import { contextDetailOf } from './claude-context'
 import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 
@@ -97,6 +98,8 @@ export function claudeArgs(options: RunOptions): string[] {
     if (options.mcp.allowed.length) args.push(`--allowedTools=${claudeToolNames(options.mcp.allowed).join(',')}`)
   }
   if (options.noChrome) args.push('--no-chrome')
+  // `=` form, one each: the option takes several values and would swallow what follows.
+  for (const dir of options.dirs ?? []) args.push(`--add-dir=${dir}`)
   args.push(...options.extraArgs)
   return args
 }
@@ -143,6 +146,11 @@ export class ClaudeRun implements AgentRun {
     })
     sink.runtime({ status: 'starting', connected: true })
     void this.request({ subtype: 'initialize' }).catch(() => undefined)
+    // Claude Code keeps a switch only for the process, so each start applies the project's again;
+    // written before the first prompt, they are through before it is read.
+    for (const name of options.mcpOff ?? []) {
+      void this.request({ subtype: 'mcp_toggle', serverName: name, enabled: false }).catch(() => undefined)
+    }
   }
 
   get alive(): boolean {
@@ -180,6 +188,18 @@ export class ClaudeRun implements AgentRun {
   async stopShell(taskId: string): Promise<void> {
     if (!this.process.alive) return
     await this.request({ subtype: 'stop_task', task_id: taskId })
+  }
+
+  async mcpServers(): Promise<McpServerState[]> {
+    if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr.')
+    return claudeMcpServers(await this.request({ subtype: 'mcp_status' }))
+  }
+
+  async setMcpEnabled(name: string, enabled: boolean): Promise<boolean> {
+    if (!this.process.alive) return false
+    // A server the CLI doesn't know (gone from its config) has nothing to switch.
+    await this.request({ subtype: 'mcp_toggle', serverName: name, enabled }).catch(() => undefined)
+    return true
   }
 
   /**

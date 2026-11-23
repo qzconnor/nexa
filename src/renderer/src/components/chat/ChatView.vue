@@ -476,6 +476,7 @@ async function remove(): Promise<void> {
               :busy="busy"
               :context="runtime.context"
               :session-id="meta.id"
+              :dirs="meta.dirs"
               autofocus
               @send="send"
               @inserted="fileTree.closeDiff(meta.id)"
@@ -486,6 +487,7 @@ async function remove(): Promise<void> {
               @update:effort="(effort) => update({ effort })"
               @update:mode="(permissionMode) => update({ permissionMode })"
               @update:ultracode="(ultracode) => update({ ultracode })"
+              @update:dirs="(dirs) => update({ dirs })"
             />
           </div>
         </div>

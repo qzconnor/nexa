@@ -15,6 +15,8 @@ export interface ProbeOptions {
   args?: string[]
   /** Control requests asked after `initialize`, one after the other. */
   requests?: Json[]
+  /** How long to wait after `initialize` before the other requests (MCP servers connect meanwhile). */
+  delayMs?: number
   /**
    * How long the process stays after the answers: Claude Code connects the MCP servers after
    * `initialize` and reports the commands again with their prompts (`system/commands_changed`).
@@ -68,6 +70,7 @@ export function probeClaude(binary: CliBinary, account: AccountEnv, options: Pro
             if (settled || m.type !== 'control_response' || !isPlainObject(m.response) || m.response.request_id !== id) return
             answers.push(isPlainObject(m.response.response) ? m.response.response : {})
             if (answers.length === requests.length) settle(answers)
+            else if (answers.length === 1 && options.delayMs) setTimeout(ask, options.delayMs)
             else ask()
           },
           onExit: () => {

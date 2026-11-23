@@ -7,6 +7,7 @@ import type {
   AppSettings,
   CommandOption,
   DeepPartial,
+  McpServerInfo,
   ModelDefaults,
   ModelOption,
   Platform,
@@ -39,6 +40,7 @@ export const IpcInvoke = {
   appShowItem: 'app:show-item',
   appPickDirectory: 'app:pick-directory',
   appPickImages: 'app:pick-images',
+  appPickFiles: 'app:pick-files',
   appSaveImage: 'app:save-image',
 
   windowMinimize: 'window:minimize',
@@ -100,6 +102,8 @@ export const IpcInvoke = {
   sessionsShellOutput: 'sessions:shell-output',
   sessionsStopShell: 'sessions:stop-shell',
   sessionsContext: 'sessions:context',
+  sessionsMcpServers: 'sessions:mcp-servers',
+  sessionsSetMcp: 'sessions:set-mcp',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
   sessionsStop: 'sessions:stop',
@@ -169,6 +173,8 @@ export interface NexaApi {
     showItem(path: string): Promise<void>
     pickDirectory(defaultPath?: string): Promise<string | null>
     pickImages(): Promise<string[]>
+    /** Any files, for the composer's „Dateien oder Fotos hinzufügen“. */
+    pickFiles(defaultPath?: string): Promise<string[]>
     /** Saves an image pasted into the composer, returns its path. */
     saveImage(data: Uint8Array, mime: string): Promise<string>
     pathForFile(file: File): string
@@ -277,6 +283,10 @@ export interface NexaApi {
     stopShell(id: string, itemId: string): Promise<void>
     /** What fills the chat's context, by kind, if its CLI tells (Claude Code while it runs). */
     context(id: string): Promise<ContextDetail | null>
+    /** The MCP servers of the chat's CLI, each on or off for its project. */
+    mcpServers(id: string): Promise<McpServerInfo[]>
+    /** Switches a server on or off for the chat's project (its running chats take it at once or with the next prompt). */
+    setMcp(id: string, name: string, enabled: boolean): Promise<void>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
     remove(id: string): Promise<void>
     /** Ends the CLI process of the session; the next prompt resumes it. */

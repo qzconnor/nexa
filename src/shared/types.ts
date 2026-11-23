@@ -223,6 +223,22 @@ export interface Project {
   collapsed?: boolean
   /** The separator it shows under; none (or one that's gone) is the default one (shared/sections.ts). */
   sectionId?: string
+  /** MCP servers switched off for the project's chats, by CLI (their names as the CLI reports them). */
+  mcpOff?: Partial<Record<ProviderId, string[]>>
+}
+
+/** An MCP server of a chat's CLI, for the switches in the composer's „+“ menu. */
+export interface McpServerInfo {
+  /** As the CLI names it (`claude.ai ClickUp`, `rea` …). */
+  name: string
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
+  /** Where it comes from: `user`, `project`, `local`, `claudeai` (a connector), `plugin` … */
+  scope?: string
+  /** How many tools it has, once connected. */
+  tools?: number
+  error?: string
+  /** On for the project's chats (Nexa keeps the ones switched off, `Project.mcpOff`). */
+  enabled: boolean
 }
 
 /** A separator in the sidebar: a heading with projects under it, like the workspaces of the Claude Manager. */
@@ -281,6 +297,11 @@ export interface SessionMeta {
    */
   cwd?: string
   /**
+   * More folders the agent may work in besides its own (the composer's „Ordner hinzufügen“): Claude
+   * Code's `--add-dir`, Codex's writable roots.
+   */
+  dirs?: string[]
+  /**
    * A session taken over from Claude Code (the Claude Manager): its transcript, read into the chat the
    * first time the session opens.
    */
@@ -311,6 +332,8 @@ export interface SessionUpdateInput {
   permissionMode?: PermissionMode
   pinned?: boolean
   archived?: boolean
+  /** The folders added to the chat (all of them; empty: none). */
+  dirs?: string[]
 }
 
 /**

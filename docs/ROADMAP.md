@@ -52,33 +52,30 @@
       Accounts lassen sich in den Einstellungen zusammenführen
 - [x] Zusammenfassen des Kontexts sichtbar: „Kontext wird zusammengefasst …“ mit Zeit, danach ein Trenner
       im Chat mit den Tokens vorher und nachher
+- [x] Keine Pause vor der Antwort: „Arbeitet …“ bleibt, bis wirklich Text zu sehen ist (ein Antwortblock
+      beginnt leer, Gedanken können ausgeblendet sein)
+- [x] Kontext im Ring richtig: aus der letzten Antwort des Hauptchats statt aus der Summe aller Aufrufe eines
+      Turns (das ergab z. B. 324 %); bei Claude Code gemessen an der Grenze aus seinen Einstellungen
+- [x] Kontext aufgeschlüsselt beim Hover über den Ring wie in Claude Desktop (Claude Code
+      `get_context_usage`): Balken und Liste nach Art, Puffer fürs Zusammenfassen, frei, Werkzeuge bei Bedarf,
+      aufklappbar MCP-Server, eigene Agents und Anweisungsdateien; Codex nennt nur die Summe
+- [x] Nachrichten in eine laufende Antwort heben sich ab: gestrichelt mit „In die laufende Antwort
+      geschickt“, in der Eingabe ein eigener Knopf dafür
+- [x] Gedanken offen im Verlauf statt eingeklappt
+- [x] „+“-Menü an der Eingabe wie in Claude Desktop statt der Büroklammer: „Dateien oder Fotos
+      hinzufügen“ (Strg+U; Bilder hängen an, andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude
+      `--add-dir`, Codex schreibbare Ordner; als Chips über der Eingabe), „Slash-Befehle“, „Konnektoren ›“
+- [x] Einzelne MCP-Server an- und ausschalten unter „Konnektoren“: Schalter mit Zustand, Werkzeugen und
+      Suche, gilt für alle Chats des Projekts. Claude Code schaltet im laufenden Prozess um (`mcp_status`,
+      `mcp_toggle`, gilt nur für den Prozess, daher wendet Nexa es bei jedem Start an); Codex über
+      `mcp_servers.<name>.enabled` in der Konfiguration des Threads, ab dem nächsten Prompt
 
 ## Als Nächstes
 
-- [ ] **Keine Pause vor der Antwort**: „Arbeitet …“ verschwindet, sobald die CLI einen Antwort- oder
-      Gedankenblock beginnt, auch wenn er noch leer ist; danach steht 1–2 s nichts da. Ursache: `working`
-      in `ChatView.vue` blendet sich bei jedem streamenden `assistant`/`thinking`-Item aus, aber ein leerer
-      Antwortblock zeigt nichts (der Cursor hängt an `:last-child`), und `chatBlocks()` lässt leere oder
-      (bei „Gedanken anzeigen“ aus) alle Gedanken weg. Die Anzeige soll bleiben, bis wirklich etwas zu
-      sehen ist.
-- [ ] **„+“-Menü an der Eingabe** wie in Claude Desktop, statt der Büroklammer: „Dateien oder Fotos
-      hinzufügen“ (Strg+U; andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude `--add-dir`),
-      „Slash-Befehle“ (öffnet die Vervollständigung), „Konnektoren ›“ und „Plugins ›“ als Untermenüs.
-- [ ] **Einzelne MCP-Server an- und ausschalten** im Untermenü „Konnektoren“: jeder Server mit Schalter,
-      Suche, „Verwalten“ führt zu den Einstellungen. Gilt je Chat, vorbelegt je Projekt. Claude Code im
-      laufenden Prozess: `mcp_status` (Server mit Zustand), `mcp_toggle { serverName, enabled }`,
-      `mcp_reconnect`, `mcp_authenticate`. Codex: `mcpServerStatus/list`, ausschalten über
-      `mcp_servers.<name>.enabled = false` in der `config` von `thread/start`/`thread/resume`. Nexas eigene
-      Werkzeuge bleiben Teil der App (eigene Schalter in den Einstellungen).
-- [ ] **Kontext aufgeschlüsselt beim Hover über den Kontextring** wie das Kontext-Panel von Claude
-      Desktop: Balken nach Art (System-Werkzeuge, Nachrichten, MCP-Werkzeuge, Systemprompt, Skills,
-      MCP-Anweisungen, eigene Agents, Puffer fürs Zusammenfassen, frei, verzögert geladene Werkzeuge),
-      aufklappbar die MCP-Werkzeuge und Agents einzeln. Claude Code: `get_context_usage { detail }`
-      (`summary` aus der letzten Usage und Schätzungen, `full` zählt jede Art über die Token-Count-API und
-      dauert); `full` nach dem Turn holen und bis zum nächsten halten, solange einer läuft „wird geladen,
-      sobald die Antwort fertig ist“. Codex hat nur Summe und Fenster (`thread/tokenUsage/updated`). Den
-      Ring an der Grenze fürs automatische Zusammenfassen messen statt am ganzen Fenster (wie
-      „Kontext bis Auto-Compact“ im Claude Manager, `lib/auto-compact.ts`).
+- [ ] **„Plugins ›“ im „+“-Menü**: installierte Plugins der CLI zeigen und schalten (Claude Code
+      `reload_plugins`, `enabledPlugins` in den Einstellungen; Codex `plugin/list`), „Konnektoren
+      verwalten“ zu den Einstellungen der CLIs, `mcp_reconnect` und `mcp_authenticate` für Server, die
+      fehlschlagen oder eine Anmeldung brauchen.
 - [ ] **Chats mit der CLI abgleichen**: Wird ein Chat außerhalb von Nexa weitergeführt (`claude --resume`,
       die Codex-TUI), fehlen Nexa die neuen Nachrichten. Transkript bzw. Rollout der verknüpften Sitzung
       beobachten (wie der Claude Manager: Watcher auf `projects/`, nur Angehängtes lesen) und Neues über

@@ -8,6 +8,7 @@ import { enabledProviders, PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
   CliLink,
+  McpServerInfo,
   Project,
   SendInput,
   SessionCreateInput,
@@ -54,6 +55,8 @@ interface SessionState {
   generation: number
   starting: Promise<AgentRun> | null
   mcpToken: string | null
+  /** The CLI takes a change only at its start (Codex's MCP servers): it ends after the turn that runs. */
+  restartAfterTurn?: boolean
 }
 
 interface Events extends Record<string, unknown[]> {
@@ -544,6 +547,11 @@ export class SessionService extends TypedEmitter<Events> {
           if (link) link.seenItems = s.items?.length ?? 0
           meta.updatedAt = Date.now()
           this.saveSoon()
+          if (s.restartAfterTurn && current()) {
+            s.restartAfterTurn = false
+            // After the turn's own reports: the next prompt resumes with what changed.
+            setTimeout(() => void this.stop(meta.id).catch(() => undefined), 0)
+          }
         } else if (item.kind === 'assistant' && !item.streaming && !item.parentId && item.text.trim()) {
           meta.preview = firstLine(item.text, 100)
         }
@@ -592,6 +600,8 @@ export class SessionService extends TypedEmitter<Events> {
           }),
           mcp,
           noChrome: !!mcp && tools.browserTools && tools.noClaudeInChrome,
+          mcpOff: project.mcpOff?.[provider],
+          dirs: meta.dirs,
           extraArgs: this.accounts.extraArgs(accountId),
         },
         sink,
@@ -624,6 +634,43 @@ export class SessionService extends TypedEmitter<Events> {
     await run.stopShell(taskId)
   }
 
+  /**
+   * The MCP servers of the chat's CLI, each on or off for its project: from the running CLI, else from
+   * one asked for the folder.
+   */
+  async mcpServers(id: string): Promise<McpServerInfo[]> {
+    const s = this.get(id)
+    const meta = s.meta
+    const project = this.projects.get(meta.projectId)
+    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
+    const provider = meta.provider
+    const live = s.run?.alive && s.runProvider === provider ? s.run : null
+    const list =
+      (live?.mcpServers ? await live.mcpServers().catch(() => null) : null) ??
+      (await this.providers.mcpServers(provider, this.accountFor(meta, provider), this.cwdOf(meta, project)))
+    const off = new Set(project.mcpOff?.[provider] ?? [])
+    return list.map((server) => ({ ...server, enabled: !off.has(server.name) }))
+  }
+
+  /**
+   * Switches an MCP server on or off for the chat's project: its chats that run take it at once where
+   * the CLI can (Claude Code), the others with their next prompt (Codex starts the thread anew).
+   */
+  async setMcpEnabled(id: string, name: string, enabled: boolean): Promise<void> {
+    const s = this.get(id)
+    const provider = s.meta.provider
+    const projectId = s.meta.projectId
+    await this.projects.setMcpEnabled(projectId, provider, name, enabled)
+    for (const other of this.sessions.values()) {
+      const run = other.run
+      if (other.meta.projectId !== projectId || other.runProvider !== provider || !run?.alive) continue
+      if (await run.setMcpEnabled?.(name, enabled).catch(() => false)) continue
+      const status = other.runtime.status
+      if (status === 'running' || status === 'waiting' || status === 'starting') other.restartAfterTurn = true
+      else await this.stop(other.meta.id)
+    }
+  }
+
   /** What fills the chat's context, by kind, as its CLI counts it; null when it can't (not running, Codex). */
   async contextDetail(id: string): Promise<ContextDetail | null> {
     const run = this.get(id).run
@@ -652,6 +699,19 @@ export class SessionService extends TypedEmitter<Events> {
     }
     if (patch.pinned !== undefined) meta.pinned = patch.pinned
     if (patch.archived !== undefined) meta.archived = patch.archived
+    if (Array.isArray(patch.dirs)) {
+      const dirs = [...new Set(patch.dirs.filter((d) => typeof d === 'string' && d.trim()).map((d) => resolve(d)))]
+      if (dirs.join('\n') !== (meta.dirs ?? []).join('\n')) {
+        if (dirs.length) meta.dirs = dirs
+        else delete meta.dirs
+        // The CLIs take their folders at the start: the next prompt resumes with them.
+        if (s.run) {
+          const status = s.runtime.status
+          if (status === 'running' || status === 'waiting' || status === 'starting') s.restartAfterTurn = true
+          else await this.stop(id)
+        }
+      }
+    }
     if (patch.account !== undefined && this.accounts.has(patch.account)) {
       const account = this.accounts.get(patch.account)
       if (meta.accounts?.[account.provider] !== account.id) {
