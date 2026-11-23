@@ -61,9 +61,9 @@
 - [x] Kontext aufgeschlüsselt beim Hover über den Ring wie in Claude Desktop (Claude Code
       `get_context_usage`): Balken und Liste nach Art, Puffer fürs Zusammenfassen, frei, Werkzeuge bei Bedarf,
       aufklappbar MCP-Server, eigene Agents und Anweisungsdateien; Codex nennt nur die Summe
-- [x] Nachrichten in eine laufende Antwort heben sich ab: gestrichelt mit „In die laufende Antwort
-      geschickt“, bis der Turn, in den sie kamen, durch ist; danach wie jede andere. In der Eingabe ein
-      eigener Knopf dafür
+- [x] Nachrichten, während der Agent arbeitet: Sie warten wie in den CLIs blass unter dem Chat („Wartet“),
+      bis der Agent sie aufnimmt, und stehen dann an dieser Stelle als normale Nachricht im Verlauf. In der
+      Eingabe ein eigener Knopf dafür
 - [x] Gedanken offen im Verlauf statt eingeklappt
 - [x] „+“-Menü an der Eingabe wie in Claude Desktop statt der Büroklammer: „Dateien oder Fotos
       hinzufügen“ (Strg+U; Bilder hängen an, andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude

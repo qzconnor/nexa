@@ -16,8 +16,18 @@ claude -p --input-format stream-json --output-format stream-json --verbose
        [--mcp-config <json> --allowedTools=<mcp__nexa__…,…>] [--no-chrome] [--add-dir=<ordner> …]
 ```
 
-- **Eingabe**: `{"type":"user","message":{"role":"user","content":[…]}}` je Zeile, Bilder als
+- **Eingabe**: `{"type":"user","uuid":"…","message":{"role":"user","content":[…]}}` je Zeile, Bilder als
   `image`-Blöcke (Base64).
+- **Warteschlange** (geprüft mit 2.1.330): Zu jeder Eingabe mit `uuid` meldet Claude Code
+  `{"type":"command_lifecycle","command_uuid":…,"state":…}`: `queued`, `started`, `completed` oder
+  `cancelled`. Eine Nachricht, die während eines Turns kommt, bleibt `queued` und wird am nächsten
+  Werkzeugergebnis desselben Turns `started` (im Transkript `queue-operation` `remove` mit
+  `reason: "absorbed_mid_turn"` und ein `attachment` vom Typ `queued_command`). Nach einem `interrupt`
+  nennt die Antwort `still_queued: [uuid…]`; dann kommt das `result` des abgebrochenen Turns, `cancelled`
+  für den alten Befehl und `started` für den wartenden, der als eigener Turn läuft. Nexa zeigt eine
+  solche Nachricht bis `started` unter dem Chat und setzt sie dann an dieser Stelle in den Verlauf.
+  `--replay-user-messages` würde die Nachricht beim Aufnehmen noch einmal ausgeben (`isReplay: true`),
+  Nexa braucht das nicht.
 - **Ausgabe**: `system/init` (Sitzungs-ID, Modell, Werkzeuge), `stream_event` (Teil-Deltas für Text und
   Thinking), `assistant`/`user` (fertige Blöcke, `tool_use`/`tool_result`), `result` (Turn-Ende mit
   Kosten und Tokens), `rate_limit_event` (Usage-Fenster mit Prozent und Reset).
@@ -217,7 +227,10 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   `tools` (Objekt je Werkzeug) und `serverInfo`; dabei ist `codex_apps`, Codex' eigener Server für die
   Apps, den Nexa nicht anzeigt. Umschalten geht nur über die Konfiguration des Threads, also ab dem
   nächsten Start des Threads.
-- **Turn**: `turn/start`; während ein Turn läuft, gehen weitere Nachrichten über `turn/steer`.
+- **Turn**: `turn/start`; während ein Turn läuft, gehen weitere Nachrichten über `turn/steer`
+  (`{ threadId, input, expectedTurnId, clientUserMessageId? }`, Antwort `{ turnId }`; ist der Turn
+  schon vorbei, ein Fehler). Beide nehmen `clientUserMessageId`, das als `clientId` am `userMessage`-Item
+  zurückkommt, bei `turn/steer` sofort: Codex nimmt die Nachricht gleich in den laufenden Turn auf.
   `turn/interrupt` bricht ab. Weitere Ordner zum Schreiben stehen in `sandboxPolicy.writableRoots`
   (`{ type: "workspaceWrite", writableRoots, networkAccess }`) von `turn/start`.
 - **Benachrichtigungen**: `turn/started`, `turn/completed`, `item/started`, `item/completed`,

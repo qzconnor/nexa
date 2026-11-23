@@ -3,8 +3,45 @@ import type { RunOptions, RunSink } from '../provider'
 import type { CodexClient } from './codex-client'
 import { CodexRun, codexMcpConfig, commandView, skillInputs, unwrapShell } from './codex-run'
 
+const sink: RunSink = { item: () => {}, delta: () => {}, runtime: () => {}, cliSession: () => {}, usage: () => {}, taken: () => {}, exited: () => {} }
+
+describe('CodexRun.send', () => {
+  const options: RunOptions = { sessionId: 's', cwd: 'F:\\app', permissionMode: 'ask', account: { accountId: 'codex', set: {}, unset: [] }, instructions: '', extraArgs: [] }
+  const working = async (answer: (method: string) => Promise<unknown>) => {
+    const request = vi.fn(async (method: string) => (method === 'thread/start' ? { thread: { id: 't1' } } : answer(method)))
+    const taken: string[] = []
+    const run = new CodexRun({ alive: true, request } as unknown as CodexClient, options, { ...sink, taken: (id) => taken.push(id) }, { add: () => {}, remove: () => {} })
+    await run.connect()
+    run.notification('turn/started', { threadId: 't1', turn: { id: 'turn-1' } })
+    return { run, taken, methods: () => request.mock.calls.map(([method]) => method) }
+  }
+
+  it('steers a prompt into the running turn, taken up at once', async () => {
+    const { run, taken, methods } = await working(async () => ({ turnId: 'turn-1' }))
+    await run.send({ id: 'p2', text: 'noch was' })
+    expect(methods()).toEqual(['thread/start', 'turn/steer'])
+    expect(taken).toEqual(['p2'])
+  })
+
+  it('starts the next turn with a steer that came too late', async () => {
+    const { run, taken, methods } = await working(async (method) => {
+      if (method !== 'turn/steer') return { turn: { id: 'turn-2' } }
+      run.notification('turn/completed', { threadId: 't1', turn: { id: 'turn-1', status: 'completed' } })
+      throw new Error('no active turn')
+    })
+    await run.send({ id: 'p2', text: 'noch was' })
+    expect(methods()).toEqual(['thread/start', 'turn/steer', 'turn/start'])
+    expect(taken).toEqual(['p2'])
+  })
+
+  it('knows its prompts again in their userMessage items', async () => {
+    const { run, taken } = await working(async () => ({}))
+    run.notification('item/started', { threadId: 't1', item: { type: 'userMessage', id: 'i1', clientId: 'p3', content: [] } })
+    expect(taken).toEqual(['p3'])
+  })
+})
+
 describe('CodexRun.connect', () => {
-  const sink: RunSink = { item: () => {}, delta: () => {}, runtime: () => {}, cliSession: () => {}, usage: () => {}, exited: () => {} }
   const options = (more: Partial<RunOptions>): RunOptions => ({ sessionId: 's', cwd: 'F:\\app', permissionMode: 'ask', account: { accountId: 'codex', set: {}, unset: [] }, instructions: '', extraArgs: [], ...more })
   const connect = async (more: Partial<RunOptions>, answer: (method: string, params: Record<string, unknown>) => Promise<unknown>) => {
     const request = vi.fn(answer)

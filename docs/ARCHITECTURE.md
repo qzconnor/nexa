@@ -282,7 +282,10 @@ der Ordner bleibt auf der Platte.
   Das „+“ (`ComposerAddMenu`) hängt Dateien an (Bilder als Anhang, andere als `@`-Erwähnung), gibt dem
   Chat weitere Ordner (`SessionMeta.dirs`, Chips über der Eingabe) und schaltet unter „Konnektoren“ die
   MCP-Server des Projekts (`Project.mcpOff`; Claude Code im laufenden Prozess, sonst ab dem nächsten
-  Start). Läuft eine Antwort, geht Text als „In die laufende Antwort“ hinein (`UserItem.steer`).
+  Start). Läuft eine Antwort, geht Text in sie hinein (`UserItem.steer`): Er wartet in
+  `SessionRuntime.queued` unter dem Chat, bis die CLI ihn aufnimmt (`RunSink.taken`: Claude Code meldet
+  `command_lifecycle`, Codex nimmt ihn mit `turn/steer` sofort), und steht dann an dieser Stelle im
+  Verlauf. Endet die CLI vorher, kommt er so in den Verlauf, wie er geschrieben wurde.
 - **Kontext** (`ContextCard`): Beim Hover über den Ring holt `sessions.context` die Aufschlüsselung der
   laufenden CLI (`AgentRun.contextDetail`, nur Claude Code); den Ring selbst speist `runtime.context`.
 - **Am Ende bleiben** (`useStickToBottom`): Der Chat folgt dem Neuen, bis der Nutzer nach oben scrollt

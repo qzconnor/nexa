@@ -15,7 +15,7 @@ import type {
   ToolItem,
 } from '@shared/chat'
 import { compactionNotice } from '@shared/chat'
-import type { SendInput, ShellOutput, UsageWindow } from '@shared/types'
+import type { ShellOutput, UsageWindow } from '@shared/types'
 import { renderSpecOf } from '@shared/render'
 import { isPlainObject } from '@shared/utils'
 import type { CliBinary } from '../cli-binary'
@@ -23,7 +23,7 @@ import { cliEnv } from '../cli-binary'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
 import { claudeMcpServers } from '../mcp-servers'
-import type { AgentRun, McpServerState, RunOptions, RunSink } from '../provider'
+import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import { contextDetailOf } from './claude-context'
 import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 
@@ -177,7 +177,7 @@ export class ClaudeRun implements AgentRun {
   // ------------------------------------------------------------------------------------------
   // Commands from Nexa
 
-  async send(input: SendInput): Promise<void> {
+  async send(input: RunInput): Promise<void> {
     const content: Json[] = []
     for (const path of input.images ?? []) {
       const type = IMAGE_TYPES[extname(path).toLowerCase()]
@@ -186,7 +186,8 @@ export class ClaudeRun implements AgentRun {
       content.push({ type: 'image', source: { type: 'base64', media_type: type, data: data.toString('base64') } })
     }
     content.push({ type: 'text', text: input.text })
-    this.process.write({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '' })
+    // The uuid comes back in `command_lifecycle` when Claude Code takes the prompt up (see onLifecycle).
+    this.process.write({ type: 'user', uuid: input.id, message: { role: 'user', content }, parent_tool_use_id: null, session_id: '' })
     this.turnStarted()
   }
 
@@ -332,7 +333,21 @@ export class ClaudeRun implements AgentRun {
         return this.onControlCancel(m)
       case 'control_response':
         return this.onControlResponse(m)
+      case 'command_lifecycle':
+        return this.onLifecycle(m)
     }
+  }
+
+  /**
+   * A prompt from stdin goes `queued` → `started` → `completed` (or `cancelled`). One sent during a turn
+   * starts at the next step of it, or after an interrupt as a turn of its own: then Claude Code works
+   * again without a prompt of Nexa's.
+   */
+  private onLifecycle(m: Json): void {
+    const id = str(m.command_uuid)
+    if (!id || m.state !== 'started') return
+    this.turnStarted()
+    this.sink.taken(id)
   }
 
   private parentOf(m: Json): string | null {

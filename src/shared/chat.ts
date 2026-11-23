@@ -30,7 +30,7 @@ export interface UserItem extends ItemBase {
   handoff?: boolean
   /**
    * Sent while the agent was at work: it joins the running turn instead of starting one (Codex
-   * steers it, Claude Code takes it up at its next step).
+   * steers it, Claude Code takes it up at its next step). It stands in the chat where the CLI took it.
    */
   steer?: boolean
 }
@@ -371,6 +371,11 @@ export interface SessionRuntime {
    * to it, each going on from what it knows. Looked at when the chat opens and the window gets focus.
    */
   openElsewhere?: string
+  /**
+   * Prompts sent while the CLI works that it hasn't taken up yet (Claude Code does at its next step,
+   * as its own queue): each joins the chat where the CLI takes it, until then it waits below it.
+   */
+  queued?: UserItem[]
 }
 
 export type SessionEvent =

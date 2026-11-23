@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
+import type { ChatItem, SessionRuntime } from '@shared/chat'
 import { claudeProjectKey } from '../accounts/cli-files'
+import type { AgentProvider, AgentRun, RunInput, RunSink } from '../providers/provider'
 import { SessionService } from './session-service'
 
 const CWD = 'F:\\Projekte\\demo'
@@ -53,7 +55,7 @@ async function claudeSession(configDir: string, sessionId: string): Promise<void
   await put(join(configDir, 'file-history', sessionId, 'abc@v1'), '1')
 }
 
-async function start(metas: SessionMeta[]): Promise<SessionService> {
+async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}): Promise<SessionService> {
   await put(join(dataDir, 'sessions.json'), JSON.stringify({ sessions: metas }))
   const accounts = {
     list: () => [
@@ -63,13 +65,18 @@ async function start(metas: SessionMeta[]): Promise<SessionService> {
     ],
     claudePaths: (id: string) => ({ configDir: id === 'claude-a' ? claudeA : claudeB }),
     codexPaths: () => ({ configDir: codexA }),
+    resolve: () => 'claude-a',
+    get: () => ({ id: 'claude-a', kind: 'system' }),
+    env: () => ({ accountId: 'claude-a', set: {}, unset: [] }),
+    extraArgs: () => [],
   }
-  const projects = { get: (id: string) => (id === 'p1' ? { id, path: CWD } : undefined) }
-  const mcp = { revoke: vi.fn() }
+  const projects = { get: (id: string) => (id === 'p1' ? { id, path: CWD } : undefined), touch: async () => {}, promptsFor: async () => [] }
+  const providers = { isReady: () => true, defaultAccount: () => 'claude-a', get: () => provider, setUsage: () => {} }
+  const mcp = { revoke: vi.fn(), running: false }
   service = new SessionService(
     dataDir,
     projects as never,
-    {} as never,
+    providers as never,
     accounts as never,
     mcp as never,
     () => settings,
@@ -161,6 +168,55 @@ describe('SessionService.remove', () => {
     }
 
     expect(await sessions.remove(['chat'])).toMatchObject({ removed: ['chat'], trashed: 0, failed: 3, error: 'Zugriff verweigert' })
+  })
+})
+
+describe('SessionService.send while the agent works', () => {
+  /** A CLI that takes what it is sent; the test reports for it through `sink`. */
+  async function working() {
+    let sink: RunSink | null = null
+    const sent: RunInput[] = []
+    const run = { alive: true, send: async (input: RunInput) => void sent.push(input), stop: async () => {} } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], {
+      start: async (_options, s) => {
+        sink = s
+        return run
+      },
+    })
+    let runtime: SessionRuntime | null = null
+    sessions.on('event', (event: { type: string; runtime?: SessionRuntime }) => {
+      if (event.type === 'runtime') runtime = event.runtime!
+    })
+    await sessions.send('chat', { text: 'erste' })
+    sink!.cliSession(GONE)
+    sink!.runtime({ status: 'running' })
+    const texts = async () => ((await sessions.history('chat'))!.items as ChatItem[]).map((i) => (i.kind === 'user' ? i.text : i.kind))
+    return { sessions, sink: () => sink!, sent, runtime: () => runtime!, texts }
+  }
+
+  it('waits below the chat until the CLI takes it up, then stands where it did', async () => {
+    const { sessions, sink, sent, runtime, texts } = await working()
+    await sessions.send('chat', { text: 'zweite' })
+
+    expect(await texts()).toEqual(['erste'])
+    expect(runtime().queued?.map((u) => u.text)).toEqual(['zweite'])
+    expect(sent.map((s) => s.text)).toEqual(['erste', 'zweite'])
+
+    sink().item({ kind: 'tool', id: 't1', ts: 1, provider: 'claude', tool: 'bash', name: 'Bash', title: 'Befehl', status: 'done', startedAt: 1 })
+    sink().taken(sent[1]!.id)
+
+    expect(await texts()).toEqual(['erste', 'tool', 'zweite'])
+    expect(runtime()).not.toHaveProperty('queued')
+  })
+
+  it('keeps what the CLI never took up when it ends', async () => {
+    const { sessions, sink, runtime, texts } = await working()
+    await sessions.send('chat', { text: 'zweite' })
+    sink().exited()
+
+    expect(await texts()).toEqual(['erste', 'zweite'])
+    expect(runtime()).toMatchObject({ status: 'idle' })
+    expect(runtime()).not.toHaveProperty('queued')
   })
 })
 
