@@ -3,7 +3,10 @@ import {
   ArrowDownIcon,
   BotIcon,
   ChevronRightIcon,
+  CopyIcon,
+  FileDownIcon,
   FolderOpenIcon,
+  InfoIcon,
   MoreHorizontalIcon,
   PanelLeftIcon,
   PencilIcon,
@@ -34,9 +37,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Kbd } from '@/components/ui/kbd'
 import { Spinner } from '@/components/ui/spinner'
+import { useChatActions } from '@/composables/useChatActions'
+import { useChatCommands } from '@/composables/useChatCommands'
 import { useClock } from '@/composables/useClock'
 import { provideProjectPath } from '@/composables/useProjectPath'
 import { useStickToBottom } from '@/composables/useStickToBottom'
+import type { AppCommand } from '@/lib/chat-commands'
 import { attempt } from '@/lib/errors'
 import { formatDuration } from '@/lib/format'
 import { runErrorToShow } from '@/lib/run-error'
@@ -51,6 +57,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import AgentDock from './AgentDock.vue'
 import AgentThread from './AgentThread.vue'
+import ChatStatusDialog from './ChatStatusDialog.vue'
 import Composer from './Composer.vue'
 import MessageList from './MessageList.vue'
 import ShellDock from './ShellDock.vue'
@@ -68,6 +75,7 @@ const settings = useSettingsStore()
 const ui = useUiStore()
 const fileTree = useFileTreeStore()
 const browsers = useBrowsersStore()
+const chatActions = useChatActions()
 const now = useClock(1000)
 
 const meta = computed(() => sessions.active)
@@ -297,6 +305,16 @@ function update(patch: SessionUpdateInput): void {
   if (id) void attempt(() => sessions.update(id, patch), 'Ändern fehlgeschlagen')
 }
 
+// ── Nexa's own commands (`/clear`, `/diff` …), run here instead of by the CLI ──
+
+const composer = ref<InstanceType<typeof Composer> | null>(null)
+const statusOpen = ref(false)
+const commands = useChatCommands({ meta, items, cwd, composer, startRename: () => void startRename(), showStatus: () => (statusOpen.value = true) })
+
+function runCommand(input: { command: AppCommand; args: string }): void {
+  void commands.run(input.command, input.args)
+}
+
 const renaming = ref(false)
 const title = ref('')
 const titleInput = ref<HTMLInputElement | null>(null)
@@ -400,6 +418,9 @@ async function remove(): Promise<void> {
               <DropdownMenuItem @select="startRename"><PencilIcon /> Umbenennen</DropdownMenuItem>
               <DropdownMenuItem v-if="project" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
               <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit Claude Code abgleichen</DropdownMenuItem>
+              <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
+              <DropdownMenuItem @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
+              <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
               <DropdownMenuItem :disabled="!runtime.connected" @select="sessions.stop(meta.id)"><PowerIcon /> CLI beenden</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</DropdownMenuItem>
@@ -527,6 +548,7 @@ async function remove(): Promise<void> {
           </div>
           <div class="frost-backing pointer-events-auto rounded-2xl">
             <Composer
+              ref="composer"
               floating
               :draft-key="meta.id"
               :provider="meta.provider"
@@ -541,6 +563,7 @@ async function remove(): Promise<void> {
               :dirs="meta.dirs"
               autofocus
               @send="send"
+              @command="runCommand"
               @inserted="fileTree.closeDiff(meta.id)"
               @stop="sessions.interrupt(meta.id)"
               @update:provider="(provider) => update({ provider })"
@@ -557,5 +580,6 @@ async function remove(): Promise<void> {
     </div>
     <ShellPanel v-if="ui.shellId" :items="items" :session-id="meta.id" />
     <BrowserPanel :session-id="meta.id" />
+    <ChatStatusDialog v-model:open="statusOpen" :meta="meta" :runtime="runtime" :cwd="cwd" />
   </div>
 </template>

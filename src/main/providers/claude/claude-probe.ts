@@ -88,7 +88,8 @@ export function probeClaude(binary: CliBinary, account: AccountEnv, options: Pro
 
 /**
  * Commands of Claude Code that only make sense in its terminal, or that Nexa does itself (model,
- * effort, title, a new chat): left out of the composer's list.
+ * effort, title, a new chat; renderer `lib/chat-commands.ts` lists Nexa's in their place): left out
+ * of the composer's list.
  */
 const LEFT_OUT = new Set(['clear', 'color', 'focus', 'heapdump', 'model', 'effort', 'rename', 'extra-usage', 'agents', 'workflow-launch-exec'])
 

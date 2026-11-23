@@ -1,6 +1,7 @@
 import { sectionIdOf } from '@shared/sections'
 import type { SessionMeta, SessionMoveInput } from '@shared/types'
-import { attempt } from '@/lib/errors'
+import { toast } from 'vue-sonner'
+import { attempt, toastError } from '@/lib/errors'
 import { foldersOf, projectTree } from '@/lib/session-tree'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -67,11 +68,33 @@ export function useChatActions() {
     for (const id of foldersOf(projectTree(project.id, project.path, sessions.byProject(project.id)), meta.id)) ui.toggleFolder(id, true)
   }
 
+  /** What the agent said last goes to the clipboard, as Markdown. */
+  async function copyLastAnswer(id: string): Promise<void> {
+    const answer = await attempt(() => window.api.sessions.lastAnswer(id), 'Antwort ließ sich nicht lesen')
+    if (answer === undefined) return
+    if (answer === null) {
+      toast('Noch keine Antwort', { description: 'In diesem Chat hat der Agent noch nichts gesagt.' })
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(answer)
+      toast('Letzte Antwort kopiert')
+    } catch (error) {
+      toastError(error, 'Konnte nicht kopiert werden')
+    }
+  }
+
+  /** The chat as a Markdown file where the user picks. */
+  async function exportMarkdown(id: string): Promise<void> {
+    const path = await attempt(() => window.api.sessions.exportMarkdown(id), 'Export fehlgeschlagen')
+    if (path) toast('Chat gespeichert', { description: path, action: { label: 'Zeigen', onClick: () => void window.api.app.showItem(path) } })
+  }
+
   async function remove(meta: SessionMeta): Promise<void> {
     if (!(await ui.confirm({ title: `„${meta.title}“ löschen?`, description: 'Der Verlauf in Nexa geht verloren.', confirmText: 'Löschen', destructive: true }))) return
     await attempt(() => sessions.remove(meta.id), 'Löschen fehlgeschlagen')
     if (!sessions.activeId && ui.view === 'chat') ui.view = 'home'
   }
 
-  return { state, working, open, newChat, rename, move, moveElsewhere, remove }
+  return { state, working, open, newChat, rename, move, moveElsewhere, copyLastAnswer, exportMarkdown, remove }
 }

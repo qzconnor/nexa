@@ -14,6 +14,7 @@ import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
 import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
+import type { GitService } from './files/git-service'
 import type { ProjectService } from './services/project-service'
 import { projectToSection } from './services/project-sections'
 import type { ProviderService } from './services/provider-service'
@@ -31,6 +32,7 @@ export interface AppContext {
   projects: ProjectService
   sessions: SessionService
   api: ApiServer
+  git: GitService
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -310,6 +312,19 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsSearch, (_e, query: unknown) => sessions.search(typeof query === 'string' ? query.slice(0, 200) : ''))
   handle(IpcInvoke.sessionsMove, (_e, id: unknown, target: unknown) => sessions.move(str(id, 'Die Session'), moveArg(target)))
+  handle(IpcInvoke.sessionsCompact, (_e, id: unknown) => sessions.compact(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsLastAnswer, (_e, id: unknown) => sessions.lastAnswer(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsExportMarkdown, async (event, id: unknown) => {
+    const { markdown, fileName } = await sessions.markdown(str(id, 'Die Session'), async (cwd) => (await ctx.git.branch(cwd))?.name ?? null)
+    const { canceled, filePath } = await dialog.showSaveDialog(windowOf(event), {
+      title: 'Chat als Markdown speichern',
+      defaultPath: join(app.getPath('documents'), fileName),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+    if (canceled || !filePath) return null
+    await writeFile(filePath, markdown, 'utf8')
+    return filePath
+  })
 
   handle(IpcInvoke.apiStatus, () => ctx.api.status())
 

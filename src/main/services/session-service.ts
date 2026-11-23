@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import { folderKey, inFolder } from '@shared/folders'
 import type { ChatItem, ContextDetail, InteractionResponse, ProviderId, SessionEvent, SessionRuntime, ToolItem, UserItem } from '@shared/chat'
+import { chatMarkdown, lastAnswer, markdownFileName } from '@shared/chat-markdown'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
@@ -346,6 +347,58 @@ export class SessionService extends TypedEmitter<Events> {
     const s = await this.loaded(id)
     const project = this.projects.get(s.meta.projectId)
     return project ? { items: s.items, cwd: this.cwdOf(s.meta, project) } : null
+  }
+
+  /** The chat as a Markdown document, with the name its file gets (see `chatMarkdown`). */
+  async markdown(id: string, branchOf: (cwd: string) => Promise<string | null>): Promise<{ markdown: string; fileName: string }> {
+    const s = this.get(id)
+    const meta = s.meta
+    // One not opened isn't loaded into the session for this: it may stay out of memory.
+    const items = s.items ?? (await this.savedItems(s))
+    const project = this.projects.get(meta.projectId)
+    const cwd = project ? this.cwdOf(meta, project) : undefined
+    const cli = Object.fromEntries(Object.entries(meta.cli).map(([provider, link]) => [provider, link.sessionId]))
+    const info = {
+      title: meta.title,
+      cwd,
+      branch: cwd ? await branchOf(cwd).catch(() => null) : null,
+      model: meta.model || undefined,
+      createdAt: meta.createdAt,
+      updatedAt: meta.updatedAt,
+      cli,
+    }
+    return { markdown: chatMarkdown(info, items), fileName: markdownFileName(meta.title) }
+  }
+
+  /** What the agent said last in the chat's main thread; null when it hasn't said anything yet. */
+  async lastAnswer(id: string): Promise<string | null> {
+    const s = this.get(id)
+    return lastAnswer(s.items ?? (await this.savedItems(s)))
+  }
+
+  /**
+   * Has the chat's CLI compact its conversation now (Codex `thread/compact/start`; Claude Code takes
+   * `/compact` as a prompt). Not while it works, and not before it has a conversation.
+   */
+  async compact(id: string): Promise<void> {
+    const s = await this.loaded(id)
+    const meta = s.meta
+    const project = this.projects.get(meta.projectId)
+    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
+    const provider = meta.provider
+    if (!meta.cli[provider]) throw new Error(`${PROVIDERS[provider].name} hat in diesem Chat noch nichts, was sich zusammenfassen ließe.`)
+    const status = s.runtime.status
+    if (s.run?.alive && (status === 'running' || status === 'waiting' || status === 'starting')) {
+      throw new Error('Der Agent arbeitet gerade. Fasse den Kontext zusammen, wenn er fertig ist.')
+    }
+    this.requireEnabled(provider)
+    const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
+    const run = await this.ensureRun(s, accountId)
+    if (!run.compact) {
+      await run.send({ text: '/compact' })
+      return
+    }
+    await run.compact()
   }
 
   async open(id: string): Promise<SessionDetail> {
@@ -803,6 +856,14 @@ export class SessionService extends TypedEmitter<Events> {
   async update(id: string, patch: SessionUpdateInput): Promise<SessionMeta> {
     const s = this.get(id)
     const meta = s.meta
+    const newDirs = Array.isArray(patch.dirs) ? [...new Set(patch.dirs.filter((d) => typeof d === 'string' && d.trim()).map((d) => resolve(d)))] : []
+    // A folder typed after `/add-dir` may not be there, and the CLI wouldn't start with it: checked
+    // before anything changes.
+    for (const dir of newDirs) {
+      if (meta.dirs?.includes(dir)) continue
+      const info = await stat(dir).catch(() => null)
+      if (!info?.isDirectory()) throw new Error(`Den Ordner „${dir}“ gibt es nicht.`)
+    }
     if (patch.title !== undefined && patch.title.trim()) {
       meta.title = patch.title.trim()
       meta.titleSource = 'user'
@@ -810,7 +871,7 @@ export class SessionService extends TypedEmitter<Events> {
     if (patch.pinned !== undefined) meta.pinned = patch.pinned
     if (patch.archived !== undefined) meta.archived = patch.archived
     if (Array.isArray(patch.dirs)) {
-      const dirs = [...new Set(patch.dirs.filter((d) => typeof d === 'string' && d.trim()).map((d) => resolve(d)))]
+      const dirs = newDirs
       if (dirs.join('\n') !== (meta.dirs ?? []).join('\n')) {
         if (dirs.length) meta.dirs = dirs
         else delete meta.dirs

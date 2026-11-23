@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArchiveIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from '@lucide/vue'
+import { ArchiveIcon, CopyIcon, FileDownIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from '@lucide/vue'
 import type { SessionMeta } from '@shared/types'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -79,6 +79,9 @@ function endDrag(): void {
       </ContextMenuItem>
       <SessionMoveMenu :meta="meta" />
       <ContextMenuItem @select="sessions.update(meta.id, { archived: true })"><ArchiveIcon /> Archivieren</ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem @select="chat.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</ContextMenuItem>
+      <ContextMenuItem @select="chat.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</ContextMenuItem>
     </ContextMenuContent>

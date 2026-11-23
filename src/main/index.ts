@@ -102,11 +102,11 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   }
 
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
-  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api })
+  const git = new GitService()
+  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git })
 
   // The file panel beside the chat: the project's tree with git's view, and what the agents do to files.
   const files = new FileTreeService((path) => shell.trashItem(path))
-  const git = new GitService()
   const fileActivity = new FileActivityTracker(files)
   sessions.on('tool', (sessionId, item, cwd) => fileActivity.tool(sessionId, item, cwd))
   sessions.on('turnEnded', (sessionId) => fileActivity.turnEnded(sessionId))
