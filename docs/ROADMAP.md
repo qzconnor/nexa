@@ -40,6 +40,10 @@
 - [x] Änderungen an Dateien wie in den CLIs aufgeklappt, auch in zusammengefalteten Werkzeugfolgen
 - [x] Chats in andere Projekte und Ordner verschieben, per Kontextmenü oder Drag & Drop (wie im Claude
       Manager); die CLI setzt die Unterhaltung im neuen Ordner fort
+- [x] Nexas eigene Werkzeuge (`mcp__nexa__*`) im Chat als Teil der App statt als fremder MCP-Server;
+      keine Kosten in Dollar mehr (Turn-Fuß, Verbrauch)
+- [x] Dateiansicht über den ganzen Chat ohne Eingabefeld, „Schließen“ gut sichtbar und mit Esc; die Datei
+      ist im Baum nach dem Schließen nicht mehr ausgewählt
 
 ## Als Nächstes
 

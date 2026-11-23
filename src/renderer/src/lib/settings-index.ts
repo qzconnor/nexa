@@ -105,12 +105,12 @@ const TREE = [
       {
         id: 'usage.claude',
         title: 'Claude Code',
-        keywords: 'Verbrauch Usage Limits Auslastung 5 Stunden Woche Reset Tokens Kosten Antworten Dashboard Statistik',
+        keywords: 'Verbrauch Usage Limits Auslastung 5 Stunden Woche Reset Tokens Antworten Dashboard Statistik',
       },
       {
         id: 'usage.codex',
         title: 'Codex',
-        keywords: 'Verbrauch Usage Limits Auslastung Monat Reset Tokens Kosten Antworten Dashboard Statistik',
+        keywords: 'Verbrauch Usage Limits Auslastung Monat Reset Tokens Antworten Dashboard Statistik',
       },
       { id: 'usage.days', title: 'Tokens pro Tag', keywords: 'Verbrauch Diagramm Chart Verlauf Tage Statistik Dashboard' },
     ],

@@ -16,6 +16,7 @@ import {
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { ChatItem, ToolItem, ToolKind } from '@shared/chat'
+import { isRenderTool, RENDER_SERVER, type RenderToolName } from '@shared/render'
 
 /** Icon and colour per kind of tool, as Claude Manager's file tree colours what Claude does. */
 export const TOOL_META: Record<ToolKind, { icon: Component; color: string }> = {
@@ -80,6 +81,47 @@ const BROWSER_STEPS: Record<string, string> = {
   clear_site_data: 'Daten der Seite löschen',
   pdf_save: 'Als PDF speichern',
   generate_test: 'Test erzeugen',
+}
+
+/** What Nexa's drawing tools make, in words. */
+const RENDER_NAMES: Record<RenderToolName, string> = {
+  render_chart: 'Chart',
+  render_diagram: 'Diagramm',
+  render_table: 'Tabelle',
+  render_stats: 'Kennzahlen',
+  render_callout: 'Hinweis',
+  render_code: 'Code',
+}
+
+/** One of Nexa's tools in words (`render_chart` → „Chart“, `browser_click` → „Klicken“). */
+function nexaToolName(short: string): string {
+  if (isRenderTool(short)) return RENDER_NAMES[short]
+  const action = /^browser_(.+)$/.exec(short)?.[1]
+  return (action && BROWSER_STEPS[action]) || short.replace(/_/g, ' ')
+}
+
+/** The tools of Nexa a ToolSearch of Claude Code loads by name (`select:mcp__nexa__render_chart,…`); null when it loads others too or searches. */
+function nexaToolsLoaded(tool: ToolItem): string[] | null {
+  if (tool.name !== 'ToolSearch') return null
+  const query = (tool.input as { query?: unknown } | undefined)?.query
+  if (typeof query !== 'string' || !query.startsWith('select:')) return null
+  const prefix = `mcp__${RENDER_SERVER}__`
+  const names = query.slice('select:'.length).split(',').map((name) => name.trim()).filter(Boolean)
+  return names.length && names.every((name) => name.startsWith(prefix)) ? names.map((name) => name.slice(prefix.length)) : null
+}
+
+/**
+ * A call of one of Nexa's own tools, or Claude loading them: they are the app itself, not a server the
+ * user added, so they show with Nexa's mark and in words. `plumbing`: only the CLI getting the tools
+ * ready, with nothing in it worth opening. Null for every other tool.
+ */
+export function nexaToolView(tool: ToolItem): { title: string; detail?: string; plumbing: boolean } | null {
+  const loaded = nexaToolsLoaded(tool)
+  if (loaded) return { title: 'Nexa-Werkzeuge laden', detail: [...new Set(loaded.map(nexaToolName))].join(', '), plumbing: true }
+  if (tool.server !== RENDER_SERVER) return null
+  // Claude names them `mcp__nexa__render_chart`, Codex `nexa.render_chart`.
+  const prefix = [`mcp__${RENDER_SERVER}__`, `${RENDER_SERVER}.`].find((p) => tool.name.startsWith(p)) ?? ''
+  return { title: nexaToolName(tool.name.slice(prefix.length)), detail: tool.detail, plumbing: false }
 }
 
 /** Claude Code's ToolSearch for one of the browser tools (it loads them when it needs them). */
@@ -157,8 +199,9 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
   return blocks
 }
 
-/** "3 Befehle, 2 Dateien bearbeitet, 4 gelesen" for a group of tool calls. */
-export function toolSummary(tools: readonly ToolItem[]): string {
+/** "3 Befehle, 2 Dateien bearbeitet, 4 gelesen" for a group of tool calls; Claude loading Nexa's tools isn't one of them. */
+export function toolSummary(all: readonly ToolItem[]): string {
+  const tools = all.filter((t) => !nexaToolView(t)?.plumbing)
   const count = (kinds: ToolKind[]) => tools.filter((t) => kinds.includes(t.tool)).length
   const parts: string[] = []
   const edits = new Set(tools.filter((t) => t.tool === 'edit' || t.tool === 'write').flatMap((t) => t.changes?.map((c) => c.path) ?? [t.detail ?? t.id]))

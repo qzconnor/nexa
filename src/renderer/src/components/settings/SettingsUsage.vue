@@ -12,7 +12,7 @@ import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { useClock } from '@/composables/useClock'
 import { attempt } from '@/lib/errors'
-import { formatCost, formatRelative, formatReset, formatTokens } from '@/lib/format'
+import { formatRelative, formatReset, formatTokens } from '@/lib/format'
 import { clampPercent, usageFillClass, usageLevel, usageTextClass } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
@@ -103,7 +103,7 @@ const chart = computed(() => {
           {{ account.authState === 'missing' ? 'Nicht angemeldet.' : (providers.usageOf(account.id)?.message ?? 'Noch keine Angaben zu den Limits.') }}
         </p>
       </div>
-      <div v-if="stats?.totals[id]" class="grid grid-cols-3 gap-2 border-t pt-4 text-center">
+      <div v-if="stats?.totals[id]" class="grid grid-cols-2 gap-2 border-t pt-4 text-center">
         <div>
           <div class="text-lg font-semibold tabular-nums">{{ stats.totals[id]!.turns }}</div>
           <div class="text-xs text-muted-foreground">Antworten</div>
@@ -111,10 +111,6 @@ const chart = computed(() => {
         <div>
           <div class="text-lg font-semibold tabular-nums">{{ formatTokens(stats.totals[id]!.inputTokens + stats.totals[id]!.outputTokens) }}</div>
           <div class="text-xs text-muted-foreground">Tokens</div>
-        </div>
-        <div>
-          <div class="text-lg font-semibold tabular-nums">{{ stats.totals[id]!.costUsd ? formatCost(stats.totals[id]!.costUsd) : '–' }}</div>
-          <div class="text-xs text-muted-foreground">API-Preis</div>
         </div>
       </div>
     </SettingsSection>

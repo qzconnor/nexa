@@ -1,15 +1,5 @@
 <script setup lang="ts">
-import {
-  Columns2Icon,
-  ExternalLinkIcon,
-  FileWarningIcon,
-  FoldVerticalIcon,
-  MinusIcon,
-  PlusIcon,
-  Undo2Icon,
-  UnfoldVerticalIcon,
-  XIcon,
-} from '@lucide/vue'
+import { Columns2Icon, ExternalLinkIcon, FileWarningIcon, FoldVerticalIcon, MinusIcon, PlusIcon, Undo2Icon, UnfoldVerticalIcon } from '@lucide/vue'
 import { useElementSize, useResizeObserver } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import type { FileDiff } from '@shared/files'
@@ -47,6 +37,7 @@ import DiffLineRow from './DiffLineRow.vue'
 import ImageDiff from './ImageDiff.vue'
 import ReviewBar from './ReviewBar.vue'
 import ReviewComposer from './ReviewComposer.vue'
+import ViewCloseButton from './ViewCloseButton.vue'
 
 /**
  * The changes of a file since the last commit, as `git diff HEAD` sees them (staged and not), drawn
@@ -61,7 +52,7 @@ const props = defineProps<{
   root: string
   /** The file in the root, `/`-separated. */
   path: string
-  /** Shows a button that closes it (beside a terminal; as a tab it closes with its tab). */
+  /** Shows the button that closes it, back to the chat. */
   closable?: boolean
 }>()
 const emit = defineEmits<{ close: [] }>()
@@ -596,14 +587,7 @@ const iconButton =
         </TooltipTrigger>
         <TooltipContent>Mit dem Standardprogramm öffnen</TooltipContent>
       </Tooltip>
-      <Tooltip v-if="closable">
-        <TooltipTrigger as-child>
-          <button type="button" aria-label="Änderungen schließen" :class="iconButton" @click="emit('close')">
-            <XIcon class="size-[16px]" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>Schließen</TooltipContent>
-      </Tooltip>
+      <ViewCloseButton v-if="closable" @close="emit('close')" />
     </header>
 
     <div v-if="error" class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">

@@ -30,6 +30,7 @@ import { runErrorToShow } from '@/lib/run-error'
 import { dockShells } from '@/lib/shells'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
+import { useBrowsersStore } from '@/stores/browsers'
 import { MAX_TREE_SHARE, useFileTreeStore } from '@/stores/file-tree'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -53,6 +54,7 @@ const projects = useProjectsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const fileTree = useFileTreeStore()
+const browsers = useBrowsersStore()
 const now = useClock(1000)
 
 const meta = computed(() => sessions.active)
@@ -163,6 +165,21 @@ watch(
     if (!id) mainScroll = null
   },
 )
+
+/** Escape is someone else's: a field's, an open menu's or dialog's, the browser's in full screen. */
+function escapeTaken(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented || browsers.fullscreen) return true
+  const target = event.target as HTMLElement | null
+  if (target?.isContentEditable || target?.closest('input, textarea, select')) return true
+  return !!document.querySelector('[role="menu"], [role="dialog"], [role="listbox"]')
+}
+
+// Escape closes a file's changes, back to the chat. Before the one below, so it doesn't also leave an agent's work.
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || !diff.value || !meta.value || escapeTaken(event)) return
+  event.preventDefault()
+  fileTree.closeDiff(meta.value.id)
+})
 
 // Escape goes back, as in the CLI; not while a menu or dialog takes it.
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -384,8 +401,8 @@ async function remove(): Promise<void> {
             <ArrowDownIcon />
           </Button>
         </Transition>
-        <!-- A file's changes from the tree, or all of them, over the timeline; the composer stays below. -->
-        <div v-if="diff" class="absolute inset-x-0 top-0 z-10 flex flex-col" :style="{ bottom: `${dockHeight}px` }">
+        <!-- A file's changes from the tree, or all of them, over the whole timeline, composer and all. -->
+        <div v-if="diff" class="absolute inset-0 z-10 flex flex-col">
           <ChangesView v-if="diff.path === ''" :key="diff.root" :root="diff.root" closable class="min-h-0 flex-1" @close="fileTree.closeDiff(meta.id)" />
           <DiffView v-else :key="`${diff.root}|${diff.path}`" :root="diff.root" :path="diff.path" closable class="min-h-0 flex-1" @close="fileTree.closeDiff(meta.id)" />
         </div>
@@ -394,9 +411,13 @@ async function remove(): Promise<void> {
           Composer: floats over the end of the timeline, frosted, so the chat scrolls on beneath it
           instead of being cut off above it. Clicks around it reach the chat. No z-index: the
           .frost-backing under each card has to get below the timeline's text. Leaves out the
-          scroll bar (10px, main.css) on the right, as the chat does.
+          scroll bar (10px, main.css) on the right, as the chat does. Hidden, not removed, under a
+          file's changes: its draft stays, and so does its height the timeline makes room for.
         -->
-        <div ref="dock" class="pointer-events-none absolute right-[10px] bottom-0 left-0 mx-auto max-w-(--chat-width) px-6 pb-5">
+        <div
+          ref="dock"
+          :class="cn('pointer-events-none absolute right-[10px] bottom-0 left-0 mx-auto max-w-(--chat-width) px-6 pb-5', diff && 'invisible')"
+        >
           <div v-if="showTodo && todo" class="frost-backing pointer-events-auto mb-2 rounded-xl">
             <TodoCard :item="todo" compact />
           </div>
@@ -440,6 +461,7 @@ async function remove(): Promise<void> {
               :context="runtime.context"
               autofocus
               @send="send"
+              @inserted="fileTree.closeDiff(meta.id)"
               @stop="sessions.interrupt(meta.id)"
               @update:provider="(provider) => update({ provider })"
               @update:account="(account) => update({ account })"
