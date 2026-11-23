@@ -4,7 +4,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import type { ContextUsage, PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { CommandOption, ModelDefaults } from '@shared/types'
-import UsageRing from '@/components/common/UsageRing.vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useProjectPath } from '@/composables/useProjectPath'
@@ -12,13 +11,13 @@ import { applySuggestion, filterCommands, findPaths, triggerAt, type Suggestion,
 import { effortLabel, effortTone } from '@/lib/effort'
 import { attempt } from '@/lib/errors'
 import { FILE_TREE_DRAG_TYPE, mentionOf } from '@/lib/file-tree'
-import { formatTokens } from '@/lib/format'
 import { fileImageUrl } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 import { useComposerStore } from '@/stores/composer'
 import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
 import ComposerControls from './ComposerControls.vue'
+import ContextCard from './ContextCard.vue'
 import ComposerSettings from './ComposerSettings.vue'
 import ComposerSuggest from './ComposerSuggest.vue'
 
@@ -39,6 +38,8 @@ const props = defineProps<{
   ultracode?: boolean
   busy?: boolean
   context?: ContextUsage
+  /** The open chat (none on the start page): its context in detail, its MCP servers. */
+  sessionId?: string
   /** Kept per chat while it isn't sent. */
   draftKey?: string
   autofocus?: boolean
@@ -69,7 +70,6 @@ const input = ref<HTMLTextAreaElement | null>(null)
 const dragging = ref(false)
 
 const canSend = computed(() => !props.disabled && (text.value.trim().length > 0 || images.value.length > 0))
-const contextPercent = computed(() => (props.context?.window ? (props.context.used / props.context.window) * 100 : 0))
 const placeholder = computed(() => (props.busy ? 'Nachricht senden, während der Agent arbeitet …' : `Nachricht an ${PROVIDERS[props.provider].name} …`))
 
 watch(
@@ -421,14 +421,7 @@ defineExpose({ focus: () => input.value?.focus() })
         <ChevronDownIcon :class="cn('size-3 opacity-60 transition-transform', settingsOpen && 'rotate-180')" />
       </Button>
       <div class="ml-auto flex items-center gap-2">
-        <Tooltip v-if="context?.window">
-          <TooltipTrigger as-child>
-            <span class="flex items-center">
-              <UsageRing :percent="contextPercent" :size="18" />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Kontext: {{ formatTokens(context.used) }} von {{ formatTokens(context.window) }} Tokens ({{ Math.round(contextPercent) }} %)</TooltipContent>
-        </Tooltip>
+        <ContextCard v-if="context?.window" :session-id="sessionId" :provider="provider" :context="context" :busy="busy" />
         <Button v-if="busy && !canSend" size="icon-sm" variant="secondary" aria-label="Anhalten" @click="emit('stop')">
           <SquareIcon class="size-3 fill-current" />
         </Button>

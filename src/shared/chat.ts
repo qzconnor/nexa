@@ -314,6 +314,44 @@ export interface ContextUsage {
   window: number
 }
 
+/** One kind of what fills the context, as the CLI counts it (Claude Code's `/context`). */
+export interface ContextPart {
+  /** The CLI's id (`system_prompt`, `messages`, `mcp_tools` …). */
+  id: string
+  name: string
+  tokens: number
+  /**
+   * `used`: in the context; `deferred`: tools loaded only once searched for, not in it yet; `buffer`:
+   * kept free for compacting; `free`: left.
+   */
+  kind: 'used' | 'deferred' | 'buffer' | 'free'
+}
+
+/** Entries behind a part: an MCP server's tools, an agent, a memory file. */
+export interface ContextEntry {
+  name: string
+  tokens: number
+  /** How many it stands for (an MCP server's tools). */
+  count?: number
+  /** Of those, how many are in the context (the others are deferred). */
+  loaded?: number
+}
+
+/** What the context holds, by kind; asked for when the user looks (the context ring's card). */
+export interface ContextDetail {
+  used: number
+  /** What the context may hold: the model's window, or less where the CLI's settings say so. */
+  window: number
+  parts: ContextPart[]
+  /** At how many tokens the CLI compacts the conversation, if it does. */
+  compactAt?: number
+  mcpServers?: ContextEntry[]
+  agents?: ContextEntry[]
+  memoryFiles?: ContextEntry[]
+  /** When it was counted. */
+  at: number
+}
+
 export interface SessionRuntime {
   status: SessionStatus
   /** The CLI process is up (Claude) or the thread is loaded (Codex). */

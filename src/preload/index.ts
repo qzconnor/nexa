@@ -179,6 +179,7 @@ const api: NexaApi = {
     respond: (id, itemId, response) => invoke(IpcInvoke.sessionsRespond, id, itemId, response),
     shellOutput: (id, itemId) => invoke(IpcInvoke.sessionsShellOutput, id, itemId),
     stopShell: (id, itemId) => invoke(IpcInvoke.sessionsStopShell, id, itemId),
+    context: (id) => invoke(IpcInvoke.sessionsContext, id),
     update: (id, patch) => invoke(IpcInvoke.sessionsUpdate, id, patch),
     remove: (id) => invoke(IpcInvoke.sessionsRemove, id),
     stop: (id) => invoke(IpcInvoke.sessionsStop, id),

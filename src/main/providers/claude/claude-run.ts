@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type {
   AgentItem,
+  ContextDetail,
   InteractionItem,
   InteractionRequest,
   InteractionResponse,
@@ -22,9 +23,13 @@ import { cliEnv } from '../cli-binary'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
 import type { AgentRun, RunOptions, RunSink } from '../provider'
+import { contextDetailOf } from './claude-context'
 import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 
 type Json = Record<string, unknown>
+
+/** How long the context's count may take before the card makes do with the last one. */
+const CONTEXT_TIMEOUT_MS = 8000
 
 const MODE_FLAG: Record<PermissionMode, string> = {
   ask: 'default',
@@ -118,6 +123,8 @@ export class ClaudeRun implements AgentRun {
    * usage adds up every call of the turn (each tool call is one), many times the context.
    */
   private lastContext: number | undefined
+  /** The last count of what fills the context (`get_context_usage`). */
+  private lastDetail: ContextDetail | null = null
   private interrupting = false
   private model: string | undefined
   private stopping = false
@@ -173,6 +180,22 @@ export class ClaudeRun implements AgentRun {
   async stopShell(taskId: string): Promise<void> {
     if (!this.process.alive) return
     await this.request({ subtype: 'stop_task', task_id: taskId })
+  }
+
+  /**
+   * What fills the context, counted by Claude Code (`/context`). `summary` answers from the last
+   * response's usage and local estimates, without calls to the API, so it is quick and free. Once the
+   * process is gone, the last count stands.
+   */
+  async contextDetail(): Promise<ContextDetail | null> {
+    if (!this.process.alive) return this.lastDetail
+    const answer = await withTimeout(this.request({ subtype: 'get_context_usage', detail: 'summary' }), CONTEXT_TIMEOUT_MS).catch(() => null)
+    const detail = contextDetailOf(answer)
+    if (!detail) return this.lastDetail
+    this.lastDetail = detail
+    this.lastContext = detail.used
+    this.sink.runtime({ context: { used: detail.used, window: detail.window } })
+    return detail
   }
 
   async respond(itemId: string, response: InteractionResponse): Promise<void> {
@@ -648,6 +671,9 @@ export class ClaudeRun implements AgentRun {
       model: this.model,
       ...(this.contextWindow && used ? { context: { used, window: this.contextWindow } } : {}),
     })
+    // Claude Code's own count measures against the window its settings allow (it may compact before
+    // the model's is full); it replaces the estimate above a moment later.
+    void this.contextDetail()
   }
 
   private onRateLimit(m: Json): void {
@@ -876,6 +902,23 @@ function shellStatusOf(status: unknown): ShellStatus | undefined {
     default:
       return undefined
   }
+}
+
+/** Rejects when `promise` takes longer than `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      },
+    )
+  })
 }
 
 /** The tokens of one API call in the context: everything sent (cached or not) and the answer. */

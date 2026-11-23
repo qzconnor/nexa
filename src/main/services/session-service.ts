@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import { folderKey, inFolder } from '@shared/folders'
-import type { ChatItem, InteractionResponse, ProviderId, SessionEvent, SessionRuntime, ToolItem, UserItem } from '@shared/chat'
+import type { ChatItem, ContextDetail, InteractionResponse, ProviderId, SessionEvent, SessionRuntime, ToolItem, UserItem } from '@shared/chat'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
@@ -622,6 +622,12 @@ export class SessionService extends TypedEmitter<Events> {
     const { run, taskId } = this.shellOf(id, itemId)
     if (!run?.stopShell) throw new Error('Die Shell lässt sich nicht beenden: Die CLI dieses Chats läuft nicht mehr.')
     await run.stopShell(taskId)
+  }
+
+  /** What fills the chat's context, by kind, as its CLI counts it; null when it can't (not running, Codex). */
+  async contextDetail(id: string): Promise<ContextDetail | null> {
+    const run = this.get(id).run
+    return (await run?.contextDetail?.()) ?? null
   }
 
   private shellOf(id: string, itemId: string): { run: AgentRun | null; taskId: string } {

@@ -31,7 +31,7 @@ async function clearBrowserData(): Promise<void> {
 <template>
   <div class="flex flex-col gap-4">
     <SettingsSection anchor="chat.history" title="Verlauf" description="Was im Chat zu sehen ist.">
-      <SettingField anchor="chat.showThinking" label="Gedanken anzeigen" description="Was das Modell denkt, eingeklappt im Verlauf.">
+      <SettingField anchor="chat.showThinking" label="Gedanken anzeigen" description="Was das Modell denkt, offen im Verlauf; „Gedanken“ klappt es ein.">
         <Switch :model-value="s.chat.showThinking" @update:model-value="(v: boolean) => update({ chat: { showThinking: v } })" />
       </SettingField>
       <SettingField anchor="chat.collapseDiffs" label="Änderungen eingeklappt" description="Diffs geänderter Dateien erst nach einem Klick zeigen.">

@@ -1,5 +1,5 @@
 import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput } from './accounts'
-import type { InteractionResponse, ProviderId, SessionEvent } from './chat'
+import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
 import type {
   ApiStatus,
@@ -99,6 +99,7 @@ export const IpcInvoke = {
   sessionsRespond: 'sessions:respond',
   sessionsShellOutput: 'sessions:shell-output',
   sessionsStopShell: 'sessions:stop-shell',
+  sessionsContext: 'sessions:context',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
   sessionsStop: 'sessions:stop',
@@ -274,6 +275,8 @@ export interface NexaApi {
     /** The end of a shell's output (`itemId`: its tool item, see `ToolItem.shell`). */
     shellOutput(id: string, itemId: string): Promise<ShellOutput>
     stopShell(id: string, itemId: string): Promise<void>
+    /** What fills the chat's context, by kind, if its CLI tells (Claude Code while it runs). */
+    context(id: string): Promise<ContextDetail | null>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
     remove(id: string): Promise<void>
     /** Ends the CLI process of the session; the next prompt resumes it. */

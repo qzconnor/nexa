@@ -1,4 +1,4 @@
-import type { ChatItem, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
+import type { ChatItem, ContextDetail, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
 import type { CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage, SendInput, ShellOutput } from '@shared/types'
 import type { AccountEnv } from '../accounts/account-env'
 import type { ResolvedCommand } from './cli-binary'
@@ -68,6 +68,8 @@ export interface AgentRun {
   shellOutput?(taskId: string): Promise<ShellOutput>
   /** Ends a shell task. */
   stopShell?(taskId: string): Promise<void>
+  /** What fills the context, by kind, for CLIs that tell (Claude Code); null while it can't be counted. */
+  contextDetail?(): Promise<ContextDetail | null>
   stop(): Promise<void>
   readonly alive: boolean
 }

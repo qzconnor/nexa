@@ -475,6 +475,7 @@ async function remove(): Promise<void> {
               :ultracode="meta.ultracode"
               :busy="busy"
               :context="runtime.context"
+              :session-id="meta.id"
               autofocus
               @send="send"
               @inserted="fileTree.closeDiff(meta.id)"
