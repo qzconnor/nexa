@@ -40,6 +40,29 @@ function cliFields<P extends string>(p: P) {
 
 const TREE = [
   {
+    tab: 'general',
+    label: 'Allgemein',
+    sections: [
+      {
+        id: 'general.window',
+        title: 'Fenster und Start',
+        keywords: 'schließen beenden Hintergrund',
+        fields: [
+          {
+            id: 'general.runInTray',
+            label: 'Im Infobereich weiterlaufen',
+            keywords: 'Tray Taskleiste Symbol Statusbereich ausblenden minimieren schließen weiterlaufen Hintergrund',
+          },
+          {
+            id: 'general.launchAtLogin',
+            label: 'Mit Windows starten',
+            keywords: 'Autostart Anmeldung Login hochfahren Systemstart automatisch starten',
+          },
+        ],
+      },
+    ],
+  },
+  {
     tab: 'appearance',
     label: 'Darstellung',
     sections: [

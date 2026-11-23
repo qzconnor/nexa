@@ -54,6 +54,10 @@ win:
       to: bin
       filter:
         - nx.exe
+  # The icon in the notification area (src/main/window/tray.ts), with every size for the display scaling.
+  extraResources:
+    - from: build/icon.ico
+      to: icon.ico
 
 nsis:
   oneClick: false

@@ -65,6 +65,16 @@ export interface ToolSettings {
   noClaudeInChrome: boolean
 }
 
+export interface GeneralSettings {
+  /**
+   * An icon in the notification area: closing the window only hides it, chats, the local API and the
+   * notifications go on; the icon's menu quits.
+   */
+  runInTray: boolean
+  /** Starts with the user's login (`--autostart`); with `runInTray` without showing the window. */
+  launchAtLogin: boolean
+}
+
 /**
  * When a chat interrupts with a notification and the flashing taskbar: `background` only while the
  * window is in the background, `hidden` also while it shows another chat or the start page.
@@ -104,6 +114,7 @@ export interface ApiSettings {
 }
 
 export interface AppSettings {
+  general: GeneralSettings
   appearance: AppearanceSettings
   defaults: {
     provider: ProviderId

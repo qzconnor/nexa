@@ -18,6 +18,7 @@ import { forwardWindowState, registerIpc } from './ipc'
 import { isLaunchRequest, parseLaunch, readLaunchRequest, type LaunchRequest } from './launch'
 import { AccountService } from './accounts/account-service'
 import { APP_NAME, userDataFolder } from './lib/app-folder'
+import { AUTOSTART_ARG, setLaunchAtLogin } from './lib/login-item'
 import { loadShellEnv } from './lib/shell-env'
 import { NexaMcpServer } from './mcp/mcp-server'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
@@ -31,6 +32,7 @@ import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
 import { handleFileProtocol, registerFileScheme } from './window/file-protocol'
 import { createMainWindow, openAppWindows, revealWindow } from './window/main-window'
+import { AppTray } from './window/tray'
 import { WindowMaterialController } from './window/material'
 
 app.setName(APP_NAME)
@@ -166,8 +168,12 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     }
   }
 
-  const openWindow = (): BrowserWindow => {
-    const win = createMainWindow(settings.get(), userDataDir)
+  /** The app is quitting: the window really closes instead of going to the notification area. */
+  let quitting = false
+  const tray = new AppTray({ open: () => show(), quit: () => app.quit() })
+
+  const openWindow = ({ hidden = false } = {}): BrowserWindow => {
+    const win = createMainWindow(settings.get(), userDataDir, { hidden })
     const material = new WindowMaterialController(win)
     let applied = ''
     const applyAppearance = () => {
@@ -185,6 +191,14 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
       win.flashFrame(false)
       notifications.windowFocused()
     })
+    win.on('close', (event) => {
+      // With the icon in the notification area the window only hides: chats and the API go on.
+      if (quitting || updates.installing || !tray.visible) return
+      event.preventDefault()
+      win.hide()
+    })
+    // Windows shuts down or logs off: no `before-quit` comes, and the window must not hold it back.
+    win.on('session-end', () => (quitting = true))
     win.on('closed', () => {
       off()
       if (mainWindow === win) mainWindow = null
@@ -196,23 +210,46 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // Dark/light of the native backdrop as the theme's, before the window shows; the window says so again
   // once it has the theme (a theme of the user's own is only known there).
   nativeTheme.themeSource = findTheme(settings.get().appearance.theme).mode
-  const firstWindow = openWindow()
+
+  tray.set(settings.get().general.runInTray)
+  // A start switched off in the Task Manager (or the desktop's autostart settings) stays off.
+  setLaunchAtLogin(settings.get().general.launchAtLogin, true)
+  let general = settings.get().general
+  settings.on('changed', (next) => {
+    const previous = general
+    general = next.general
+    if (general.launchAtLogin !== previous.launchAtLogin) setLaunchAtLogin(general.launchAtLogin)
+    if (general.runInTray !== previous.runInTray) {
+      tray.set(general.runInTray)
+      // Without the icon a hidden window could not be opened again.
+      if (!tray.visible && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) revealWindow(mainWindow)
+    }
+  })
+
+  // Started by the system at login: with the icon the window stays hidden until it is opened.
+  const firstWindow = openWindow({ hidden: process.argv.includes(AUTOSTART_ARG) && tray.visible })
   if (launchRequest) firstWindow.webContents.once('did-finish-load', () => void openFromCommandLine(launchRequest))
 
-  app.on('second-instance', (_event, _argv, _cwd, additionalData) => {
+  app.on('second-instance', (_event, argv, _cwd, additionalData) => {
     if (isLaunchRequest(additionalData)) void openFromCommandLine(additionalData)
-    else show()
+    // A start at login while the app already runs changes nothing.
+    else if (!argv.includes(AUTOSTART_ARG)) show()
   })
   app.on('activate', () => {
     if (openAppWindows().length === 0) openWindow()
   })
-  app.on('window-all-closed', () => app.quit())
+  app.on('window-all-closed', () => {
+    // With the icon the app goes on and opens a new window from there.
+    if (!tray.visible) app.quit()
+  })
 
   let cleanedUp = false
   app.on('before-quit', (event) => {
+    quitting = true
     if (cleanedUp) return
     event.preventDefault()
     cleanedUp = true
+    tray.dispose()
     updates.dispose()
     // Ends the CLI processes (they would outlive the app) and writes what is pending.
     void Promise.allSettled([sessions.dispose(), providers.dispose(), browserTabs.flush()])

@@ -64,6 +64,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `files/file-activity.ts`, `files/shell-files.ts` | Shell-Befehle: welche Dateien sie nennen, schreiben, ob sie committen |
 | `files/files-ipc.ts` | Kanäle `files:*` und `git:*` mit Prüfung der Pfade |
 | `window/*` | Hauptfenster, Fensterzustand, Material (Mica/Acryl), Datei-Protokoll |
+| `window/tray.ts` | Symbol im Infobereich (Einstellung `general.runInTray`): Schließen blendet das Fenster dann nur aus, das Menü öffnet und beendet |
+| `lib/login-item.ts` | Start mit der Anmeldung (`general.launchAtLogin`, Schalter `--autostart`): Windows über den Run-Schlüssel (der Uninstaller in `build/installer.nsh` entfernt ihn), Linux über `~/.config/autostart/nexa.desktop`; mit Infobereich startet das Fenster versteckt |
 | `window/browser-*.ts` | Härtung der `<webview>`s (eigene Partition, keine Node-Integration, Berechtigungen, Popups, Navigation, Tastenkürzel), Downloads, HTTP-Logins |
 
 ## Datenmodell
