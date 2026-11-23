@@ -44,6 +44,11 @@ export interface RunOptions {
   resumeId?: string
   /** Codex: the conversation's file, after it was copied from another account. */
   resumePath?: string
+  /**
+   * `resumeId` is another chat's conversation: continue a copy of it under a new id (Claude
+   * `--fork-session`, Codex `thread/fork`), up to `at` (Claude: a message uuid, Codex: a turn id).
+   */
+  fork?: { at?: string }
   /** The account the CLI runs with (its config folder and login). */
   account: AccountEnv
   /** Instructions Nexa adds to the system prompt (its tools, the handoff). */

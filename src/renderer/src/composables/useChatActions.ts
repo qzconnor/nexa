@@ -68,6 +68,15 @@ export function useChatActions() {
     for (const id of foldersOf(projectTree(project.id, project.path, sessions.byProject(project.id)), meta.id)) ui.toggleFolder(id, true)
   }
 
+  /** A new chat that goes on from where this one is now, this one staying as it is; the new one opens. */
+  async function fork(id: string): Promise<SessionMeta | undefined> {
+    const meta = await attempt(() => sessions.fork(id), 'Abzweigen ging nicht')
+    if (!meta) return
+    ui.view = 'chat'
+    reveal(meta)
+    return meta
+  }
+
   /** What the agent said last goes to the clipboard, as Markdown. */
   async function copyLastAnswer(id: string): Promise<void> {
     const answer = await attempt(() => window.api.sessions.lastAnswer(id), 'Antwort ließ sich nicht lesen')
@@ -96,5 +105,5 @@ export function useChatActions() {
     if (!sessions.activeId && ui.view === 'chat') ui.view = 'home'
   }
 
-  return { state, working, open, newChat, rename, move, moveElsewhere, copyLastAnswer, exportMarkdown, remove }
+  return { state, working, open, newChat, rename, move, moveElsewhere, fork, copyLastAnswer, exportMarkdown, remove }
 }

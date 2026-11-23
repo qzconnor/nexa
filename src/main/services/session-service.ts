@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import { folderKey, inFolder } from '@shared/folders'
@@ -35,6 +35,7 @@ import { TypedEmitter } from '../lib/typed-emitter'
 import type { NexaMcpServer } from '../mcp/mcp-server'
 import { nexaToolsOn, type NexaToolGrant } from '../mcp/tool-grant'
 import { claudeOpenElsewhere } from '../providers/claude/claude-presence'
+import { forkPoint } from '../providers/claude/claude-transcript'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { folderPromptText } from './folder-prompts'
 import { handoffContext, sessionInstructions } from './instructions'
@@ -222,6 +223,60 @@ export class SessionService extends TypedEmitter<Events> {
     return meta
   }
 
+  /**
+   * A new chat that goes on from where this one is now, while this one stays as it is (Claude Code's
+   * `/branch`): its items and settings, and each CLI's conversation, which the new chat's next prompt
+   * forks at the chat's last answer (`CliLink.fork`).
+   */
+  async fork(id: string): Promise<SessionMeta> {
+    const s = await this.loaded(id)
+    this.requireAtRest(s, 'abzweigen')
+    // What was said in a terminal meanwhile belongs to what the new chat goes on from.
+    await this.syncCli(id).catch((error) => console.warn('[sessions] transcript could not be compared', error))
+    const from = s.meta
+    const project = this.projects.get(from.projectId)
+    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
+    const cli: SessionMeta['cli'] = {}
+    for (const provider of Object.keys(from.cli) as ProviderId[]) {
+      const link = from.cli[provider]!
+      // A chat branched off and not yet used: the same point of the same conversation.
+      const at = link.fork ? link.fork.at : await this.forkPointOf(s, provider, link, this.cwdOf(from, project)).catch(() => null)
+      cli[provider] = { ...link, fork: at ? { at } : {} }
+    }
+    const now = Date.now()
+    const { pinned: _pinned, archived: _archived, importedFrom: _imported, ...rest } = from
+    const meta: SessionMeta = {
+      ...structuredClone(rest),
+      id: randomUUID(),
+      title: `${from.title} (Abzweig)`,
+      createdAt: now,
+      updatedAt: now,
+      cli,
+    }
+    const items: ChatItem[] = [
+      ...structuredClone(s.items),
+      { kind: 'notice', id: randomUUID(), ts: now, provider: meta.provider, level: 'info', text: `Abgezweigt von „${from.title}“` },
+    ]
+    await this.store.rewrite(meta.id, items)
+    const fork = this.state(meta)
+    fork.items = items
+    fork.index = new Map(items.map((item, i) => [item.id, i]))
+    this.sessions.set(meta.id, fork)
+    this.saveSoon()
+    return meta
+  }
+
+  /** Where a fork of the chat's conversation with a CLI ends: Claude Code's last answer, Codex's last turn. */
+  private async forkPointOf(s: SessionState & { items: ChatItem[] }, provider: ProviderId, link: CliLink, cwd: string): Promise<string | null> {
+    if (provider === 'codex') {
+      const turn = s.items.findLast((i) => i.kind === 'turn' && i.provider === 'codex' && i.id.startsWith('turn:'))
+      return turn ? turn.id.slice('turn:'.length) : null
+    }
+    const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(s.meta, 'claude'))
+    const transcript = await findClaudeTranscript(paths.projectsDir, link.sessionId, cwd)
+    return transcript ? forkPoint(await readFile(transcript, 'utf8')) : null
+  }
+
   /** A folder in the project for a chat to work in; undefined for the project's own. */
   private async subfolder(project: Project, path: string): Promise<string | undefined> {
     const folder = resolve(path)
@@ -315,20 +370,26 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /** Whether the chat's CLI is at rest: no turn, question, shell or agent of it that still runs. */
-  private requireAtRest(s: SessionState): void {
+  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' = 'verschieben'): void {
     const status = s.runtime.status
     if (status === 'running' || status === 'starting' || status === 'waiting') {
-      throw new Error('Der Chat arbeitet gerade. Sobald er fertig ist, lässt er sich verschieben.')
+      throw new Error(`Der Chat arbeitet gerade. Sobald er fertig ist, lässt er sich ${action}.`)
     }
     // Only a CLI that still runs has them; after a restart a state left on "running" means nothing.
     const background = s.run?.alive && s.items?.some((i) => (i.kind === 'tool' && i.shell?.background && i.shell.status === 'running') || (i.kind === 'agent' && i.status === 'running'))
-    if (background) throw new Error('Im Hintergrund läuft noch eine Shell oder ein Agent des Chats. Sobald sie fertig sind, lässt er sich verschieben.')
+    if (background) throw new Error(`Im Hintergrund läuft noch eine Shell oder ein Agent des Chats. Sobald sie fertig sind, lässt er sich ${action}.`)
   }
 
   /** Claude Code's transcript of the chat into the project folder of `to`; without one there is nothing to move. */
   private async moveClaudeSession(meta: SessionMeta, from: string, to: string): Promise<void> {
     const link = meta.cli.claude
     if (!link) return
+    if (link.fork) {
+      // The transcript is still the other chat's, which stays where it is: Claude Code gets the chat as
+      // context in the new folder instead.
+      delete meta.cli.claude
+      return
+    }
     const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(meta, 'claude'))
     const transcript = await findClaudeTranscript(paths.projectsDir, link.sessionId, from)
     if (transcript && !(await relocateClaudeSession(paths.projectsDir, transcript, link.sessionId, to))) {
@@ -425,7 +486,8 @@ export class SessionService extends TypedEmitter<Events> {
     const meta = s.meta
     const link = meta.cli.claude
     const project = this.projects.get(meta.projectId)
-    if (!link || !project || !s.items) return 0
+    // A conversation not forked yet is the other chat's: what comes to it there isn't this chat's.
+    if (!link || link.fork || !project || !s.items) return 0
     // Not into a turn at work, of either CLI: its items would come between the turn's.
     const busy = () => {
       const status = s.runtime.status
@@ -715,9 +777,11 @@ export class SessionService extends TypedEmitter<Events> {
       cliSession: (sessionId) => {
         const link = meta.cli[provider]
         const same = link?.sessionId === sessionId
+        // The fork of another chat's conversation has seen what that one had seen.
+        const forked = !!link?.fork && !same
         meta.cli[provider] = {
           sessionId,
-          seenItems: same ? link.seenItems : (s.items?.length ?? 0),
+          seenItems: same || forked ? link!.seenItems : (s.items?.length ?? 0),
           accountId,
           configDir: savedIn,
           ...(same && link.resumePath ? { resumePath: link.resumePath } : {}),
@@ -749,6 +813,7 @@ export class SessionService extends TypedEmitter<Events> {
           permissionMode: meta.permissionMode,
           resumeId: meta.cli[provider]?.sessionId,
           resumePath: meta.cli[provider]?.resumePath,
+          fork: meta.cli[provider]?.fork,
           account: this.accounts.env(accountId),
           instructions: [
             sessionInstructions({

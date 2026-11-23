@@ -6,6 +6,7 @@ import {
   CopyIcon,
   FileDownIcon,
   FolderOpenIcon,
+  GitForkIcon,
   InfoIcon,
   MoreHorizontalIcon,
   PanelLeftIcon,
@@ -416,6 +417,7 @@ async function remove(): Promise<void> {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="w-56">
               <DropdownMenuItem @select="startRename"><PencilIcon /> Umbenennen</DropdownMenuItem>
+              <DropdownMenuItem :disabled="busy" @select="chatActions.fork(meta.id)"><GitForkIcon /> Chat abzweigen</DropdownMenuItem>
               <DropdownMenuItem v-if="project" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
               <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit Claude Code abgleichen</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>

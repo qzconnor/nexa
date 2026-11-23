@@ -9,6 +9,7 @@ import {
   FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
+  GitForkIcon,
   PanelLeftIcon,
   PencilIcon,
   PinIcon,
@@ -191,6 +192,10 @@ const switchChoices = computed(() => {
           <CommandItem value="chat-folder" filter-text="Ordner des Chats öffnen Explorer Projektordner" @select="run(openFolder)">
             <FolderOpenIcon />
             Ordner öffnen
+          </CommandItem>
+          <CommandItem v-if="!busy" value="chat-fork" filter-text="Chat abzweigen Abzweig fork branch kopieren verzweigen" @select="run(() => chat.fork(meta!.id))">
+            <GitForkIcon />
+            Chat abzweigen
           </CommandItem>
           <CommandItem value="chat-copy-answer" filter-text="Letzte Antwort kopieren Zwischenablage copy" @select="run(() => chat.copyLastAnswer(meta!.id))">
             <CopyIcon />

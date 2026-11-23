@@ -1,5 +1,39 @@
-import { describe, expect, it } from 'vitest'
-import { codexMcpConfig, commandView, skillInputs, unwrapShell } from './codex-run'
+import { describe, expect, it, vi } from 'vitest'
+import type { RunOptions, RunSink } from '../provider'
+import type { CodexClient } from './codex-client'
+import { CodexRun, codexMcpConfig, commandView, skillInputs, unwrapShell } from './codex-run'
+
+describe('CodexRun.connect', () => {
+  const sink: RunSink = { item: () => {}, delta: () => {}, runtime: () => {}, cliSession: () => {}, usage: () => {}, exited: () => {} }
+  const options = (more: Partial<RunOptions>): RunOptions => ({ sessionId: 's', cwd: 'F:\\app', permissionMode: 'ask', account: { accountId: 'codex', set: {}, unset: [] }, instructions: '', extraArgs: [], ...more })
+  const connect = async (more: Partial<RunOptions>, answer: (method: string, params: Record<string, unknown>) => Promise<unknown>) => {
+    const request = vi.fn(answer)
+    const run = new CodexRun({ alive: true, request } as unknown as CodexClient, options(more), sink, { add: () => {}, remove: () => {} })
+    await run.connect()
+    return { run, calls: request.mock.calls.map(([method, params]) => ({ method, params })) }
+  }
+  const thread = async () => ({ thread: { id: 'neu' } })
+
+  it('resumes the chat’s own thread', async () => {
+    const { calls } = await connect({ resumeId: 't1' }, thread)
+    expect(calls).toMatchObject([{ method: 'thread/resume', params: { threadId: 't1', excludeTurns: true } }])
+  })
+
+  it('forks another chat’s thread through its last turn', async () => {
+    const { run, calls } = await connect({ resumeId: 't1', fork: { at: 'turn-3' } }, thread)
+    expect(calls).toMatchObject([{ method: 'thread/fork', params: { threadId: 't1', lastTurnId: 'turn-3' } }])
+    expect(run.threadId).toBe('neu')
+  })
+
+  it('forks all of it when the thread doesn’t know the turn', async () => {
+    const { calls } = await connect({ resumeId: 't1', fork: { at: 'fremd' } }, async (_method, params) => {
+      if (params.lastTurnId) throw new Error('unknown turn')
+      return { thread: { id: 'neu' } }
+    })
+    expect(calls.map((c) => c.method)).toEqual(['thread/fork', 'thread/fork'])
+    expect(calls[1]!.params.lastTurnId).toBeUndefined()
+  })
+})
 
 describe('unwrapShell', () => {
   it('takes the command out of PowerShell', () => {

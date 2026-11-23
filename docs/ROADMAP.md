@@ -93,6 +93,10 @@
 - [x] Chat als Markdown exportieren (Ordner, Branch, Modell, Zeitraum, Nachrichten nach Tagen) und letzte
       Antwort kopieren: im Menü des Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als
       `/export` und `/copy`
+- [x] Chat abzweigen: ein neuer Chat „… (Abzweig)“ mit dem ganzen Verlauf geht von hier aus weiter, der
+      alte bleibt, wie er ist. Claude Code (`--fork-session`, `--resume-session-at` der letzten Antwort) und
+      Codex (`thread/fork` bis zum letzten Turn) setzen eine Kopie ihrer Unterhaltung fort. Im Menü des
+      Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als `/fork [Name]` (`/branch`)
 
 ## Als Nächstes
 
@@ -140,7 +144,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] **Neuer Chat in einem Worktree** (`claude --worktree <name>`): Dialog mit Repository, Name (geprüft
       wie ein Branch) und vorhandenen Worktrees (`WorktreeDialog.vue`, `lib/worktree.ts`); `worktreeCheck`
       in `files/git-service.ts` ist schon da, aber nicht in Preload und UI.
-- [ ] **Chat abzweigen** als neuen Chat ab hier (Claude `--fork-session`, Codex `thread/fork`).
 - [ ] **Suche im offenen Chat** (Strg+F, F3 / Umschalt+F3, alle Treffer markiert, lädt ältere Nachrichten
       nach; `composables/useDomFind.ts`).
 - [ ] **Tastenkürzel**: Strg+Tab und Strg+1–9 zwischen Chats, Strg+Umschalt+T neuer Chat, Pfeiltasten in

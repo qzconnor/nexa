@@ -210,15 +210,7 @@ export class CodexRun implements AgentRun {
       ...(this.model ? { model: this.model } : {}),
       ...(Object.keys(config).length ? { config } : {}),
     }
-    const response = this.options.resumeId
-      ? await this.client.request('thread/resume', {
-          ...common,
-          threadId: this.options.resumeId,
-          // A thread copied from another account: Codex doesn't know it by id yet (accounts/session-transfer.ts).
-          ...(this.options.resumePath ? { path: this.options.resumePath } : {}),
-          excludeTurns: true,
-        })
-      : await this.client.request('thread/start', common)
+    const response = this.options.resumeId ? await this.resume(common, this.options.resumeId) : await this.client.request('thread/start', common)
     const thread = isPlainObject(response.thread) ? response.thread : {}
     this.threadId = str(thread.id) ?? ''
     if (!this.threadId) throw new Error('Codex hat keinen Thread angelegt.')
@@ -226,6 +218,23 @@ export class CodexRun implements AgentRun {
     this.routes.add(this.threadId, this)
     this.sink.cliSession(this.threadId)
     this.sink.runtime({ status: 'idle', connected: true, model: this.model })
+  }
+
+  /** `thread/resume`, or `thread/fork` for a chat branched off another (up to its last turn). */
+  private async resume(common: Json, threadId: string): Promise<Json> {
+    const params: Json = {
+      ...common,
+      threadId,
+      // A thread copied from another account: Codex doesn't know it by id yet (accounts/session-transfer.ts).
+      ...(this.options.resumePath ? { path: this.options.resumePath } : {}),
+      excludeTurns: true,
+    }
+    const fork = this.options.fork
+    if (!fork) return this.client.request('thread/resume', params)
+    if (!fork.at) return this.client.request('thread/fork', params)
+    // A turn the thread doesn't know (the chat's last turn was another thread's): all of it, rather
+    // than a chat that can't go on.
+    return this.client.request('thread/fork', { ...params, lastTurnId: fork.at }).catch(() => this.client.request('thread/fork', params))
   }
 
   // ------------------------------------------------------------------------------------------

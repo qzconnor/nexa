@@ -313,6 +313,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsSearch, (_e, query: unknown) => sessions.search(typeof query === 'string' ? query.slice(0, 200) : ''))
   handle(IpcInvoke.sessionsMove, (_e, id: unknown, target: unknown) => sessions.move(str(id, 'Die Session'), moveArg(target)))
   handle(IpcInvoke.sessionsCompact, (_e, id: unknown) => sessions.compact(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsFork, (_e, id: unknown) => sessions.fork(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsLastAnswer, (_e, id: unknown) => sessions.lastAnswer(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsExportMarkdown, async (event, id: unknown) => {
     const { markdown, fileName } = await sessions.markdown(str(id, 'Die Session'), async (cwd) => (await ctx.git.branch(cwd))?.name ?? null)

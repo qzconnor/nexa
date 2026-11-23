@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArchiveIcon, CopyIcon, FileDownIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from '@lucide/vue'
+import { ArchiveIcon, CopyIcon, FileDownIcon, GitForkIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from '@lucide/vue'
 import type { SessionMeta } from '@shared/types'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -78,6 +78,7 @@ function endDrag(): void {
         <component :is="meta.pinned ? PinOffIcon : PinIcon" /> {{ meta.pinned ? 'Lösen' : 'Anheften' }}
       </ContextMenuItem>
       <SessionMoveMenu :meta="meta" />
+      <ContextMenuItem :disabled="chat.working(meta.id)" @select="chat.fork(meta.id)"><GitForkIcon /> Abzweigen</ContextMenuItem>
       <ContextMenuItem @select="sessions.update(meta.id, { archived: true })"><ArchiveIcon /> Archivieren</ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem @select="chat.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</ContextMenuItem>
