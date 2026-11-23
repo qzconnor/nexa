@@ -71,11 +71,35 @@ watch(open, (value) => {
 const shown = computed(() => {
   const list = servers.value ?? []
   const terms = query.value.trim().split(/\s+/).filter(Boolean)
-  return terms.length ? list.filter((s) => containsTerms(searchText(s.name, s.scope), terms)) : list
+  return terms.length ? list.filter((s) => containsTerms(searchText(s.name, scopeText(s)), terms)) : list
 })
 
-/** A claude.ai connector shows by its name, without the prefix all of them share. */
-const label = (server: McpServerInfo) => (server.scope === 'claudeai' ? server.name.replace(/^claude\.ai\s+/, '') : server.name)
+/**
+ * A claude.ai connector shows by its name, without the prefix all of them share; a plugin's server
+ * (`plugin:<plugin>:<server>`) by the server's, with the plugin when it is named otherwise.
+ */
+function label(server: McpServerInfo): string {
+  if (server.scope === 'claudeai') return server.name.replace(/^claude\.ai\s+/, '')
+  const plugin = /^plugin:([^:]+):(.+)$/.exec(server.name)
+  if (plugin) return plugin[1] === plugin[2] ? plugin[2]! : `${plugin[2]} (${plugin[1]})`
+  return server.name
+}
+
+/** Where a server is configured, in the words of the settings. */
+const SCOPES: Record<string, string> = {
+  user: 'Nutzer',
+  project: 'Projekt',
+  local: 'Lokal',
+  claudeai: 'claude.ai',
+  enterprise: 'Verwaltet',
+  managed: 'Verwaltet',
+  dynamic: 'Dynamisch',
+}
+
+function scopeText(server: McpServerInfo): string {
+  if (server.name.startsWith('plugin:')) return 'Plugin'
+  return server.scope ? (SCOPES[server.scope] ?? server.scope) : ''
+}
 
 const STATUS: Record<McpServerInfo['status'], { dot: string; text: string }> = {
   connected: { dot: 'bg-success', text: 'Verbunden' },
@@ -89,8 +113,8 @@ function statusText(server: McpServerInfo): string {
   if (!server.enabled) return 'Aus in diesem Projekt'
   const parts = [STATUS[server.status].text]
   if (server.tools) parts.push(`${server.tools} Werkzeuge`)
-  if (server.scope === 'claudeai') parts.push('claude.ai')
-  else if (server.scope) parts.push(server.scope)
+  const scope = scopeText(server)
+  if (scope) parts.push(scope)
   if (server.error) parts.push(server.error)
   return parts.join(' · ')
 }
@@ -122,7 +146,7 @@ function onSearchKey(event: KeyboardEvent): void {
         <PlusIcon />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent side="top" align="start" class="w-64">
+    <DropdownMenuContent side="top" align="start" class="w-max min-w-60">
       <DropdownMenuItem @select="emit('files')">
         <PaperclipIcon /> Dateien oder Fotos hinzufügen
         <DropdownMenuShortcut>Strg+U</DropdownMenuShortcut>
@@ -145,7 +169,7 @@ function onSearchKey(event: KeyboardEvent): void {
               />
             </div>
             <DropdownMenuSeparator />
-            <div class="max-h-[min(24rem,60vh)] overflow-y-auto">
+            <div class="max-h-[min(24rem,60vh)] overflow-x-hidden overflow-y-auto">
               <p v-if="loading && !servers" class="px-2 py-3 text-[0.8rem] text-muted-foreground">Wird geladen …</p>
               <p v-else-if="failed" class="px-2 py-3 text-[0.8rem] text-destructive">{{ failed }}</p>
               <p v-else-if="servers && !servers.length" class="px-2 py-3 text-[0.8rem] text-muted-foreground">

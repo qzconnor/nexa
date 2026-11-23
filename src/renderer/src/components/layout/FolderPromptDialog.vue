@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { FolderPromptInfo, PromptTarget } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -29,6 +29,9 @@ const failed = ref<string | null>(null)
 /** Kept while the dialog closes, so its words don't change during the animation. */
 const kind = ref<PromptTarget['kind']>('project')
 
+// A plain copy: IPC can't clone the store's reactive proxy.
+const plain = (target: PromptTarget): PromptTarget => ({ kind: target.kind, id: target.id })
+
 watch(
   () => ui.promptTarget,
   async (target) => {
@@ -40,10 +43,14 @@ watch(
     saving.value = false
     loading.value = true
     try {
-      const read = await window.api.projects.prompt(target)
+      const read = await window.api.projects.prompt(plain(target))
       if (ui.promptTarget !== target) return
       info.value = read
       text.value = read.text.trimEnd()
+      // The field comes after the dialog opened, so the dialog's own focus went to a button.
+      loading.value = false
+      await nextTick()
+      document.getElementById('folder-prompt')?.focus()
     } catch (error) {
       failed.value = errorMessage(error)
     } finally {
@@ -67,7 +74,7 @@ async function save(): Promise<void> {
   if (!target || saving.value || !info.value) return
   saving.value = true
   try {
-    await window.api.projects.setPrompt(target, text.value)
+    await window.api.projects.setPrompt(plain(target), text.value)
     ui.promptTarget = null
   } catch (error) {
     toastError(error, 'Prompt nicht gespeichert')
@@ -111,7 +118,6 @@ function onKeydown(event: KeyboardEvent): void {
             v-model="text"
             class="max-h-[50vh] min-h-36 font-mono text-[0.82rem]"
             placeholder="z. B. Nutze nur Open-Source-Bibliotheken."
-            autofocus
             @keydown="onKeydown"
           />
           <p class="text-[0.75rem] text-muted-foreground">
