@@ -107,7 +107,13 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   private state(meta: SessionMeta): SessionState {
-    return { meta, items: null, loading: null, index: new Map(), runtime: { ...IDLE }, run: null, runProvider: null, runAccount: null, generation: 0, starting: null, mcpToken: null }
+    const runtime: SessionRuntime = { ...IDLE, ...(meta.context ? { context: meta.context } : {}) }
+    return { meta, items: null, loading: null, index: new Map(), runtime, run: null, runProvider: null, runAccount: null, generation: 0, starting: null, mcpToken: null }
+  }
+
+  /** The runtime of a chat whose CLI is gone: at rest, with the context as last counted. */
+  private atRest(s: SessionState, patch: Partial<SessionRuntime> = {}): SessionRuntime {
+    return { ...IDLE, ...(s.runtime.context ? { context: s.runtime.context } : {}), ...patch }
   }
 
   /** The folder a session's agent works in: its own folder in the project, else the project's. */
@@ -579,7 +585,7 @@ export class SessionService extends TypedEmitter<Events> {
         s.run = null
         s.runProvider = null
         s.runAccount = null
-        this.setRuntime(s, { status: error ? 'error' : 'idle', connected: false, error })
+        this.setRuntime(s, this.atRest(s, { status: error ? 'error' : 'idle', error }))
       },
     }
     try {
@@ -740,8 +746,10 @@ export class SessionService extends TypedEmitter<Events> {
         s.runAccount = null
         s.generation++
         await old.stop().catch(() => undefined)
-        this.setRuntime(s, { ...IDLE })
       }
+      // The other CLI counts its own context: none until it has answered.
+      delete meta.context
+      this.setRuntime(s, { ...IDLE })
     } else if (patch.model !== undefined || patch.effort !== undefined || typeof patch.ultracode === 'boolean') {
       const effortChanged = patch.effort !== undefined && patch.effort !== meta.effort
       const ultracodeChanged = typeof patch.ultracode === 'boolean' && patch.ultracode !== meta.ultracode
@@ -788,7 +796,7 @@ export class SessionService extends TypedEmitter<Events> {
     s.runAccount = null
     s.generation++
     await run?.stop().catch(() => undefined)
-    this.setRuntime(s, { ...IDLE })
+    this.setRuntime(s, this.atRest(s))
   }
 
   async remove(id: string): Promise<void> {
@@ -879,6 +887,8 @@ export class SessionService extends TypedEmitter<Events> {
 
   private setRuntime(s: SessionState, runtime: SessionRuntime): void {
     s.runtime = runtime
+    // Saved with the next save of the session (a turn's end at the latest), not on every count.
+    if (runtime.context) s.meta.context = runtime.context
     this.emit('event', { type: 'runtime', sessionId: s.meta.id, runtime })
   }
 

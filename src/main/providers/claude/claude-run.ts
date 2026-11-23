@@ -145,7 +145,11 @@ export class ClaudeRun implements AgentRun {
       onExit: (code, stderr) => this.onExit(code, stderr),
     })
     sink.runtime({ status: 'starting', connected: true })
-    void this.request({ subtype: 'initialize' }).catch(() => undefined)
+    // Counted at once, not only after the first answer: a resumed conversation is as full as it was,
+    // a new one starts with the system prompt and the tools.
+    void this.request({ subtype: 'initialize' })
+      .then(() => this.contextDetail())
+      .catch(() => undefined)
     // Claude Code keeps a switch only for the process, so each start applies the project's again;
     // written before the first prompt, they are through before it is read.
     for (const name of options.mcpOff ?? []) {
@@ -207,6 +211,19 @@ export class ClaudeRun implements AgentRun {
    * response's usage and local estimates, without calls to the API, so it is quick and free. Once the
    * process is gone, the last count stands.
    */
+  /** What the context is measured against: Claude Code's own limit once counted, else the model's window. */
+  private contextLimit(): number | undefined {
+    return this.lastDetail?.window ?? this.contextWindow
+  }
+
+  /** The context after an answer of the main thread, in the ring while the turn still runs. */
+  private showContext(used: number): void {
+    if (used === this.lastContext) return
+    this.lastContext = used
+    const max = this.contextLimit()
+    if (max) this.sink.runtime({ context: { used, window: max } })
+  }
+
   async contextDetail(): Promise<ContextDetail | null> {
     if (!this.process.alive) return this.lastDetail
     const answer = await withTimeout(this.request({ subtype: 'get_context_usage', detail: 'summary' }), CONTEXT_TIMEOUT_MS).catch(() => null)
@@ -362,7 +379,7 @@ export class ClaudeRun implements AgentRun {
     if (!parentId && isPlainObject(message.usage)) {
       const used = contextOf(message.usage)
       // Claude Code's own messages (`<synthetic>`) come without usage.
-      if (used > 0) this.lastContext = used
+      if (used > 0) this.showContext(used)
     }
     for (const raw of message.content) {
       if (!isPlainObject(raw)) continue
@@ -544,7 +561,8 @@ export class ClaudeRun implements AgentRun {
         const after = compaction.after
         if (after !== undefined) this.lastContext = after
         this.compactingSince = null
-        this.sink.runtime({ compactingSince: undefined, ...(after !== undefined && this.contextWindow ? { context: { used: after, window: this.contextWindow } } : {}) })
+        const max = this.contextLimit()
+        this.sink.runtime({ compactingSince: undefined, ...(after !== undefined && max ? { context: { used: after, window: max } } : {}) })
         return
       }
       case 'api_retry': {
@@ -684,12 +702,13 @@ export class ClaudeRun implements AgentRun {
     this.interrupting = false
     if (window) this.contextWindow = window
     const used = this.lastContext
+    const max = this.contextLimit()
     this.sink.runtime({
       status: 'idle',
       turnStartedAt: undefined,
       compactingSince: undefined,
       model: this.model,
-      ...(this.contextWindow && used ? { context: { used, window: this.contextWindow } } : {}),
+      ...(max && used ? { context: { used, window: max } } : {}),
     })
     // Claude Code's own count measures against the window its settings allow (it may compact before
     // the model's is full); it replaces the estimate above a moment later.

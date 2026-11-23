@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BlocksIcon, FolderPlusIcon, PaperclipIcon, PlusIcon, SearchIcon, SquareSlashIcon } from '@lucide/vue'
+import { BlocksIcon, ChevronRightIcon, FolderPlusIcon, PaperclipIcon, PlusIcon, SearchIcon, SquareSlashIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
 import type { ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
@@ -62,16 +62,36 @@ watch(
   },
 )
 
+/** The unused connectors below the others, as in the CLI's `/mcp`: folded until asked for. */
+const showUnused = ref(false)
+
 // Asked for as the menu opens, so the list is there when the submenu is.
 watch(open, (value) => {
   if (value) void loadServers()
-  else query.value = ''
+  else {
+    query.value = ''
+    showUnused.value = false
+  }
 })
 
 const shown = computed(() => {
   const list = servers.value ?? []
   const terms = query.value.trim().split(/\s+/).filter(Boolean)
   return terms.length ? list.filter((s) => containsTerms(searchText(s.name, scopeText(s)), terms)) : list
+})
+
+/** Never signed in: of the claude.ai connectors usually most, and nothing the chat can use. */
+const isUnused = (server: McpServerInfo) => server.status === 'needs-auth'
+
+type Row = { type: 'server'; server: McpServerInfo } | { type: 'unused'; count: number }
+
+/** The servers in use, then the unused ones behind a row that unfolds them; a search finds them all. */
+const rows = computed<Row[]>(() => {
+  const list = shown.value
+  const unused = list.filter(isUnused)
+  const asRows = (servers: McpServerInfo[]): Row[] => servers.map((server) => ({ type: 'server', server }))
+  if (query.value.trim() || !unused.length) return asRows(list)
+  return [...asRows(list.filter((s) => !isUnused(s))), { type: 'unused', count: unused.length }, ...(showUnused.value ? asRows(unused) : [])]
 })
 
 /**
@@ -176,20 +196,36 @@ function onSearchKey(event: KeyboardEvent): void {
                 {{ PROVIDERS[provider].name }} hat keine MCP-Server eingerichtet.
               </p>
               <p v-else-if="!shown.length && servers" class="px-2 py-3 text-[0.8rem] text-muted-foreground">Kein Treffer.</p>
-              <DropdownMenuItem
-                v-for="server in shown"
-                :key="server.name"
-                class="gap-2.5"
-                :title="statusText(server)"
-                @select="(event: Event) => { event.preventDefault(); void toggle(server) }"
-              >
-                <span :class="cn('size-2 shrink-0 rounded-full', server.enabled ? STATUS[server.status].dot : 'bg-muted-foreground/30')" />
-                <span class="flex min-w-0 flex-1 flex-col">
-                  <span :class="cn('truncate', !server.enabled && 'text-muted-foreground')">{{ label(server) }}</span>
-                  <span class="truncate text-[0.7rem] text-muted-foreground">{{ statusText(server) }}</span>
-                </span>
-                <Switch :model-value="server.enabled" class="pointer-events-none" tabindex="-1" :aria-label="`${label(server)} ${server.enabled ? 'an' : 'aus'}`" />
-              </DropdownMenuItem>
+              <template v-for="row in rows" :key="row.type === 'server' ? `server:${row.server.name}` : 'unused'">
+                <DropdownMenuItem
+                  v-if="row.type === 'unused'"
+                  class="gap-2.5 text-muted-foreground"
+                  :aria-expanded="showUnused"
+                  @select="(event: Event) => { event.preventDefault(); showUnused = !showUnused }"
+                >
+                  <ChevronRightIcon :class="cn('transition-transform', showUnused && 'rotate-90')" />
+                  <span class="flex-1">{{ showUnused ? 'Ungenutzte Konnektoren ausblenden' : 'Ungenutzte Konnektoren zeigen' }}</span>
+                  <span class="text-[0.75rem] tabular-nums">{{ row.count }}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-else
+                  class="gap-2.5"
+                  :title="statusText(row.server)"
+                  @select="(event: Event) => { event.preventDefault(); void toggle(row.server) }"
+                >
+                  <span :class="cn('size-2 shrink-0 rounded-full', row.server.enabled ? STATUS[row.server.status].dot : 'bg-muted-foreground/30')" />
+                  <span class="flex min-w-0 flex-1 flex-col">
+                    <span :class="cn('truncate', !row.server.enabled && 'text-muted-foreground')">{{ label(row.server) }}</span>
+                    <span class="truncate text-[0.7rem] text-muted-foreground">{{ statusText(row.server) }}</span>
+                  </span>
+                  <Switch
+                    :model-value="row.server.enabled"
+                    class="pointer-events-none"
+                    tabindex="-1"
+                    :aria-label="`${label(row.server)} ${row.server.enabled ? 'an' : 'aus'}`"
+                  />
+                </DropdownMenuItem>
+              </template>
             </div>
             <DropdownMenuSeparator />
             <p class="px-2 py-1.5 text-[0.7rem] leading-snug text-muted-foreground">

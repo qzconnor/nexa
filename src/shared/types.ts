@@ -1,4 +1,4 @@
-import type { ChatItem, PermissionMode, ProviderId, SessionRuntime } from './chat'
+import type { ChatItem, ContextUsage, PermissionMode, ProviderId, SessionRuntime } from './chat'
 
 export type { DeepPartial } from './utils'
 
@@ -318,6 +318,11 @@ export interface SessionMeta {
    * Code's `--add-dir`, Codex's writable roots.
    */
   dirs?: string[]
+  /**
+   * The context as last counted, kept over a restart of the CLI or of Nexa: a fresh CLI knows it only
+   * once it has answered, and until then the composer's ring would be gone.
+   */
+  context?: ContextUsage
   /**
    * A session taken over from Claude Code (the Claude Manager): its transcript, read into the chat the
    * first time the session opens.
