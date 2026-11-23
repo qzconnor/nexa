@@ -27,13 +27,20 @@
 - [x] Agents und Shells im Hintergrund über dem Eingabefeld, Übersicht der Shells (laufend, Ausgabe, Beenden) neben dem Chat
 - [x] Releases wie im Claude Manager: semantic-release auf `main`, Installer für Windows (mit `nx` im PATH),
       AppImage/deb/rpm für Linux, Auto-Update mit Versionshinweisen in den Einstellungen
+- [x] Übernahme aus dem Claude Manager (Workspaces, Accounts, Sessions) bei der Einrichtung und in den Einstellungen
+- [x] Unterordner in Projekten: Chats arbeiten in einem Ordner des Projekts, die Sidebar zeigt ihn als Ebene
+- [x] Tabellen mit Abständen, festem Kopf und Sortierung per Klick auf die Spalte
+- [x] Standard-Account einer CLI ausgeblendet, sobald ein eigener Account da ist
+- [x] Trenner in der Sidebar (wie die Workspaces im Claude Manager): eigene anlegen, Projekte und Trenner per
+      Drag & Drop ordnen, ein Projekt zum Trenner machen
 
 ## Als Nächstes
 
 - [ ] **Automatischer Account-Wechsel bei erreichtem Limit** (wie „Account wechseln“ im Claude Manager):
       Chat mit dem nächsten freien Account derselben CLI fortsetzen, Reihenfolge einstellbar.
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
-- [ ] **Bestehende CLI-Sessions importieren** (`~/.claude/projects`, `~/.codex/sessions`).
+- [ ] **Bestehende CLI-Sessions importieren** ohne Claude Manager (`~/.claude/projects`, `~/.codex/sessions`);
+  aus dem Claude Manager geht es schon (siehe oben), der Transkript-Leser für Claude ist da.
 - [ ] **Modellnamen**: „Default“ durch das tatsächliche Standardmodell der CLI ersetzen.
 - [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
 - [ ] **Systemfarben**: `nativeTheme` folgt dem Modus des Themes (hell/dunkel).

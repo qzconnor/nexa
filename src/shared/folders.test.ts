@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { folderKey, inFolder, movedPath, windowsPath } from './folders'
+import { folderKey, inFolder, innermostFolder, movedPath, subfolderSegments, windowsPath } from './folders'
 
 describe('windowsPath', () => {
   it('writes every drive as Windows does, also from Git Bash and Cygwin', () => {
@@ -51,5 +51,23 @@ describe('movedPath', () => {
   it('is null outside of it', () => {
     expect(movedPath('F:\\Kunden\\shop-alt', 'F:\\Kunden\\shop', 'F:\\Andere\\shop')).toBeNull()
     expect(movedPath('F:\\Kunden', 'F:\\Kunden\\shop', 'F:\\Andere\\shop')).toBeNull()
+  })
+})
+
+describe('innermostFolder', () => {
+  it('finds the deepest folder a path lies in, as with nested workspaces', () => {
+    const folders = ['F:\\Projekte', 'f:/projekte/apps', 'F:\\Andere']
+    expect(innermostFolder('F:\\Projekte\\Apps\\nexa\\src', folders, (f) => f)).toBe('f:/projekte/apps')
+    expect(innermostFolder('F:\\Projekte\\Flowtech', folders, (f) => f)).toBe('F:\\Projekte')
+    expect(innermostFolder('F:\\Projekte', folders, (f) => f)).toBe('F:\\Projekte')
+    expect(innermostFolder('F:\\Projekte2', folders, (f) => f)).toBeUndefined()
+  })
+})
+
+describe('subfolderSegments', () => {
+  it('names the folders between a folder and a path in it, as the path writes them', () => {
+    expect(subfolderSegments('F:\\Projekte\\Apps\\Nexa\\src', 'f:/projekte/apps')).toEqual(['Nexa', 'src'])
+    expect(subfolderSegments('F:\\Projekte\\Apps\\', 'F:\\Projekte\\Apps')).toEqual([])
+    expect(subfolderSegments('F:\\Anders', 'F:\\Projekte')).toEqual([])
   })
 })

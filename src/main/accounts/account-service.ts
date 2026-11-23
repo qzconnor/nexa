@@ -7,6 +7,7 @@ import {
   ACCOUNT_KINDS,
   isSystemAccountId,
   maskSecret,
+  pickAccount,
   systemAccountId,
   usesSecret,
   type Account,
@@ -234,13 +235,12 @@ export class AccountService extends TypedEmitter<Events> {
     this.rebuild(true)
   }
 
-  /** The account a CLI runs with when `id` is unknown (removed meanwhile): the default, else the standard. */
+  /**
+   * The account a CLI runs with: `id`, else `fallback` (the default), else the first one the user
+   * sees. The standard account counts only while no other was added (`visibleAccounts`).
+   */
   resolve(provider: ProviderId, id: string | null | undefined, fallback?: string): string {
-    for (const candidate of [id, fallback]) {
-      const account = candidate ? this.stored.find((a) => a.id === candidate) : undefined
-      if (account?.provider === provider) return account.id
-    }
-    return systemAccountId(provider)
+    return pickAccount(this.stored, provider, [id, fallback])
   }
 
   /** The environment that starts the account's CLI. */

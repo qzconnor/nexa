@@ -30,7 +30,10 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
-| `services/project-service.ts` | Projekte (Ordner) |
+| `services/project-service.ts` | Projekte (Ordner) und Trenner, ihre Reihenfolge; `project-sections.ts` macht ein Projekt zum Trenner |
+| `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |
+| `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen |
+| `providers/claude/claude-transcript.ts` | Claude-Code-Transkript (`projects/<key>/<id>.jsonl`) → `ChatItem`s wie aus dem Stream, plus Kurzfassung (Ordner, Titel, Zeiten) |
 | `services/session-service.ts` | Sessions: Metadaten, Items, Runs starten/stoppen, Wechsel der CLI, Statistik |
 | `services/transcript-store.ts` | Verlauf je Session als JSONL |
 | `services/instructions.ts` | Systemprompt-Zusatz und Übergabe-Kontext beim CLI-Wechsel |
@@ -68,6 +71,50 @@ Alles, was im Chat steht, ist ein `ChatItem` (`src/shared/chat.ts`):
 
 Provider liefern Items über `RunSink.item()` (neu oder ersetzt) und `RunSink.delta()` (Text anhängen). Der
 `SessionService` speichert, nummeriert und sendet sie als `SessionEvent` an die Fenster.
+
+## Projekte und Unterordner
+
+Ein Projekt ist ein Ordner. Eine Session arbeitet in ihm oder in einem Ordner darin (`SessionMeta.cwd`,
+fehlt für den Projektordner selbst); dort startet ihre CLI, und Dateibaum, Titelleiste und Browser
+nehmen diesen Ordner. Die Sidebar zeigt unter dem Projekt jede Ebene bis zum Ordner einer Session als
+eigenen, einklappbaren Ordner (`lib/session-tree.ts`), wie der Claude Manager die Projekte eines
+Workspaces; ein Ordner, der nur einen Ordner enthält, wird mit ihm zu einer Zeile (`cm/packages/core`).
+Neue Chats in einem Unterordner: „+“ am Ordner oder „Neuer Chat in Unterordner …“ am Projekt.
+
+## Trenner
+
+Projekte stehen unter Trennern (`ProjectSection`, `shared/sections.ts`), wie die Workspaces im Claude
+Manager. „Projekte“ (`DEFAULT_SECTION_ID`) ist immer da; ein Projekt ohne (gültige) `sectionId` steht
+dort. `projects.json` (Version 2) hält Trenner und Projekte in der Reihenfolge, in die der Nutzer sie
+gezogen hat; `arrange()` nimmt nach einem Drag & Drop die ganze Reihenfolge (`SectionLayout`).
+
+Ein Trenner kann für einen Ordner stehen (`path`, ein Workspace): Neue Projekte in diesem Ordner kommen
+unter ihn, und die Chats des Ordners selbst (sein „Wurzelprojekt“) stehen direkt unter der Überschrift.
+„Zum Trenner machen“ (`projectToSection`) macht aus einem Projekt so einen Trenner: Chats in seinen
+Unterordnern kommen in Projekte je Unterordner der ersten Ebene, jeder arbeitet weiter im selben Ordner
+(`SessionService.relocate`). Bis Version 1 sortierte die Sidebar selbst (Angeheftete zuerst, dann die
+neuesten); diese Reihenfolge wird beim ersten Laden übernommen.
+
+## Übernahme aus dem Claude Manager
+
+Der Claude Manager hat keine eigenen Sessions: Er listet die Transkripte von Claude Code in den Ordnern
+seiner Accounts und ordnet sie seinen Workspaces zu (`workspaces.json`: Ordner, deren Unterordner
+Projekte sind; der innerste gewinnt). `ClaudeManagerImport` liest dessen Daten (`%APPDATA%\Claude
+Manager`, sonst `Signalbox`) nur:
+
+- Workspaces werden Trenner, ihre Unterordner der ersten Ebene mit Sessions Projekte darunter. Hat Nexa
+  schon ein Projekt für den Workspace-Ordner, wird es zum Trenner gemacht. Sessions außerhalb aller
+  Workspaces werden je Ordner ein Projekt unter „Projekte“.
+- `oauth`-Accounts werden Nexa-Accounts mit demselben Ordner (Login und Unterhaltungen bleiben, wo sie
+  sind); der Standard-Account ist Nexas Standard. Token und API-Keys sind mit `safeStorage` für den
+  Claude Manager verschlüsselt und lassen sich nicht übernehmen; ihre Sessions laufen mit dem
+  Vorgabe-Account weiter (das Transkript wird beim ersten Prompt kopiert).
+- Jede Session wird ein `SessionMeta` mit `cli.claude` (Sitzung, Account, Ordner) und `importedFrom`.
+  Den Chat liest `SessionService` erst beim ersten Öffnen aus dem Transkript (`claude-transcript.ts`)
+  und speichert ihn dann wie jeden anderen. Namen und Anheften kommen aus `session-names.json` und
+  `session-marks.json`; schon übernommene Sessions (gleiche Sitzungs-ID) werden übersprungen.
+
+Die Übernahme steht in der Einrichtung beim ersten Start und unter Einstellungen › Accounts.
 
 ## Wechsel der CLI
 

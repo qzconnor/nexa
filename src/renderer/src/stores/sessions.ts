@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
 import type { SendInput, SessionCreateInput, SessionMeta, SessionUpdateInput } from '@shared/types'
+import { useProjectsStore } from './projects'
 
 /** The chat of an opened session. */
 export interface SessionChat {
@@ -39,6 +40,12 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function byProject(projectId: string): SessionMeta[] {
     return metas.value.filter((m) => m.projectId === projectId && !m.archived)
+  }
+
+  /** The folder a chat's agent works in: its own in the project, else the project's. */
+  function cwdOf(meta: SessionMeta | null | undefined): string | null {
+    if (!meta) return null
+    return meta.cwd ?? useProjectsStore().get(meta.projectId)?.path ?? null
   }
 
   async function load(): Promise<void> {
@@ -146,6 +153,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     runtime,
     get,
     byProject,
+    cwdOf,
     load,
     open,
     close,

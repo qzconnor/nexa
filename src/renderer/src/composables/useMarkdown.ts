@@ -25,6 +25,15 @@ function createRenderer(breaks: boolean) {
   const defaultFence = md.renderer.rules.fence!
   md.renderer.rules.fence = (tokens, idx, options, env, self) =>
     defaultFence(tokens, idx, options, env, self).replace(/^<pre>/, '<pre><button type="button" data-copy class="code-copy" aria-label="Code kopieren"></button>')
+  // Tables in a frame of their own that scrolls (the header stays), sorted by a click on a header
+  // cell (Markdown.vue). Only header cells are `th` in markdown.
+  md.renderer.rules.table_open = () => '<div class="md-table"><table>\n'
+  md.renderer.rules.table_close = () => '</table></div>\n'
+  md.renderer.rules.th_open = (tokens, idx, options, _env, self) => {
+    tokens[idx].attrSet('tabindex', '0')
+    tokens[idx].attrSet('aria-sort', 'none')
+    return self.renderToken(tokens, idx, options)
+  }
   return md
 }
 

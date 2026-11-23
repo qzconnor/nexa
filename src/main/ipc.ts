@@ -5,7 +5,8 @@ import { existsSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
-import { IpcEvent, IpcInvoke } from '@shared/ipc'
+import { IpcEvent, IpcInvoke, type SectionCreateInput, type SectionUpdateInput } from '@shared/ipc'
+import type { SectionLayout } from '@shared/sections'
 import { parseThemeFile } from '@shared/themes/file'
 import type { ThemeContent } from '@shared/themes/types'
 import type { AppInfo } from '@shared/types'
@@ -13,6 +14,7 @@ import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
 import type { ProjectService } from './services/project-service'
+import { projectToSection } from './services/project-sections'
 import type { ProviderService } from './services/provider-service'
 import type { SessionService } from './services/session-service'
 import type { SettingsService } from './services/settings-service'
@@ -82,6 +84,16 @@ function providerId(value: unknown): ProviderId {
 function objectArg<T>(value: unknown, what: string): T {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${what} fehlt.`)
   return value as T
+}
+
+/** The order of the sidebar from the window: separators with the ids of their projects. */
+function layoutArg(value: unknown): SectionLayout[] {
+  if (!Array.isArray(value)) throw new Error('Die Reihenfolge fehlt.')
+  return value.map((entry) => {
+    const { id, projects } = objectArg<{ id?: unknown; projects?: unknown }>(entry, 'Der Trenner')
+    if (!Array.isArray(projects) || !projects.every((p) => typeof p === 'string')) throw new Error('Die Projekte fehlen.')
+    return { id: str(id, 'Der Trenner'), projects: projects as string[] }
+  })
 }
 
 function windowOf(event: IpcMainInvokeEvent): BrowserWindow {
@@ -231,6 +243,14 @@ export function registerIpc(ctx: AppContext): void {
     await sessions.removeProject(projectId)
     await projects.remove(projectId)
   })
+  handle(IpcInvoke.projectsArrange, (_e, layout: unknown) => projects.arrange(layoutArg(layout)))
+  handle(IpcInvoke.projectsToSection, (_e, id: unknown) => projectToSection(projects, sessions, str(id, 'Das Projekt')))
+  handle(IpcInvoke.sectionsList, () => projects.sections())
+  handle(IpcInvoke.sectionsCreate, (_e, input: unknown) => projects.createSection(objectArg<SectionCreateInput>(input, 'Der Trenner')))
+  handle(IpcInvoke.sectionsUpdate, (_e, id: unknown, patch: unknown) =>
+    projects.updateSection(str(id, 'Der Trenner'), objectArg<SectionUpdateInput>(patch, 'Die Änderung')),
+  )
+  handle(IpcInvoke.sectionsRemove, (_e, id: unknown) => projects.removeSection(str(id, 'Der Trenner')))
 
   // Sessions -----------------------------------------------------------------------------------
   handle(IpcInvoke.sessionsList, () => sessions.list())
@@ -258,6 +278,7 @@ export function registerIpc(ctx: AppContext): void {
   accounts.on('changed', (list) => broadcast(IpcEvent.accountsChanged, list))
   providers.on('usage', (list) => broadcast(IpcEvent.usageChanged, list))
   projects.on('changed', (list) => broadcast(IpcEvent.projectsChanged, list))
+  projects.on('sections', (list) => broadcast(IpcEvent.sectionsChanged, list))
   sessions.on('changed', (list) => broadcast(IpcEvent.sessionsChanged, list))
   sessions.on('event', (event) => broadcast(IpcEvent.sessionEvent, event))
 }

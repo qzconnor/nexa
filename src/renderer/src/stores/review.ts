@@ -59,12 +59,11 @@ export const useReviewStore = defineStore('review', () => {
     comments.value = [...comments.value, ...list.filter((c) => !ids.has(c.id))]
   }
 
-  /** The chats of the projects in this folder, the one on screen first, then the latest. */
+  /** The chats that work in this folder, the one on screen first, then the latest. */
   function targets(root: string): SessionMeta[] {
-    const ids = new Set(projects.projects.filter((p) => samePath(p.path, root)).map((p) => p.id))
     const shown = (m: SessionMeta) => (m.id === sessions.activeId ? 1 : 0)
     return sessions.metas
-      .filter((m) => ids.has(m.projectId) && !m.archived)
+      .filter((m) => !m.archived && projects.get(m.projectId) && samePath(sessions.cwdOf(m) ?? '', root))
       .sort((a, b) => shown(b) - shown(a) || b.updatedAt - a.updatedAt)
       .slice(0, MAX_TARGETS)
   }

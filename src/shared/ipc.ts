@@ -9,6 +9,7 @@ import type {
   ModelOption,
   Platform,
   Project,
+  ProjectSection,
   ProviderStatus,
   ProviderUsage,
   UsageStats,
@@ -23,6 +24,8 @@ import type {
 import type { FilesApi, GitApi } from './files-ipc'
 import type { BrowserApi } from './browser-ipc'
 import type { UpdatesApi } from './updates'
+import type { ImportApi } from './import-ipc'
+import type { SectionLayout } from './sections'
 
 /** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
 export const IpcInvoke = {
@@ -74,6 +77,12 @@ export const IpcInvoke = {
   projectsCreate: 'projects:create',
   projectsUpdate: 'projects:update',
   projectsRemove: 'projects:remove',
+  projectsArrange: 'projects:arrange',
+  projectsToSection: 'projects:to-section',
+  sectionsList: 'sections:list',
+  sectionsCreate: 'sections:create',
+  sectionsUpdate: 'sections:update',
+  sectionsRemove: 'sections:remove',
 
   sessionsList: 'sessions:list',
   sessionsCreate: 'sessions:create',
@@ -104,6 +113,7 @@ export const IpcEvent = {
   accountsLogin: 'event:accounts-login',
   usageChanged: 'event:usage-changed',
   projectsChanged: 'event:projects-changed',
+  sectionsChanged: 'event:sections-changed',
   sessionsChanged: 'event:sessions-changed',
   sessionEvent: 'event:session',
   /** The `nx` command or the local API asks the window to show a session. */
@@ -117,7 +127,19 @@ export interface ProjectCreateInput {
   name?: string
   /** Create the folder if it doesn't exist. */
   create?: boolean
+  /** The separator it comes under; else the one whose folder it lies in, else the default one. */
+  sectionId?: string
 }
+
+export interface SectionCreateInput {
+  name?: string
+  /** The folder it stands for (its subfolders are the projects in it). */
+  path?: string
+  /** The separator it comes after; else it comes last. */
+  after?: string
+}
+
+export type SectionUpdateInput = Partial<Pick<ProjectSection, 'name' | 'collapsed'>>
 
 export interface NexaApi {
   platform: Platform
@@ -128,6 +150,8 @@ export interface NexaApi {
   browser: BrowserApi
   /** New versions and their release notes (shared/updates.ts). */
   updates: UpdatesApi
+  /** Taking over from the Claude Manager (shared/import-ipc.ts). */
+  claudeManager: ImportApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>
@@ -210,9 +234,19 @@ export interface NexaApi {
   projects: {
     list(): Promise<Project[]>
     create(input: ProjectCreateInput): Promise<Project>
-    update(id: string, patch: Partial<Pick<Project, 'name' | 'collapsed' | 'pinned'>>): Promise<Project>
+    update(id: string, patch: Partial<Pick<Project, 'name' | 'collapsed'>>): Promise<Project>
     remove(id: string): Promise<void>
     onChanged(cb: (list: Project[]) => void): Unsubscribe
+    /** The order of separators and projects after a drag and drop (shared/sections.ts). */
+    arrange(layout: SectionLayout[]): Promise<void>
+    /** Makes a project a separator for its folder: its subfolders with chats become projects under it. */
+    toSection(id: string): Promise<ProjectSection>
+    sections(): Promise<ProjectSection[]>
+    createSection(input: SectionCreateInput): Promise<ProjectSection>
+    updateSection(id: string, patch: SectionUpdateInput): Promise<ProjectSection>
+    /** Its projects go to the default separator. */
+    removeSection(id: string): Promise<void>
+    onSectionsChanged(cb: (list: ProjectSection[]) => void): Unsubscribe
   }
   sessions: {
     list(): Promise<SessionMeta[]>

@@ -191,10 +191,10 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   }
   watch([width, open, showIgnored, filtersOpen, diffWrap, diffSplit, filters, hiddenStatuses, hiddenKinds], save)
 
-  /** The tree of a chat: the folder of its project. Null without one. */
+  /** The tree of a chat: the folder its agent works in (its project's, or one in it). Null without one. */
   function targetOf(sessionId: string | null | undefined): TreeTarget | null {
     const meta = sessions.get(sessionId)
-    const root = projects.get(meta?.projectId)?.path
+    const root = projects.get(meta?.projectId) ? sessions.cwdOf(meta) : null
     return meta && root ? { id: meta.id, root } : null
   }
 

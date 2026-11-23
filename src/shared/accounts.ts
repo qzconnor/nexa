@@ -102,6 +102,30 @@ export function isSystemAccountId(id: string): boolean {
   return id === 'system' || id.startsWith('system-')
 }
 
+/**
+ * The accounts of a CLI as the user sees and picks them: its standard account only while no other
+ * was added. Once the user has their own, the standard one (`~/.claude`, `~/.codex`) is out of the way
+ * everywhere: not listed, not chosen, not run with.
+ */
+export function visibleAccounts<T extends Pick<Account, 'provider' | 'kind'>>(list: readonly T[], provider: ProviderId): T[] {
+  const own = list.filter((a) => a.provider === provider)
+  const added = own.filter((a) => a.kind !== 'system')
+  return added.length ? added : own
+}
+
+/** The account a CLI runs with: the first of `candidates` that is visible, else the first visible one. */
+export function pickAccount(
+  list: readonly Pick<Account, 'id' | 'provider' | 'kind'>[],
+  provider: ProviderId,
+  candidates: readonly (string | null | undefined)[],
+): string {
+  const shown = visibleAccounts(list, provider)
+  for (const candidate of candidates) {
+    if (candidate && shown.some((a) => a.id === candidate)) return candidate
+  }
+  return shown[0]?.id ?? systemAccountId(provider)
+}
+
 /** Tokens and API keys can be lent to another config folder; a browser login only works in its own. */
 export function usesSecret(kind: AccountKind): boolean {
   return kind === 'token' || kind === 'apiKey'

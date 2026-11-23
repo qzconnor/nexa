@@ -20,6 +20,13 @@ export interface ConfirmOptions {
   destructive?: boolean
   /** Shows a warning symbol next to the title. */
   warning?: boolean
+  /** A text field below the description (see `ask`). */
+  input?: { value?: string; placeholder?: string }
+}
+
+interface ConfirmAnswer {
+  ok: boolean
+  text: string
 }
 
 /** Between two questions of the confirmation dialog: the first fades out (100 ms), the next one comes. */
@@ -30,6 +37,15 @@ function stored<T extends string>(key: string, fallback: T): T {
     return (localStorage.getItem(key) as T | null) ?? fallback
   } catch {
     return fallback
+  }
+}
+
+function parseList(raw: string): string[] {
+  try {
+    const list = JSON.parse(raw) as unknown
+    return Array.isArray(list) ? list.filter((v): v is string => typeof v === 'string') : []
+  } catch {
+    return []
   }
 }
 
@@ -54,6 +70,15 @@ export const useUiStore = defineStore('ui', () => {
   watch(shellDockFolded, (folded) => remember('nexa.shellDock', folded ? 'folded' : 'open'))
   /** The project a new chat goes to (home view). */
   const homeProjectId = ref<string | null>(null)
+  /** Folders in projects the sidebar shows open (see lib/session-tree.ts); closed by default, as many as there are. */
+  const openFolders = ref(new Set<string>(parseList(stored('nexa.openFolders', '[]'))))
+  function toggleFolder(id: string, open?: boolean): void {
+    const next = new Set(openFolders.value)
+    if (open ?? !next.has(id)) next.add(id)
+    else next.delete(id)
+    openFolders.value = next
+    remember('nexa.openFolders', JSON.stringify([...next]))
+  }
 
   /** The settings are a dialog over whatever the window shows. */
   const settingsOpen = ref(false)
@@ -77,22 +102,35 @@ export const useUiStore = defineStore('ui', () => {
 
   const confirmState = ref<(ConfirmOptions & { open: boolean }) | null>(null)
   /** The question shown, and those that wait for it: one never answers another one with No. */
-  let shownConfirm: ((value: boolean) => void) | null = null
-  const waitingConfirms: { options: ConfirmOptions; resolve: (value: boolean) => void }[] = []
+  let shownConfirm: ((answer: ConfirmAnswer) => void) | null = null
+  const waitingConfirms: { options: ConfirmOptions; resolve: (answer: ConfirmAnswer) => void }[] = []
+  /** What the text field of the question shown holds. */
+  const confirmInput = ref('')
 
   function showNextConfirm(): void {
     const next = waitingConfirms.shift()
     if (!next) return
     shownConfirm = next.resolve
+    confirmInput.value = next.options.input?.value ?? ''
     confirmState.value = { ...next.options, open: true }
   }
 
-  /** Asks in the confirmation dialog; while it asks something else, this one waits its turn. */
-  function confirm(options: ConfirmOptions): Promise<boolean> {
+  function question(options: ConfirmOptions): Promise<ConfirmAnswer> {
     return new Promise((resolve) => {
       waitingConfirms.push({ options, resolve })
       if (!shownConfirm) showNextConfirm()
     })
+  }
+
+  /** Asks in the confirmation dialog; while it asks something else, this one waits its turn. */
+  async function confirm(options: ConfirmOptions): Promise<boolean> {
+    return (await question(options)).ok
+  }
+
+  /** Asks for a text, e.g. a name (Electron has no `prompt()`); null when cancelled or left empty. */
+  async function ask(options: ConfirmOptions & { input: NonNullable<ConfirmOptions['input']> }): Promise<string | null> {
+    const answer = await question(options)
+    return answer.ok && answer.text.trim() ? answer.text.trim() : null
   }
 
   function settleConfirm(result: boolean): void {
@@ -100,7 +138,7 @@ export const useUiStore = defineStore('ui', () => {
     if (!resolve) return
     shownConfirm = null
     if (confirmState.value) confirmState.value = { ...confirmState.value, open: false }
-    resolve(result)
+    resolve({ ok: result, text: confirmInput.value })
     // Once the dialog has gone, so the next one is seen to be another question.
     if (waitingConfirms.length > 0) setTimeout(() => shownConfirm ?? showNextConfirm(), NEXT_CONFIRM_MS)
   }
@@ -112,14 +150,18 @@ export const useUiStore = defineStore('ui', () => {
     shellId,
     shellDockFolded,
     homeProjectId,
+    openFolders,
+    toggleFolder,
     settingsOpen,
     settingsSection,
     themeEditorRequest,
     confirmState,
+    confirmInput,
     toggleSidebar,
     openSettings,
     selectSettings,
     confirm,
+    ask,
     settleConfirm,
   }
 })

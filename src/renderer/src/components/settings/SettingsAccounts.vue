@@ -5,6 +5,7 @@ import type { Account } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
 import AccountRow from '@/components/accounts/AccountRow.vue'
 import RemoveAccountDialog from '@/components/accounts/RemoveAccountDialog.vue'
+import ClaudeManagerImport from '@/components/setup/ClaudeManagerImport.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useSettingsFilter } from '@/composables/useSettingsSearch'
@@ -75,9 +76,14 @@ async function refresh(): Promise<void> {
       <AccountRow v-for="account in accounts.ofProvider('codex')" :key="account.id" :account="account" @remove="remove(account)" />
     </SettingsSection>
 
+    <div v-if="filter.shows('accounts.import')" data-setting="accounts.import">
+      <ClaudeManagerImport always />
+    </div>
+
     <p v-if="!filter.terms.value.length" class="px-1 text-xs text-muted-foreground">
       Neue Chats starten mit dem Vorgabe-Account ihrer CLI. Im Chat wechselt das Menü an der Eingabe den Account; die Unterhaltung
-      geht mit allem, was die CLI wusste, beim anderen Account weiter.
+      geht mit allem, was die CLI wusste, beim anderen Account weiter. Sobald du für eine CLI einen eigenen Account hinzufügst,
+      ist ihr Standard-Account (~/.claude, ~/.codex) ausgeblendet; Chats, die ihn nutzten, gehen mit dem Vorgabe-Account weiter.
     </p>
 
     <RemoveAccountDialog v-model:open="removeOpen" :account="removing" />

@@ -61,7 +61,9 @@ const runtime = computed(() => sessions.activeRuntime)
 const items = computed(() => chat.value?.items ?? [])
 const runError = computed(() => (runtime.value.status === 'error' ? runErrorToShow(items.value, runtime.value.error) : null))
 const project = computed(() => projects.get(meta.value?.projectId))
-provideProjectPath(computed(() => project.value?.path ?? null))
+/** Where the agent works: paths in it are shown relative to it. */
+const cwd = computed(() => (project.value ? (sessions.cwdOf(meta.value) ?? project.value.path) : null))
+provideProjectPath(cwd)
 const busy = computed(() => runtime.value.status === 'running' || runtime.value.status === 'waiting' || runtime.value.status === 'starting')
 
 // ── The file panel on the left, and a file's changes over the timeline ──
@@ -233,7 +235,7 @@ function finishRename(save: boolean): void {
 }
 
 function openFolder(): void {
-  if (project.value) void window.api.app.openPath(project.value.path)
+  if (cwd.value) void window.api.app.openPath(cwd.value)
 }
 
 async function remove(): Promise<void> {

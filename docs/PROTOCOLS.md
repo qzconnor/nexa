@@ -68,6 +68,31 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   oder Key); 429 mit `retry-after`, Nexa wartet dann je Account. Ohne Browser-Login kommen die Limits wie
   bisher aus `rate_limit_event`.
 
+### Transkripte (`projects/<key>/<id>.jsonl`)
+
+Was Claude Code selbst speichert und Nexa beim Übernehmen liest (`claude-transcript.ts`):
+
+- Je Zeile ein Eintrag. `user` und `assistant` mit `uuid`, `timestamp`, `cwd`, `message` wie in der API;
+  ein Antwort-Block je Zeile, mehrere Zeilen teilen `message.id` (Usage je `message.id` einmal zählen).
+  `message.model: "<synthetic>"` sind Meldungen von Claude Code selbst. `isMeta` (eingefügte Skills und
+  Ähnliches) und `isSidechain` (Subagents in älteren Versionen) gehören nicht zum Hauptchat.
+- Was der Nutzer tippte: Tags herausnehmen (`system-reminder`, `local-command-*`, `command-message`,
+  `bash-stdout`/`bash-stderr`, `task-notification` …). Slash-Befehle stehen als `<command-name>` und
+  `<command-args>`, `! befehl` als `<bash-input>` mit der Ausgabe als eigener Eintrag
+  (`<bash-stdout>`, `<bash-stderr>`), Abbrüche als `[Request interrupted by user …]`, eingefügter Text
+  als `<pasted_content id="…">`. `isCompactSummary` ist die Zusammenfassung nach `/compact`.
+- `system`: `compact_boundary` (`compactMetadata.trigger`, `preTokens`), `turn_duration` (`durationMs`
+  am Ende eines Turns), `local_command` (Slash-Befehle neuerer Versionen).
+- Titel: `custom-title` (`/rename`), `ai-title`, älter `summary`; `relocated.relocatedCwd`, wenn die
+  Session in einen anderen Ordner zog (`--resume` geht nur von dort).
+- Hintergrund-Agents: das `tool_result` ist „Async agent launched …“, das Ende ein Eintrag des Nutzers
+  mit `<task-notification>` (`<tool-use-id>`, `<status>` `completed`/`failed`/`killed`, `<summary>`,
+  `<result>`). Die Arbeit eines Subagents liegt in `<id>/subagents/agent-<agentId>.jsonl`, sein Aufruf in
+  `agent-<agentId>.meta.json` (`toolUseId`, `agentType`).
+- Viele Zeilen braucht der Chat nicht (`api-request*`, `file-history-*`, `permission-mode`, `mode`,
+  `queue-operation` …); sie sind der größte Teil der Datei und werden am Zeilenanfang erkannt und
+  übersprungen.
+
 ## Codex (`codex app-server`)
 
 Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio

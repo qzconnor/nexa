@@ -2,6 +2,7 @@
 import { FolderIcon, PanelLeftIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
+import { subfolderSegments } from '@shared/folders'
 import AppLogo from '@/components/common/AppLogo.vue'
 import GitBranchChip from '@/components/common/GitBranchChip.vue'
 import { Button } from '@/components/ui/button'
@@ -39,9 +40,13 @@ const shown = computed<ProviderId[]>(() => {
 
 /** Where the open chat's agent works. */
 const project = computed(() => (ui.view === 'chat' && sessions.active ? projects.get(sessions.active.projectId) : undefined))
+/** The folder itself: the project's, or one in it the chat works in. */
+const cwd = computed(() => (project.value ? (sessions.cwdOf(sessions.active) ?? project.value.path) : null))
+/** The way from the project to the chat's folder, e.g. `nexa/src`; empty for the project's own. */
+const subfolder = computed(() => (project.value && cwd.value ? subfolderSegments(cwd.value, project.value.path).join('/') : ''))
 
 function openProject(): void {
-  if (project.value) void window.api.app.openPath(project.value.path)
+  if (cwd.value) void window.api.app.openPath(cwd.value)
 }
 </script>
 
@@ -65,13 +70,14 @@ function openProject(): void {
         type="button"
         class="app-no-drag flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[0.8rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         :aria-label="`Projektordner ${project.name} öffnen`"
-        v-tooltip="`${project.path} · Klicken öffnet den Ordner`"
+        v-tooltip="`${cwd} · Klicken öffnet den Ordner`"
         @click="openProject"
       >
         <FolderIcon class="size-3.5 shrink-0" />
         <span class="truncate font-medium">{{ project.name }}</span>
+        <span v-if="subfolder" class="truncate">/ {{ subfolder }}</span>
       </button>
-      <GitBranchChip :cwd="project.path" class="min-w-0" />
+      <GitBranchChip :cwd="cwd ?? project.path" class="min-w-0" />
     </div>
     <div class="h-full min-w-8 flex-1" />
     <div class="mr-2 flex items-center gap-1 transition-opacity in-data-unfocused:opacity-75">
