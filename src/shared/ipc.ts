@@ -114,6 +114,9 @@ export const IpcInvoke = {
   sessionsStop: 'sessions:stop',
   sessionsSearch: 'sessions:search',
   sessionsMove: 'sessions:move',
+  sessionsCompact: 'sessions:compact',
+  sessionsExportMarkdown: 'sessions:export-markdown',
+  sessionsLastAnswer: 'sessions:last-answer',
 
   apiStatus: 'api:status',
 } as const
@@ -309,6 +312,12 @@ export interface NexaApi {
     search(query: string): Promise<SessionSearchHit[]>
     /** Into another project or folder: the chat goes on there with its conversation (not while its CLI works). */
     move(id: string, target: SessionMoveInput): Promise<SessionMeta>
+    /** Has the chat's CLI compact its conversation now (Codex; Claude Code gets `/compact` as a prompt). */
+    compact(id: string): Promise<void>
+    /** Saves the chat as Markdown where the user picks; the file's path, or null when cancelled. */
+    exportMarkdown(id: string): Promise<string | null>
+    /** What the agent said last in the chat; null before it said anything. */
+    lastAnswer(id: string): Promise<string | null>
     onChanged(cb: (list: SessionMeta[]) => void): Unsubscribe
     onEvent(cb: (event: SessionEvent) => void): Unsubscribe
     onShow(cb: (id: string) => void): Unsubscribe

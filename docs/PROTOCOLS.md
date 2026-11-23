@@ -54,6 +54,17 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   `background_tasks_changed` (die ganze Liste, die noch läuft). `get_task_output { task_id }` liefert die
   letzten 8 KiB der Ausgabe (`output`, `truncated`), auch nach dem Ende, solange der Prozess lebt;
   `stop_task { task_id }` beendet die Shell. Mit dem Prozess von Claude Code enden auch seine Shells.
+- **Slash-Befehle** (geprüft mit 2.1.330): `initialize` und `system/commands_changed` nennen nur, was im
+  Stream-Modus geht. Lokale Befehle antworten mit einer `assistant`-Nachricht von `model: "<synthetic>"`
+  und einem `result` ohne Usage: `/context` (Markdown-Tabelle), `/usage` und `/cost` (Limits und
+  Verbrauch), `/mcp` (nur eine Zeile mit der Zahl der Server), `/model` ohne Namen (Liste der Kürzel),
+  `/config` ohne `key=value` (die Schlüssel), `/fast` („not available in the Agent SDK“). Was es nur im
+  Terminal gibt, kennt er nicht und sagt „/diff isn't available in this environment.“ (ebenso `/status`,
+  `/help`). `/rename <Titel>` meldet `system/session_title_changed`. `/clear` meldet `conversation_reset`
+  (`new_conversation_id`, `trigger: "clear"`) und danach ein neues `system/init` mit neuer `session_id`:
+  eine neue Unterhaltung, von der der Chat nichts weiß. Deshalb führt Nexa diese Befehle selbst aus,
+  bevor sie die CLI erreichen (renderer `lib/chat-commands.ts`); `/compact`, `/context`, `/usage`,
+  `/init` und die Skills gehen weiter an Claude Code.
 - **Zusammenfassen des Kontexts** (automatisch oder mit `/compact`; geprüft mit 2.1.330):
   `system/status` mit `status: "compacting"` beim Start und danach alle 30 s erneut, am Ende `status: null`
   mit `compact_result` (`success`, `failed`, dann ggf. `compact_error`). Danach `system/compact_boundary`
@@ -189,10 +200,13 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   `item/commandExecution/outputDelta`, `turn/plan/updated`, `thread/tokenUsage/updated`,
   `thread/compacted`, `model/rerouted`, `account/rateLimits/updated`.
 - **Zusammenfassen des Kontexts**: ein Item `contextCompaction` (`id`, `startedAtMs`, `completedAtMs`)
-  mit `item/started` und `item/completed`, ohne Tokens oder Anlass (geprüft mit 0.169,
-  `thread/compact/start` startet es von Hand). Dazwischen kommt `thread/tokenUsage/updated` mit
-  `last.inputTokens` und `last.outputTokens` 0; Nexa nimmt als Größe vorher die letzte Meldung davor.
-  `thread/compacted` ist veraltet und kam in 0.169 nicht mehr; Nexa zeigt es nur ohne Items.
+  mit `item/started` und `item/completed`, ohne Tokens oder Anlass (geprüft mit 0.169). Dazwischen kommt
+  `thread/tokenUsage/updated` mit `last.inputTokens` und `last.outputTokens` 0; Nexa nimmt als Größe
+  vorher die letzte Meldung davor. `thread/compacted` ist veraltet und kam in 0.169 nicht mehr; Nexa zeigt
+  es nur ohne Items. `thread/compact/start { threadId }` startet es von Hand (Nexas `/compact`) und
+  antwortet sofort mit `{}`; es läuft dann als eigener Turn: `turn/started`, das Item, `turn/completed`.
+- **Slash-Befehle** kennt der App-Server nicht: `/…` ginge als Text an das Modell. Nexa führt seine eigenen
+  aus (renderer `lib/chat-commands.ts`), die Skills kommen mit `skills/list` und gehen als `$name`.
 - **Anfragen vom Server** (Antwort nötig): `item/commandExecution/requestApproval`,
   `item/fileChange/requestApproval`, `item/permissions/requestApproval`, `item/tool/requestUserInput`.
 - **Befehle**: `commandExecution.command` ist unter Windows die ganze Shell-Zeile

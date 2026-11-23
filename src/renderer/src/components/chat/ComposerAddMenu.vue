@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BlocksIcon, ChevronRightIcon, FolderPlusIcon, PaperclipIcon, PlusIcon, SearchIcon, SquareSlashIcon } from '@lucide/vue'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import type { ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import type { McpServerInfo } from '@shared/types'
@@ -153,6 +153,23 @@ async function toggle(server: McpServerInfo): Promise<void> {
   }
 }
 
+/** The connectors' submenu, opened by `/mcp` as well. */
+const connectorsOpen = ref(false)
+watch(open, (value) => {
+  if (!value) connectorsOpen.value = false
+})
+
+/** `/mcp`: the menu opens right at its connectors. */
+async function openConnectors(): Promise<void> {
+  if (!props.sessionId) return
+  open.value = true
+  // The submenu needs its trigger on screen first.
+  await nextTick()
+  connectorsOpen.value = true
+}
+
+defineExpose({ openConnectors })
+
 function onSearchKey(event: KeyboardEvent): void {
   // The menu would take the letters for its type-ahead and the arrows away from the field.
   if (event.key !== 'Escape' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') event.stopPropagation()
@@ -175,7 +192,7 @@ function onSearchKey(event: KeyboardEvent): void {
       <DropdownMenuItem @select="emit('commands')"><SquareSlashIcon /> Slash-Befehle</DropdownMenuItem>
       <template v-if="sessionId">
         <DropdownMenuSeparator />
-        <DropdownMenuSub>
+        <DropdownMenuSub v-model:open="connectorsOpen">
           <DropdownMenuSubTrigger><BlocksIcon /> Konnektoren</DropdownMenuSubTrigger>
           <DropdownMenuSubContent class="w-80 p-1">
             <div class="flex items-center gap-2 px-2 py-1.5">
