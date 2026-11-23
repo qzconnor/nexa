@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import { IpcEvent } from '@shared/ipc'
 import { PROVIDERS } from '@shared/providers'
+import { findTheme } from '@shared/themes/builtin'
 import { ApiServer } from './api/api-server'
 import { BrowserControl } from './browser/browser-control'
 import { registerBrowserIpc } from './browser/browser-ipc'
@@ -172,8 +173,9 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     return win
   }
 
-  // Dark/light of the native backdrop; the renderer follows the theme.
-  nativeTheme.themeSource = 'dark'
+  // Dark/light of the native backdrop as the theme's, before the window shows; the window says so again
+  // once it has the theme (a theme of the user's own is only known there).
+  nativeTheme.themeSource = findTheme(settings.get().appearance.theme).mode
   const firstWindow = openWindow()
   if (launchRequest) firstWindow.webContents.once('did-finish-load', () => void openFromCommandLine(launchRequest))
 

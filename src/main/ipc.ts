@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir, release } from 'node:os'
 import { existsSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
 import { IpcEvent, IpcInvoke, type SectionCreateInput, type SectionUpdateInput } from '@shared/ipc'
 import type { SectionLayout } from '@shared/sections'
@@ -187,7 +187,10 @@ export function registerIpc(ctx: AppContext): void {
   })
   handle(IpcInvoke.windowState, (event) => windowState(windowOf(event)))
   handle(IpcInvoke.windowSetTitleBarColors, (event, colors: unknown) => {
-    const { color, symbolColor } = (colors ?? {}) as { color?: unknown; symbolColor?: unknown }
+    const { color, symbolColor, dark } = (colors ?? {}) as { color?: unknown; symbolColor?: unknown; dark?: unknown }
+    // Mica's tint, the native menus and scroll bars and what web pages see as `prefers-color-scheme`
+    // follow the theme's mode.
+    if (typeof dark === 'boolean') nativeTheme.themeSource = dark ? 'dark' : 'light'
     if (process.platform === 'darwin' || typeof color !== 'string' || typeof symbolColor !== 'string') return
     windowOf(event).setTitleBarOverlay({ color, symbolColor })
   })

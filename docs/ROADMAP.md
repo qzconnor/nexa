@@ -93,6 +93,10 @@
 - [x] Chat als Markdown exportieren (Ordner, Branch, Modell, Zeitraum, Nachrichten nach Tagen) und letzte
       Antwort kopieren: im Menü des Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als
       `/export` und `/copy`
+- [x] Modellnamen: Claudes „Default“ heißt nach dem Modell, für das es steht („Standard (Opus 5.5)“,
+      aus `resolvedModel`)
+- [x] Systemfarben: `nativeTheme` folgt dem Modus des Themes (Mica, native Menüs, `prefers-color-scheme`
+      der Seiten im Browser), schon beim Start
 
 ## Als Nächstes
 
@@ -115,9 +119,7 @@
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
 - [ ] **Bestehende CLI-Sessions importieren** ohne Claude Manager (`~/.claude/projects`, `~/.codex/sessions`);
   aus dem Claude Manager geht es schon (siehe oben), der Transkript-Leser für Claude ist da.
-- [ ] **Modellnamen**: „Default“ durch das tatsächliche Standardmodell der CLI ersetzen.
 - [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
-- [ ] **Systemfarben**: `nativeTheme` folgt dem Modus des Themes (hell/dunkel).
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt „Konnektoren verwalten“.
 
