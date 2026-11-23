@@ -1,0 +1,21 @@
+<script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
+import type { ProviderId } from '@shared/chat'
+import { cn } from '@/lib/utils'
+
+/** A neutral mark per CLI (not the vendors' logos): a spark for Claude Code, a hexagon for Codex. */
+const props = defineProps<{ provider: ProviderId; class?: HTMLAttributes['class'] }>()
+</script>
+
+<template>
+  <svg v-if="props.provider === 'claude'" viewBox="0 0 16 16" aria-hidden="true" :class="cn('size-4 text-[#d97757]', props.class)">
+    <path
+      fill="currentColor"
+      d="M8 1.2c.35 0 .6.27.62.62l.2 3.9 2.6-2.9a.62.62 0 0 1 .95.8l-2.32 3.15 3.9-.2a.62.62 0 0 1 .1 1.24l-3.86.55 3.02 2.47a.62.62 0 0 1-.78.97L9.3 9.5l.55 3.86a.62.62 0 0 1-1.24.1L8 9.6l-.6 3.86a.62.62 0 0 1-1.24-.1l.55-3.86-3.13 2.31a.62.62 0 0 1-.78-.97L5.82 8.4l-3.86-.55a.62.62 0 0 1 .1-1.24l3.9.2-2.32-3.15a.62.62 0 0 1 .95-.8l2.6 2.9.2-3.9c.02-.35.27-.62.61-.62Z"
+    />
+  </svg>
+  <svg v-else viewBox="0 0 16 16" fill="none" aria-hidden="true" :class="cn('size-4 text-[#10a37f]', props.class)">
+    <path d="M8 1.6 13.5 4.8v6.4L8 14.4 2.5 11.2V4.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+    <path d="m5.6 6.6 1.9 1.4-1.9 1.4M8.6 10h1.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+</template>

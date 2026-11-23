@@ -1,0 +1,270 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { release } from 'node:os'
+import { existsSync } from 'node:fs'
+import { basename, isAbsolute, join } from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
+import { IpcEvent, IpcInvoke } from '@shared/ipc'
+import { parseThemeFile } from '@shared/themes/file'
+import type { ThemeContent } from '@shared/themes/types'
+import type { AppInfo } from '@shared/types'
+import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
+import type { AccountService } from './accounts/account-service'
+import type { ApiServer } from './api/api-server'
+import type { ProjectService } from './services/project-service'
+import type { ProviderService } from './services/provider-service'
+import type { SessionService } from './services/session-service'
+import type { SettingsService } from './services/settings-service'
+import type { ThemeService } from './services/theme-service'
+import { fromAppWindow, openAppWindows, windowState } from './window/main-window'
+
+export interface AppContext {
+  userDataDir: string
+  settings: SettingsService
+  themes: ThemeService
+  accounts: AccountService
+  providers: ProviderService
+  projects: ProjectService
+  sessions: SessionService
+  api: ApiServer
+}
+
+const IMAGE_TYPES: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+/** Sends an event to every window of the app. */
+export function broadcast(channel: string, ...args: unknown[]): void {
+  for (const win of openAppWindows()) win.webContents.send(channel, ...args)
+}
+
+export function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    // Only the app's own page may call; anything else gets nothing.
+    if (!fromAppWindow(event)) throw new Error('Nicht erlaubt.')
+    return (listener as (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown)(event, ...args)
+  })
+}
+
+function str(value: unknown, what: string): string {
+  if (typeof value !== 'string') throw new Error(`${what} fehlt.`)
+  return value
+}
+
+function absolutePath(value: unknown, what: string): string {
+  const path = str(value, what)
+  if (!path || path.length > 4096 || !isAbsolute(path) || path.includes('\0')) throw new Error(`Ungültiger Pfad: ${what}`)
+  return path
+}
+
+/** A theme from the window, checked like a file. */
+function themeArg(value: unknown): ThemeContent {
+  if (typeof value !== 'object' || value === null) throw new Error('Ungültiges Theme.')
+  const { name, mode, colors, terminal } = value as Record<string, unknown>
+  return parseThemeFile({ name, mode, colors, terminal }, 'Eigenes Theme')
+}
+
+const THEME_FILE_FILTERS = [{ name: 'Theme', extensions: ['json'] }]
+/** Theme files taken over in one go. */
+const MAX_THEME_IMPORT = 100
+
+function providerId(value: unknown): ProviderId {
+  if (!PROVIDER_IDS.includes(value as ProviderId)) throw new Error('Unbekannte CLI.')
+  return value as ProviderId
+}
+
+/** A plain object from the window; its fields are checked by the service. */
+function objectArg<T>(value: unknown, what: string): T {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${what} fehlt.`)
+  return value as T
+}
+
+function windowOf(event: IpcMainInvokeEvent): BrowserWindow {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) throw new Error('Kein Fenster.')
+  return win
+}
+
+export function appInfo(userDataDir: string): AppInfo {
+  return {
+    version: app.getVersion(),
+    platform: process.platform,
+    userData: userDataDir,
+    windowsBuild: process.platform === 'win32' ? Number(release().split('.')[2]) || null : null,
+  }
+}
+
+export function registerIpc(ctx: AppContext): void {
+  const { settings, themes, accounts, providers, projects, sessions } = ctx
+
+  // App ----------------------------------------------------------------------------------------
+  handle(IpcInvoke.appInfo, () => appInfo(ctx.userDataDir))
+  handle(IpcInvoke.appOpenExternal, (_e, url: unknown) => {
+    const target = str(url, 'Die Adresse')
+    if (!/^(https?|mailto):/i.test(target)) throw new Error('Nur Web-Adressen lassen sich öffnen.')
+    return shell.openExternal(target)
+  })
+  handle(IpcInvoke.appOpenPath, async (_e, path: unknown) => {
+    const error = await shell.openPath(str(path, 'Der Pfad'))
+    if (error) throw new Error(error)
+  })
+  handle(IpcInvoke.appShowItem, (_e, path: unknown) => shell.showItemInFolder(str(path, 'Der Pfad')))
+  handle(IpcInvoke.appPickDirectory, async (event, defaultPath: unknown) => {
+    const result = await dialog.showOpenDialog(windowOf(event), {
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: typeof defaultPath === 'string' ? defaultPath : undefined,
+    })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  handle(IpcInvoke.appPickImages, async (event) => {
+    const result = await dialog.showOpenDialog(windowOf(event), {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Bilder', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+    })
+    return result.canceled ? [] : result.filePaths
+  })
+  handle(IpcInvoke.appSaveImage, async (_e, data: unknown, mime: unknown) => {
+    if (!(data instanceof Uint8Array)) throw new Error('Das Bild fehlt.')
+    if (data.byteLength > MAX_IMAGE_BYTES) throw new Error('Das Bild ist zu groß (höchstens 20 MB).')
+    const ext = IMAGE_TYPES[String(mime)]
+    if (!ext) throw new Error('Nur PNG, JPEG, GIF und WebP gehen.')
+    const dir = join(ctx.userDataDir, 'attachments')
+    await mkdir(dir, { recursive: true })
+    const file = join(dir, `${randomUUID()}.${ext}`)
+    await writeFile(file, data)
+    return file
+  })
+
+  // Window -------------------------------------------------------------------------------------
+  handle(IpcInvoke.windowMinimize, (event) => windowOf(event).minimize())
+  handle(IpcInvoke.windowToggleMaximize, (event) => {
+    const win = windowOf(event)
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  })
+  handle(IpcInvoke.windowState, (event) => windowState(windowOf(event)))
+  handle(IpcInvoke.windowSetTitleBarColors, (event, colors: unknown) => {
+    const { color, symbolColor } = (colors ?? {}) as { color?: unknown; symbolColor?: unknown }
+    if (process.platform === 'darwin' || typeof color !== 'string' || typeof symbolColor !== 'string') return
+    windowOf(event).setTitleBarOverlay({ color, symbolColor })
+  })
+
+  // Settings & themes --------------------------------------------------------------------------
+  handle(IpcInvoke.settingsGet, () => settings.get())
+  handle(IpcInvoke.settingsUpdate, (_e, patch: unknown) => settings.update((patch ?? {}) as never))
+  handle(IpcInvoke.themesList, () => themes.list())
+  handle(IpcInvoke.themesCreate, (_e, theme: unknown) => themes.create(themeArg(theme)))
+  handle(IpcInvoke.themesSave, (_e, id: unknown, theme: unknown) => themes.save(str(id, 'id'), themeArg(theme)))
+  handle(IpcInvoke.themesRemove, (_e, id: unknown) => themes.remove(str(id, 'id')))
+  handle(IpcInvoke.themesExport, async (event, id: unknown) => {
+    const themeId = str(id, 'id')
+    const { canceled, filePath } = await dialog.showSaveDialog(windowOf(event), {
+      title: 'Theme exportieren',
+      defaultPath: join(app.getPath('documents'), basename(themes.fileOf(themeId))),
+      filters: THEME_FILE_FILTERS,
+    })
+    if (canceled || !filePath) return null
+    await themes.exportTo(themeId, filePath)
+    return filePath
+  })
+  handle(IpcInvoke.themesImport, async (event, files: unknown) => {
+    if (Array.isArray(files)) {
+      if (files.length === 0 || files.length > MAX_THEME_IMPORT) throw new Error('Ungültige Dateien.')
+      return themes.importFrom(files.map((file) => absolutePath(file, 'Datei')))
+    }
+    const { canceled, filePaths } = await dialog.showOpenDialog(windowOf(event), {
+      title: 'Themes importieren',
+      defaultPath: app.getPath('documents'),
+      properties: ['openFile', 'multiSelections'],
+      filters: THEME_FILE_FILTERS,
+    })
+    return canceled || filePaths.length === 0 ? null : themes.importFrom(filePaths.slice(0, MAX_THEME_IMPORT))
+  })
+  handle(IpcInvoke.themesOpenFile, async (_e, id: unknown) => {
+    const file = themes.fileOf(str(id, 'id'))
+    if (!existsSync(file)) throw new Error('Die Datei des Themes gibt es nicht mehr.')
+    // Without a program for JSON files, the file is shown in Explorer instead.
+    if (!(await shell.openPath(file))) return true
+    shell.showItemInFolder(file)
+    return false
+  })
+  handle(IpcInvoke.themesShowFile, (_e, id: unknown) => {
+    const file = themes.fileOf(str(id, 'id'))
+    if (!existsSync(file)) throw new Error('Die Datei des Themes gibt es nicht mehr.')
+    shell.showItemInFolder(file)
+  })
+  handle(IpcInvoke.themesOpenFolder, async () => {
+    const error = await shell.openPath(themes.dir)
+    if (error) throw new Error(error)
+  })
+
+  // Providers & usage --------------------------------------------------------------------------
+  handle(IpcInvoke.providersList, () => providers.list())
+  handle(IpcInvoke.providersRefresh, () => providers.detect())
+  handle(IpcInvoke.providersModels, (_e, id: unknown) => providers.models(providerId(id)))
+  handle(IpcInvoke.usageGet, () => providers.usage())
+  handle(IpcInvoke.usageRefresh, () => providers.refreshUsage(true))
+
+  // Accounts -----------------------------------------------------------------------------------
+  handle(IpcInvoke.accountsList, () => accounts.list())
+  handle(IpcInvoke.accountsRefresh, () => accounts.refresh())
+  handle(IpcInvoke.accountsCreate, (_e, input: unknown) => accounts.create(objectArg<AccountCreateInput>(input, 'Der Account')))
+  handle(IpcInvoke.accountsUpdate, (_e, id: unknown, patch: unknown) => accounts.update(str(id, 'Der Account'), objectArg<AccountUpdateInput>(patch, 'Die Änderung')))
+  handle(IpcInvoke.accountsRemove, (_e, id: unknown, deleteFolder: unknown) => accounts.remove(str(id, 'Der Account'), deleteFolder === true))
+  handle(IpcInvoke.accountsLogins, () => providers.loginStates())
+  handle(IpcInvoke.accountsLogin, (_e, id: unknown) => providers.login(str(id, 'Der Account')))
+  handle(IpcInvoke.accountsLoginCode, (_e, id: unknown, code: unknown) => providers.loginCode(str(id, 'Der Account'), str(code, 'Der Code')))
+  handle(IpcInvoke.accountsLoginCancel, (_e, id: unknown) => providers.cancelLogin(str(id, 'Der Account')))
+  handle(IpcInvoke.usageStats, (_e, days: unknown) => sessions.stats(Math.min(365, Math.max(1, Number(days) || 30))))
+
+  // Projects -----------------------------------------------------------------------------------
+  handle(IpcInvoke.projectsList, () => projects.list())
+  handle(IpcInvoke.projectsCreate, (_e, input: unknown) => projects.create(input as never))
+  handle(IpcInvoke.projectsUpdate, (_e, id: unknown, patch: unknown) => projects.update(str(id, 'Das Projekt'), (patch ?? {}) as never))
+  handle(IpcInvoke.projectsRemove, async (_e, id: unknown) => {
+    const projectId = str(id, 'Das Projekt')
+    await sessions.removeProject(projectId)
+    await projects.remove(projectId)
+  })
+
+  // Sessions -----------------------------------------------------------------------------------
+  handle(IpcInvoke.sessionsList, () => sessions.list())
+  handle(IpcInvoke.sessionsCreate, (_e, input: unknown) => sessions.create(input as never))
+  handle(IpcInvoke.sessionsOpen, (_e, id: unknown) => sessions.open(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsSend, (_e, id: unknown, input: unknown) => sessions.send(str(id, 'Die Session'), input as never))
+  handle(IpcInvoke.sessionsInterrupt, (_e, id: unknown) => sessions.interrupt(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsRespond, (_e, id: unknown, itemId: unknown, response: unknown) =>
+    sessions.respond(str(id, 'Die Session'), str(itemId, 'Die Frage'), response as never),
+  )
+  handle(IpcInvoke.sessionsUpdate, (_e, id: unknown, patch: unknown) => sessions.update(str(id, 'Die Session'), (patch ?? {}) as never))
+  handle(IpcInvoke.sessionsRemove, (_e, id: unknown) => sessions.remove(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))
+
+  handle(IpcInvoke.apiStatus, () => ctx.api.status())
+
+  // Events -------------------------------------------------------------------------------------
+  settings.on('changed', (next) => broadcast(IpcEvent.settingsChanged, next))
+  themes.on('changed', () => broadcast(IpcEvent.themesChanged))
+  themes.on('saved', (entry) => broadcast(IpcEvent.themesSaved, entry))
+  providers.on('status', (list) => broadcast(IpcEvent.providersChanged, list))
+  providers.on('login', (state) => broadcast(IpcEvent.accountsLogin, state))
+  accounts.on('changed', (list) => broadcast(IpcEvent.accountsChanged, list))
+  providers.on('usage', (list) => broadcast(IpcEvent.usageChanged, list))
+  projects.on('changed', (list) => broadcast(IpcEvent.projectsChanged, list))
+  sessions.on('changed', (list) => broadcast(IpcEvent.sessionsChanged, list))
+  sessions.on('event', (event) => broadcast(IpcEvent.sessionEvent, event))
+}
+
+export function forwardWindowState(win: BrowserWindow): void {
+  const send = () => {
+    if (!win.isDestroyed()) win.webContents.send(IpcEvent.windowState, windowState(win))
+  }
+  for (const event of ['maximize', 'unmaximize', 'focus', 'blur', 'enter-full-screen', 'leave-full-screen'] as const) {
+    win.on(event as 'maximize', send)
+  }
+}

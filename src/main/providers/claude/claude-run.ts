@@ -1,0 +1,726 @@
+import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { extname } from 'node:path'
+import type {
+  AgentItem,
+  InteractionItem,
+  InteractionRequest,
+  InteractionResponse,
+  PermissionMode,
+  PermissionOption,
+  Question,
+  ToolItem,
+} from '@shared/chat'
+import type { SendInput, UsageWindow } from '@shared/types'
+import { renderSpecOf } from '@shared/render'
+import { isPlainObject } from '@shared/utils'
+import type { CliBinary } from '../cli-binary'
+import { cliEnv } from '../cli-binary'
+import { claudeToolNames } from '../../mcp/tool-grant'
+import { JsonlProcess } from '../jsonl-process'
+import type { AgentRun, RunOptions, RunSink } from '../provider'
+import { AGENT_TOOLS, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
+
+type Json = Record<string, unknown>
+
+const MODE_FLAG: Record<PermissionMode, string> = {
+  ask: 'default',
+  edits: 'acceptEdits',
+  plan: 'plan',
+  auto: 'auto',
+  full: 'bypassPermissions',
+}
+
+const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
+
+interface StreamBlock {
+  itemId: string
+  kind: 'text' | 'thinking' | 'tool'
+  /** The final `assistant` message of the block arrived. */
+  done: boolean
+  /** A thinking block is only shown once it has text. */
+  shown: boolean
+}
+
+interface OpenInteraction {
+  requestId: string
+  item: InteractionItem
+  toolName: string
+  input: Json
+  suggestions: unknown[]
+  kind: 'tool' | 'elicitation'
+}
+
+/** The arguments Claude Code is started with (stream-json both ways, Nexa answers its questions). */
+export function claudeArgs(options: RunOptions): string[] {
+  const args = [
+    '-p',
+    '--input-format',
+    'stream-json',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--forward-subagent-text',
+    '--permission-prompt-tool',
+    'stdio',
+    '--permission-mode',
+    MODE_FLAG[options.permissionMode],
+    // Lets the user switch to full permissions while the session runs.
+    '--allow-dangerously-skip-permissions',
+  ]
+  if (options.model) args.push('--model', options.model)
+  if (options.effort) args.push('--effort', options.effort)
+  if (options.resumeId) args.push('--resume', options.resumeId)
+  if (options.instructions) args.push('--append-system-prompt', options.instructions)
+  if (options.mcp) {
+    const config = {
+      mcpServers: {
+        nexa: { type: 'http', url: options.mcp.url, headers: { Authorization: `Bearer ${options.mcp.token}` } },
+      },
+    }
+    args.push('--mcp-config', JSON.stringify(config))
+    // Tool by tool: the ones left out (the browser's sensitive tools) go through Nexa's permission prompt.
+    // The `=` form, as the option takes several values and would swallow what follows.
+    if (options.mcp.allowed.length) args.push(`--allowedTools=${claudeToolNames(options.mcp.allowed).join(',')}`)
+  }
+  if (options.noChrome) args.push('--no-chrome')
+  args.push(...options.extraArgs)
+  return args
+}
+
+/**
+ * One Claude Code process in `-p` mode with stream-json in and out. Maps its stream onto Nexa's
+ * chat items and answers its control requests (permissions, AskUserQuestion, plans, elicitations)
+ * with what the user chooses in the chat. Protocol: docs/PROTOCOLS.md.
+ */
+export class ClaudeRun implements AgentRun {
+  private readonly process: JsonlProcess
+  private readonly blocks = new Map<string, StreamBlock>()
+  private readonly tools = new Map<string, ToolItem | AgentItem>()
+  private readonly interactions = new Map<string, OpenInteraction>()
+  private readonly pending = new Map<string, { resolve: (value: Json) => void; reject: (error: Error) => void }>()
+  /** Agents by the id of their task, for the task events of background agents. */
+  private readonly tasks = new Map<string, string>()
+  private turnStartedAt: number | null = null
+  private interrupting = false
+  private model: string | undefined
+  private stopping = false
+
+  constructor(
+    binary: CliBinary,
+    options: RunOptions,
+    private readonly sink: RunSink,
+  ) {
+    this.model = options.model
+    this.process = new JsonlProcess(binary.command(claudeArgs(options)), {
+      cwd: options.cwd,
+      env: cliEnv({ CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', ...options.account.set }, options.account.unset),
+      onMessage: (m) => this.onMessage(m),
+      onExit: (code, stderr) => this.onExit(code, stderr),
+    })
+    sink.runtime({ status: 'starting', connected: true })
+    void this.request({ subtype: 'initialize' }).catch(() => undefined)
+  }
+
+  get alive(): boolean {
+    return this.process.alive
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Commands from Nexa
+
+  async send(input: SendInput): Promise<void> {
+    const content: Json[] = []
+    for (const path of input.images ?? []) {
+      const type = IMAGE_TYPES[extname(path).toLowerCase()]
+      if (!type) continue
+      const data = await readFile(path)
+      content.push({ type: 'image', source: { type: 'base64', media_type: type, data: data.toString('base64') } })
+    }
+    content.push({ type: 'text', text: input.text })
+    this.process.write({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '' })
+    this.turnStarted()
+  }
+
+  async interrupt(): Promise<void> {
+    if (!this.process.alive) return
+    this.interrupting = true
+    await this.request({ subtype: 'interrupt' }).catch(() => undefined)
+  }
+
+  async respond(itemId: string, response: InteractionResponse): Promise<void> {
+    const open = this.interactions.get(itemId)
+    if (!open) throw new Error('Die Frage ist nicht mehr offen.')
+    this.interactions.delete(itemId)
+    const answer = open.kind === 'elicitation' ? this.elicitationAnswer(response) : await this.toolAnswer(open, response)
+    this.process.write({ type: 'control_response', response: { subtype: 'success', request_id: open.requestId, response: answer } })
+    this.sink.item({ ...open.item, state: 'answered', response })
+    if (this.interactions.size === 0 && this.turnStartedAt !== null) this.sink.runtime({ status: 'running' })
+  }
+
+  async setModel(model: string | undefined): Promise<void> {
+    this.model = model
+    await this.request({ subtype: 'set_model', model: model ?? 'default' })
+  }
+
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
+    await this.request({ subtype: 'set_permission_mode', mode: MODE_FLAG[mode] })
+  }
+
+  async stop(): Promise<void> {
+    this.stopping = true
+    await this.process.stop()
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Answers to control requests
+
+  private async toolAnswer(open: OpenInteraction, response: InteractionResponse): Promise<Json> {
+    if (response.type === 'question') {
+      // Claude Code keys the answers by the question's text; several choices are joined.
+      const answers: Record<string, string> = {}
+      for (const [question, values] of Object.entries(response.answers)) answers[question] = values.join(', ')
+      return { behavior: 'allow', updatedInput: { ...open.input, answers } }
+    }
+    if (response.type === 'plan') {
+      if (!response.approve) {
+        return { behavior: 'deny', message: response.feedback?.trim() || 'Der Nutzer hat den Plan abgelehnt. Frag nach, was er anders haben möchte.' }
+      }
+      if (response.mode && response.mode !== 'plan') await this.setPermissionMode(response.mode).catch(() => undefined)
+      return { behavior: 'allow', updatedInput: open.input }
+    }
+    if (response.type === 'permission') {
+      if (response.decision === 'deny') {
+        return { behavior: 'deny', message: response.message?.trim() || 'Der Nutzer hat das abgelehnt.' }
+      }
+      return {
+        behavior: 'allow',
+        updatedInput: open.input,
+        ...(response.decision === 'allow-session' && open.suggestions.length ? { updatedPermissions: open.suggestions } : {}),
+      }
+    }
+    return { behavior: 'deny', message: 'Unerwartete Antwort.' }
+  }
+
+  private elicitationAnswer(response: InteractionResponse): Json {
+    if (response.type !== 'elicitation') return { action: 'cancel' }
+    return { action: response.action, ...(response.content ? { content: response.content } : {}) }
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // The stream
+
+  private onMessage(raw: unknown): void {
+    if (!isPlainObject(raw)) return
+    const m = raw
+    switch (m.type) {
+      case 'stream_event':
+        return this.onStreamEvent(m)
+      case 'assistant':
+        return this.onAssistant(m)
+      case 'user':
+        return this.onUser(m)
+      case 'system':
+        return this.onSystem(m)
+      case 'result':
+        return this.onResult(m)
+      case 'rate_limit_event':
+        return this.onRateLimit(m)
+      case 'control_request':
+        return this.onControlRequest(m)
+      case 'control_cancel_request':
+        return this.onControlCancel(m)
+      case 'control_response':
+        return this.onControlResponse(m)
+    }
+  }
+
+  private parentOf(m: Json): string | null {
+    return str(m.parent_tool_use_id) ?? null
+  }
+
+  private onStreamEvent(m: Json): void {
+    const event = isPlainObject(m.event) ? m.event : null
+    if (!event) return
+    const messageId = str(m.api_message_id) ?? (isPlainObject(event.message) ? str(event.message.id) : undefined)
+    if (!messageId) return
+    const parentId = this.parentOf(m)
+    if (event.type === 'content_block_start' && isPlainObject(event.content_block)) {
+      const block = event.content_block
+      const key = `${messageId}:${String(event.index)}`
+      if (block.type === 'text') {
+        const itemId = key
+        this.blocks.set(key, { itemId, kind: 'text', done: false, shown: true })
+        this.sink.item({ kind: 'assistant', id: itemId, ts: Date.now(), provider: 'claude', parentId, text: '', streaming: true })
+      } else if (block.type === 'thinking') {
+        this.blocks.set(key, { itemId: key, kind: 'thinking', done: false, shown: false })
+      } else if (block.type === 'tool_use' && typeof block.id === 'string') {
+        this.blocks.set(key, { itemId: block.id, kind: 'tool', done: false, shown: false })
+      }
+      return
+    }
+    if (event.type === 'content_block_delta' && isPlainObject(event.delta)) {
+      const block = this.blocks.get(`${messageId}:${String(event.index)}`)
+      if (!block || block.done) return
+      const delta = event.delta
+      if (delta.type === 'text_delta' && typeof delta.text === 'string' && block.kind === 'text') {
+        this.sink.delta(block.itemId, 'text', delta.text)
+      } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string' && block.kind === 'thinking') {
+        if (!block.shown) {
+          block.shown = true
+          this.sink.item({ kind: 'thinking', id: block.itemId, ts: Date.now(), provider: 'claude', parentId, text: '', streaming: true })
+        }
+        this.sink.delta(block.itemId, 'text', delta.thinking)
+      }
+    }
+  }
+
+  /** The stream block of this message that the next finished block of `kind` belongs to. */
+  private takeBlock(messageId: string, kind: StreamBlock['kind']): StreamBlock | undefined {
+    for (const [key, block] of this.blocks) {
+      if (key.startsWith(`${messageId}:`) && block.kind === kind && !block.done) return block
+    }
+    return undefined
+  }
+
+  private onAssistant(m: Json): void {
+    const message = isPlainObject(m.message) ? m.message : null
+    if (!message || !Array.isArray(message.content)) return
+    const messageId = str(message.id) ?? randomUUID()
+    const parentId = this.parentOf(m)
+    if (typeof message.model === 'string' && !parentId) this.model = message.model
+    for (const raw of message.content) {
+      if (!isPlainObject(raw)) continue
+      if (raw.type === 'text') {
+        const block = this.takeBlock(messageId, 'text')
+        if (block) block.done = true
+        const text = str(raw.text) ?? ''
+        if (!text.trim() && !block) continue
+        this.sink.item({
+          kind: 'assistant',
+          id: block?.itemId ?? `${messageId}:t${randomUUID().slice(0, 8)}`,
+          ts: Date.now(),
+          provider: 'claude',
+          parentId,
+          text,
+          streaming: false,
+        })
+      } else if (raw.type === 'thinking') {
+        const block = this.takeBlock(messageId, 'thinking')
+        if (block) block.done = true
+        const text = str(raw.thinking) ?? ''
+        // Without a summary Claude Code sends the block empty: nothing to show.
+        if (!text.trim()) continue
+        this.sink.item({
+          kind: 'thinking',
+          id: block?.itemId ?? `${messageId}:k${randomUUID().slice(0, 8)}`,
+          ts: Date.now(),
+          provider: 'claude',
+          parentId,
+          text,
+          streaming: false,
+        })
+      } else if (raw.type === 'tool_use' && typeof raw.id === 'string' && typeof raw.name === 'string') {
+        const block = this.takeBlock(messageId, 'tool')
+        if (block) block.done = true
+        this.onToolUse(raw.id, raw.name, isPlainObject(raw.input) ? raw.input : {}, parentId)
+      }
+    }
+  }
+
+  private onToolUse(id: string, name: string, input: Json, parentId: string | null): void {
+    const now = Date.now()
+    if (AGENT_TOOLS.has(name)) {
+      const agent: AgentItem = {
+        kind: 'agent',
+        id,
+        ts: now,
+        provider: 'claude',
+        parentId,
+        agentType: str(input.subagent_type) ?? 'general-purpose',
+        description: str(input.description) ?? 'Subagent',
+        prompt: str(input.prompt),
+        model: str(input.model),
+        background: input.run_in_background === true,
+        status: 'running',
+        toolCount: 0,
+        startedAt: now,
+      }
+      this.tools.set(id, agent)
+      this.sink.item(agent)
+      return
+    }
+    const view = viewOfClaudeTool(name, input)
+    const tool: ToolItem = {
+      kind: 'tool',
+      id,
+      ts: now,
+      provider: 'claude',
+      parentId,
+      tool: view.tool,
+      name,
+      title: view.title,
+      detail: view.detail,
+      input,
+      changes: view.changes,
+      server: view.server,
+      render: renderSpecOf(view.server, view.shortName, input),
+      status: 'running',
+      startedAt: now,
+    }
+    this.tools.set(id, tool)
+    this.sink.item(tool)
+    if (name === 'TodoWrite') {
+      const entries = todosOf(input)
+      if (entries) this.sink.item({ kind: 'todo', id: `todo:${parentId ?? 'main'}`, ts: now, provider: 'claude', parentId, entries })
+    }
+    if (parentId) this.bumpAgent(parentId, view.title + (view.detail ? ` · ${view.detail}` : ''))
+  }
+
+  private bumpAgent(agentId: string, activity: string): void {
+    const agent = this.tools.get(agentId)
+    if (agent?.kind !== 'agent') return
+    const next: AgentItem = { ...agent, activity, toolCount: (agent.toolCount ?? 0) + 1 }
+    this.tools.set(agentId, next)
+    this.sink.item(next)
+  }
+
+  private onUser(m: Json): void {
+    const message = isPlainObject(m.message) ? m.message : null
+    if (!message || !Array.isArray(message.content)) return
+    for (const block of message.content) {
+      if (!isPlainObject(block) || block.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue
+      const known = this.tools.get(block.tool_use_id)
+      if (!known) continue
+      const text = resultText(block.content)
+      const isError = block.is_error === true
+      const now = Date.now()
+      if (known.kind === 'agent') {
+        // A background agent answers at once that it was started; its end comes as a task event.
+        if (known.background && !isError) continue
+        const next: AgentItem = { ...known, status: isError ? 'error' : 'done', result: text, endedAt: now, activity: undefined }
+        this.tools.set(known.id, next)
+        this.sink.item(next)
+      } else {
+        const denied = isError && /permission|denied|abgelehnt|rejected/i.test(text) && text.length < 400
+        const next: ToolItem = { ...known, status: denied ? 'denied' : isError ? 'error' : 'done', output: text, endedAt: now }
+        this.tools.set(known.id, next)
+        this.sink.item(next)
+      }
+    }
+  }
+
+  private onSystem(m: Json): void {
+    switch (m.subtype) {
+      case 'init': {
+        if (typeof m.session_id === 'string') this.sink.cliSession(m.session_id)
+        if (typeof m.model === 'string') this.model = m.model
+        this.sink.runtime({ connected: true, model: this.model, ...(this.turnStartedAt === null ? { status: 'idle' } : {}) })
+        return
+      }
+      case 'compact_boundary': {
+        const meta = isPlainObject(m.compact_metadata) ? m.compact_metadata : {}
+        this.sink.item({
+          kind: 'notice',
+          id: str(m.uuid) ?? randomUUID(),
+          ts: Date.now(),
+          provider: 'claude',
+          level: 'info',
+          text: meta.trigger === 'manual' ? 'Kontext wurde zusammengefasst' : 'Kontext wurde automatisch zusammengefasst',
+          detail: typeof meta.pre_tokens === 'number' ? `${Math.round(meta.pre_tokens / 1000)}k Tokens vorher` : undefined,
+        })
+        return
+      }
+      case 'api_retry': {
+        const attempt = typeof m.attempt === 'number' ? m.attempt : 1
+        const max = typeof m.max_retries === 'number' ? m.max_retries : undefined
+        this.sink.item({
+          kind: 'notice',
+          id: 'claude:api-retry',
+          ts: Date.now(),
+          provider: 'claude',
+          level: 'warning',
+          text: `API nicht erreichbar, neuer Versuch ${attempt}${max ? ` von ${max}` : ''}`,
+          detail: typeof m.error_status === 'number' ? `Status ${m.error_status}` : undefined,
+        })
+        return
+      }
+      case 'notification':
+        if (typeof m.text === 'string' && m.priority !== 'low') {
+          this.sink.item({ kind: 'notice', id: str(m.uuid) ?? randomUUID(), ts: Date.now(), provider: 'claude', level: 'info', text: m.text })
+        }
+        return
+      case 'task_started': {
+        const toolId = str(m.tool_use_id)
+        if (toolId && typeof m.task_id === 'string') this.tasks.set(m.task_id, toolId)
+        return
+      }
+      case 'task_progress': {
+        const toolId = str(m.tool_use_id) ?? (typeof m.task_id === 'string' ? this.tasks.get(m.task_id) : undefined)
+        const agent = toolId ? this.tools.get(toolId) : undefined
+        if (agent?.kind !== 'agent') return
+        const usage = isPlainObject(m.usage) ? m.usage : {}
+        const next: AgentItem = {
+          ...agent,
+          activity: str(m.summary) ?? str(m.last_tool_name) ?? agent.activity,
+          toolCount: typeof usage.tool_uses === 'number' ? usage.tool_uses : agent.toolCount,
+        }
+        this.tools.set(agent.id, next)
+        this.sink.item(next)
+        return
+      }
+      case 'task_notification': {
+        const toolId = str(m.tool_use_id) ?? (typeof m.task_id === 'string' ? this.tasks.get(m.task_id) : undefined)
+        const agent = toolId ? this.tools.get(toolId) : undefined
+        if (agent?.kind !== 'agent') return
+        const status = m.status === 'failed' ? 'error' : m.status === 'stopped' ? 'stopped' : 'done'
+        const next: AgentItem = { ...agent, status, result: str(m.summary) ?? agent.result, endedAt: Date.now(), activity: undefined }
+        this.tools.set(agent.id, next)
+        this.sink.item(next)
+        return
+      }
+    }
+  }
+
+  private onResult(m: Json): void {
+    const usage = isPlainObject(m.usage) ? m.usage : {}
+    const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+    const input = num(usage.input_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens)
+    const output = num(usage.output_tokens)
+    const modelUsage = isPlainObject(m.modelUsage) ? m.modelUsage : {}
+    const ofModel = this.model && isPlainObject(modelUsage[this.model]) ? (modelUsage[this.model] as Json) : (Object.values(modelUsage).find(isPlainObject) as Json | undefined)
+    const window = ofModel && typeof ofModel.contextWindow === 'number' ? ofModel.contextWindow : undefined
+    const failed = m.is_error === true || (typeof m.subtype === 'string' && m.subtype !== 'success')
+    const status = this.interrupting ? 'interrupted' : failed ? 'error' : 'done'
+    const errorText =
+      failed && !this.interrupting
+        ? (Array.isArray(m.errors) ? m.errors.filter((e) => typeof e === 'string').join('\n') : '') || str(m.result) || 'Der Turn ist fehlgeschlagen.'
+        : undefined
+    this.finishStreaming()
+    this.cancelInteractions()
+    this.sink.item({
+      kind: 'turn',
+      id: str(m.uuid) ?? randomUUID(),
+      ts: Date.now(),
+      provider: 'claude',
+      status,
+      durationMs: typeof m.duration_ms === 'number' ? m.duration_ms : undefined,
+      costUsd: typeof m.total_cost_usd === 'number' ? m.total_cost_usd : undefined,
+      inputTokens: input,
+      outputTokens: output,
+      model: this.model,
+      error: errorText,
+    })
+    this.turnStartedAt = null
+    this.interrupting = false
+    this.sink.runtime({
+      status: 'idle',
+      turnStartedAt: undefined,
+      model: this.model,
+      ...(window && input ? { context: { used: input + output, window } } : {}),
+    })
+  }
+
+  private onRateLimit(m: Json): void {
+    const info = isPlainObject(m.rate_limit_info) ? m.rate_limit_info : null
+    if (!info) return
+    const windows: UsageWindow[] = []
+    const unified = isPlainObject(info.unifiedWindows) ? info.unifiedWindows : {}
+    const labels: Record<string, string> = { five_hour: '5 Stunden', seven_day: 'Woche', seven_day_opus: 'Woche Opus', seven_day_sonnet: 'Woche Sonnet' }
+    for (const [key, value] of Object.entries(unified)) {
+      if (!isPlainObject(value) || typeof value.utilization !== 'number') continue
+      windows.push({
+        key,
+        label: labels[key] ?? key,
+        usedPercent: Math.round(value.utilization * 1000) / 10,
+        resetsAt: typeof value.resetsAt === 'number' ? value.resetsAt * 1000 : undefined,
+      })
+    }
+    if (windows.length === 0) return
+    this.sink.usage({ provider: 'claude', windows, limited: info.status === 'rejected', updatedAt: Date.now(), source: 'session' })
+  }
+
+  // ------------------------------------------------------------------------------------------
+  // Control protocol
+
+  private request(request: Json): Promise<Json> {
+    const id = randomUUID()
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
+      try {
+        this.process.write({ type: 'control_request', request_id: id, request })
+      } catch (error) {
+        this.pending.delete(id)
+        reject(error as Error)
+      }
+    })
+  }
+
+  private onControlResponse(m: Json): void {
+    const response = isPlainObject(m.response) ? m.response : null
+    const id = response ? str(response.request_id) : undefined
+    if (!response || !id) return
+    const waiter = this.pending.get(id)
+    if (!waiter) return
+    this.pending.delete(id)
+    if (response.subtype === 'error') waiter.reject(new Error(str(response.error) ?? 'Claude Code hat die Anfrage abgelehnt.'))
+    else waiter.resolve(isPlainObject(response.response) ? response.response : {})
+  }
+
+  private onControlRequest(m: Json): void {
+    const requestId = str(m.request_id)
+    const request = isPlainObject(m.request) ? m.request : null
+    if (!requestId || !request) return
+    if (request.subtype === 'can_use_tool') return this.onPermissionRequest(requestId, request)
+    if (request.subtype === 'elicitation') return this.onElicitation(requestId, request)
+    // Nothing else is announced in `initialize`; answer so Claude Code doesn't wait.
+    this.process.write({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error: 'Wird von Nexa nicht unterstützt.' } })
+  }
+
+  private onPermissionRequest(requestId: string, request: Json): void {
+    const toolName = str(request.tool_name) ?? 'Werkzeug'
+    const input = isPlainObject(request.input) ? request.input : {}
+    const toolItemId = str(request.tool_use_id)
+    let interaction: InteractionRequest
+    if (toolName === 'AskUserQuestion') {
+      interaction = { type: 'question', questions: questionsOf(input) }
+    } else if (toolName === 'ExitPlanMode') {
+      interaction = { type: 'plan', plan: str(input.plan) ?? '' }
+    } else {
+      const mcp = splitMcpName(toolName)
+      const view = viewOfClaudeTool(toolName, input)
+      const suggestions = Array.isArray(request.permission_suggestions) ? request.permission_suggestions : []
+      const options: PermissionOption[] = [{ id: 'allow', label: 'Erlauben' }]
+      if (suggestions.length && request.suppress_always_allow_rule !== true) options.push({ id: 'allow-session', label: 'Für diese Session erlauben' })
+      options.push({ id: 'deny', label: 'Ablehnen' })
+      interaction = {
+        type: 'permission',
+        toolName,
+        title: str(request.title) ?? (mcp ? `${mcp.server}: ${mcp.tool}` : view.title),
+        description: str(request.description),
+        detail: view.tool === 'bash' && typeof input.command === 'string' ? input.command : view.detail,
+        input,
+        changes: view.changes,
+        reason: str(request.decision_reason)?.replace(/\u001b\[[0-9;]*m/g, ''),
+        options,
+      }
+    }
+    const item: InteractionItem = {
+      kind: 'interaction',
+      id: `interaction:${requestId}`,
+      ts: Date.now(),
+      provider: 'claude',
+      parentId: toolItemId ? (this.tools.get(toolItemId)?.parentId ?? null) : null,
+      request: interaction,
+      state: 'pending',
+      toolItemId,
+    }
+    this.interactions.set(item.id, {
+      requestId,
+      item,
+      toolName,
+      input,
+      suggestions: Array.isArray(request.permission_suggestions) ? request.permission_suggestions : [],
+      kind: 'tool',
+    })
+    this.sink.item(item)
+    this.sink.runtime({ status: 'waiting' })
+  }
+
+  private onElicitation(requestId: string, request: Json): void {
+    const item: InteractionItem = {
+      kind: 'interaction',
+      id: `interaction:${requestId}`,
+      ts: Date.now(),
+      provider: 'claude',
+      request: {
+        type: 'elicitation',
+        server: str(request.mcp_server_name) ?? 'MCP',
+        message: str(request.message) ?? '',
+        schema: isPlainObject(request.requested_schema) ? request.requested_schema : undefined,
+        url: str(request.url),
+      },
+      state: 'pending',
+    }
+    this.interactions.set(item.id, { requestId, item, toolName: 'elicitation', input: {}, suggestions: [], kind: 'elicitation' })
+    this.sink.item(item)
+    this.sink.runtime({ status: 'waiting' })
+  }
+
+  private onControlCancel(m: Json): void {
+    const requestId = str(m.request_id)
+    for (const [id, open] of this.interactions) {
+      if (open.requestId !== requestId) continue
+      this.interactions.delete(id)
+      this.sink.item({ ...open.item, state: 'cancelled' })
+    }
+  }
+
+  // ------------------------------------------------------------------------------------------
+
+  private turnStarted(): void {
+    if (this.turnStartedAt === null) this.turnStartedAt = Date.now()
+    this.sink.runtime({ status: 'running', turnStartedAt: this.turnStartedAt, error: undefined })
+  }
+
+  /** Items still streaming when a turn ends are finished as they are. */
+  private finishStreaming(): void {
+    for (const [, block] of this.blocks) block.done = true
+    this.blocks.clear()
+    const now = Date.now()
+    for (const [id, tool] of this.tools) {
+      if (tool.kind === 'tool' && (tool.status === 'running' || tool.status === 'pending')) {
+        const next: ToolItem = { ...tool, status: this.interrupting ? 'denied' : 'done', endedAt: now }
+        this.tools.set(id, next)
+        this.sink.item(next)
+      } else if (tool.kind === 'agent' && tool.status === 'running' && !tool.background) {
+        const next: AgentItem = { ...tool, status: this.interrupting ? 'stopped' : 'done', endedAt: now, activity: undefined }
+        this.tools.set(id, next)
+        this.sink.item(next)
+      }
+    }
+  }
+
+  private cancelInteractions(): void {
+    for (const [, open] of this.interactions) this.sink.item({ ...open.item, state: 'cancelled' })
+    this.interactions.clear()
+  }
+
+  private onExit(code: number | null, stderr: string): void {
+    for (const [, waiter] of this.pending) waiter.reject(new Error('Claude Code wurde beendet.'))
+    this.pending.clear()
+    const wasRunning = this.turnStartedAt !== null
+    this.finishStreaming()
+    this.cancelInteractions()
+    this.turnStartedAt = null
+    const error = this.stopping || code === 0 ? undefined : lastLines(stderr) || `Claude Code wurde beendet (Code ${code ?? 'unbekannt'}).`
+    if (error && wasRunning) {
+      this.sink.item({ kind: 'notice', id: randomUUID(), ts: Date.now(), provider: 'claude', level: 'error', text: 'Claude Code wurde unerwartet beendet', detail: error })
+    }
+    this.sink.exited(error)
+  }
+}
+
+function questionsOf(input: Json): Question[] {
+  const questions = Array.isArray(input.questions) ? input.questions.filter(isPlainObject) : []
+  return questions.map((q) => ({
+    // Claude Code wants the answers keyed by the question's text.
+    id: str(q.question) ?? '',
+    header: str(q.header) ?? '',
+    question: str(q.question) ?? '',
+    multiSelect: q.multiSelect === true,
+    allowOther: true,
+    options: (Array.isArray(q.options) ? q.options.filter(isPlainObject) : []).map((o) => ({
+      label: str(o.label) ?? '',
+      description: str(o.description),
+      preview: str(o.preview),
+    })),
+  }))
+}
+
+function lastLines(text: string, count = 6): string {
+  return text.split(/\r?\n/).filter((l) => l.trim()).slice(-count).join('\n')
+}

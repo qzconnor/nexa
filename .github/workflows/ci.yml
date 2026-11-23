@@ -1,0 +1,45 @@
+# Checks every pull request: the unit tests on Windows and Linux, then the same builds as the
+# release (typecheck included, without publishing), so a broken installer or package never reaches main.
+name: CI
+
+on:
+  pull_request:
+
+# The install scripts of the dependencies run here: the token may only read.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows-Build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run release:build
+
+  linux:
+    name: Linux-Build
+    runs-on: ubuntu-latest
+    # Like the release: built on Debian 12.
+    container: node:24-bookworm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # rpmbuild for the rpm package.
+      - run: apt-get update && apt-get install -y rpm
+      - run: npm ci
+      - run: npm test
+      - run: npm run release:build:linux

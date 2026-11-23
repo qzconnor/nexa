@@ -1,0 +1,136 @@
+appId: local.nexa
+productName: Nexa
+copyright: Copyright © 2026 Connor Breuer
+
+directories:
+  output: release/${version}
+  buildResources: build
+
+# Use the Electron build from node_modules instead of downloading it again.
+electronDist: node_modules/electron/dist
+
+files:
+  - out/**
+  - package.json
+  # Debug symbols and koffi's sources and docs are not needed at runtime.
+  - '!**/*.{pdb,map}'
+  - '!node_modules/koffi/{doc,vendor,cnoke.cjs,CHANGELOG.md}'
+
+asar: true
+# koffi's native module (.node) must live on disk.
+asarUnpack:
+  - node_modules/koffi/**
+  - node_modules/@koromix/**
+
+# Cookies on disk encrypted like Chrome's (DPAPI, the keyring on Linux): the logins in the browser
+# beside the chat. One way only: turned off again, the encrypted cookies can't be read any more.
+electronFuses:
+  enableCookieEncryption: true
+  # The app can't be made to run other code through the environment or a debugger: NODE_OPTIONS
+  # (e.g. --require) and --inspect are ignored, and it only starts from its own app.asar. Running
+  # as Node stays, the app asks the login shell for its environment with it (Linux, shell-env.ts).
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+
+# koffi uses Node-API and ships prebuilds, nothing has to be compiled for Electron.
+npmRebuild: false
+
+# Where the installed app looks for updates (electron-updater reads it from app-update.yml).
+# Releases are published by semantic-release (release.config.mjs), the build itself never publishes.
+publish:
+  provider: github
+  owner: qzconnor
+  repo: nexa
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  # The `nx` command line launcher (npm run build:launcher), registered by build/installer.nsh.
+  extraFiles:
+    - from: build/bin
+      to: bin
+      filter:
+        - nx.exe
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Nexa
+  artifactName: Nexa-${version}-Setup.${ext}
+  include: build/installer.nsh
+
+# Linux: an AppImage for every distribution (updates itself without a password) and packages for
+# Debian/Ubuntu and Fedora/openSUSE (updated by the package manager).
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  icon: build/icon.png
+  executableName: nexa
+  # The .desktop file is named after `desktopName` in package.json, which Electron uses as the window's
+  # app_id / WM_CLASS: the desktop shows the app's icon and groups its windows with the launcher.
+  syncDesktopName: true
+  category: Development
+  synopsis: Ein Chat für Coding-Agenten wie Claude Code und Codex
+  description: Claude Code und Codex mit derselben Oberfläche, mit Projekten, Agents, Freigaben, Browser, Dateien und Usage.
+  maintainer: Connor Breuer
+  vendor: Connor Breuer
+  desktop:
+    entry:
+      Keywords: claude;claude code;codex;chat;ai;agent;
+  files:
+    # koffi only calls Windows APIs (the window material).
+    - '!node_modules/koffi/**'
+    - '!node_modules/@koromix/**'
+  # The window's icon (src/main/window/main-window.ts).
+  extraResources:
+    - from: build/icon.png
+      to: icon.png
+
+# The static AppImage runtime: runs without libfuse2, which e.g. Ubuntu 24.04 no longer installs.
+toolsets:
+  appimage: '1.0.3'
+
+appImage:
+  artifactName: Nexa-${version}.${ext}
+
+deb:
+  artifactName: Nexa-${version}.${ext}
+  # electron-builder's list plus what Chromium loads besides (graphics buffers, audio). Since Ubuntu
+  # 24.04 and Debian 13 the libraries are called …t64; the old names are only virtual packages there,
+  # and for libasound2 apt would otherwise pick an OSS emulation that Electron can't start with.
+  depends:
+    - libgtk-3-0t64 | libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0t64 | libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libgbm1
+    - libasound2t64 | libasound2
+
+rpm:
+  artifactName: Nexa-${version}.${ext}
+  depends:
+    - gtk3
+    - libnotify
+    - nss
+    - libXScrnSaver
+    - (libXtst or libXtst6)
+    - xdg-utils
+    - at-spi2-core
+    - (libuuid or libuuid1)
+    - (mesa-libgbm or libgbm1)
+    - (alsa-lib or libasound2)

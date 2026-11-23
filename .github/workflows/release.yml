@@ -1,0 +1,138 @@
+# Every push to main: semantic-release decides the next version from the commits. The Windows
+# installer and the Linux packages are built with it, each on its own system, and semantic-release
+# publishes them together as one GitHub release – the apps update themselves from there.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# Read only by default: the builds run the install scripts of all dependencies (Electron download)
+# and need no more. Only the jobs that run semantic-release may write.
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # Only semantic-release is needed here, not Electron.
+      - run: npm ci --ignore-scripts
+      # The dry run only decides the version (release.config.mjs writes it to .release-version), without
+      # a release-worthy commit there is none and nothing is built.
+      - id: next
+        run: |
+          npx semantic-release --dry-run
+          if [ -f .release-version ]; then echo "version=$(cat .release-version)" >> "$GITHUB_OUTPUT"; fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows:
+    name: Windows-Build
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # postinstall downloads the Electron binary; nx.exe is built with the .NET Framework's csc.
+      - run: npm ci
+      - run: npm test
+      # The version in package.json stays unchanged in the repository, only the build gets the new one.
+      - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
+      - run: npm run release:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            release/*/Nexa-*-Setup.exe
+            release/*/Nexa-*-Setup.exe.blockmap
+            release/*/latest.yml
+          if-no-files-found: error
+
+  linux:
+    name: Linux-Build
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    # Debian 12 like the Claude Manager: the packages are built with the tools of a common distribution
+    # rather than the newest Ubuntu of the runner.
+    container: node:24-bookworm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # rpmbuild for the rpm package; deb and AppImage need nothing beyond the image.
+      - run: apt-get update && apt-get install -y rpm
+      # postinstall downloads the Electron binary.
+      - run: npm ci
+      - run: npm test
+      - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
+      - run: npm run release:build:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            release/*/Nexa-*.AppImage
+            release/*/Nexa-*.deb
+            release/*/Nexa-*.rpm
+            release/*/latest-linux.yml
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: [version, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Where release.config.mjs looks for the assets, as if they had been built here. The artifacts
+      # already contain the version folder (upload-artifact keeps everything after `release/`).
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      # semantic-release only warns about a missing asset and publishes the release without it.
+      - name: Check the assets
+        run: ls -l release/${{ needs.version.outputs.version }}/{Nexa-*-Setup.exe,Nexa-*-Setup.exe.blockmap,latest.yml,Nexa-*.AppImage,Nexa-*.deb,Nexa-*.rpm,latest-linux.yml}
+      - run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

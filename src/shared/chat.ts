@@ -1,0 +1,287 @@
+/**
+ * The chat model every agent CLI is mapped onto. Claude Code (stream-json) and Codex (app-server)
+ * speak different protocols; their providers in `src/main/providers` translate both into these
+ * items, so the renderer draws one timeline no matter which CLI produced it, and a session can move
+ * from one CLI to the other.
+ */
+
+export type ProviderId = 'claude' | 'codex'
+export const PROVIDER_IDS: readonly ProviderId[] = ['claude', 'codex']
+
+/** How freely the agent may act. Each provider maps it onto its own flags (see providers/*). */
+export type PermissionMode = 'ask' | 'edits' | 'plan' | 'auto' | 'full'
+
+export interface ItemBase {
+  /** Stable while an item streams and when it is finished: updates replace the item with the same id. */
+  id: string
+  /** Milliseconds since the epoch, when the item began. */
+  ts: number
+  provider: ProviderId
+  /** The agent item this one belongs to (work of a subagent), null on the main thread. */
+  parentId?: string | null
+}
+
+export interface UserItem extends ItemBase {
+  kind: 'user'
+  text: string
+  /** Absolute paths of attached images. */
+  images?: string[]
+  /** Set on the hidden context Nexa sends when a session moves to another CLI. */
+  handoff?: boolean
+}
+
+export interface AssistantItem extends ItemBase {
+  kind: 'assistant'
+  text: string
+  streaming?: boolean
+  /** Codex separates commentary between tool calls from its final answer. */
+  phase?: 'commentary' | 'final'
+}
+
+export interface ThinkingItem extends ItemBase {
+  kind: 'thinking'
+  text: string
+  streaming?: boolean
+}
+
+/** What a tool does, for its icon and how its input and output are shown. */
+export type ToolKind =
+  | 'bash'
+  | 'read'
+  | 'edit'
+  | 'write'
+  | 'search'
+  | 'web'
+  | 'mcp'
+  | 'todo'
+  | 'plan'
+  | 'question'
+  | 'render'
+  | 'image'
+  | 'other'
+
+export type ToolStatus = 'pending' | 'running' | 'done' | 'error' | 'denied'
+
+export interface FileChange {
+  path: string
+  type: 'add' | 'update' | 'delete'
+  /** Unified diff, when the CLI reports one (Codex). */
+  diff?: string
+  /** Replaced and new text of an edit (Claude's Edit tool), or the whole new file (Write). */
+  oldText?: string
+  newText?: string
+  movePath?: string
+}
+
+export interface ToolItem extends ItemBase {
+  kind: 'tool'
+  tool: ToolKind
+  /** The CLI's own name of the tool, e.g. `Bash`, `mcp__nexa__render_chart`, `commandExecution`. */
+  name: string
+  /** Short label for the row, e.g. "Befehl ausführen". */
+  title: string
+  /** The main argument in one line: command, path, pattern, URL. */
+  detail?: string
+  input?: unknown
+  output?: string
+  status: ToolStatus
+  changes?: FileChange[]
+  /** MCP server of the tool. */
+  server?: string
+  /** Something Nexa draws in the chat (its own MCP tools). */
+  render?: RenderSpec
+  exitCode?: number | null
+  startedAt: number
+  endedAt?: number
+}
+
+export type AgentStatus = 'running' | 'done' | 'error' | 'stopped'
+
+/** A subagent: its own work is in the items whose `parentId` is this item's id. */
+export interface AgentItem extends ItemBase {
+  kind: 'agent'
+  /** Type of agent, e.g. `Explore`, `general-purpose`, or Codex's spawned agent. */
+  agentType: string
+  description: string
+  prompt?: string
+  status: AgentStatus
+  model?: string
+  /** Its final answer. */
+  result?: string
+  /** What it does right now, e.g. the title of its running tool. */
+  activity?: string
+  toolCount?: number
+  background?: boolean
+  startedAt: number
+  endedAt?: number
+}
+
+export interface PermissionOption {
+  id: 'allow' | 'allow-session' | 'deny'
+  label: string
+}
+
+export interface QuestionOption {
+  label: string
+  description?: string
+  preview?: string
+}
+
+export interface Question {
+  id: string
+  header: string
+  question: string
+  options: QuestionOption[]
+  multiSelect: boolean
+  /** A free answer besides the options. */
+  allowOther: boolean
+  secret?: boolean
+}
+
+export type InteractionRequest =
+  | {
+      type: 'permission'
+      toolName: string
+      title: string
+      description?: string
+      /** Command, path or URL the permission is about. */
+      detail?: string
+      input?: unknown
+      changes?: FileChange[]
+      reason?: string
+      options: PermissionOption[]
+    }
+  | { type: 'question'; questions: Question[] }
+  | { type: 'plan'; plan: string }
+  | { type: 'elicitation'; server: string; message: string; schema?: Record<string, unknown>; url?: string }
+
+export type InteractionResponse =
+  | { type: 'permission'; decision: PermissionOption['id']; message?: string }
+  | { type: 'question'; answers: Record<string, string[]> }
+  | { type: 'plan'; approve: boolean; mode?: PermissionMode; feedback?: string }
+  | { type: 'elicitation'; action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }
+
+/** A question of the agent to the user: answered right in the chat. */
+export interface InteractionItem extends ItemBase {
+  kind: 'interaction'
+  request: InteractionRequest
+  state: 'pending' | 'answered' | 'cancelled'
+  response?: InteractionResponse
+  /** The tool call it is about. */
+  toolItemId?: string
+}
+
+export interface TodoEntry {
+  text: string
+  status: 'pending' | 'in_progress' | 'completed'
+  /** Shown while the entry is in progress ("Tests werden ausgeführt"). */
+  activeText?: string
+}
+
+export interface TodoItem extends ItemBase {
+  kind: 'todo'
+  entries: TodoEntry[]
+  explanation?: string
+}
+
+export interface NoticeItem extends ItemBase {
+  kind: 'notice'
+  level: 'info' | 'warning' | 'error'
+  text: string
+  detail?: string
+}
+
+/** The end of a turn: how long it took and what it cost. */
+export interface TurnItem extends ItemBase {
+  kind: 'turn'
+  status: 'done' | 'error' | 'interrupted'
+  durationMs?: number
+  costUsd?: number
+  inputTokens?: number
+  outputTokens?: number
+  model?: string
+  error?: string
+}
+
+export type ChatItem =
+  | UserItem
+  | AssistantItem
+  | ThinkingItem
+  | ToolItem
+  | AgentItem
+  | InteractionItem
+  | TodoItem
+  | NoticeItem
+  | TurnItem
+
+export type ChatItemKind = ChatItem['kind']
+
+// ---------------------------------------------------------------------------------------------
+// Things Nexa draws in the chat: the input of its own MCP tools (src/main/mcp/render-tools.ts).
+
+export interface ChartSeries {
+  key: string
+  label?: string
+}
+
+export type RenderSpec =
+  | {
+      type: 'chart'
+      chart: 'bar' | 'line' | 'area' | 'pie' | 'donut'
+      title?: string
+      description?: string
+      /** Rows of the data; `x` names the column of the categories. */
+      data: Record<string, string | number>[]
+      x: string
+      series: ChartSeries[]
+      stacked?: boolean
+      unit?: string
+    }
+  | { type: 'diagram'; title?: string; description?: string; mermaid: string }
+  | {
+      type: 'table'
+      title?: string
+      description?: string
+      columns: { key: string; label: string; align?: 'left' | 'right' | 'center' }[]
+      rows: Record<string, string | number | boolean | null>[]
+    }
+  | {
+      type: 'stats'
+      title?: string
+      items: { label: string; value: string; hint?: string; trend?: 'up' | 'down' | 'flat' }[]
+    }
+  | { type: 'callout'; tone: 'info' | 'success' | 'warning' | 'danger'; title?: string; text: string }
+  | { type: 'code'; title?: string; language?: string; code: string }
+
+// ---------------------------------------------------------------------------------------------
+// Runtime of a session and events from the main process.
+
+export type SessionStatus = 'idle' | 'starting' | 'running' | 'waiting' | 'error' | 'stopped'
+
+export interface ContextUsage {
+  /** Tokens the conversation takes up in the model's context. */
+  used: number
+  window: number
+}
+
+export interface SessionRuntime {
+  status: SessionStatus
+  /** The CLI process is up (Claude) or the thread is loaded (Codex). */
+  connected: boolean
+  model?: string
+  context?: ContextUsage
+  /** Why the session stopped or what failed. */
+  error?: string
+  /** Since when the current turn runs. */
+  turnStartedAt?: number
+}
+
+export type SessionEvent =
+  | { type: 'item'; sessionId: string; item: ChatItem }
+  | { type: 'delta'; sessionId: string; itemId: string; field: 'text' | 'output'; text: string }
+  | { type: 'runtime'; sessionId: string; runtime: SessionRuntime }
+  | { type: 'cleared'; sessionId: string }
+
+export function isPendingInteraction(item: ChatItem): item is InteractionItem {
+  return item.kind === 'interaction' && item.state === 'pending'
+}

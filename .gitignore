@@ -1,0 +1,16 @@
+node_modules/
+out/
+release/
+build/bin/
+.release-version
+*.tsbuildinfo
+*.log
+.DS_Store
+Thumbs.db
+
+# Generated on demand (npm run codex:protocol), the reference for the Codex app-server protocol.
+docs/codex-protocol/
+
+# Local tool settings (coding assistants, MCP servers, analysis caches)
+.claude/settings.local.json
+.mcp.json

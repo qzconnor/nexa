@@ -1,0 +1,135 @@
+<script setup lang="ts">
+import { CloudOffIcon, ExternalLinkIcon, RefreshCwIcon, ScrollTextIcon } from '@lucide/vue'
+import { computed, onMounted } from 'vue'
+import { compareVersions } from '@shared/version'
+import ReleaseDetails from '@/components/updates/ReleaseDetails.vue'
+import UpdateStatus from '@/components/updates/UpdateStatus.vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useSettingsFilter } from '@/composables/useSettingsSearch'
+import { attempt } from '@/lib/errors'
+import { cn } from '@/lib/utils'
+import { useUpdatesStore } from '@/stores/updates'
+
+const updates = useUpdatesStore()
+const filter = useSettingsFilter()
+
+onMounted(() => {
+  updates.markSeen()
+  // Every time: a list loaded earlier may be outdated (or empty) by now.
+  if (!updates.releasesLoading) void updates.loadReleases()
+})
+
+const dateFormat = new Intl.DateTimeFormat('de', { day: 'numeric', month: 'long', year: 'numeric' })
+const formatDate = (iso: string) => (iso && !Number.isNaN(Date.parse(iso)) ? dateFormat.format(new Date(iso)) : '')
+
+const isInstalled = (version: string) => version === updates.state.current
+const isNewer = (version: string) => !!updates.state.current && compareVersions(version, updates.state.current) > 0
+
+const canCheck = computed(() => !['unsupported', 'checking', 'downloading', 'downloaded'].includes(updates.state.status))
+
+function openLink(url: string) {
+  void attempt(() => window.api.app.openExternal(url), 'Link konnte nicht geöffnet werden')
+}
+
+/** Links in the notes open in the browser; anchors within the notes are ignored. */
+function onNotesClick(event: MouseEvent) {
+  const link = (event.target as HTMLElement).closest('a')
+  if (!link) return
+  event.preventDefault()
+  if (/^https?:/i.test(link.href)) openLink(link.href)
+}
+</script>
+
+<template>
+  <div class="flex flex-col gap-6">
+    <div v-if="filter.shows('updates.status')" class="flex flex-col gap-4" data-setting="updates.status">
+      <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <p class="min-w-64 flex-1 text-sm text-muted-foreground">
+          Neue Versionen von Nexa und was sich darin geändert hat. Gesucht wird beim Start und alle 4 Stunden.
+        </p>
+        <div class="flex items-center gap-2">
+          <Badge v-if="updates.state.current" variant="secondary" class="tabular-nums">Version {{ updates.state.current }}</Badge>
+          <Button variant="outline" :disabled="!canCheck" @click="updates.check()">
+            <RefreshCwIcon data-icon="inline-start" :class="updates.state.status === 'checking' && 'animate-spin'" />
+            Jetzt suchen
+          </Button>
+        </div>
+      </div>
+      <UpdateStatus />
+    </div>
+
+    <section v-if="filter.shows('updates.notes')" class="flex flex-col gap-4" aria-labelledby="release-notes-heading" data-setting="updates.notes">
+      <h3 id="release-notes-heading" class="text-sm font-semibold">Versionshinweise</h3>
+
+      <div v-if="updates.releasesLoading && !updates.releases" class="flex flex-col gap-4">
+        <Skeleton v-for="n in 2" :key="n" class="h-36 w-full rounded-xl" />
+      </div>
+
+      <Empty v-else-if="updates.releasesError" class="border">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <CloudOffIcon />
+          </EmptyMedia>
+          <EmptyTitle>Versionshinweise nicht erreichbar</EmptyTitle>
+          <EmptyDescription class="selectable">{{ updates.releasesError }}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button variant="outline" size="sm" :disabled="updates.releasesLoading" @click="updates.loadReleases()">
+            Erneut laden
+          </Button>
+        </EmptyContent>
+      </Empty>
+
+      <Empty v-else-if="!updates.releases?.length" class="border">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ScrollTextIcon />
+          </EmptyMedia>
+          <EmptyTitle>Noch keine Versionen</EmptyTitle>
+          <EmptyDescription>Sobald eine Version veröffentlicht ist, steht sie hier.</EmptyDescription>
+        </EmptyHeader>
+        <!-- GitHub may answer with an empty list for a moment right after a release. -->
+        <EmptyContent>
+          <Button variant="outline" size="sm" :disabled="updates.releasesLoading" @click="updates.loadReleases()">
+            Erneut laden
+          </Button>
+        </EmptyContent>
+      </Empty>
+
+      <template v-else>
+        <Card
+          v-for="release in updates.releases"
+          :key="release.version"
+          :class="cn((release.version === updates.justUpdated || isNewer(release.version)) && 'bg-primary/5 ring-2 ring-primary/50')"
+        >
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <span class="tabular-nums">{{ release.version }}</span>
+              <Badge v-if="release.version === updates.justUpdated">Gerade aktualisiert</Badge>
+              <Badge v-else-if="isInstalled(release.version)" variant="secondary">Installiert</Badge>
+              <Badge v-else-if="isNewer(release.version)">Neu</Badge>
+            </CardTitle>
+            <CardDescription v-if="release.date">
+              <time :datetime="release.date">{{ formatDate(release.date) }}</time>
+            </CardDescription>
+            <CardAction>
+              <Button variant="ghost" size="sm" @click="openLink(release.url)">
+                Auf GitHub
+                <ExternalLinkIcon data-icon="inline-end" />
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent class="flex flex-col gap-3">
+            <!-- Rendered and sanitized by GitHub. -->
+            <div class="release-notes selectable" @click="onNotesClick" v-html="release.html" />
+            <ReleaseDetails v-if="release.references.length" :references="release.references" />
+          </CardContent>
+        </Card>
+      </template>
+    </section>
+  </div>
+</template>

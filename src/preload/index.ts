@@ -1,0 +1,173 @@
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
+import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
+import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
+import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
+import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
+
+function subscribe<Args extends unknown[]>(channel: string, cb: (...args: Args) => void): Unsubscribe {
+  const listener = (_event: IpcRendererEvent, ...args: unknown[]) => cb(...(args as Args))
+  ipcRenderer.on(channel, listener)
+  return () => {
+    ipcRenderer.removeListener(channel, listener)
+  }
+}
+
+const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args) as Promise<T>
+
+const api: NexaApi = {
+  platform: process.platform,
+  files: {
+    list: (dir) => invoke(FilesInvoke.list, dir),
+    status: (root) => invoke(FilesInvoke.status, root),
+    searchList: (root) => invoke(FilesInvoke.searchList, root),
+    watch: (trees) => invoke(FilesInvoke.watch, trees),
+    onChanged: (cb) => subscribe(FilesEvent.changed, cb),
+    diff: (root, path, full, base) => invoke(FilesInvoke.diff, root, path, full, base ?? null),
+    reviewBase: (root) => invoke(FilesInvoke.reviewBase, root),
+    create: (root, path, dir) => invoke(FilesInvoke.create, root, path, dir),
+    rename: (root, from, to) => invoke(FilesInvoke.rename, root, from, to),
+    trash: (root, path) => invoke(FilesInvoke.trash, root, path),
+    grep: (root, query) => invoke(FilesInvoke.grep, root, query),
+    stage: (root, path) => invoke(FilesInvoke.stage, root, path),
+    unstage: (root, path) => invoke(FilesInvoke.unstage, root, path),
+    discard: (root, path) => invoke(FilesInvoke.discard, root, path),
+    hunk: (root, path, change) => invoke(FilesInvoke.hunk, root, path, change),
+    history: (sessionId) => invoke(FilesInvoke.history, sessionId),
+    onTouched: (cb) => subscribe(FilesEvent.touched, cb),
+  },
+  updates: {
+    state: () => invoke(UpdatesInvoke.state),
+    check: () => invoke(UpdatesInvoke.check),
+    download: () => invoke(UpdatesInvoke.download),
+    install: () => invoke(UpdatesInvoke.install),
+    releases: () => invoke(UpdatesInvoke.releases),
+    reference: (number) => invoke(UpdatesInvoke.reference, number),
+    onChanged: (cb) => subscribe(UpdatesEvent.changed, cb),
+    onShow: (cb) => subscribe(UpdatesEvent.show, cb),
+  },
+  git: {
+    branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),
+    watch: (cwds) => invoke(FilesInvoke.gitWatch, cwds),
+    webUrl: (cwd) => invoke(FilesInvoke.gitWebUrl, cwd),
+    mainWorktree: (cwd) => invoke(FilesInvoke.gitMainWorktree, cwd),
+    onBranchChanged: (cb) => subscribe(FilesEvent.gitBranchChanged, cb),
+  },
+  browser: {
+    tabs: () => invoke(BrowserInvoke.tabs),
+    openTab: (sessionId, url, background) => invoke(BrowserInvoke.openTab, sessionId, url ?? null, background === true),
+    closeTab: (id) => invoke(BrowserInvoke.closeTab, id),
+    showTab: (sessionId, id) => invoke(BrowserInvoke.showTab, sessionId, id),
+    page: (id, page) => invoke(BrowserInvoke.page, id, page),
+    attach: (id, webContentsId) => invoke(BrowserInvoke.attach, id, webContentsId),
+    favicon: (url) => invoke(BrowserInvoke.favicon, url),
+    log: (id) => invoke(BrowserInvoke.log, id),
+    clearLog: (id) => invoke(BrowserInvoke.clearLog, id),
+    takeOver: (id, takenOver) => invoke(BrowserInvoke.takeOver, id, takenOver),
+    controls: () => invoke(BrowserInvoke.controls),
+    clearData: () => invoke(BrowserInvoke.clearData),
+    resetViewport: (id) => invoke(BrowserInvoke.resetViewport, id),
+    resetEmulation: (id) => invoke(BrowserInvoke.resetEmulation, id),
+    resetRoutes: (id) => invoke(BrowserInvoke.resetRoutes, id),
+    downloads: () => invoke(BrowserInvoke.downloads),
+    downloadAction: (id, action) => invoke(BrowserInvoke.downloadAction, id, action),
+    clearDownloads: () => invoke(BrowserInvoke.clearDownloads),
+    answerLogin: (id, credentials) => invoke(BrowserInvoke.loginAnswer, id, credentials),
+    onTabs: (cb) => subscribe(BrowserEvent.tabs, cb),
+    onShortcut: (cb) => subscribe(BrowserEvent.shortcut, cb),
+    onOpenTab: (cb) => subscribe(BrowserEvent.openTab, cb),
+    onDownloads: (cb) => subscribe(BrowserEvent.downloads, cb),
+    onLogin: (cb) => subscribe(BrowserEvent.login, cb),
+    onLoginDone: (cb) => subscribe(BrowserEvent.loginDone, cb),
+    onActivity: (cb) => subscribe(BrowserEvent.activity, cb),
+    onControl: (cb) => subscribe(BrowserEvent.control, cb),
+    onHighlight: (cb) => subscribe(BrowserEvent.highlight, cb),
+    onFocus: (cb) => subscribe(BrowserEvent.focus, cb),
+    onUserClick: (cb) => subscribe(BrowserEvent.userClick, cb),
+  },
+  app: {
+    info: () => invoke(IpcInvoke.appInfo),
+    openExternal: (url) => invoke(IpcInvoke.appOpenExternal, url),
+    openPath: (path) => invoke(IpcInvoke.appOpenPath, path),
+    showItem: (path) => invoke(IpcInvoke.appShowItem, path),
+    pickDirectory: (defaultPath) => invoke(IpcInvoke.appPickDirectory, defaultPath ?? null),
+    pickImages: () => invoke(IpcInvoke.appPickImages),
+    saveImage: (data, mime) => invoke(IpcInvoke.appSaveImage, data, mime),
+    pathForFile: (file) => webUtils.getPathForFile(file),
+  },
+  window: {
+    minimize: () => invoke(IpcInvoke.windowMinimize),
+    toggleMaximize: () => invoke(IpcInvoke.windowToggleMaximize),
+    state: () => invoke(IpcInvoke.windowState),
+    setTitleBarColors: (colors) => invoke(IpcInvoke.windowSetTitleBarColors, colors),
+    onState: (cb) => subscribe(IpcEvent.windowState, cb),
+  },
+  settings: {
+    get: () => invoke(IpcInvoke.settingsGet),
+    update: (patch) => invoke(IpcInvoke.settingsUpdate, patch),
+    onChanged: (cb) => subscribe(IpcEvent.settingsChanged, cb),
+  },
+  themes: {
+    list: () => invoke(IpcInvoke.themesList),
+    create: (theme) => invoke(IpcInvoke.themesCreate, theme),
+    save: (id, theme) => invoke(IpcInvoke.themesSave, id, theme),
+    remove: (id) => invoke(IpcInvoke.themesRemove, id),
+    export: (id) => invoke(IpcInvoke.themesExport, id),
+    import: (files) => invoke(IpcInvoke.themesImport, files ?? null),
+    openFile: (id) => invoke(IpcInvoke.themesOpenFile, id),
+    showFile: (id) => invoke(IpcInvoke.themesShowFile, id),
+    openFolder: () => invoke(IpcInvoke.themesOpenFolder),
+    onChanged: (cb) => subscribe(IpcEvent.themesChanged, cb),
+    onSaved: (cb) => subscribe(IpcEvent.themesSaved, cb),
+  },
+  providers: {
+    list: () => invoke(IpcInvoke.providersList),
+    refresh: () => invoke(IpcInvoke.providersRefresh),
+    models: (provider) => invoke(IpcInvoke.providersModels, provider),
+    onChanged: (cb) => subscribe(IpcEvent.providersChanged, cb),
+  },
+  accounts: {
+    list: () => invoke(IpcInvoke.accountsList),
+    refresh: () => invoke(IpcInvoke.accountsRefresh),
+    create: (input) => invoke(IpcInvoke.accountsCreate, input),
+    update: (id, patch) => invoke(IpcInvoke.accountsUpdate, id, patch),
+    remove: (id, deleteFolder) => invoke(IpcInvoke.accountsRemove, id, deleteFolder),
+    logins: () => invoke(IpcInvoke.accountsLogins),
+    login: (id) => invoke(IpcInvoke.accountsLogin, id),
+    loginCode: (id, code) => invoke(IpcInvoke.accountsLoginCode, id, code),
+    cancelLogin: (id) => invoke(IpcInvoke.accountsLoginCancel, id),
+    onChanged: (cb) => subscribe(IpcEvent.accountsChanged, cb),
+    onLogin: (cb) => subscribe(IpcEvent.accountsLogin, cb),
+  },
+  usage: {
+    get: () => invoke(IpcInvoke.usageGet),
+    refresh: () => invoke(IpcInvoke.usageRefresh),
+    stats: (days) => invoke(IpcInvoke.usageStats, days),
+    onChanged: (cb) => subscribe(IpcEvent.usageChanged, cb),
+  },
+  projects: {
+    list: () => invoke(IpcInvoke.projectsList),
+    create: (input) => invoke(IpcInvoke.projectsCreate, input),
+    update: (id, patch) => invoke(IpcInvoke.projectsUpdate, id, patch),
+    remove: (id) => invoke(IpcInvoke.projectsRemove, id),
+    onChanged: (cb) => subscribe(IpcEvent.projectsChanged, cb),
+  },
+  sessions: {
+    list: () => invoke(IpcInvoke.sessionsList),
+    create: (input) => invoke(IpcInvoke.sessionsCreate, input),
+    open: (id) => invoke(IpcInvoke.sessionsOpen, id),
+    send: (id, input) => invoke(IpcInvoke.sessionsSend, id, input),
+    interrupt: (id) => invoke(IpcInvoke.sessionsInterrupt, id),
+    respond: (id, itemId, response) => invoke(IpcInvoke.sessionsRespond, id, itemId, response),
+    update: (id, patch) => invoke(IpcInvoke.sessionsUpdate, id, patch),
+    remove: (id) => invoke(IpcInvoke.sessionsRemove, id),
+    stop: (id) => invoke(IpcInvoke.sessionsStop, id),
+    onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),
+    onEvent: (cb) => subscribe(IpcEvent.sessionEvent, cb),
+    onShow: (cb) => subscribe(IpcEvent.showSession, cb),
+  },
+  api: {
+    status: () => invoke(IpcInvoke.apiStatus),
+  },
+}
+
+contextBridge.exposeInMainWorld('api', api)

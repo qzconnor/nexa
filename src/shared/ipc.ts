@@ -1,0 +1,235 @@
+import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput } from './accounts'
+import type { InteractionResponse, ProviderId, SessionEvent } from './chat'
+import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
+import type {
+  ApiStatus,
+  AppInfo,
+  AppSettings,
+  DeepPartial,
+  ModelOption,
+  Platform,
+  Project,
+  ProviderStatus,
+  ProviderUsage,
+  UsageStats,
+  SendInput,
+  SessionCreateInput,
+  SessionDetail,
+  SessionMeta,
+  SessionUpdateInput,
+  WindowState,
+} from './types'
+import type { FilesApi, GitApi } from './files-ipc'
+import type { BrowserApi } from './browser-ipc'
+import type { UpdatesApi } from './updates'
+
+/** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
+export const IpcInvoke = {
+  appInfo: 'app:info',
+  appOpenExternal: 'app:open-external',
+  appOpenPath: 'app:open-path',
+  appShowItem: 'app:show-item',
+  appPickDirectory: 'app:pick-directory',
+  appPickImages: 'app:pick-images',
+  appSaveImage: 'app:save-image',
+
+  windowMinimize: 'window:minimize',
+  windowToggleMaximize: 'window:toggle-maximize',
+  windowState: 'window:state',
+  windowSetTitleBarColors: 'window:set-title-bar-colors',
+
+  settingsGet: 'settings:get',
+  settingsUpdate: 'settings:update',
+
+  themesList: 'themes:list',
+  themesCreate: 'themes:create',
+  themesSave: 'themes:save',
+  themesRemove: 'themes:remove',
+  themesExport: 'themes:export',
+  themesImport: 'themes:import',
+  themesOpenFile: 'themes:open-file',
+  themesShowFile: 'themes:show-file',
+  themesOpenFolder: 'themes:open-folder',
+
+  providersList: 'providers:list',
+  providersRefresh: 'providers:refresh',
+  providersModels: 'providers:models',
+
+  accountsList: 'accounts:list',
+  accountsRefresh: 'accounts:refresh',
+  accountsCreate: 'accounts:create',
+  accountsUpdate: 'accounts:update',
+  accountsRemove: 'accounts:remove',
+  accountsLogins: 'accounts:logins',
+  accountsLogin: 'accounts:login',
+  accountsLoginCode: 'accounts:login-code',
+  accountsLoginCancel: 'accounts:login-cancel',
+
+  usageGet: 'usage:get',
+  usageRefresh: 'usage:refresh',
+  usageStats: 'usage:stats',
+
+  projectsList: 'projects:list',
+  projectsCreate: 'projects:create',
+  projectsUpdate: 'projects:update',
+  projectsRemove: 'projects:remove',
+
+  sessionsList: 'sessions:list',
+  sessionsCreate: 'sessions:create',
+  sessionsOpen: 'sessions:open',
+  sessionsSend: 'sessions:send',
+  sessionsInterrupt: 'sessions:interrupt',
+  sessionsRespond: 'sessions:respond',
+  sessionsUpdate: 'sessions:update',
+  sessionsRemove: 'sessions:remove',
+  sessionsStop: 'sessions:stop',
+
+  apiStatus: 'api:status',
+} as const
+
+/** Events from main to the window. */
+export const IpcEvent = {
+  windowState: 'event:window-state',
+  settingsChanged: 'event:settings-changed',
+  /** A file in the themes folder came, went or changed (also by hand). */
+  themesChanged: 'event:themes-changed',
+  /** The app wrote a theme, with the theme. */
+  themesSaved: 'event:themes-saved',
+  providersChanged: 'event:providers-changed',
+  accountsChanged: 'event:accounts-changed',
+  /** A browser login of an account moved on (link known, done, failed). */
+  accountsLogin: 'event:accounts-login',
+  usageChanged: 'event:usage-changed',
+  projectsChanged: 'event:projects-changed',
+  sessionsChanged: 'event:sessions-changed',
+  sessionEvent: 'event:session',
+  /** The `nx` command or the local API asks the window to show a session. */
+  showSession: 'event:show-session',
+} as const
+
+export type Unsubscribe = () => void
+
+export interface ProjectCreateInput {
+  path: string
+  name?: string
+  /** Create the folder if it doesn't exist. */
+  create?: boolean
+}
+
+export interface NexaApi {
+  platform: Platform
+  /** The file panel beside the chat (shared/files-ipc.ts). */
+  files: FilesApi
+  git: GitApi
+  /** The browser beside each chat (shared/browser-ipc.ts). */
+  browser: BrowserApi
+  /** New versions and their release notes (shared/updates.ts). */
+  updates: UpdatesApi
+  app: {
+    info(): Promise<AppInfo>
+    openExternal(url: string): Promise<void>
+    openPath(path: string): Promise<void>
+    showItem(path: string): Promise<void>
+    pickDirectory(defaultPath?: string): Promise<string | null>
+    pickImages(): Promise<string[]>
+    /** Saves an image pasted into the composer, returns its path. */
+    saveImage(data: Uint8Array, mime: string): Promise<string>
+    pathForFile(file: File): string
+  }
+  window: {
+    minimize(): Promise<void>
+    toggleMaximize(): Promise<void>
+    state(): Promise<WindowState>
+    setTitleBarColors(colors: { color: string; symbolColor: string }): Promise<void>
+    onState(cb: (state: WindowState) => void): Unsubscribe
+  }
+  settings: {
+    get(): Promise<AppSettings>
+    update(patch: DeepPartial<AppSettings>): Promise<AppSettings>
+    onChanged(cb: (settings: AppSettings) => void): Unsubscribe
+  }
+  /** The user's own themes, one JSON file each in the folder `themes` of the app's data. */
+  themes: {
+    /** Every file of the folder; ones that can't be used with the reason. */
+    list(): Promise<CustomThemeEntry[]>
+    /** Saves a new theme (a name another theme has gets a number). */
+    create(theme: ThemeContent): Promise<CustomThemeEntry>
+    /** Saves the theme `id`; a new name renames its file, so its id changes. */
+    save(id: string, theme: ThemeContent): Promise<CustomThemeEntry>
+    /** Moves the file to the recycle bin. */
+    remove(id: string): Promise<void>
+    /** Saves the theme to a file the user picks. The path, or null when cancelled. */
+    export(id: string): Promise<string | null>
+    /** Takes over themes from `files`, or from files the user picks without; null when cancelled. */
+    import(files?: string[]): Promise<ThemeImportResult | null>
+    /** Opens the file in the program for JSON; false when there is none (the file is shown in Explorer then). */
+    openFile(id: string): Promise<boolean>
+    /** Shows the file selected in Explorer (the file manager). */
+    showFile(id: string): Promise<void>
+    openFolder(): Promise<void>
+    onChanged(cb: () => void): Unsubscribe
+    /** A theme the app wrote, before the folder's watcher reports it. */
+    onSaved(cb: (entry: CustomThemeEntry) => void): Unsubscribe
+  }
+  providers: {
+    list(): Promise<ProviderStatus[]>
+    refresh(): Promise<ProviderStatus[]>
+    models(provider: ProviderId): Promise<ModelOption[]>
+    onChanged(cb: (list: ProviderStatus[]) => void): Unsubscribe
+  }
+  /** Several logins per CLI, each with its own config folder (see shared/accounts.ts). */
+  accounts: {
+    list(): Promise<Account[]>
+    /** Reads the logins from the CLIs' files again. */
+    refresh(): Promise<Account[]>
+    create(input: AccountCreateInput): Promise<Account>
+    update(id: string, patch: AccountUpdateInput): Promise<Account>
+    /** `deleteFolder`: also Nexa's profile folder of the account (never one the user picked). */
+    remove(id: string, deleteFolder: boolean): Promise<void>
+    /** The browser logins that run. */
+    logins(): Promise<AccountLoginState[]>
+    /** Starts the CLI's browser login for the account. */
+    login(id: string): Promise<AccountLoginState>
+    /** A code the browser showed, for the CLI that waits for it. */
+    loginCode(id: string, code: string): Promise<void>
+    cancelLogin(id: string): Promise<void>
+    onChanged(cb: (list: Account[]) => void): Unsubscribe
+    onLogin(cb: (state: AccountLoginState) => void): Unsubscribe
+  }
+  usage: {
+    get(): Promise<ProviderUsage[]>
+    /** Reads the limits of every account, also of those whose CLI isn't running. */
+    refresh(): Promise<ProviderUsage[]>
+    /** Tokens and turns of Nexa's chats per day, the last `days` days. */
+    stats(days: number): Promise<UsageStats>
+    onChanged(cb: (list: ProviderUsage[]) => void): Unsubscribe
+  }
+  projects: {
+    list(): Promise<Project[]>
+    create(input: ProjectCreateInput): Promise<Project>
+    update(id: string, patch: Partial<Pick<Project, 'name' | 'collapsed' | 'pinned'>>): Promise<Project>
+    remove(id: string): Promise<void>
+    onChanged(cb: (list: Project[]) => void): Unsubscribe
+  }
+  sessions: {
+    list(): Promise<SessionMeta[]>
+    create(input: SessionCreateInput): Promise<SessionMeta>
+    /** The session with its chat; doesn't start the CLI. */
+    open(id: string): Promise<SessionDetail>
+    send(id: string, input: SendInput): Promise<void>
+    interrupt(id: string): Promise<void>
+    respond(id: string, itemId: string, response: InteractionResponse): Promise<void>
+    update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
+    remove(id: string): Promise<void>
+    /** Ends the CLI process of the session; the next prompt resumes it. */
+    stop(id: string): Promise<void>
+    onChanged(cb: (list: SessionMeta[]) => void): Unsubscribe
+    onEvent(cb: (event: SessionEvent) => void): Unsubscribe
+    onShow(cb: (id: string) => void): Unsubscribe
+  }
+  api: {
+    status(): Promise<ApiStatus>
+  }
+}
+
+export type { AppTheme }

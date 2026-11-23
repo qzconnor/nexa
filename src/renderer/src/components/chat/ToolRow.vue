@@ -1,0 +1,89 @@
+<script setup lang="ts">
+import { CheckIcon, ChevronRightIcon, CircleSlashIcon, XIcon } from '@lucide/vue'
+import { computed, ref, watch } from 'vue'
+import type { ToolItem } from '@shared/chat'
+import { Spinner } from '@/components/ui/spinner'
+import { formatDuration } from '@/lib/format'
+import { TOOL_META } from '@/lib/tools'
+import { cn } from '@/lib/utils'
+import { useProjectPath } from '@/composables/useProjectPath'
+import { useSettingsStore } from '@/stores/settings'
+import DiffView from './DiffView.vue'
+
+/**
+ * One tool call: icon in the colour of what it does, its title and main argument, its state. Opened,
+ * it shows what it changed (diff), ran (command and output) or found.
+ */
+const props = defineProps<{ tool: ToolItem }>()
+const settings = useSettingsStore()
+const { shorten } = useProjectPath()
+const detail = computed(() => (props.tool.detail ? shorten(props.tool.detail) : ''))
+
+const meta = computed(() => TOOL_META[props.tool.tool])
+const running = computed(() => props.tool.status === 'running' || props.tool.status === 'pending')
+const failed = computed(() => props.tool.status === 'error')
+const hasChanges = computed(() => !!props.tool.changes?.length)
+const output = computed(() => (props.tool.output ?? '').replace(/\s+$/, ''))
+const inputText = computed(() => {
+  const input = props.tool.input
+  if (input === undefined || input === null) return ''
+  if (props.tool.tool === 'bash') return detail.value
+  try {
+    return JSON.stringify(input, null, 2)
+  } catch {
+    return String(input)
+  }
+})
+const expandable = computed(() => hasChanges.value || !!output.value || (!!inputText.value && props.tool.tool !== 'read'))
+const duration = computed(() => (props.tool.endedAt ? props.tool.endedAt - props.tool.startedAt : null))
+
+// Edits open by themselves (unless tools stay folded), failures always.
+const open = ref((hasChanges.value && !settings.settings.chat.collapseTools) || failed.value)
+watch(failed, (now) => now && (open.value = true))
+watch(hasChanges, (now) => now && !settings.settings.chat.collapseTools && (open.value = true))
+</script>
+
+<template>
+  <div class="group/tool">
+    <button
+      type="button"
+      :disabled="!expandable"
+      class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[0.85rem] transition-colors enabled:hover:bg-muted/60"
+      :aria-expanded="expandable ? open : undefined"
+      @click="open = !open"
+    >
+      <component :is="meta.icon" :class="cn('size-3.5 shrink-0', meta.color)" />
+      <span :class="cn('shrink-0 font-medium', running && 'text-shimmer')">{{ tool.title }}</span>
+      <span v-if="detail" class="min-w-0 truncate font-mono text-[0.78rem] text-muted-foreground" :title="tool.detail">{{ detail }}</span>
+      <span v-if="tool.server && tool.tool === 'mcp'" class="shrink-0 rounded bg-muted px-1.5 text-[0.7rem] text-muted-foreground">{{ tool.server }}</span>
+      <span class="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-xs text-muted-foreground">
+        <span v-if="duration !== null && duration > 1500" class="tabular-nums opacity-0 transition-opacity group-hover/tool:opacity-100">{{ formatDuration(duration) }}</span>
+        <span v-if="tool.exitCode !== undefined && tool.exitCode !== null && tool.exitCode !== 0" class="font-mono text-destructive">exit {{ tool.exitCode }}</span>
+        <Spinner v-if="running" class="size-3.5" />
+        <XIcon v-else-if="failed" class="size-3.5 text-destructive" />
+        <CircleSlashIcon v-else-if="tool.status === 'denied'" class="size-3.5" />
+        <CheckIcon v-else class="size-3.5 text-(--tool-run) opacity-70" />
+        <ChevronRightIcon v-if="expandable" :class="cn('size-3.5 transition-transform', open && 'rotate-90')" />
+      </span>
+    </button>
+    <div v-if="open && expandable" class="mt-1 mb-2 ml-7 flex flex-col gap-2">
+      <template v-if="hasChanges">
+        <DiffView v-for="change in tool.changes" :key="change.path" :change="change" />
+      </template>
+      <pre
+        v-else-if="inputText && tool.tool !== 'read'"
+        class="selectable max-h-48 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)"
+      ><span v-if="tool.tool === 'bash'" class="text-(--syn-comment) select-none">$ </span>{{ inputText }}</pre>
+      <pre
+        v-if="output"
+        :class="
+          cn(
+            'selectable max-h-72 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)',
+            failed && 'border-destructive/40',
+          )
+        "
+        >{{ output.length > 20000 ? output.slice(0, 20000) + '\n…' : output }}</pre
+      >
+    </div>
+  </div>
+</template>
