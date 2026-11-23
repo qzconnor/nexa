@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, wa
 import type { ChatItem } from '@shared/chat'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
+import { pendingSteers } from '@/lib/steer'
 import { chatBlocks, type ChatBlock } from '@/lib/tools'
+import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import AgentCard from './AgentCard.vue'
 import InteractionCard from './InteractionCard.vue'
@@ -19,6 +21,13 @@ import UserMessage from './UserMessage.vue'
 /** The timeline of one thread: the main chat, or (with `parentId`) a subagent's work. */
 const props = defineProps<{ items: ChatItem[]; sessionId: string; parentId?: string | null }>()
 const settings = useSettingsStore()
+const sessions = useSessionsStore()
+
+/** Prompts sent into the running answer that it hasn't come to yet; afterwards they look like any other. */
+const pending = computed(() => {
+  const status = sessions.runtime(props.sessionId).status
+  return pendingSteers(props.items, status === 'running' || status === 'waiting' || status === 'starting')
+})
 
 const blocks = computed(() => chatBlocks(props.items, props.parentId ?? null, settings.settings.chat.showThinking))
 // A long chat renders its newest blocks only and older ones as the user scrolls up: hundreds of
@@ -136,7 +145,12 @@ const providerChanges = computed(() => {
       <ToolGroup v-if="block.type === 'tools'" :tools="block.tools" />
       <BrowserCard v-else-if="block.type === 'browser'" :tools="block.tools" :block-id="block.id" :session-id="sessionId" :live="block.id === liveBrowser" />
       <template v-else>
-        <UserMessage v-if="block.item.kind === 'user'" :item="block.item" :show-provider="providerChanges.has(block.item.id)" />
+        <UserMessage
+          v-if="block.item.kind === 'user'"
+          :item="block.item"
+          :pending="pending.has(block.item.id)"
+          :show-provider="providerChanges.has(block.item.id)"
+        />
         <div
           v-else-if="block.item.kind === 'assistant'"
           :class="block.item.phase === 'commentary' ? 'py-1 text-[0.92rem] text-foreground/85' : 'py-2'"

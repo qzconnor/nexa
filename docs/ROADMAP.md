@@ -55,18 +55,21 @@
 - [x] Keine Pause vor der Antwort: „Arbeitet …“ bleibt, bis wirklich Text zu sehen ist (ein Antwortblock
       beginnt leer, Gedanken können ausgeblendet sein)
 - [x] Kontext im Ring richtig: aus der letzten Antwort des Hauptchats statt aus der Summe aller Aufrufe eines
-      Turns (das ergab z. B. 324 %); bei Claude Code gemessen an der Grenze aus seinen Einstellungen
+      Turns (das ergab z. B. 324 %); bei Claude Code gemessen an der Grenze aus seinen Einstellungen. Der
+      Ring zählt während des Turns mit, Claude Code wird schon beim Start gefragt, und der letzte Stand
+      bleibt über einen Neustart der CLI oder von Nexa
 - [x] Kontext aufgeschlüsselt beim Hover über den Ring wie in Claude Desktop (Claude Code
       `get_context_usage`): Balken und Liste nach Art, Puffer fürs Zusammenfassen, frei, Werkzeuge bei Bedarf,
       aufklappbar MCP-Server, eigene Agents und Anweisungsdateien; Codex nennt nur die Summe
 - [x] Nachrichten in eine laufende Antwort heben sich ab: gestrichelt mit „In die laufende Antwort
-      geschickt“, in der Eingabe ein eigener Knopf dafür
+      geschickt“, bis der Turn, in den sie kamen, durch ist; danach wie jede andere. In der Eingabe ein
+      eigener Knopf dafür
 - [x] Gedanken offen im Verlauf statt eingeklappt
 - [x] „+“-Menü an der Eingabe wie in Claude Desktop statt der Büroklammer: „Dateien oder Fotos
       hinzufügen“ (Strg+U; Bilder hängen an, andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude
       `--add-dir`, Codex schreibbare Ordner; als Chips über der Eingabe), „Slash-Befehle“, „Konnektoren ›“
 - [x] Einzelne MCP-Server an- und ausschalten unter „Konnektoren“: Schalter mit Zustand, Werkzeugen und
-      Suche, gilt für alle Chats des Projekts. Claude Code schaltet im laufenden Prozess um (`mcp_status`,
+      Suche, gilt für alle Chats des Projekts. Ungenutzte (nie angemeldete) wie in der CLI eingeklappt. Claude Code schaltet im laufenden Prozess um (`mcp_status`,
       `mcp_toggle`, gilt nur für den Prozess, daher wendet Nexa es bei jedem Start an); Codex über
       `mcp_servers.<name>.enabled` in der Konfiguration des Threads, ab dem nächsten Prompt
 - [x] Prompt je Projekt und Trenner wie der Workspace-Prompt im Claude Manager: „Prompt …“ im
