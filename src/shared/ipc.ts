@@ -7,12 +7,14 @@ import type {
   AppSettings,
   CommandOption,
   DeepPartial,
+  FolderPromptInfo,
   McpServerInfo,
   ModelDefaults,
   ModelOption,
   Platform,
   Project,
   ProjectSection,
+  PromptTarget,
   ProviderStatus,
   ProviderUsage,
   UsageStats,
@@ -85,6 +87,8 @@ export const IpcInvoke = {
   projectsList: 'projects:list',
   projectsCreate: 'projects:create',
   projectsUpdate: 'projects:update',
+  projectsPrompt: 'projects:prompt',
+  projectsSetPrompt: 'projects:set-prompt',
   projectsRemove: 'projects:remove',
   projectsArrange: 'projects:arrange',
   projectsToSection: 'projects:to-section',
@@ -257,6 +261,10 @@ export interface NexaApi {
     list(): Promise<Project[]>
     create(input: ProjectCreateInput): Promise<Project>
     update(id: string, patch: Partial<Pick<Project, 'name' | 'collapsed'>>): Promise<Project>
+    /** The prompt of a project or a separator for a folder (`cm_prompts.md`, as in the Claude Manager). */
+    prompt(target: PromptTarget): Promise<FolderPromptInfo>
+    /** Its chats get it from the next start of their CLI on. */
+    setPrompt(target: PromptTarget, text: string): Promise<void>
     remove(id: string): Promise<void>
     onChanged(cb: (list: Project[]) => void): Unsubscribe
     /** The order of separators and projects after a drag and drop (shared/sections.ts). */

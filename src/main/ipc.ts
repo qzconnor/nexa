@@ -9,7 +9,7 @@ import { IpcEvent, IpcInvoke, type SectionCreateInput, type SectionUpdateInput }
 import type { SectionLayout } from '@shared/sections'
 import { parseThemeFile } from '@shared/themes/file'
 import type { ThemeContent } from '@shared/themes/types'
-import type { AppInfo, SessionMoveInput } from '@shared/types'
+import type { AppInfo, PromptTarget, SessionMoveInput } from '@shared/types'
 import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
 import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
@@ -57,6 +57,14 @@ export function handle(channel: string, listener: (event: IpcMainInvokeEvent, ..
 function str(value: unknown, what: string): string {
   if (typeof value !== 'string') throw new Error(`${what} fehlt.`)
   return value
+}
+
+/** Whose prompt: a project or a separator, by id (the folder comes from Nexa's own list, never from the window). */
+function promptTarget(value: unknown): PromptTarget {
+  if (!value || typeof value !== 'object') throw new Error('Das Ziel des Prompts fehlt.')
+  const { kind, id } = value as Record<string, unknown>
+  if (kind !== 'project' && kind !== 'section') throw new Error('Unbekanntes Ziel des Prompts.')
+  return { kind, id: str(id, 'Das Projekt') }
 }
 
 function absolutePath(value: unknown, what: string): string {
@@ -264,6 +272,8 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.projectsList, () => projects.list())
   handle(IpcInvoke.projectsCreate, (_e, input: unknown) => projects.create(input as never))
   handle(IpcInvoke.projectsUpdate, (_e, id: unknown, patch: unknown) => projects.update(str(id, 'Das Projekt'), (patch ?? {}) as never))
+  handle(IpcInvoke.projectsPrompt, (_e, target: unknown) => projects.readPrompt(promptTarget(target)))
+  handle(IpcInvoke.projectsSetPrompt, (_e, target: unknown, text: unknown) => projects.writePrompt(promptTarget(target), str(text, 'Der Prompt')))
   handle(IpcInvoke.projectsRemove, async (_e, id: unknown) => {
     const projectId = str(id, 'Das Projekt')
     await sessions.removeProject(projectId)

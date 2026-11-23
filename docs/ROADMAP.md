@@ -69,9 +69,15 @@
       Suche, gilt für alle Chats des Projekts. Claude Code schaltet im laufenden Prozess um (`mcp_status`,
       `mcp_toggle`, gilt nur für den Prozess, daher wendet Nexa es bei jedem Start an); Codex über
       `mcp_servers.<name>.enabled` in der Konfiguration des Threads, ab dem nächsten Prompt
+- [x] Prompt je Projekt und Trenner wie der Workspace-Prompt im Claude Manager: „Prompt …“ im
+      Kontextmenü, der Text steht als `cm_prompts.md` im Ordner (dieselbe Datei wie im Claude Manager). Jeder
+      Chat darunter bekommt ihn zusätzlich, der äußerste zuerst (Claude `--append-system-prompt`, Codex
+      `developerInstructions`), ab dem nächsten Start seiner CLI
 
 ## Als Nächstes
 
+- [ ] **Chat bleibt unten**: Manchmal scrollt der Chat nicht mehr mit, die neuen Nachrichten laufen
+      unten weg und die Ansicht steht mitten in der Session statt dort, wo etwas passiert.
 - [ ] **„Plugins ›“ im „+“-Menü**: installierte Plugins der CLI zeigen und schalten (Claude Code
       `reload_plugins`, `enabledPlugins` in den Einstellungen; Codex `plugin/list`), „Konnektoren
       verwalten“ zu den Einstellungen der CLIs, `mcp_reconnect` und `mcp_authenticate` für Server, die
@@ -82,10 +88,6 @@
       `claude-transcript.ts` als Items nachtragen; dazu „Aktualisieren“ im Menü des Chats. Vor dem
       Fortsetzen warnen, wenn die Sitzung gerade in einer CLI außerhalb offen ist (Claude:
       `<config>/sessions/<pid>.json`). Codex: `thread/read`, `thread/turns/list`.
-- [ ] **System-Prompt je Projekt und Trenner** wie der Workspace-Prompt im Claude Manager: Dialog
-      „Prompt von …“ im Kontextmenü, der Text steht als Datei im Ordner (vorhandene `cm_prompts.md` gelten
-      mit). Jede Session darunter bekommt ihn zusätzlich, der äußerste zuerst (Claude
-      `--append-system-prompt`, Codex `developerInstructions`); gilt für neu startende CLIs.
 - [ ] **Artefakte und Sites** als eigener Eintrag unter „Neuer Chat“ in der Sidebar: Claudes Artefakte
       (claude.ai, je Account; die Seite „Artefakte“ des Claude Managers, `artifact-service.ts`) und die
       Sites von Codex in einer Liste mit Suche, Vorschau im Browser-Panel und Sprung in den Chat, aus dem

@@ -34,6 +34,7 @@ import { TypedEmitter } from '../lib/typed-emitter'
 import type { NexaMcpServer } from '../mcp/mcp-server'
 import { nexaToolsOn, type NexaToolGrant } from '../mcp/tool-grant'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
+import { folderPromptText } from './folder-prompts'
 import { handoffContext, sessionInstructions } from './instructions'
 import type { ProjectService } from './project-service'
 import type { ProviderService } from './provider-service'
@@ -593,11 +594,17 @@ export class SessionService extends TypedEmitter<Events> {
           resumeId: meta.cli[provider]?.sessionId,
           resumePath: meta.cli[provider]?.resumePath,
           account: this.accounts.env(accountId),
-          instructions: sessionInstructions({
-            renderTools: !!mcp && tools.renderTools,
-            browserTools: !!mcp && tools.browserTools,
-            projectName: project.name,
-          }),
+          instructions: [
+            sessionInstructions({
+              renderTools: !!mcp && tools.renderTools,
+              browserTools: !!mcp && tools.browserTools,
+              projectName: project.name,
+            }),
+            // The user's own for the project and the separators around it (`cm_prompts.md`).
+            folderPromptText(await this.projects.promptsFor(project.id)),
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
           mcp,
           noChrome: !!mcp && tools.browserTools && tools.noClaudeInChrome,
           mcpOff: project.mcpOff?.[provider],

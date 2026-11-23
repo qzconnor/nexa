@@ -227,6 +227,23 @@ export interface Project {
   mcpOff?: Partial<Record<ProviderId, string[]>>
 }
 
+/** Whose prompt (`cm_prompts.md` in its folder): a project's or a separator's that stands for a folder. */
+export interface PromptTarget {
+  kind: 'project' | 'section'
+  id: string
+}
+
+/** A folder's prompt for the dialog that edits it. */
+export interface FolderPromptInfo {
+  name: string
+  path: string
+  /** The file's name in the folder. */
+  file: string
+  text: string
+  /** The separators around it whose prompts a chat gets first, the outermost first. */
+  outer: string[]
+}
+
 /** An MCP server of a chat's CLI, for the switches in the composer's „+“ menu. */
 export interface McpServerInfo {
   /** As the CLI names it (`claude.ai ClickUp`, `rea` …). */
