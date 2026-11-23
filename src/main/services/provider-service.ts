@@ -7,7 +7,7 @@ import type { AccountService } from '../accounts/account-service'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ClaudeProvider } from '../providers/claude/claude-provider'
 import { CodexProvider } from '../providers/codex/codex-provider'
-import type { AccountContext, AgentProvider, RunUsage } from '../providers/provider'
+import type { AccountContext, AgentProvider, McpServerState, RunUsage } from '../providers/provider'
 
 const USAGE_POLL_MS = 5 * 60_000
 
@@ -120,6 +120,11 @@ export class ProviderService extends TypedEmitter<Events> {
 
   commands(id: ProviderId, account: string | undefined, cwd: string): Promise<CommandOption[]> {
     return this.providers[id].commands(this.context(this.accountOf(id, account)), cwd)
+  }
+
+  /** The MCP servers the CLI starts in a folder with this account (`accountId` resolved already). */
+  mcpServers(id: ProviderId, accountId: string, cwd: string): Promise<McpServerState[]> {
+    return this.providers[id].mcpServers(this.context(accountId), cwd)
   }
 
   usage(): ProviderUsage[] {

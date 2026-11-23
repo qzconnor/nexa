@@ -12,7 +12,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose
        --include-partial-messages --forward-subagent-text
        --permission-prompt-tool stdio --permission-mode <modus>
        [--model …] [--effort …] [--resume <id>] [--append-system-prompt …]
-       [--mcp-config <json> --allowedTools=<mcp__nexa__…,…>] [--no-chrome]
+       [--mcp-config <json> --allowedTools=<mcp__nexa__…,…>] [--no-chrome] [--add-dir=<ordner> …]
 ```
 
 - **Eingabe**: `{"type":"user","message":{"role":"user","content":[…]}}` je Zeile, Bilder als
@@ -64,6 +64,27 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   Argumente mit). Nicht genannte, z. B. die heiklen Browser-Werkzeuge, fragen über `can_use_tool` und
   erscheinen als Freigabe im Chat. `--no-chrome` schaltet „Claude in Chrome“ ab, damit Claude den
   Browser von Nexa nimmt (Einstellung „Ohne ‚Claude in Chrome‘“, nur mit eingeschalteten Browser-Werkzeugen).
+- **Kontext**: Die Usage im `result` summiert alle API-Aufrufe eines Turns (mit Werkzeugen schnell ein
+  Vielfaches des Fensters). Den Kontext gibt die `usage` der letzten `assistant`-Nachricht des Hauptchats
+  (ohne `parent_tool_use_id`): `input_tokens + cache_creation_input_tokens + cache_read_input_tokens +
+  output_tokens`. Genau und aufgeschlüsselt: `get_context_usage { detail: "summary" }` liefert
+  `categories[]` (`id` wie `system_prompt`, `system_tools`, `mcp_tools`, `memory_files`, `messages`,
+  `autocompact_buffer`, `free_space`, mit `_deferred` für Werkzeuge, die erst bei Bedarf geladen werden;
+  `name`, `tokens`), `totalTokens`, `maxTokens` (die Grenze aus den Einstellungen, z. B.
+  `autoCompactWindow`, nicht das Fenster des Modells), `autoCompactThreshold`, `isAutoCompactEnabled`,
+  `mcpTools[]` (`name`, `serverName`, `tokens`, `isLoaded`), `agents[]`, `memoryFiles[]` (`path`, `type`,
+  `tokens`) und `skills`. Nexa fragt danach am Ende jedes Turns (`claude-context.ts`).
+- **MCP-Server**: `mcp_status` liefert `mcpServers[]` (`name`, `status`: `connected`, `failed`,
+  `needs-auth`, `pending`, `disabled`; `scope`, `tools[]`, `error`). `mcp_toggle { serverName, enabled }`
+  schaltet einen Server im laufenden Prozess; geprüft mit 2.1.330: Claude Code speichert das nicht
+  (`.claude.json` bleibt gleich), Nexa schickt es deshalb nach jedem Start für die Server, die im Projekt
+  aus sind. Ohne laufenden Chat fragt Nexa einen kurzen Prozess (`initialize`, gut 2 s warten, bis die
+  Server verbunden sind, dann `mcp_status`). Weitere Untertypen, die Nexa noch nicht nutzt:
+  `mcp_reconnect`, `mcp_authenticate`, `reload_plugins`, `rewind_files`, `cancel_async_message`
+  (eine eingereihte Nachricht zurücknehmen), `mcp_read_resource`, `apply_flag_settings`,
+  `get_session_cost`, `set_cwd`.
+- **Weitere Ordner**: `--add-dir=<ordner>` (je Ordner einmal) gibt Claude Zugriff außerhalb des
+  Arbeitsordners; gilt für den Prozess, Nexa startet ihn bei einer Änderung neu.
 
 ### Accounts, Login und Limits
 
@@ -134,8 +155,15 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
     Browser-Werkzeug wartet z. B., solange der Nutzer den Browser übernommen hat.
   - `mcp_servers.nexa.tools.<werkzeug>.approval_mode`: `approve` für die Werkzeuge ohne Rückfrage,
     `prompt` für die heiklen Browser-Werkzeuge (außer im Modus „Vollzugriff“).
+  - `mcp_servers.<name>.enabled = false` für die MCP-Server, die im Projekt aus sind (nur Namen aus
+    Buchstaben, Ziffern, `_` und `-`, sonst bricht der gepunktete Schlüssel).
+- **MCP-Server**: `mcpServerStatus/list` liefert `data[]` mit `name`, `runtimeStatus`, `authStatus`,
+  `tools` (Objekt je Werkzeug) und `serverInfo`; dabei ist `codex_apps`, Codex' eigener Server für die
+  Apps, den Nexa nicht anzeigt. Umschalten geht nur über die Konfiguration des Threads, also ab dem
+  nächsten Start des Threads.
 - **Turn**: `turn/start`; während ein Turn läuft, gehen weitere Nachrichten über `turn/steer`.
-  `turn/interrupt` bricht ab.
+  `turn/interrupt` bricht ab. Weitere Ordner zum Schreiben stehen in `sandboxPolicy.writableRoots`
+  (`{ type: "workspaceWrite", writableRoots, networkAccess }`) von `turn/start`.
 - **Benachrichtigungen**: `turn/started`, `turn/completed`, `item/started`, `item/completed`,
   `item/agentMessage/delta`, `item/reasoning/textDelta`, `item/reasoning/summaryTextDelta`,
   `item/commandExecution/outputDelta`, `turn/plan/updated`, `thread/tokenUsage/updated`,

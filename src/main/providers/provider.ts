@@ -1,5 +1,8 @@
-import type { ChatItem, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
-import type { CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage, SendInput, ShellOutput } from '@shared/types'
+import type { ChatItem, ContextDetail, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
+import type { CommandOption, McpServerInfo, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage, SendInput, ShellOutput } from '@shared/types'
+
+/** An MCP server as a CLI reports it; whether it is on for the project is Nexa's. */
+export type McpServerState = Omit<McpServerInfo, 'enabled'>
 import type { AccountEnv } from '../accounts/account-env'
 import type { ResolvedCommand } from './cli-binary'
 
@@ -53,6 +56,10 @@ export interface RunOptions {
   mcp?: { url: string; token: string; allowed: string[]; ask: string[] }
   /** Claude: start without Claude in Chrome, so it takes Nexa's browser (`--no-chrome`). */
   noChrome?: boolean
+  /** The user's MCP servers that stay off in this run (switched off for the project). */
+  mcpOff?: string[]
+  /** More folders the agent may work in (Claude `--add-dir`, Codex writable roots). */
+  dirs?: string[]
   extraArgs: string[]
 }
 
@@ -68,6 +75,15 @@ export interface AgentRun {
   shellOutput?(taskId: string): Promise<ShellOutput>
   /** Ends a shell task. */
   stopShell?(taskId: string): Promise<void>
+  /** What fills the context, by kind, for CLIs that tell (Claude Code); null while it can't be counted. */
+  contextDetail?(): Promise<ContextDetail | null>
+  /** The MCP servers of the running CLI with their state. */
+  mcpServers?(): Promise<McpServerState[]>
+  /**
+   * Switches an MCP server on or off while the run lives; false when the CLI takes it only at its
+   * start (the next prompt starts it anew, see `mcpOff`).
+   */
+  setMcpEnabled?(name: string, enabled: boolean): Promise<boolean>
   stop(): Promise<void>
   readonly alive: boolean
 }
@@ -85,6 +101,8 @@ export interface AgentProvider {
   modelDefaults(account: AccountContext, model: string): Promise<ModelDefaults>
   /** The commands and skills the composer offers in a folder. */
   commands(account: AccountContext, cwd: string): Promise<CommandOption[]>
+  /** The MCP servers the CLI would start in a folder, without a chat of its own running there. */
+  mcpServers(account: AccountContext, cwd: string): Promise<McpServerState[]>
   start(options: RunOptions, sink: RunSink): Promise<AgentRun>
   /**
    * Limits of the account's plan without a running session, if the CLI can tell. `wake`: also when

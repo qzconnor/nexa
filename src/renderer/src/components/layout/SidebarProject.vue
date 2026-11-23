@@ -8,6 +8,7 @@ import {
   FolderTreeIcon,
   PencilIcon,
   PlusIcon,
+  ScrollTextIcon,
   Trash2Icon,
 } from '@lucide/vue'
 import { computed, ref } from 'vue'
@@ -141,6 +142,7 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
         <ContextMenuItem @select="newChatInFolder"><FolderInputIcon /> Neuer Chat in Unterordner …</ContextMenuItem>
         <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
         <ContextMenuItem @select="rename"><PencilIcon /> Umbenennen</ContextMenuItem>
+        <ContextMenuItem @select="ui.promptTarget = { kind: 'project', id: project.id }"><ScrollTextIcon /> Prompt …</ContextMenuItem>
         <ContextMenuSub v-if="otherSections.length">
           <ContextMenuSubTrigger><ArrowRightIcon /> Verschieben nach</ContextMenuSubTrigger>
           <ContextMenuSubContent class="w-48">

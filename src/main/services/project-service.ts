@@ -14,10 +14,12 @@ import {
   sectionIdOf,
   type SectionLayout,
 } from '@shared/sections'
-import type { Project, ProjectSection } from '@shared/types'
+import type { ProviderId } from '@shared/chat'
+import type { FolderPromptInfo, Project, ProjectSection, PromptTarget } from '@shared/types'
 import { baseName } from '@shared/utils'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { TypedEmitter } from '../lib/typed-emitter'
+import { type FolderPrompt, PROMPT_FILE, readFolderPrompt, writeFolderPrompt } from './folder-prompts'
 
 interface Saved {
   version?: number
@@ -120,6 +122,21 @@ export class ProjectService extends TypedEmitter<{ changed: [Project[]]; section
     return project
   }
 
+  /** Switches an MCP server of a CLI on or off for the project's chats. */
+  async setMcpEnabled(id: string, provider: ProviderId, name: string, enabled: boolean): Promise<Project> {
+    const project = this.get(id)
+    if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
+    const off = new Set(project.mcpOff?.[provider] ?? [])
+    if (enabled) off.delete(name)
+    else off.add(name)
+    const mcpOff = { ...project.mcpOff, [provider]: [...off].sort() }
+    if (!off.size) delete mcpOff[provider]
+    if (Object.keys(mcpOff).length) project.mcpOff = mcpOff
+    else delete project.mcpOff
+    await this.save()
+    return project
+  }
+
   async touch(id: string): Promise<void> {
     const project = this.get(id)
     if (!project) return
@@ -130,6 +147,51 @@ export class ProjectService extends TypedEmitter<{ changed: [Project[]]; section
   async remove(id: string): Promise<void> {
     this.projects = this.projects.filter((p) => p.id !== id)
     await this.save()
+  }
+
+  // Prompts of projects and separators -----------------------------------------------------------
+
+  /**
+   * The folders whose prompt a chat of the project gets, the outermost first: the separators for a
+   * folder it lies in (a workspace in a workspace, too), then the project. Only folders Nexa knows:
+   * a `prompts.md` that comes with a cloned repository in a subfolder stays out.
+   */
+  promptFolders(projectId: string): { name: string; path: string }[] {
+    const project = this.get(projectId)
+    if (!project) return []
+    const sections = this.sectionList
+      .filter((s): s is ProjectSection & { path: string } => !!s.path && inFolder(project.path, s.path))
+      .sort((a, b) => folderKey(a.path).length - folderKey(b.path).length)
+      .map((s) => ({ name: s.name, path: s.path }))
+    const own = sections.some((s) => folderKey(s.path) === folderKey(project.path))
+    return own ? sections : [...sections, { name: project.name, path: project.path }]
+  }
+
+  /** The prompts of a project's chats, read as a CLI starts: a change counts from its next start. */
+  async promptsFor(projectId: string): Promise<FolderPrompt[]> {
+    const folders = this.promptFolders(projectId)
+    return Promise.all(folders.map(async (f) => ({ ...f, text: await readFolderPrompt(f.path) })))
+  }
+
+  /** The folder of a project or a separator with one, whose prompt it is. */
+  promptTarget(target: PromptTarget): { name: string; path: string } {
+    const owner = target.kind === 'project' ? this.get(target.id) : this.section(target.id)
+    if (!owner?.path) throw new Error(target.kind === 'project' ? 'Das Projekt gibt es nicht mehr.' : 'Dieser Trenner steht für keinen Ordner.')
+    return { name: owner.name, path: owner.path }
+  }
+
+  async readPrompt(target: PromptTarget): Promise<FolderPromptInfo> {
+    const { name, path } = this.promptTarget(target)
+    // The folders around it whose prompts come first.
+    const outer =
+      target.kind === 'project'
+        ? this.promptFolders(target.id).filter((f) => folderKey(f.path) !== folderKey(path))
+        : this.sectionList.filter((s) => s.path && s.id !== target.id && inFolder(path, s.path)).map((s) => ({ name: s.name, path: s.path! }))
+    return { name, path, file: PROMPT_FILE, text: await readFolderPrompt(path), outer: outer.map((f) => f.name) }
+  }
+
+  async writePrompt(target: PromptTarget, text: string): Promise<void> {
+    await writeFolderPrompt(this.promptTarget(target).path, text)
   }
 
   // Separators ---------------------------------------------------------------------------------

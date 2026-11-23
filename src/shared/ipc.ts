@@ -1,5 +1,5 @@
 import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput } from './accounts'
-import type { InteractionResponse, ProviderId, SessionEvent } from './chat'
+import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
 import type {
   ApiStatus,
@@ -7,11 +7,14 @@ import type {
   AppSettings,
   CommandOption,
   DeepPartial,
+  FolderPromptInfo,
+  McpServerInfo,
   ModelDefaults,
   ModelOption,
   Platform,
   Project,
   ProjectSection,
+  PromptTarget,
   ProviderStatus,
   ProviderUsage,
   UsageStats,
@@ -39,6 +42,7 @@ export const IpcInvoke = {
   appShowItem: 'app:show-item',
   appPickDirectory: 'app:pick-directory',
   appPickImages: 'app:pick-images',
+  appPickFiles: 'app:pick-files',
   appSaveImage: 'app:save-image',
 
   windowMinimize: 'window:minimize',
@@ -83,6 +87,8 @@ export const IpcInvoke = {
   projectsList: 'projects:list',
   projectsCreate: 'projects:create',
   projectsUpdate: 'projects:update',
+  projectsPrompt: 'projects:prompt',
+  projectsSetPrompt: 'projects:set-prompt',
   projectsRemove: 'projects:remove',
   projectsArrange: 'projects:arrange',
   projectsToSection: 'projects:to-section',
@@ -99,6 +105,9 @@ export const IpcInvoke = {
   sessionsRespond: 'sessions:respond',
   sessionsShellOutput: 'sessions:shell-output',
   sessionsStopShell: 'sessions:stop-shell',
+  sessionsContext: 'sessions:context',
+  sessionsMcpServers: 'sessions:mcp-servers',
+  sessionsSetMcp: 'sessions:set-mcp',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
   sessionsStop: 'sessions:stop',
@@ -168,6 +177,8 @@ export interface NexaApi {
     showItem(path: string): Promise<void>
     pickDirectory(defaultPath?: string): Promise<string | null>
     pickImages(): Promise<string[]>
+    /** Any files, for the composer's „Dateien oder Fotos hinzufügen“. */
+    pickFiles(defaultPath?: string): Promise<string[]>
     /** Saves an image pasted into the composer, returns its path. */
     saveImage(data: Uint8Array, mime: string): Promise<string>
     pathForFile(file: File): string
@@ -250,6 +261,10 @@ export interface NexaApi {
     list(): Promise<Project[]>
     create(input: ProjectCreateInput): Promise<Project>
     update(id: string, patch: Partial<Pick<Project, 'name' | 'collapsed'>>): Promise<Project>
+    /** The prompt of a project or a separator for a folder (`cm_prompts.md`, as in the Claude Manager). */
+    prompt(target: PromptTarget): Promise<FolderPromptInfo>
+    /** Its chats get it from the next start of their CLI on. */
+    setPrompt(target: PromptTarget, text: string): Promise<void>
     remove(id: string): Promise<void>
     onChanged(cb: (list: Project[]) => void): Unsubscribe
     /** The order of separators and projects after a drag and drop (shared/sections.ts). */
@@ -274,6 +289,12 @@ export interface NexaApi {
     /** The end of a shell's output (`itemId`: its tool item, see `ToolItem.shell`). */
     shellOutput(id: string, itemId: string): Promise<ShellOutput>
     stopShell(id: string, itemId: string): Promise<void>
+    /** What fills the chat's context, by kind, if its CLI tells (Claude Code while it runs). */
+    context(id: string): Promise<ContextDetail | null>
+    /** The MCP servers of the chat's CLI, each on or off for its project. */
+    mcpServers(id: string): Promise<McpServerInfo[]>
+    /** Switches a server on or off for the chat's project (its running chats take it at once or with the next prompt). */
+    setMcp(id: string, name: string, enabled: boolean): Promise<void>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
     remove(id: string): Promise<void>
     /** Ends the CLI process of the session; the next prompt resumes it. */

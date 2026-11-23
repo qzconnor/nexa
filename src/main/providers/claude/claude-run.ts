@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type {
   AgentItem,
+  ContextDetail,
   InteractionItem,
   InteractionRequest,
   InteractionResponse,
@@ -21,10 +22,15 @@ import type { CliBinary } from '../cli-binary'
 import { cliEnv } from '../cli-binary'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
-import type { AgentRun, RunOptions, RunSink } from '../provider'
+import { claudeMcpServers } from '../mcp-servers'
+import type { AgentRun, McpServerState, RunOptions, RunSink } from '../provider'
+import { contextDetailOf } from './claude-context'
 import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 
 type Json = Record<string, unknown>
+
+/** How long the context's count may take before the card makes do with the last one. */
+const CONTEXT_TIMEOUT_MS = 8000
 
 const MODE_FLAG: Record<PermissionMode, string> = {
   ask: 'default',
@@ -92,6 +98,8 @@ export function claudeArgs(options: RunOptions): string[] {
     if (options.mcp.allowed.length) args.push(`--allowedTools=${claudeToolNames(options.mcp.allowed).join(',')}`)
   }
   if (options.noChrome) args.push('--no-chrome')
+  // `=` form, one each: the option takes several values and would swallow what follows.
+  for (const dir of options.dirs ?? []) args.push(`--add-dir=${dir}`)
   args.push(...options.extraArgs)
   return args
 }
@@ -113,6 +121,13 @@ export class ClaudeRun implements AgentRun {
   private compactingSince: number | null = null
   /** The model's context window from the last result, for the context after a compaction. */
   private contextWindow: number | undefined
+  /**
+   * What the main thread's last API call took up: the context. The turn's result can't tell, its
+   * usage adds up every call of the turn (each tool call is one), many times the context.
+   */
+  private lastContext: number | undefined
+  /** The last count of what fills the context (`get_context_usage`). */
+  private lastDetail: ContextDetail | null = null
   private interrupting = false
   private model: string | undefined
   private stopping = false
@@ -131,6 +146,11 @@ export class ClaudeRun implements AgentRun {
     })
     sink.runtime({ status: 'starting', connected: true })
     void this.request({ subtype: 'initialize' }).catch(() => undefined)
+    // Claude Code keeps a switch only for the process, so each start applies the project's again;
+    // written before the first prompt, they are through before it is read.
+    for (const name of options.mcpOff ?? []) {
+      void this.request({ subtype: 'mcp_toggle', serverName: name, enabled: false }).catch(() => undefined)
+    }
   }
 
   get alive(): boolean {
@@ -168,6 +188,34 @@ export class ClaudeRun implements AgentRun {
   async stopShell(taskId: string): Promise<void> {
     if (!this.process.alive) return
     await this.request({ subtype: 'stop_task', task_id: taskId })
+  }
+
+  async mcpServers(): Promise<McpServerState[]> {
+    if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr.')
+    return claudeMcpServers(await this.request({ subtype: 'mcp_status' }))
+  }
+
+  async setMcpEnabled(name: string, enabled: boolean): Promise<boolean> {
+    if (!this.process.alive) return false
+    // A server the CLI doesn't know (gone from its config) has nothing to switch.
+    await this.request({ subtype: 'mcp_toggle', serverName: name, enabled }).catch(() => undefined)
+    return true
+  }
+
+  /**
+   * What fills the context, counted by Claude Code (`/context`). `summary` answers from the last
+   * response's usage and local estimates, without calls to the API, so it is quick and free. Once the
+   * process is gone, the last count stands.
+   */
+  async contextDetail(): Promise<ContextDetail | null> {
+    if (!this.process.alive) return this.lastDetail
+    const answer = await withTimeout(this.request({ subtype: 'get_context_usage', detail: 'summary' }), CONTEXT_TIMEOUT_MS).catch(() => null)
+    const detail = contextDetailOf(answer)
+    if (!detail) return this.lastDetail
+    this.lastDetail = detail
+    this.lastContext = detail.used
+    this.sink.runtime({ context: { used: detail.used, window: detail.window } })
+    return detail
   }
 
   async respond(itemId: string, response: InteractionResponse): Promise<void> {
@@ -311,6 +359,11 @@ export class ClaudeRun implements AgentRun {
     const messageId = str(message.id) ?? randomUUID()
     const parentId = this.parentOf(m)
     if (typeof message.model === 'string' && !parentId) this.model = message.model
+    if (!parentId && isPlainObject(message.usage)) {
+      const used = contextOf(message.usage)
+      // Claude Code's own messages (`<synthetic>`) come without usage.
+      if (used > 0) this.lastContext = used
+    }
     for (const raw of message.content) {
       if (!isPlainObject(raw)) continue
       if (raw.type === 'text') {
@@ -489,6 +542,7 @@ export class ClaudeRun implements AgentRun {
         this.sink.item(compactionNotice({ id: str(m.uuid) ?? randomUUID(), ts: Date.now(), provider: 'claude' }, compaction))
         // The result of a /compact reports no usage: the context shrinks here or not until the next turn.
         const after = compaction.after
+        if (after !== undefined) this.lastContext = after
         this.compactingSince = null
         this.sink.runtime({ compactingSince: undefined, ...(after !== undefined && this.contextWindow ? { context: { used: after, window: this.contextWindow } } : {}) })
         return
@@ -629,13 +683,17 @@ export class ClaudeRun implements AgentRun {
     this.compactingSince = null
     this.interrupting = false
     if (window) this.contextWindow = window
+    const used = this.lastContext
     this.sink.runtime({
       status: 'idle',
       turnStartedAt: undefined,
       compactingSince: undefined,
       model: this.model,
-      ...(window && input ? { context: { used: input + output, window } } : {}),
+      ...(this.contextWindow && used ? { context: { used, window: this.contextWindow } } : {}),
     })
+    // Claude Code's own count measures against the window its settings allow (it may compact before
+    // the model's is full); it replaces the estimate above a moment later.
+    void this.contextDetail()
   }
 
   private onRateLimit(m: Json): void {
@@ -864,6 +922,29 @@ function shellStatusOf(status: unknown): ShellStatus | undefined {
     default:
       return undefined
   }
+}
+
+/** Rejects when `promise` takes longer than `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      },
+    )
+  })
+}
+
+/** The tokens of one API call in the context: everything sent (cached or not) and the answer. */
+export function contextOf(usage: Json): number {
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  return num(usage.input_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens) + num(usage.output_tokens)
 }
 
 function lastLines(text: string, count = 6): string {

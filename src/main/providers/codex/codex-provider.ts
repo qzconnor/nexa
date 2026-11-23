@@ -3,7 +3,8 @@ import type { CommandOption, ModelDefaults, ModelOption, ProviderSettings, Provi
 import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import { CliBinary, type ResolvedCommand } from '../cli-binary'
-import type { AccountContext, AgentProvider, AgentRun, RunOptions, RunSink, RunUsage } from '../provider'
+import { codexMcpServers } from '../mcp-servers'
+import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { CodexClient, type CodexServerRequest } from './codex-client'
 import { CodexRun } from './codex-run'
 
@@ -186,6 +187,11 @@ export class CodexProvider implements AgentProvider {
     } catch {
       return cached?.skills ?? []
     }
+  }
+
+  /** The MCP servers of the account's config, as its app-server runs them (the same for every folder). */
+  async mcpServers(account: AccountContext): Promise<McpServerState[]> {
+    return codexMcpServers(await this.server(account).client.request('mcpServerStatus/list', {}))
   }
 
   /** The default model of the account: Codex's own config may name one this plan can't use. */
