@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
-import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionUpdateInput } from '@shared/types'
+import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
 import { useProjectsStore } from './projects'
 
 /** The chat of an opened session. */
@@ -19,7 +19,11 @@ const IDLE: SessionRuntime = { status: 'idle', connected: false }
  * loading ignores them: what came before its answer is in the answer (one IPC pipe keeps the order).
  */
 export const useSessionsStore = defineStore('sessions', () => {
-  const metas = ref<SessionMeta[]>([])
+  /** Every session the main process has, also those about to be deleted. */
+  const all = ref<SessionMeta[]>([])
+  /** Deleted, but for a few seconds still to be brought back (useChatRemoval): gone from every list. */
+  const hidden = reactive(new Set<string>())
+  const metas = computed(() => (hidden.size ? all.value.filter((m) => !hidden.has(m.id)) : all.value))
   const runtimes = reactive(new Map<string, SessionRuntime>())
   const chats = shallowReactive(new Map<string, SessionChat>())
   const activeId = ref<string | null>(null)
@@ -49,8 +53,8 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function load(): Promise<void> {
-    metas.value = await window.api.sessions.list()
-    window.api.sessions.onChanged((next) => (metas.value = next))
+    all.value = await window.api.sessions.list()
+    window.api.sessions.onChanged((next) => (all.value = next))
     window.api.sessions.onEvent(onEvent)
   }
 
@@ -126,7 +130,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function create(input: SessionCreateInput): Promise<SessionMeta> {
     const meta = await window.api.sessions.create(input)
-    if (!metas.value.some((m) => m.id === meta.id)) metas.value = [meta, ...metas.value]
+    if (!all.value.some((m) => m.id === meta.id)) all.value = [meta, ...all.value]
     await open(meta.id)
     return meta
   }
@@ -134,7 +138,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   /** A new chat that goes on from where this one is now; it opens. */
   async function fork(id: string): Promise<SessionMeta> {
     const meta = await window.api.sessions.fork(id)
-    if (!metas.value.some((m) => m.id === meta.id)) metas.value = [meta, ...metas.value]
+    if (!all.value.some((m) => m.id === meta.id)) all.value = [meta, ...all.value]
     await open(meta.id)
     return meta
   }
@@ -145,14 +149,14 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function update(id: string, patch: SessionUpdateInput): Promise<void> {
     const meta = await window.api.sessions.update(id, { ...patch })
-    const at = metas.value.findIndex((m) => m.id === id)
-    if (at >= 0) metas.value[at] = meta
+    const at = all.value.findIndex((m) => m.id === id)
+    if (at >= 0) all.value[at] = meta
   }
 
   async function move(id: string, target: SessionMoveInput): Promise<SessionMeta> {
     const meta = await window.api.sessions.move(id, { ...target })
-    const at = metas.value.findIndex((m) => m.id === id)
-    if (at >= 0) metas.value[at] = meta
+    const at = all.value.findIndex((m) => m.id === id)
+    if (at >= 0) all.value[at] = meta
     return meta
   }
 
@@ -160,16 +164,43 @@ export const useSessionsStore = defineStore('sessions', () => {
     await window.api.sessions.respond(id, itemId, JSON.parse(JSON.stringify(response)) as InteractionResponse)
   }
 
-  async function remove(id: string): Promise<void> {
-    await window.api.sessions.remove(id)
-    metas.value = metas.value.filter((m) => m.id !== id)
-    chats.delete(id)
-    runtimes.delete(id)
-    if (activeId.value === id) activeId.value = null
+  /** Out of every list at once, for the seconds in which deleting can be undone; the shown chat closes. */
+  function hide(ids: readonly string[]): void {
+    for (const id of ids) hidden.add(id)
+    if (activeId.value && hidden.has(activeId.value)) activeId.value = null
+  }
+
+  function unhide(ids: readonly string[]): void {
+    for (const id of ids) hidden.delete(id)
+  }
+
+  /** Deletes chats for good, with their CLIs' conversations if the settings say so (see SessionService.remove). */
+  async function remove(ids: readonly string[]): Promise<SessionRemoveResult> {
+    try {
+      const result = await window.api.sessions.remove([...ids])
+      forget(result.removed)
+      return result
+    } finally {
+      unhide(ids)
+    }
+  }
+
+  /** What the window keeps of chats the main process no longer has (deleted, also with their project). */
+  function forget(ids: readonly string[]): void {
+    const gone = new Set(ids)
+    all.value = all.value.filter((m) => !gone.has(m.id))
+    for (const id of gone) {
+      chats.delete(id)
+      runtimes.delete(id)
+      unread.delete(id)
+    }
+    if (activeId.value && gone.has(activeId.value)) activeId.value = null
   }
 
   return {
+    all,
     metas,
+    hidden,
     runtimes,
     chats,
     activeId,
@@ -191,7 +222,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     update,
     move,
     respond,
+    hide,
+    unhide,
     remove,
+    forget,
     interrupt: (id: string) => window.api.sessions.interrupt(id),
     stop: (id: string) => window.api.sessions.stop(id),
   }

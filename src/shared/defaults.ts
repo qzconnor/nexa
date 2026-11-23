@@ -32,6 +32,7 @@ export function defaultSettings(): AppSettings {
       showThinking: true,
       collapseDiffs: false,
       enterSends: true,
+      deleteCliConversations: true,
     },
     tools: {
       renderTools: true,

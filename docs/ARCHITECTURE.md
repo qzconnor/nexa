@@ -30,6 +30,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
+| `accounts/conversation-files.ts` | Die Dateien einer Unterhaltung je Config-Ordner (Claude: Transkript, Subagents, Checkpoints; Codex: Rollouts) und ihre Größe, zum Löschen und Aufräumen |
 | `accounts/session-move.ts` | Verschiebt eine Session von Claude Code in den Projektordner eines anderen Arbeitsordners (wie `/cd`, aus dem Claude Manager) |
 | `services/project-service.ts` | Projekte (Ordner) und Trenner, ihre Reihenfolge, ausgeschaltete MCP-Server je Projekt; `project-sections.ts` macht ein Projekt zum Trenner |
 | `services/folder-prompts.ts` | Prompt eines Projekts oder Trenners (`prompts.md` im Ordner) lesen, schreiben und für den Systemprompt zusammensetzen |
@@ -195,6 +196,15 @@ welchem Account die Sitzung der CLI entstand. Weichen beide ab, kopiert `session
 Unterhaltung (Claude: Transkript, Unterordner, `file-history`; Codex: Rollout unter `sessions/`) in den
 neuen Ordner und setzt sie dort fort (Codex mit `thread/resume { path }`). Klappt das nicht, verfällt
 der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`.
+
+Ein Chat nimmt beim Löschen (`SessionService.remove`, mehrere auf einmal) seine Unterhaltungen mit,
+solange `chat.deleteCliConversations` an ist: Die CLI endet zuerst, dann gehen ihre Dateien
+(`conversation-files.ts`) aus dem Ordner, in dem sie entstanden, und aus den Ordnern aller Accounts
+derselben CLI in den Papierkorb (`shell.trashItem`). Es bleiben die Unterhaltung eines Abzweigs, der
+noch nicht lief (`CliLink.fork`: sie gehört dem anderen Chat), eine, mit der ein anderer Chat
+weitermacht, und eine Sitzung, die Claude Code außerhalb von Nexa offen hat. Der Renderer blendet die
+Chats sofort aus und löscht erst, wenn der Toast mit „Rückgängig“ nach 8 s geht (`useChatRemoval.ts`);
+`ChatCleanupDialog.vue` filtert nach Projekt, Alter, Größe (`SessionService.storage`) und Archiv.
 
 Derselbe Login in zwei Ordnern (gleiche E-Mail und Organisation, `sameLogin`) ist ein Account zu viel:
 Der jüngere zeigt in den Einstellungen „Gleicher Login wie …“ (`duplicateOf`) und lässt sich in den

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   ArrowRightIcon,
+  BrushCleaningIcon,
   ChevronRightIcon,
   FolderIcon,
   FolderInputIcon,
@@ -24,12 +25,14 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { report } from '@/composables/useChatRemoval'
 import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import type { ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
+import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import SidebarFolder from './SidebarFolder.vue'
 import SidebarSession from './SidebarSession.vue'
@@ -41,6 +44,7 @@ import SidebarSession from './SidebarSession.vue'
 const props = defineProps<{ entry: ProjectEntry; now: number; bare?: boolean; draggable?: boolean }>()
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
+const settings = useSettingsStore()
 const ui = useUiStore()
 const drag = useSessionDrag()
 
@@ -70,17 +74,23 @@ async function rename(): Promise<void> {
 }
 
 async function remove(): Promise<void> {
-  const count = sessions.byProject(project.value.id).length
+  // Archived ones too: they go with the project.
+  const count = sessions.metas.filter((m) => m.projectId === project.value.id).length
+  const chats = count === 1 ? 'Sein Chat wird' : `Seine ${count} Chats werden`
+  const cli = settings.settings.chat.deleteCliConversations ? `, ${count === 1 ? 'seine Unterhaltung' : 'ihre Unterhaltungen'} der CLIs ${count === 1 ? 'kommt' : 'kommen'} in den Papierkorb` : ''
   if (
     !(await ui.confirm({
       title: `Projekt „${project.value.name}“ entfernen?`,
-      description: `${count ? `Seine ${count} Chats werden gelöscht. ` : ''}Der Ordner auf der Festplatte bleibt.`,
+      description: `${count ? `${chats} gelöscht${cli}. ` : ''}Der Ordner auf der Festplatte bleibt.`,
       confirmText: 'Entfernen',
       destructive: true,
     }))
   )
     return
-  await attempt(() => projects.remove(project.value.id), 'Entfernen fehlgeschlagen')
+  const result = await attempt(() => projects.remove(project.value.id), 'Entfernen fehlgeschlagen')
+  if (!result) return
+  sessions.forget(result.removed)
+  report(result)
   if (!sessions.activeId && ui.view === 'chat') ui.view = 'home'
 }
 
@@ -157,6 +167,7 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
         </ContextMenuSub>
         <ContextMenuItem v-if="canBecomeSection" @select="toSection"><FolderTreeIcon /> Zum Trenner machen …</ContextMenuItem>
         <ContextMenuSeparator />
+        <ContextMenuItem @select="ui.cleanupProject = project.id"><BrushCleaningIcon /> Chats aufräumen …</ContextMenuItem>
         <ContextMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Aus Nexa entfernen</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

@@ -63,6 +63,12 @@ function str(value: unknown, what: string): string {
   return value
 }
 
+/** A list of ids from the window; an unknown id is simply not found. */
+function idList(value: unknown, what: string): string[] {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'string')) throw new Error(`${what} fehlen.`)
+  return value as string[]
+}
+
 /** Whose prompt: a project or a separator, by id (the folder comes from Nexa's own list, never from the window). */
 function promptTarget(value: unknown): PromptTarget {
   if (!value || typeof value !== 'object') throw new Error('Das Ziel des Prompts fehlt.')
@@ -283,8 +289,9 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.projectsSetPrompt, (_e, target: unknown, text: unknown) => projects.writePrompt(promptTarget(target), str(text, 'Der Prompt')))
   handle(IpcInvoke.projectsRemove, async (_e, id: unknown) => {
     const projectId = str(id, 'Das Projekt')
-    await sessions.removeProject(projectId)
+    const result = await sessions.removeProject(projectId)
     await projects.remove(projectId)
+    return result
   })
   handle(IpcInvoke.projectsArrange, (_e, layout: unknown) => projects.arrange(layoutArg(layout)))
   handle(IpcInvoke.projectsToSection, (_e, id: unknown) => projectToSection(projects, sessions, str(id, 'Das Projekt')))
@@ -313,7 +320,8 @@ export function registerIpc(ctx: AppContext): void {
   )
   handle(IpcInvoke.sessionsSync, (_e, id: unknown) => sessions.syncCli(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsUpdate, (_e, id: unknown, patch: unknown) => sessions.update(str(id, 'Die Session'), (patch ?? {}) as never))
-  handle(IpcInvoke.sessionsRemove, (_e, id: unknown) => sessions.remove(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsRemove, (_e, ids: unknown) => sessions.remove(idList(ids, 'Die Sessions')))
+  handle(IpcInvoke.sessionsStorage, () => sessions.storage())
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsSearch, (_e, query: unknown) => sessions.search(typeof query === 'string' ? query.slice(0, 200) : ''))
   handle(IpcInvoke.sessionsMove, (_e, id: unknown, target: unknown) => sessions.move(str(id, 'Die Session'), moveArg(target)))

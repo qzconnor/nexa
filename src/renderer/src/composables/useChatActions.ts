@@ -6,6 +6,7 @@ import { foldersOf, projectTree } from '@/lib/session-tree'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
+import { useChatRemoval } from './useChatRemoval'
 
 /** What a chat shows at a glance: its CLI works, waits for the user, finished while elsewhere, or failed. */
 export type ChatState = 'running' | 'waiting' | 'unread' | 'error' | null
@@ -15,6 +16,7 @@ export function useChatActions() {
   const sessions = useSessionsStore()
   const projects = useProjectsStore()
   const ui = useUiStore()
+  const removal = useChatRemoval()
 
   function state(id: string): ChatState {
     const status = sessions.runtime(id).status
@@ -99,10 +101,9 @@ export function useChatActions() {
     if (path) toast('Chat gespeichert', { description: path, action: { label: 'Zeigen', onClick: () => void window.api.app.showItem(path) } })
   }
 
+  /** Gone at once, for 8 s to be brought back (useChatRemoval). */
   async function remove(meta: SessionMeta): Promise<void> {
-    if (!(await ui.confirm({ title: `„${meta.title}“ löschen?`, description: 'Der Verlauf in Nexa geht verloren.', confirmText: 'Löschen', destructive: true }))) return
-    await attempt(() => sessions.remove(meta.id), 'Löschen fehlgeschlagen')
-    if (!sessions.activeId && ui.view === 'chat') ui.view = 'home'
+    await removal.remove([meta])
   }
 
   return { state, working, open, newChat, rename, move, moveElsewhere, fork, copyLastAnswer, exportMarkdown, remove }

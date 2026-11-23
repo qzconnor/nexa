@@ -3,6 +3,7 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ArrowRightLeftIcon,
+  BrushCleaningIcon,
   CircleStopIcon,
   CopyIcon,
   FileDownIcon,
@@ -133,6 +134,14 @@ const switchChoices = computed(() => {
           <SeparatorHorizontalIcon />
           Neuer Trenner…
         </CommandItem>
+        <CommandItem
+          value="cleanup-chats"
+          filter-text="Chats aufräumen löschen alte große Speicherplatz Transkripte Papierkorb mehrere"
+          @select="run(() => (ui.cleanupProject = null), true)"
+        >
+          <BrushCleaningIcon />
+          Chats aufräumen…
+        </CommandItem>
         <CommandItem value="toggle-sidebar" filter-text="Seitenleiste ein- ausblenden Sidebar Projekte" @select="run(() => ui.toggleSidebar())">
           <PanelLeftIcon />
           {{ ui.sidebarOpen ? 'Seitenleiste ausblenden' : 'Seitenleiste einblenden' }}
@@ -227,9 +236,9 @@ const switchChoices = computed(() => {
             <span class="min-w-0 truncate">Weiter mit „{{ choice.label }}“</span>
             <CommandShortcut class="tracking-normal"><AccountDot :color="choice.account.color" /></CommandShortcut>
           </CommandItem>
-          <CommandItem value="chat-delete" filter-text="Chat löschen entfernen Verlauf" @select="run(() => chat.remove(meta!), true)">
+          <CommandItem value="chat-delete" filter-text="Chat löschen entfernen Verlauf Transkript Papierkorb" @select="run(() => chat.remove(meta!))">
             <Trash2Icon />
-            Chat löschen…
+            Chat löschen
           </CommandItem>
         </CommandGroup>
       </template>

@@ -3,16 +3,17 @@ import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import { folderKey, inFolder } from '@shared/folders'
-import type {
-  ChatItem,
-  ContextDetail,
-  InteractionRequest,
-  InteractionResponse,
-  ProviderId,
-  SessionEvent,
-  SessionRuntime,
-  ToolItem,
-  UserItem,
+import {
+  PROVIDER_IDS,
+  type ChatItem,
+  type ContextDetail,
+  type InteractionRequest,
+  type InteractionResponse,
+  type ProviderId,
+  type SessionEvent,
+  type SessionRuntime,
+  type ToolItem,
+  type UserItem,
 } from '@shared/chat'
 import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
@@ -26,7 +27,9 @@ import type {
   SessionDetail,
   SessionMeta,
   SessionMoveInput,
+  SessionRemoveResult,
   SessionSearchHit,
+  SessionStorage,
   SessionUpdateInput,
   ShellOutput,
   ToolSettings,
@@ -36,6 +39,7 @@ import type {
 import { firstLine, searchTerms } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { claudePaths, codexPaths } from '../accounts/cli-files'
+import { claudeSessionFiles, codexRollouts, codexThreadFiles, diskSize } from '../accounts/conversation-files'
 import { relocateClaudeSession } from '../accounts/session-move'
 import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript } from '../accounts/session-transfer'
 import { readClaudeChat, readClaudeChatSince } from '../import/claude-sessions'
@@ -105,6 +109,26 @@ export type Attention =
   | { kind: 'limit'; provider: ProviderId; accountId: string; message: string | null }
   | { kind: 'input'; provider: ProviderId; request: InteractionRequest }
 
+/** Where one deletion or size count looks for conversation files; Codex's folders are read once each. */
+interface ConversationLookup {
+  /** Also in Claude Code's other project folders (for deleting; sizes take the direct path only). */
+  search: boolean
+  codex(configDir: string): Promise<Map<string, string[]>>
+}
+
+function conversationLookup(search: boolean): ConversationLookup {
+  const indexes = new Map<string, Promise<Map<string, string[]>>>()
+  return {
+    search,
+    codex(configDir) {
+      const key = folderKey(configDir)
+      let index = indexes.get(key)
+      if (!index) indexes.set(key, (index = codexRollouts(configDir)))
+      return index
+    },
+  }
+}
+
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
 /** Chats a search returns at most; with more, another word narrows it down better than scrolling. */
 const MAX_SEARCH_HITS = 200
@@ -132,6 +156,8 @@ export class SessionService extends TypedEmitter<Events> {
     private readonly settings: () => AppSettings,
     /** Which of Nexa's MCP tools a run uses without asking (mcp/nexa-tools.ts). */
     private readonly toolGrant: (tools: ToolSettings) => NexaToolGrant,
+    /** Moves a file or folder into the recycle bin (Electron's shell, a fake in tests). */
+    private readonly trash: (path: string) => Promise<void>,
   ) {
     super()
     this.file = join(dataDir, 'sessions.json')
@@ -1068,14 +1094,119 @@ export class SessionService extends TypedEmitter<Events> {
     this.setRuntime(s, this.atRest(s))
   }
 
-  async remove(id: string): Promise<void> {
-    const s = this.sessions.get(id)
-    if (!s) return
-    await this.stop(id).catch(() => undefined)
-    if (s.mcpToken) this.mcp.revoke(s.mcpToken)
-    this.sessions.delete(id)
-    await this.store.remove(id)
-    this.saveSoon()
+  /**
+   * Deletes chats: their history in Nexa, and (setting `chat.deleteCliConversations`) their CLIs'
+   * conversations into the recycle bin, in every account with a copy. A conversation stays that
+   * another chat still goes on with (a fork that hasn't run yet), or that a CLI outside Nexa has open.
+   */
+  async remove(ids: readonly string[]): Promise<SessionRemoveResult> {
+    const result: SessionRemoveResult = { removed: [], trashed: 0, bytes: 0, openElsewhere: [], failed: 0 }
+    const targets = [...new Set(ids)].map((id) => this.sessions.get(id)).filter((s): s is SessionState => !!s)
+    const going = new Set(targets.map((s) => s.meta.id))
+    const shared = new Set<string>()
+    for (const s of this.sessions.values()) {
+      if (going.has(s.meta.id)) continue
+      for (const provider of PROVIDER_IDS) {
+        const link = s.meta.cli[provider]
+        if (link) shared.add(`${provider}:${link.sessionId}`)
+      }
+    }
+    const withCli = this.settings().chat.deleteCliConversations
+    const lookup = conversationLookup(true)
+    const handled = new Set<string>()
+    for (const s of targets) {
+      const id = s.meta.id
+      // The CLI ends first (stop waits for its process): it would write its conversation again.
+      await this.stop(id).catch(() => undefined)
+      let files: string[] = []
+      if (withCli) {
+        const found = await this.conversationFiles(s.meta, lookup, shared)
+        if (found.openElsewhere) result.openElsewhere.push(id)
+        files = found.files
+      }
+      if (s.mcpToken) this.mcp.revoke(s.mcpToken)
+      this.sessions.delete(id)
+      await this.store.remove(id)
+      result.removed.push(id)
+      for (const file of files) {
+        // Two chats of one conversation (a fork that ran on with it) name the same files.
+        if (handled.has(file)) continue
+        handled.add(file)
+        const size = await diskSize(file)
+        try {
+          await this.trash(file)
+          result.trashed++
+          result.bytes += size
+        } catch (error) {
+          result.failed++
+          result.error ??= error instanceof Error ? error.message : String(error)
+        }
+      }
+    }
+    if (result.removed.length > 0) this.saveSoon()
+    return result
+  }
+
+  /** What each chat takes on disk: its history in Nexa and what deleting it takes along of its CLIs. */
+  async storage(): Promise<SessionStorage[]> {
+    const withCli = this.settings().chat.deleteCliConversations
+    const lookup = conversationLookup(false)
+    const result: SessionStorage[] = []
+    await pool([...this.sessions.values()], 8, async (s) => {
+      let bytes = await this.store.size(s.meta.id)
+      if (withCli) {
+        const { files } = await this.conversationFiles(s.meta, lookup, new Set())
+        for (const file of files) bytes += await diskSize(file)
+      }
+      result.push({ id: s.meta.id, bytes })
+    })
+    return result
+  }
+
+  /**
+   * The files of a chat's CLI conversations, in the config folder of every account of the CLI (and the
+   * one it was saved in). Not those of a fork that hasn't run yet (they are the other chat's), nor
+   * those another chat goes on with (`shared`, `<provider>:<id>`), nor those of a Claude Code session
+   * open outside Nexa (`openElsewhere`; it would write them again).
+   */
+  private async conversationFiles(
+    meta: SessionMeta,
+    lookup: ConversationLookup,
+    shared: ReadonlySet<string>,
+  ): Promise<{ files: string[]; openElsewhere: boolean }> {
+    const cwd = meta.cwd ?? this.projects.get(meta.projectId)?.path ?? ''
+    const files: string[] = []
+    let openElsewhere = false
+    for (const provider of PROVIDER_IDS) {
+      const link = meta.cli[provider]
+      if (!link || link.fork || shared.has(`${provider}:${link.sessionId}`)) continue
+      for (const dir of this.conversationDirs(provider, link)) {
+        if (provider === 'codex') {
+          files.push(...codexThreadFiles(await lookup.codex(dir), link.sessionId))
+          continue
+        }
+        const found = await claudeSessionFiles(dir, link.sessionId, cwd, lookup.search)
+        if (found.length > 0 && lookup.search && (await claudeOpenElsewhere(dir, link.sessionId).catch(() => null))) {
+          openElsewhere = true
+          continue
+        }
+        files.push(...found)
+      }
+    }
+    return { files: [...new Set(files)], openElsewhere }
+  }
+
+  /** The config folders that may hold a copy of a conversation, each once. */
+  private conversationDirs(provider: ProviderId, link: CliLink): string[] {
+    const dirs = [link.configDir, ...this.accounts.list().filter((a) => a.provider === provider).map((a) => this.configDirOf(provider, a.id))]
+    const seen = new Set<string>()
+    return dirs.filter((dir): dir is string => {
+      if (!dir) return false
+      const key = folderKey(dir)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
   }
 
   /** Turns of all chats per day, from their transcripts (sessions not opened aren't kept in memory). */
@@ -1116,8 +1247,8 @@ export class SessionService extends TypedEmitter<Events> {
     return { days: [...byDay.values()], totals }
   }
 
-  async removeProject(projectId: string): Promise<void> {
-    for (const s of [...this.sessions.values()]) if (s.meta.projectId === projectId) await this.remove(s.meta.id)
+  async removeProject(projectId: string): Promise<SessionRemoveResult> {
+    return this.remove([...this.sessions.values()].filter((s) => s.meta.projectId === projectId).map((s) => s.meta.id))
   }
 
   async dispose(): Promise<void> {

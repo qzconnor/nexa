@@ -51,6 +51,11 @@ export interface ChatSettings {
   collapseDiffs: boolean
   /** Enter sends; with Shift+Enter a new line. Off: Ctrl+Enter sends. */
   enterSends: boolean
+  /**
+   * A deleted chat takes its conversations in Claude Code and Codex along into the recycle bin, with
+   * subagents and the snapshots of `/rewind`, in every account with a copy. Off: the CLIs keep them.
+   */
+  deleteCliConversations: boolean
 }
 
 export interface ToolSettings {
@@ -429,6 +434,26 @@ export interface SessionDetail {
   meta: SessionMeta
   items: ChatItem[]
   runtime: SessionRuntime
+}
+
+/** What deleting chats did (`sessions.remove`). */
+export interface SessionRemoveResult {
+  /** The chats gone from Nexa. */
+  removed: string[]
+  /** Files and folders of the CLIs that went to the recycle bin, and what they took on disk. */
+  trashed: number
+  bytes: number
+  /** Chats whose CLI conversation stayed: a CLI outside Nexa has it open right now. */
+  openElsewhere: string[]
+  /** Files that could not go to the recycle bin, with the first reason. */
+  failed: number
+  error?: string
+}
+
+/** What a chat takes on disk: its history in Nexa, and the conversations of its CLIs that deleting it takes along. */
+export interface SessionStorage {
+  id: string
+  bytes: number
 }
 
 /** A chat whose conversation holds every word searched for (the quick open's search). */

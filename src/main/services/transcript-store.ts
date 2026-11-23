@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ChatItem } from '@shared/chat'
 
@@ -56,6 +56,14 @@ export class TranscriptStore {
       await mkdir(this.dir, { recursive: true })
       await writeFile(this.file(sessionId), items.map((i) => JSON.stringify(i)).join('\n') + (items.length ? '\n' : ''), 'utf8')
     })
+  }
+
+  /** The chat's file on disk, 0 without one. */
+  async size(sessionId: string): Promise<number> {
+    return stat(this.file(sessionId)).then(
+      (s) => s.size,
+      () => 0,
+    )
   }
 
   remove(sessionId: string): Promise<void> {

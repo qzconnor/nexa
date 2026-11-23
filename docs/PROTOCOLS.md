@@ -178,6 +178,20 @@ lebt, zeigt erst `process.kill(pid, 0)` (EPERM heißt: lebt, unter anderem Benut
 eigenen Prozess des Chats aus und zeigt sonst „Auch in … offen“ (`claude-presence.ts`). Zwei Prozesse auf
 einer Sitzung schreiben beide ins Transkript, und jeder macht mit dem weiter, was er kennt.
 
+### Was zu einer Sitzung gehört (Löschen)
+
+Je Config-Ordner, in dem die Sitzung liegt (nach einem Account-Wechsel in mehreren,
+`conversation-files.ts`):
+
+- `projects/<key>/<id>.jsonl`, das Transkript. Ohne es gibt es die Sitzung für Claude Code nicht mehr.
+- `projects/<key>/<id>/` daneben: `subagents/` und ausgelagerte Werkzeug-Ausgaben.
+- `file-history/<id>/`: die Sicherungen für `/rewind` (Checkpoints).
+- `session-env/<id>/` und `tasks/<id>/`: Umgebung und Aufgabenliste der Sitzung.
+
+Nexa legt diese Dateien und Ordner in den Papierkorb, nicht aber Einträge in gemeinsamen Dateien
+(`history.jsonl` mit den Prompts aller Sitzungen). Hat ein Prozess außerhalb von Nexa die Sitzung offen
+(`sessions/<pid>.json`), bleiben ihre Dateien in diesem Ordner liegen, weil er sie weiterschreiben würde.
+
 ## Codex (`codex app-server`)
 
 Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
@@ -248,6 +262,11 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 - **Wechsel des Accounts**: Nexa kopiert den Rollout an dieselbe Stelle unter `sessions/` des neuen
   Ordners und setzt mit `thread/resume { threadId, path }` fort; der App-Server des neuen Accounts findet
   den Thread sonst nicht.
+- **Löschen**: Ein Thread ist seine Rollouts unter `sessions/` und, archiviert, unter
+  `archived_sessions/` (die Thread-ID steht am Ende des Dateinamens). Nexa legt sie in jedem Account-Ordner
+  in den Papierkorb. Der App-Server hätte `thread/delete { threadId }` (endgültig, nur im eigenen
+  `CODEX_HOME`); Nexa nutzt es nicht, damit sich ein Chat aus dem Papierkorb zurückholen lässt. Den Index
+  von Codex (`state_<n>.sqlite`, `session_index.jsonl` mit den Namen) fasst Nexa nicht an.
 - **Limits**: `account/rateLimits/read` je App-Server; `account/rateLimits/updated` kommt vom Server des
   Accounts, der gerade arbeitet. Für Accounts ohne laufenden Server fragt Nexa nur beim ausdrücklichen
   Aktualisieren (startet dafür den Server).

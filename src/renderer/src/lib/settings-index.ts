@@ -174,6 +174,19 @@ const TREE = [
         fields: [{ id: 'chat.enterSends', label: 'Enter sendet', keywords: 'Strg+Enter Zeilenumbruch Tastatur senden Shortcut' }],
       },
       {
+        id: 'chat.removal',
+        title: 'Löschen',
+        keywords: 'entfernen Speicherplatz',
+        fields: [
+          {
+            id: 'chat.deleteCliConversations',
+            label: 'Transkripte der CLIs mitlöschen',
+            keywords: 'Papierkorb Unterhaltung Claude Code Codex Rollout Subagents Checkpoints Dateien',
+          },
+          { id: 'chat.cleanup', label: 'Chats aufräumen', keywords: 'alte große mehrere löschen Filter Alter Größe Speicherplatz' },
+        ],
+      },
+      {
         id: 'chat.tools',
         title: 'Nexa-Werkzeuge',
         keywords: 'MCP Server Tools Werkzeuge',

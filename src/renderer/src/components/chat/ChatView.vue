@@ -340,11 +340,8 @@ function openFolder(): void {
   if (cwd.value) void window.api.app.openPath(cwd.value)
 }
 
-async function remove(): Promise<void> {
-  const id = meta.value?.id
-  if (!id || !(await ui.confirm({ title: `„${meta.value?.title}“ löschen?`, description: 'Der Verlauf in Nexa geht verloren.', confirmText: 'Löschen', destructive: true }))) return
-  await attempt(() => sessions.remove(id), 'Löschen fehlgeschlagen')
-  ui.view = 'home'
+function remove(): void {
+  if (meta.value) void chatActions.remove(meta.value)
 }
 
 // ── Find in the chat (Ctrl+F, F3), as in a browser ──
