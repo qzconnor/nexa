@@ -1,4 +1,4 @@
-import type { FileChange, ToolKind } from '@shared/chat'
+import type { Compaction, FileChange, ToolKind } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
 import { firstLine, isPlainObject } from '@shared/utils'
 
@@ -132,6 +132,26 @@ export function todosOf(input: unknown): { text: string; status: 'pending' | 'in
     status: t.status === 'in_progress' || t.status === 'completed' ? t.status : 'pending',
     activeText: s(t.activeForm),
   }))
+}
+
+/**
+ * What a `compact_boundary` says about its compaction: the stream sends `compact_metadata` in
+ * snake_case, the transcript `compactMetadata` in camelCase.
+ */
+export function compactionOf(meta: Record<string, unknown>): Compaction {
+  const num = (...keys: string[]): number | undefined => {
+    for (const key of keys) {
+      const value = meta[key]
+      if (typeof value === 'number') return value
+    }
+    return undefined
+  }
+  return {
+    trigger: meta.trigger === 'manual' ? 'manual' : meta.trigger === 'auto' ? 'auto' : undefined,
+    before: num('pre_tokens', 'preTokens'),
+    after: num('post_tokens', 'postTokens'),
+    durationMs: num('duration_ms', 'durationMs'),
+  }
 }
 
 /** The text of a tool result's content (a string or content blocks). */

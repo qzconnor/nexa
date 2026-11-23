@@ -72,8 +72,12 @@ Alles, was im Chat steht, ist ein `ChatItem` (`src/shared/chat.ts`):
   allein lässt sich nicht aufklappen und zählt in der Zusammenfassung einer Gruppe nicht mit.
 - `interaction` (Freigabe, Frage, Plan, Formular; offen oder beantwortet)
 - `agent` (Subagent mit eigenem Verlauf über `parentId`)
-- `todo`, `render` (Element des MCP-Servers), `notice`, `turn` (Dauer, Tokens, Kosten; die Kosten, die
-  die CLIs melden, sind ein API-Preis und werden nicht angezeigt)
+- `todo`, `render` (Element des MCP-Servers), `turn` (Dauer, Tokens, Kosten; die Kosten, die die CLIs
+  melden, sind ein API-Preis und werden nicht angezeigt)
+- `notice` (Hinweis, Warnung, Fehler). Mit `compaction` ist es ein Zusammenfassen des Kontexts und
+  erscheint als Trenner quer über den Chat (`compactionNotice` in `shared/chat.ts`). Solange die CLI
+  zusammenfasst, steht `compactingSince` in der Laufzeit der Session, und unter dem Chat steht
+  „Kontext wird zusammengefasst …“.
 
 Provider liefern Items über `RunSink.item()` (neu oder ersetzt) und `RunSink.delta()` (Text anhängen). Der
 `SessionService` speichert, nummeriert und sendet sie als `SessionEvent` an die Fenster.

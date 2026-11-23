@@ -13,6 +13,7 @@ import type {
   ShellStatus,
   ToolItem,
 } from '@shared/chat'
+import { compactionNotice } from '@shared/chat'
 import type { SendInput, ShellOutput, UsageWindow } from '@shared/types'
 import { renderSpecOf } from '@shared/render'
 import { isPlainObject } from '@shared/utils'
@@ -21,7 +22,7 @@ import { cliEnv } from '../cli-binary'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
 import type { AgentRun, RunOptions, RunSink } from '../provider'
-import { AGENT_TOOLS, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
+import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 
 type Json = Record<string, unknown>
 
@@ -109,6 +110,9 @@ export class ClaudeRun implements AgentRun {
   /** Agents by the id of their task, for the task events of background agents. */
   private readonly tasks = new Map<string, string>()
   private turnStartedAt: number | null = null
+  private compactingSince: number | null = null
+  /** The model's context window from the last result, for the context after a compaction. */
+  private contextWindow: number | undefined
   private interrupting = false
   private model: string | undefined
   private stopping = false
@@ -454,17 +458,39 @@ export class ClaudeRun implements AgentRun {
         this.sink.runtime({ connected: true, model: this.model, ...(this.turnStartedAt === null ? { status: 'idle' } : {}) })
         return
       }
+      case 'status': {
+        // `compacting` comes when a compaction starts and again every 30 s while it runs; any other
+        // status (null, `requesting`) means it is over.
+        if (m.status === 'compacting') {
+          if (this.compactingSince !== null) return
+          this.compactingSince = Date.now()
+          this.sink.runtime({ compactingSince: this.compactingSince })
+          return
+        }
+        if (this.compactingSince === null) return
+        this.compactingSince = null
+        this.sink.runtime({ compactingSince: undefined })
+        if (m.compact_result === 'failed') {
+          this.sink.item({
+            kind: 'notice',
+            id: randomUUID(),
+            ts: Date.now(),
+            provider: 'claude',
+            level: 'warning',
+            text: 'Kontext ließ sich nicht zusammenfassen',
+            detail: str(m.compact_error),
+          })
+        }
+        return
+      }
       case 'compact_boundary': {
         const meta = isPlainObject(m.compact_metadata) ? m.compact_metadata : {}
-        this.sink.item({
-          kind: 'notice',
-          id: str(m.uuid) ?? randomUUID(),
-          ts: Date.now(),
-          provider: 'claude',
-          level: 'info',
-          text: meta.trigger === 'manual' ? 'Kontext wurde zusammengefasst' : 'Kontext wurde automatisch zusammengefasst',
-          detail: typeof meta.pre_tokens === 'number' ? `${Math.round(meta.pre_tokens / 1000)}k Tokens vorher` : undefined,
-        })
+        const compaction = compactionOf(meta)
+        this.sink.item(compactionNotice({ id: str(m.uuid) ?? randomUUID(), ts: Date.now(), provider: 'claude' }, compaction))
+        // The result of a /compact reports no usage: the context shrinks here or not until the next turn.
+        const after = compaction.after
+        this.compactingSince = null
+        this.sink.runtime({ compactingSince: undefined, ...(after !== undefined && this.contextWindow ? { context: { used: after, window: this.contextWindow } } : {}) })
         return
       }
       case 'api_retry': {
@@ -600,10 +626,13 @@ export class ClaudeRun implements AgentRun {
       error: errorText,
     })
     this.turnStartedAt = null
+    this.compactingSince = null
     this.interrupting = false
+    if (window) this.contextWindow = window
     this.sink.runtime({
       status: 'idle',
       turnStartedAt: undefined,
+      compactingSince: undefined,
       model: this.model,
       ...(window && input ? { context: { used: input + output, window } } : {}),
     })
@@ -793,6 +822,7 @@ export class ClaudeRun implements AgentRun {
       }
     }
     this.turnStartedAt = null
+    this.compactingSince = null
     const error = this.stopping || code === 0 ? undefined : lastLines(stderr) || `Claude Code wurde beendet (Code ${code ?? 'unbekannt'}).`
     if (error && wasRunning) {
       this.sink.item({ kind: 'notice', id: randomUUID(), ts: Date.now(), provider: 'claude', level: 'error', text: 'Claude Code wurde unerwartet beendet', detail: error })

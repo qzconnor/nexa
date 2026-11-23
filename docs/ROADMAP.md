@@ -50,6 +50,8 @@
 - [x] Modell, Denkaufwand (Schieberegler wie in der CLI), Ultracode und Freigaben hinter einem Zahnrad
 - [x] Derselbe Login nur einmal: die Übernahme aus dem Claude Manager legt ihn nicht doppelt an, doppelte
       Accounts lassen sich in den Einstellungen zusammenführen
+- [x] Zusammenfassen des Kontexts sichtbar: „Kontext wird zusammengefasst …“ mit Zeit, danach ein Trenner
+      im Chat mit den Tokens vorher und nachher
 
 ## Als Nächstes
 

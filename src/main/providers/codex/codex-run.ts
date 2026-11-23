@@ -11,6 +11,7 @@ import type {
   ToolItem,
   ToolStatus,
 } from '@shared/chat'
+import { compactionNotice } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
 import type { CommandOption, SendInput } from '@shared/types'
 import { firstLine, isPlainObject } from '@shared/utils'
@@ -156,6 +157,11 @@ export class CodexRun implements AgentRun {
   private mode: PermissionMode
   private modeChanged = false
   private lastTokens: { input: number; output: number } | null = null
+  /** What the conversation took up in the context at the last request, for the size before a compaction. */
+  private contextUsed: number | undefined
+  private compacting: { since: number; before: number | undefined } | null = null
+  /** The thread reports compactions as items; the older `thread/compacted` would show them twice. */
+  private compactionItems = false
   private closed = false
 
   constructor(
@@ -351,6 +357,8 @@ export class CodexRun implements AgentRun {
         const input = typeof last.inputTokens === 'number' ? last.inputTokens : 0
         const output = typeof last.outputTokens === 'number' ? last.outputTokens : 0
         this.lastTokens = { input, output }
+        // The compaction itself reports a request without tokens.
+        if (input + output > 0) this.contextUsed = input + output
         if (typeof usage.modelContextWindow === 'number') this.sink.runtime({ context: { used: input + output, window: usage.modelContextWindow } })
         return
       }
@@ -378,7 +386,7 @@ export class CodexRun implements AgentRun {
         return
       }
       case 'thread/compacted':
-        this.sink.item({ kind: 'notice', id: randomUUID(), ts: Date.now(), provider: 'codex', level: 'info', text: 'Kontext wurde zusammengefasst' })
+        if (!this.compactionItems) this.sink.item(compactionNotice({ id: randomUUID(), ts: Date.now(), provider: 'codex', parentId }, {}))
         return
       case 'model/rerouted':
         if (typeof params.toModel === 'string') {
@@ -509,9 +517,20 @@ export class CodexRun implements AgentRun {
         if (status) this.setAgent(agentId, { status, ...(status !== 'running' ? { endedAt: now, activity: undefined } : {}) })
         return
       }
-      case 'contextCompaction':
-        if (completed) this.sink.item({ ...base, kind: 'notice', level: 'info', text: 'Kontext wurde zusammengefasst' })
+      case 'contextCompaction': {
+        this.compactionItems = true
+        // A subagent's thread compacts too; only the main thread's shows under the chat and has a size.
+        if (!completed) {
+          if (parentId) return
+          this.compacting ??= { since: startedAt, before: this.contextUsed }
+          this.sink.runtime({ compactingSince: this.compacting.since })
+          return
+        }
+        const before = parentId ? undefined : (this.compacting?.before ?? this.contextUsed)
+        this.sink.item(compactionNotice(base, { before, durationMs: endedAt !== undefined ? endedAt - startedAt : undefined }))
+        if (!parentId) this.endCompacting()
         return
+      }
       case 'enteredReviewMode':
       case 'exitedReviewMode':
         if (completed) this.sink.item({ ...base, kind: 'notice', level: 'info', text: item.type === 'enteredReviewMode' ? 'Review gestartet' : 'Review beendet', detail: str(item.review) })
@@ -629,7 +648,14 @@ export class CodexRun implements AgentRun {
     })
     this.turnId = null
     this.turnStartedAt = null
-    this.sink.runtime({ status: 'idle', turnStartedAt: undefined, model: this.model })
+    this.compacting = null
+    this.sink.runtime({ status: 'idle', turnStartedAt: undefined, compactingSince: undefined, model: this.model })
+  }
+
+  private endCompacting(): void {
+    if (!this.compacting) return
+    this.compacting = null
+    this.sink.runtime({ compactingSince: undefined })
   }
 
   private finishRunning(interrupted: boolean): void {

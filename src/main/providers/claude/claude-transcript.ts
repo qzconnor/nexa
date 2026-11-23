@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentItem, AgentStatus, ChatItem, ShellStatus, ToolItem, TurnItem } from '@shared/chat'
+import { compactionNotice } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
 import { firstLine, isPlainObject } from '@shared/utils'
-import { AGENT_TOOLS, resultText, todosOf, viewOfClaudeTool } from './claude-tools'
+import { AGENT_TOOLS, compactionOf, resultText, todosOf, viewOfClaudeTool } from './claude-tools'
 
 /**
  * Claude Code's own transcript of a session (`<config>/projects/<key>/<id>.jsonl`) read as Nexa's
@@ -408,16 +409,7 @@ class ChatBuilder {
   private system(e: Json, ts: number): void {
     if (e.subtype === 'compact_boundary') {
       const meta = isPlainObject(e.compactMetadata) ? e.compactMetadata : isPlainObject(e.compact_metadata) ? e.compact_metadata : {}
-      const before = typeof meta.preTokens === 'number' ? meta.preTokens : typeof meta.pre_tokens === 'number' ? meta.pre_tokens : null
-      this.put({
-        kind: 'notice',
-        id: str(e.uuid) ?? randomUUID(),
-        ts,
-        provider: 'claude',
-        level: 'info',
-        text: meta.trigger === 'manual' ? 'Kontext wurde zusammengefasst' : 'Kontext wurde automatisch zusammengefasst',
-        detail: before !== null ? `${Math.round(before / 1000)}k Tokens vorher` : undefined,
-      })
+      this.put(compactionNotice({ id: str(e.uuid) ?? randomUUID(), ts, provider: 'claude' }, compactionOf(meta)))
     } else if (e.subtype === 'local_command' && typeof e.content === 'string') {
       // Newer versions write slash commands as entries of this kind.
       const command = commandOf(e.content)
