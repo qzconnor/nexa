@@ -31,7 +31,10 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
 | `accounts/session-move.ts` | Verschiebt eine Session von Claude Code in den Projektordner eines anderen Arbeitsordners (wie `/cd`, aus dem Claude Manager) |
-| `services/project-service.ts` | Projekte (Ordner) und Trenner, ihre Reihenfolge; `project-sections.ts` macht ein Projekt zum Trenner |
+| `services/project-service.ts` | Projekte (Ordner) und Trenner, ihre Reihenfolge, ausgeschaltete MCP-Server je Projekt; `project-sections.ts` macht ein Projekt zum Trenner |
+| `services/folder-prompts.ts` | Prompt eines Projekts oder Trenners (`prompts.md` im Ordner) lesen, schreiben und für den Systemprompt zusammensetzen |
+| `providers/mcp-servers.ts` | Antworten der CLIs auf die Frage nach ihren MCP-Servern → `McpServerState` (ohne Nexas eigenen) |
+| `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |
 | `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen |
 | `providers/claude/claude-transcript.ts` | Claude-Code-Transkript (`projects/<key>/<id>.jsonl`) → `ChatItem`s wie aus dem Stream, plus Kurzfassung (Ordner, Titel, Zeiten) |
@@ -114,6 +117,12 @@ unter ihn, und die Chats des Ordners selbst (sein „Wurzelprojekt“) stehen di
 Unterordnern kommen in Projekte je Unterordner der ersten Ebene, jeder arbeitet weiter im selben Ordner
 (`SessionService.relocate`). Bis Version 1 sortierte die Sidebar selbst (Angeheftete zuerst, dann die
 neuesten); diese Reihenfolge wird beim ersten Laden übernommen.
+
+Projekte und Trenner mit Ordner haben einen Prompt („Prompt …“ im Kontextmenü, `FolderPromptDialog`),
+gespeichert als `prompts.md` im Ordner. Beim Start einer CLI setzt `SessionService` die Prompts der
+Ordner, in denen der Chat liegt, an den Systemprompt (`promptFolders`: die Trenner um das Projekt, der
+äußerste zuerst, dann das Projekt). Nur Ordner, die Nexa kennt, zählen: eine `prompts.md` aus einem
+geklonten Repository in einem Unterordner bleibt draußen.
 
 ## Übernahme aus dem Claude Manager
 
@@ -240,6 +249,16 @@ der Ordner bleibt auf der Platte.
   Hinter dem Zahnrad (`ComposerSettings`) liegen Modell, Denkaufwand als Schieberegler (`EffortSlider`,
   Namen und Farben in `lib/effort.ts`, „Standard“ von der CLI über `providers.modelDefaults`), Ultracode
   (Claude) und Freigaben; CLI und Account bleiben in der Leiste (`ComposerControls`).
+  Das „+“ (`ComposerAddMenu`) hängt Dateien an (Bilder als Anhang, andere als `@`-Erwähnung), gibt dem
+  Chat weitere Ordner (`SessionMeta.dirs`, Chips über der Eingabe) und schaltet unter „Konnektoren“ die
+  MCP-Server des Projekts (`Project.mcpOff`; Claude Code im laufenden Prozess, sonst ab dem nächsten
+  Start). Läuft eine Antwort, geht Text als „In die laufende Antwort“ hinein (`UserItem.steer`).
+- **Kontext** (`ContextCard`): Beim Hover über den Ring holt `sessions.context` die Aufschlüsselung der
+  laufenden CLI (`AgentRun.contextDetail`, nur Claude Code); den Ring selbst speist `runtime.context`.
+- **Am Ende bleiben** (`useStickToBottom`): Der Chat folgt dem Neuen, bis der Nutzer nach oben scrollt
+  (Mausrad nach oben, oder die Ansicht steht beim Scroll-Ereignis höher als zuvor, ohne dass der Inhalt
+  schrumpfte). Wo die Ansicht beim Ereignis steht, entscheidet nicht: Bis es kommt, kann schon mehr
+  dazugekommen sein.
 - **Lange Chats** (`MessageList`): Gezeigt werden die neuesten 40 Blöcke, beim Hochscrollen je 40 ältere
   (ein `IntersectionObserver` am oberen Ende, 1200 px voraus), ohne dass der sichtbare Inhalt springt. Das
   Fenster hängt am ältesten gezeigten Block, neue kommen dazu. Unter dem Verlauf eines Agents bleibt der
