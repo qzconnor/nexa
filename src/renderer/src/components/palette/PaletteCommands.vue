@@ -17,6 +17,7 @@ import {
   PowerIcon,
   RefreshCwIcon,
   RotateCwIcon,
+  SearchIcon,
   SeparatorHorizontalIcon,
   SettingsIcon,
   SparklesIcon,
@@ -165,6 +166,16 @@ const switchChoices = computed(() => {
           <CommandItem value="chat-rename" filter-text="Chat umbenennen Name Titel" @select="run(() => chat.rename(meta!), true)">
             <PencilIcon />
             Chat umbenennen…
+          </CommandItem>
+          <CommandItem
+            v-if="ui.view === 'chat'"
+            value="chat-find"
+            filter-text="Im Chat suchen finden Suche Text Strg+F find"
+            @select="run(() => ui.findInChat(), true)"
+          >
+            <SearchIcon />
+            Im Chat suchen
+            <CommandShortcut>Strg+F</CommandShortcut>
           </CommandItem>
           <CommandItem value="chat-pin" filter-text="Chat anheften lösen oben halten" @select="run(() => update({ pinned: !meta!.pinned }))">
             <PinOffIcon v-if="meta.pinned" />

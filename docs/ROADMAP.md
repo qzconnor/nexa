@@ -101,6 +101,9 @@
       aus `resolvedModel`)
 - [x] Systemfarben: `nativeTheme` folgt dem Modus des Themes (Mica, native Menüs, `prefers-color-scheme`
       der Seiten im Browser), schon beim Start
+- [x] Suche im offenen Chat: Strg+F (auch im Menü des Chats und in der Befehlsliste), Enter und F3 zum
+      nächsten Treffer, Umschalt dazu zum vorigen; alle Treffer markiert, der aktuelle stärker. Ältere
+      Nachrichten, die noch nicht geladen sind, lädt „Alle laden“ für die Suche nach
 
 ## Als Nächstes
 
@@ -146,8 +149,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] **Neuer Chat in einem Worktree** (`claude --worktree <name>`): Dialog mit Repository, Name (geprüft
       wie ein Branch) und vorhandenen Worktrees (`WorktreeDialog.vue`, `lib/worktree.ts`); `worktreeCheck`
       in `files/git-service.ts` ist schon da, aber nicht in Preload und UI.
-- [ ] **Suche im offenen Chat** (Strg+F, F3 / Umschalt+F3, alle Treffer markiert, lädt ältere Nachrichten
-      nach; `composables/useDomFind.ts`).
 - [ ] **Tastenkürzel**: Strg+Tab und Strg+1–9 zwischen Chats, Strg+Umschalt+T neuer Chat, Pfeiltasten in
       Listen (`shared/shortcuts.ts`, `useShortcuts.ts`, `useListKeys.ts`).
 - [ ] **Löschen samt Transkript der CLI** (in den Papierkorb, mit Subagents und Checkpoints), mehrere auf
