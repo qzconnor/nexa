@@ -64,6 +64,13 @@ export function subfolderSegments(path: string, folder: string): string[] {
   return pathSegments(path).slice(pathSegments(folderKey(folder)).length)
 }
 
+/** The folder `name` in `folder`, with the separator `folder` writes: a Windows path stays one on any system. */
+export function childFolder(folder: string, name: string): string {
+  const trimmed = folder.trim().replace(TRAILING_SEPARATORS, '')
+  const separator = trimmed.includes('\\') || DRIVE.test(trimmed) ? '\\' : '/'
+  return trimmed.endsWith(separator) ? `${trimmed}${name}` : `${trimmed}${separator}${name}`
+}
+
 /**
  * Where `path` is once the folder `from` it lies in (or is) has moved to `to`, with the separators of
  * `to`; null when it doesn't lie in `from`.

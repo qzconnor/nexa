@@ -1,5 +1,4 @@
-import { join } from 'node:path'
-import { subfolderSegments } from '@shared/folders'
+import { childFolder, subfolderSegments } from '@shared/folders'
 import { sectionIdOf } from '@shared/sections'
 import type { ProjectSection } from '@shared/types'
 import type { ProjectService } from './project-service'
@@ -26,7 +25,7 @@ export async function projectToSection(projects: ProjectService, sessions: Sessi
     const [first] = subfolderSegments(meta.cwd, project.path)
     if (!first) continue
     try {
-      const target = await projects.create({ path: join(project.path, first), sectionId: section.id }, { at: meta.updatedAt, collapsed: true, end: true })
+      const target = await projects.create({ path: childFolder(project.path, first), sectionId: section.id }, { at: meta.updatedAt, collapsed: true, end: true })
       moves.push({ id: meta.id, projectId: target.id, cwd: meta.cwd })
     } catch {
       // The subfolder is gone: the chat stays where it is.

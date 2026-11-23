@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { systemAccountId, type AccountKind } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
-import { folderKey, innermostFolder, subfolderSegments } from '@shared/folders'
+import { childFolder, folderKey, innermostFolder, subfolderSegments } from '@shared/folders'
 import type { ClaudeManagerFound, ImportAccount, ImportGroup, ImportInput, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
 import type { AppSettings, Project, SessionMeta } from '@shared/types'
 import { DEFAULT_SECTION_ID } from '@shared/sections'
@@ -166,7 +166,7 @@ export function planGroups(
 /** The project folder of a session in a workspace: the subfolder of the first level it lies in, else the workspace. */
 export function projectFolder(cwd: string, workspace: string): string {
   const [first] = subfolderSegments(cwd, workspace)
-  return first ? join(workspace, first) : workspace
+  return first ? childFolder(workspace, first) : workspace
 }
 
 /** The title a session gets: its name in the Claude Manager, its own, its first prompt. */

@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptSummary } from '../providers/claude/claude-transcript'
 import { cmAccounts, planGroups, projectFolder, sessionTitle, type FoundSession } from './claude-manager'
@@ -16,7 +16,10 @@ const summary = (cwd: string | null, updatedAt: number, patch: Partial<Transcrip
 const session = (id: string, cwd: string | null, updatedAt: number): FoundSession => ({ id, file: `${id}.jsonl`, configDir: 'C:\\cfg', mtimeMs: updatedAt, summary: summary(cwd, updatedAt) })
 
 describe('cmAccounts', () => {
-  const env = { CLAUDE_CONFIG_DIR: 'C:\\claude', CODEX_HOME: 'C:\\codex' }
+  // Absolute on the system the tests run on: the folders from the environment are resolved.
+  const claude = resolve('/cfg/claude')
+  const cm = resolve('/cfg/cm')
+  const env = { CLAUDE_CONFIG_DIR: claude, CODEX_HOME: resolve('/cfg/codex') }
 
   it('finds the folder of every account as the Claude Manager does', () => {
     const accounts = cmAccounts(
@@ -30,20 +33,20 @@ describe('cmAccounts', () => {
           { id: 'x', kind: 'unbekannt' },
         ],
       },
-      'C:\\cm',
+      cm,
       env,
     )
     expect(accounts.map((a) => [a.id, a.provider, a.kind, a.configDir])).toEqual([
-      ['system', 'claude', 'system', 'C:\\claude'],
-      ['a1', 'claude', 'oauth', join('C:\\cm', 'profiles', 'a1')],
+      ['system', 'claude', 'system', claude],
+      ['a1', 'claude', 'oauth', join(cm, 'profiles', 'a1')],
       ['a2', 'claude', 'oauth', 'D:\\eigen'],
-      ['c1', 'codex', 'oauth', join('C:\\cm', 'profiles', 'c1')],
+      ['c1', 'codex', 'oauth', join(cm, 'profiles', 'c1')],
     ])
     expect(Object.keys(accounts[1]!)).not.toContain('secret')
   })
 
   it('adds the standard account of Claude Code when the file doesn’t list it', () => {
-    expect(cmAccounts(null, 'C:\\cm', env)).toEqual([expect.objectContaining({ id: 'system', kind: 'system', configDir: 'C:\\claude' })])
+    expect(cmAccounts(null, cm, env)).toEqual([expect.objectContaining({ id: 'system', kind: 'system', configDir: claude })])
   })
 })
 

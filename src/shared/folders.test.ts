@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { folderKey, inFolder, innermostFolder, movedPath, subfolderSegments, windowsPath } from './folders'
+import { childFolder, folderKey, inFolder, innermostFolder, movedPath, subfolderSegments, windowsPath } from './folders'
 
 describe('windowsPath', () => {
   it('writes every drive as Windows does, also from Git Bash and Cygwin', () => {
@@ -37,6 +37,17 @@ describe('inFolder', () => {
     expect(inFolder('/home/dev/App', '/home/dev/app')).toBe(false)
     expect(inFolder('C:\\dev', 'C:\\dev\\app')).toBe(false)
     expect(inFolder('C:\\dev', ' ')).toBe(false)
+  })
+})
+
+describe('childFolder', () => {
+  it('writes the separator of the folder, on any system', () => {
+    expect(childFolder('F:\\Projekte', 'app')).toBe('F:\\Projekte\\app')
+    expect(childFolder('F:\\Projekte\\', 'app')).toBe('F:\\Projekte\\app')
+    expect(childFolder('f:/projekte', 'app')).toBe('f:/projekte\\app')
+    expect(childFolder('C:\\', 'app')).toBe('C:\\app')
+    expect(childFolder('/home/me/', 'app')).toBe('/home/me/app')
+    expect(childFolder('/', 'app')).toBe('/app')
   })
 })
 
