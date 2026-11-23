@@ -131,7 +131,8 @@ export class ProviderService extends TypedEmitter<Events> {
   async refreshUsage(wake = false): Promise<ProviderUsage[]> {
     await Promise.all(
       this.accounts.list().map(async (account) => {
-        if (!this.isReady(account.provider) || account.authState === 'missing') return
+        // A CLI switched off isn't asked: its limits don't concern the user, and the asking costs.
+        if (!this.isReady(account.provider) || !this.settings()[account.provider].enabled || account.authState === 'missing') return
         try {
           const usage = await this.providers[account.provider].usage(this.context(account.id), wake)
           if (usage) this.setUsage(account.id, usage)

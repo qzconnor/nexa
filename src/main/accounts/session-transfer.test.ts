@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { claudePaths, claudeProjectKey } from './cli-files'
-import { copyClaudeSession, copyCodexThread } from './session-transfer'
+import { claudePaths, claudeProjectKey, codexPaths } from './cli-files'
+import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread } from './session-transfer'
 
 let root: string
 
@@ -63,5 +63,40 @@ describe('copyCodexThread', () => {
     expect(copied).toBe(join(to, '2026', '11', '23', `rollout-2026-11-23T10-00-00-${thread}.jsonl`))
     expect(await readFile(copied!, 'utf8')).toBe('r')
     expect(await copyCodexThread(from, to, 'unknown')).toBeNull()
+  })
+})
+
+describe('ensureClaudeSession', () => {
+  const id = '11111111-2222-3333-4444-555555555555'
+  const cwd = '/work/project'
+
+  it('finds the session where Claude Code looks, else copies it from where it was saved', async () => {
+    const saved = claudePaths(join(root, 'saved'), true)
+    const now = claudePaths(join(root, 'now'), true)
+    expect(await ensureClaudeSession(now, saved.configDir, id, cwd)).toBe(false)
+    const folder = join(saved.projectsDir, claudeProjectKey(cwd))
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, `${id}.jsonl`), 't')
+    // Saved in the folder Claude Code looks in, or nowhere known: nothing to copy.
+    expect(await ensureClaudeSession(now, undefined, id, cwd)).toBe(false)
+    expect(await ensureClaudeSession(now, saved.configDir, id, cwd)).toBe(true)
+    expect(await readFile(join(now.projectsDir, claudeProjectKey(cwd), `${id}.jsonl`), 'utf8')).toBe('t')
+    expect(await ensureClaudeSession(saved, saved.configDir, id, cwd)).toBe(true)
+  })
+})
+
+describe('ensureCodexThread', () => {
+  it('finds the thread below sessions, else copies it from where it was saved', async () => {
+    const thread = '019a0000-0000-7000-8000-000000000002'
+    const saved = codexPaths(join(root, 'saved'))
+    const now = codexPaths(join(root, 'now'))
+    expect(await ensureCodexThread(now, saved.configDir, thread)).toEqual({ found: false })
+    const file = join(saved.sessionsDir, '2026', '11', '23', `rollout-2026-11-23T10-00-00-${thread}.jsonl`)
+    await mkdir(join(saved.sessionsDir, '2026', '11', '23'), { recursive: true })
+    await writeFile(file, 'r')
+    expect(await ensureCodexThread(saved, saved.configDir, thread)).toEqual({ found: true })
+    const copied = await ensureCodexThread(now, saved.configDir, thread)
+    expect(copied).toEqual({ found: true, copiedTo: join(now.sessionsDir, '2026', '11', '23', `rollout-2026-11-23T10-00-00-${thread}.jsonl`) })
+    expect(await ensureCodexThread(now, undefined, thread)).toEqual({ found: true })
   })
 })

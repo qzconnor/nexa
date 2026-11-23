@@ -5,9 +5,10 @@ import { PROVIDER_IDS, type PermissionMode, type ProviderId } from '@shared/chat
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { AppSettings, DeepPartial } from '@shared/types'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
-import ProviderCard from '@/components/home/ProviderCard.vue'
+import ProviderCard from '@/components/providers/ProviderCard.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { attempt } from '@/lib/errors'
 import { useProvidersStore } from '@/stores/providers'
 import type { SettingsAnchor } from '@/lib/settings-index'
@@ -24,7 +25,11 @@ function update(patch: DeepPartial<AppSettings>): void {
 }
 
 /** The anchor of a row of a CLI's card (lib/settings-index.ts). */
-const cliAnchor = (id: ProviderId, row: 'model' | 'path' | 'extraArgs') => `${id}.${row}` as SettingsAnchor
+const cliAnchor = (id: ProviderId, row: 'enabled' | 'model' | 'path' | 'extraArgs') => `${id}.${row}` as SettingsAnchor
+
+/** The last CLI that is on stays on (shared/providers.ts). */
+const lastOn = (id: ProviderId) => providers.enabled.length === 1 && providers.enabled[0] === id
+const setEnabled = (id: ProviderId, on: boolean) => void attempt(() => providers.setEnabled(id, on), 'Speichern fehlgeschlagen')
 
 const selectClass = 'h-8 rounded-md border bg-background/60 px-2 text-sm'
 const extraArgs = (id: ProviderId) => s.value[id].extraArgs.join(' ')
@@ -47,7 +52,7 @@ async function pickCli(id: ProviderId): Promise<void> {
       <SettingField anchor="providers.provider" label="CLI">
         <SegmentedControl
           :model-value="s.defaults.provider"
-          :options="PROVIDER_IDS.map((id) => ({ value: id, label: PROVIDERS[id].short }))"
+          :options="providers.enabled.map((id) => ({ value: id, label: PROVIDERS[id].short }))"
           aria-label="CLI für neue Chats"
           @update:model-value="(provider) => update({ defaults: { provider } })"
         />
@@ -65,6 +70,18 @@ async function pickCli(id: ProviderId): Promise<void> {
     </SettingsSection>
 
     <SettingsSection v-for="id in PROVIDER_IDS" :key="id" :anchor="id" :title="PROVIDERS[id].name">
+      <SettingField
+        :anchor="cliAnchor(id, 'enabled')"
+        label="In Nexa nutzen"
+        :description="lastOn(id) ? 'Eine CLI bleibt immer eingeschaltet.' : 'Aus: nicht mehr für Chats wählbar, und Nexa fragt ihre Limits nicht ab.'"
+      >
+        <Switch
+          :model-value="providers.enabled.includes(id)"
+          :disabled="lastOn(id)"
+          :aria-label="`${PROVIDERS[id].name} in Nexa nutzen`"
+          @update:model-value="(on: boolean) => setEnabled(id, on)"
+        />
+      </SettingField>
       <ProviderCard :provider="id" />
       <SettingField :anchor="cliAnchor(id, 'model')" label="Modell" description="Für neue Chats.">
         <select

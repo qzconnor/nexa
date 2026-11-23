@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import type { ChatItem, InteractionResponse, ProviderId, SessionEvent, SessionRuntime, ToolItem, UserItem } from '@shared/chat'
-import { PROVIDERS } from '@shared/providers'
+import { enabledProviders, PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
   CliLink,
@@ -11,13 +11,15 @@ import type {
   SessionDetail,
   SessionMeta,
   SessionUpdateInput,
+  ShellOutput,
   ToolSettings,
   UsageDay,
   UsageStats,
 } from '@shared/types'
 import { firstLine } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
-import { copyClaudeSession, copyCodexThread } from '../accounts/session-transfer'
+import { claudePaths, codexPaths } from '../accounts/cli-files'
+import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread } from '../accounts/session-transfer'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { TypedEmitter } from '../lib/typed-emitter'
 import type { NexaMcpServer } from '../mcp/mcp-server'
@@ -116,7 +118,10 @@ export class SessionService extends TypedEmitter<Events> {
     if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
     const settings = this.settings()
     const chosen = input.account && this.accounts.has(input.account) ? this.accounts.get(input.account).provider : undefined
-    const provider = input.provider ?? chosen ?? settings.defaults.provider
+    const asked = input.provider ?? chosen
+    if (asked) this.requireEnabled(asked)
+    // The default may be off (settings edited by hand): then the first CLI that is on.
+    const provider = asked ?? (settings[settings.defaults.provider].enabled ? settings.defaults.provider : (enabledProviders(settings)[0] ?? settings.defaults.provider))
     const now = Date.now()
     const meta: SessionMeta = {
       id: randomUUID(),
@@ -158,6 +163,7 @@ export class SessionService extends TypedEmitter<Events> {
     const project = this.projects.get(meta.projectId)
     if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
     const provider = meta.provider
+    this.requireEnabled(provider)
     if (!this.providers.isReady(provider)) throw new Error(`${PROVIDERS[provider].name} ist nicht installiert.`)
     const text = input.text.trim()
     if (!text && !input.images?.length) return
@@ -184,6 +190,10 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /** The account a CLI answers this chat with: the chosen one, else the one its conversation lies with, else the default. */
+  private requireEnabled(provider: ProviderId): void {
+    if (!this.settings()[provider].enabled) throw new Error(`${PROVIDERS[provider].name} ist in den Einstellungen ausgeschaltet (Einstellungen › CLIs).`)
+  }
+
   private accountFor(meta: SessionMeta, provider: ProviderId): string {
     const link = meta.cli[provider]
     const chosen = meta.accounts?.[provider] ?? (link ? (link.accountId ?? systemAccountId(provider)) : undefined)
@@ -209,19 +219,47 @@ export class SessionService extends TypedEmitter<Events> {
         console.warn('[sessions] conversation could not be copied', error)
         return false
       })
-      if (moved) link.accountId = accountId
-      else delete meta.cli[provider]
+      if (moved) {
+        link.accountId = accountId
+        link.configDir = this.configDirOf(provider, accountId)
+      } else delete meta.cli[provider]
       this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `Weiter mit Account „${account.name}“`, detail: moved ? undefined : 'Mit dem bisherigen Verlauf als Kontext' })
+      this.saveSoon()
+    }
+    // Before the CLI starts with `--resume` (or `thread/resume`), it must find the conversation; when it
+    // is gone, the chat goes on with its history as context instead of failing.
+    const kept = meta.cli[provider]
+    const running = s.run?.alive && s.runProvider === provider && s.runAccount === accountId
+    if (kept && !running && !(await this.locate(provider, accountId, kept, cwd).catch(() => true))) {
+      delete meta.cli[provider]
+      this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `Unterhaltung von ${PROVIDERS[provider].name} nicht gefunden`, detail: 'Weiter mit dem bisherigen Verlauf als Kontext' })
       this.saveSoon()
     }
     return accountId
   }
 
-  /** Copies the CLI's conversation from one account's folder to another's. */
+  /** The config folder the account's CLI starts with: where it saves and looks for conversations. */
+  private configDirOf(provider: ProviderId, accountId: string): string {
+    return provider === 'claude' ? this.accounts.claudePaths(accountId).configDir : this.accounts.codexPaths(accountId).configDir
+  }
+
+  /** Whether the account's CLI finds the conversation of `link`, copied from the folder it was saved in if need be. */
+  private async locate(provider: ProviderId, accountId: string, link: CliLink, cwd: string): Promise<boolean> {
+    if (provider === 'claude') return ensureClaudeSession(this.accounts.claudePaths(accountId), link.configDir, link.sessionId, cwd)
+    const { found, copiedTo } = await ensureCodexThread(this.accounts.codexPaths(accountId), link.configDir, link.sessionId, link.resumePath)
+    if (copiedTo) link.resumePath = copiedTo
+    return found
+  }
+
+  /** Copies the CLI's conversation from one account's folder (or the one it was saved in) to another's. */
   private async transfer(provider: ProviderId, from: string, to: string, link: CliLink, cwd: string): Promise<boolean> {
-    if (!this.accounts.has(from)) return false
-    if (provider === 'claude') return copyClaudeSession(this.accounts.claudePaths(from), this.accounts.claudePaths(to), link.sessionId, cwd)
-    const path = await copyCodexThread(this.accounts.codexPaths(from).sessionsDir, this.accounts.codexPaths(to).sessionsDir, link.sessionId, link.resumePath)
+    if (!this.accounts.has(from) && !link.configDir) return false
+    if (provider === 'claude') {
+      const source = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(from)
+      return copyClaudeSession(source, this.accounts.claudePaths(to), link.sessionId, cwd)
+    }
+    const source = link.configDir ? codexPaths(link.configDir).sessionsDir : this.accounts.codexPaths(from).sessionsDir
+    const path = await copyCodexThread(source, this.accounts.codexPaths(to).sessionsDir, link.sessionId, link.resumePath)
     if (!path) return false
     link.resumePath = path
     return true
@@ -248,6 +286,7 @@ export class SessionService extends TypedEmitter<Events> {
     const generation = ++s.generation
     const current = () => s.generation === generation
     const tools = settings.tools
+    const savedIn = this.configDirOf(provider, accountId)
     let mcp: RunOptions['mcp']
     if (nexaToolsOn(tools) && this.mcp.running) {
       // A token of its own for every run, Claude's and Codex's: it says whose browser the browser tools drive.
@@ -280,6 +319,7 @@ export class SessionService extends TypedEmitter<Events> {
           sessionId,
           seenItems: same ? link.seenItems : (s.items?.length ?? 0),
           accountId,
+          configDir: savedIn,
           ...(same && link.resumePath ? { resumePath: link.resumePath } : {}),
         }
         this.saveSoon()
@@ -330,6 +370,26 @@ export class SessionService extends TypedEmitter<Events> {
     await this.get(id).run?.interrupt()
   }
 
+  /** The end of what a shell of the chat wrote, as its CLI still keeps it. */
+  async shellOutput(id: string, itemId: string): Promise<ShellOutput> {
+    const { run, taskId } = this.shellOf(id, itemId)
+    if (!run?.shellOutput) throw new Error('Die Ausgabe ist nicht mehr abrufbar: Die CLI dieses Chats läuft nicht mehr.')
+    return run.shellOutput(taskId)
+  }
+
+  async stopShell(id: string, itemId: string): Promise<void> {
+    const { run, taskId } = this.shellOf(id, itemId)
+    if (!run?.stopShell) throw new Error('Die Shell lässt sich nicht beenden: Die CLI dieses Chats läuft nicht mehr.')
+    await run.stopShell(taskId)
+  }
+
+  private shellOf(id: string, itemId: string): { run: AgentRun | null; taskId: string } {
+    const s = this.get(id)
+    const item = s.items?.[s.index.get(itemId) ?? -1]
+    if (item?.kind !== 'tool' || !item.shell) throw new Error('Diese Shell gibt es in dem Chat nicht.')
+    return { run: s.run, taskId: item.shell.taskId }
+  }
+
   async respond(id: string, itemId: string, response: InteractionResponse): Promise<void> {
     const s = this.get(id)
     if (!s.run) throw new Error('Die Session läuft nicht mehr, die Frage ist verfallen.')
@@ -355,6 +415,7 @@ export class SessionService extends TypedEmitter<Events> {
       }
     }
     if (patch.provider !== undefined && patch.provider !== meta.provider) {
+      this.requireEnabled(patch.provider)
       meta.provider = patch.provider
       const settings = this.settings()
       meta.model = patch.model ?? settings[patch.provider].model

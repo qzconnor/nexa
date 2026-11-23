@@ -20,9 +20,10 @@ Die Dateien stehen bei jedem [Release](https://github.com/qzconnor/nexa/releases
 Updates holt sich die App selbst (*Einstellungen › Updates*): Das AppImage ersetzt seine eigene Datei, das
 deb- und rpm-Paket installiert die App über den Paketmanager, der dafür einmal nach dem Passwort fragt.
 
-Claude Code und Codex müssen installiert sein. Nexa findet sie im PATH, unter Linux auch dann, wenn die
-App aus dem Anwendungsmenü startet: Sie übernimmt einmal die Umgebung der Login-Shell (`~/.bashrc`,
-`~/.zshrc`, nvm & Co.).
+Mindestens eine der CLIs, Claude Code oder Codex, muss installiert sein. Nexa findet sie im PATH, unter
+Linux auch dann, wenn die App aus dem Anwendungsmenü startet: Sie übernimmt einmal die Umgebung der
+Login-Shell (`~/.bashrc`, `~/.zshrc`, nvm & Co.). Beim ersten Start zeigt Nexa, was es gefunden hat, und
+fragt, welche CLIs es nutzen soll; das lässt sich später unter *Einstellungen › CLIs* ändern.
 
 ## Befehl `nx` (Windows)
 

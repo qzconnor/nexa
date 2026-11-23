@@ -2,7 +2,7 @@ import { systemAccountId } from './accounts'
 import { DEFAULT_THEME_ID } from './themes/builtin'
 import type { AppSettings, ProviderSettings } from './types'
 
-const provider = (): ProviderSettings => ({ path: '', model: '', effort: '', extraArgs: [] })
+const provider = (): ProviderSettings => ({ enabled: true, path: '', model: '', effort: '', extraArgs: [] })
 
 /** Settings of a fresh install; the folder for new projects is filled in by the main process. */
 export function defaultSettings(): AppSettings {
@@ -38,5 +38,7 @@ export function defaultSettings(): AppSettings {
       enabled: false,
       port: 47615,
     },
+    // Existing installs lack it too, so they see the setup once after the update that brought it.
+    setup: { done: false },
   }
 }

@@ -91,7 +91,24 @@ export interface ToolItem extends ItemBase {
   /** Something Nexa draws in the chat (its own MCP tools). */
   render?: RenderSpec
   exitCode?: number | null
+  /** A command the CLI runs as a task of its own (Claude Code's shells): what became of the process. */
+  shell?: ShellState
   startedAt: number
+  endedAt?: number
+}
+
+export type ShellStatus = 'running' | 'done' | 'error' | 'stopped'
+
+/**
+ * The process behind a shell command. In the background it outlives its tool call, which returns at
+ * once; this tells whether it still runs.
+ */
+export interface ShellState {
+  /** The CLI's id of the task, to read its output and stop it. */
+  taskId: string
+  /** Started in the background (or sent there later), rather than the tool call waiting for it. */
+  background: boolean
+  status: ShellStatus
   endedAt?: number
 }
 

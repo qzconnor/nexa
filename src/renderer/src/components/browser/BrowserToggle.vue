@@ -5,10 +5,14 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useBrowsersStore } from '@/stores/browsers'
 
-/** The button in the chat's header that shows or hides its browser; a dot while the agent works in it. */
+/**
+ * The button in the chat's header that shows or hides its browser; a dot while the agent works in it.
+ * Only while the chat's browser has a tab: an empty one isn't opened.
+ */
 const props = defineProps<{ sessionId: string }>()
 
 const browsers = useBrowsersStore()
+const hasTabs = computed(() => browsers.tabsOf(props.sessionId).length > 0)
 const open = computed(() => browsers.isOpen(props.sessionId))
 const busy = computed(() => browsers.busyIn(props.sessionId))
 const label = computed(() => (open.value ? 'Browser ausblenden' : 'Browser einblenden'))
@@ -16,6 +20,7 @@ const label = computed(() => (open.value ? 'Browser ausblenden' : 'Browser einbl
 
 <template>
   <Button
+    v-if="hasTabs"
     variant="ghost"
     size="icon-sm"
     :aria-label="busy ? `${label}, der Agent arbeitet darin` : label"

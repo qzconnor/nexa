@@ -4,6 +4,7 @@ import type {
   BrowserCredentials,
   BrowserDownload,
   BrowserDownloadAction,
+  BrowserFrame,
   BrowserHighlight,
   BrowserLoginRequest,
   BrowserPage,
@@ -35,6 +36,7 @@ export const BrowserInvoke = {
   downloadAction: 'browser:download-action',
   clearDownloads: 'browser:clear-downloads',
   loginAnswer: 'browser:login-answer',
+  watchFrames: 'browser:watch-frames',
 } as const
 
 export const BrowserEvent = {
@@ -60,6 +62,8 @@ export const BrowserEvent = {
   focus: 'event:browser-focus',
   /** The user clicked into a browser page, which the window doesn't see. */
   userClick: 'event:browser-user-click',
+  /** A picture of a watched tab's page (`watchFrames`). */
+  frame: 'event:browser-frame',
 } as const
 
 /** The browser beside each chat: its tabs, their pages and what the agents do in them. */
@@ -97,6 +101,8 @@ export interface BrowserApi {
   clearDownloads(): Promise<void>
   /** The user's answer to a page's question for a login; null cancels it. */
   answerLogin(id: string, credentials: BrowserCredentials | null): Promise<void>
+  /** Live pictures of a tab's page start or stop coming (`onFrame`); calls are counted per window. */
+  watchFrames(id: string, on: boolean): Promise<void>
   onTabs(cb: (state: BrowserTabsState) => void): Unsubscribe
   onShortcut(cb: (shortcut: BrowserShortcut, contentsId: number | null) => void): Unsubscribe
   /** `background`: without the keyboard, like Chrome (middle click, Ctrl+click). */
@@ -111,4 +117,5 @@ export interface BrowserApi {
   onFocus(cb: (id: string) => void): Unsubscribe
   /** The user clicked into the page (the agent's clicks aside). */
   onUserClick(cb: (id: string) => void): Unsubscribe
+  onFrame(cb: (id: string, frame: BrowserFrame) => void): Unsubscribe
 }

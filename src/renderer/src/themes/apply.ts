@@ -51,6 +51,7 @@ export function themeTokens(theme: Pick<AppTheme, 'mode' | 'colors' | 'terminal'
     '--sidebar-ring': mix(c.primary, 65),
     '--surface': mix(c.surface, translucent ? Math.min(100, opacity) : 100),
     '--surface-strong': mix(c.surface, translucent ? Math.min(100, opacity + 18) : 100),
+    '--surface-solid': mix(c.surface, translucent ? Math.min(100, opacity) : 100, c.background),
     '--success': c.success,
     '--warning': c.warning,
     '--window-bg': mix(c.background, opacity),

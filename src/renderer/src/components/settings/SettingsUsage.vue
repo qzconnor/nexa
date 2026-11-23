@@ -41,6 +41,12 @@ const CARDS = {
   codex: { anchor: 'usage.codex', description: 'Limits je Account und was Nexas Chats in 30 Tagen verbraucht haben.' },
 } as const satisfies Record<ProviderId, { anchor: string; description: string }>
 
+function describe(id: ProviderId): string {
+  // Off, its limits aren't read: old numbers would only look current.
+  if (!providers.enabled.includes(id)) return 'In Nexa ausgeschaltet (Einstellungen › CLIs).'
+  return providers.status(id)?.installed === false ? 'Nicht installiert.' : CARDS[id].description
+}
+
 const chart = computed(() => {
   const days = stats.value?.days ?? []
   if (!days.length) return null
@@ -62,7 +68,7 @@ const chart = computed(() => {
       :key="id"
       :anchor="CARDS[id].anchor"
       :title="PROVIDERS[id].name"
-      :description="providers.status(id)?.installed === false ? 'Nicht installiert.' : CARDS[id].description"
+      :description="describe(id)"
     >
       <template v-if="index === 0" #actions>
         <Button variant="ghost" size="sm" :disabled="loading" @click="load">
@@ -71,7 +77,7 @@ const chart = computed(() => {
           Aktualisieren
         </Button>
       </template>
-      <div v-for="account in accounts.ofProvider(id)" :key="account.id" class="flex flex-col gap-3">
+      <div v-for="account in providers.enabled.includes(id) ? accounts.ofProvider(id) : []" :key="account.id" class="flex flex-col gap-3">
         <div class="flex min-w-0 items-center gap-2 text-sm">
           <AccountDot :color="account.color" />
           <span class="truncate font-medium">{{ account.name }}</span>

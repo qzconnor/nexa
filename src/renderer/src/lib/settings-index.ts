@@ -31,6 +31,7 @@ interface TabDef {
 /** The settings of a CLI; the same rows for each. */
 function cliFields<P extends string>(p: P) {
   return [
+    { id: `${p}.enabled`, label: 'In Nexa nutzen', keywords: 'aktiv aktivieren deaktivieren einschalten ausschalten ausblenden verwenden' },
     { id: `${p}.model`, label: 'Modell', keywords: 'Standardmodell neue Chats Opus Sonnet Haiku GPT' },
     { id: `${p}.path`, label: 'Pfad zur CLI', keywords: 'Programm exe installiert finden PATH Ordner' },
     { id: `${p}.extraArgs`, label: 'Zusätzliche Argumente', keywords: 'Parameter Flags Optionen Kommandozeile Start' },

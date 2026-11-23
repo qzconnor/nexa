@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ChevronDownIcon, FolderIcon, FolderPlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { ChevronDownIcon, FolderIcon, FolderPlusIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
-import { PROVIDER_IDS, type PermissionMode, type ProviderId } from '@shared/chat'
+import type { PermissionMode, ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import type { AppSettings, DeepPartial } from '@shared/types'
 import AppLogo from '@/components/common/AppLogo.vue'
 import Composer from '@/components/chat/Composer.vue'
-import ProviderCard from '@/components/home/ProviderCard.vue'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -26,8 +25,8 @@ import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 
 /**
- * The start: which CLIs are there (installed, logged in), the project to work in, and the first
- * prompt of a new chat.
+ * The start: the project to work in and the first prompt of a new chat. Which CLIs are there and in
+ * use is the setup's and the settings' matter.
  */
 const providers = useProvidersStore()
 const accounts = useAccountsStore()
@@ -48,13 +47,18 @@ const mode = ref<PermissionMode>(supportedMode(provider.value, settings.settings
 const account = ref(accounts.defaultId(provider.value))
 const starting = ref(false)
 
-// The default CLI isn't installed but the other one is: take that one (without making it the default).
+// The default CLI isn't usable but another one is: take that one (without making it the default).
 watch(
-  () => providers.installed,
-  (installed) => {
-    if (installed.length && !installed.includes(provider.value)) provider.value = installed[0]
+  () => providers.available,
+  (available) => {
+    if (available.length && !available.includes(provider.value)) provider.value = available[0]
   },
   { immediate: true },
+)
+// The default changed elsewhere (a CLI switched off in the settings moves it).
+watch(
+  () => settings.settings.defaults.provider,
+  (id) => (provider.value = id),
 )
 // Follow the defaults of the chosen CLI, also when the settings dialog changes them.
 watch(
@@ -109,7 +113,14 @@ function pickAccount(id: string): void {
 }
 
 const project = computed(() => projects.get(ui.homeProjectId) ?? projects.projects[0])
-const anyReady = computed(() => providers.installed.length > 0)
+const anyReady = computed(() => providers.available.length > 0)
+/** The switch mid-chat is only worth telling about with more than one CLI on. */
+const tagline = computed(() => {
+  const names = providers.enabled.map((id) => PROVIDERS[id].name)
+  return names.length > 1
+    ? `${names.join(' und ')} in einer Oberfläche – wechsle mitten im Chat, der Verlauf geht mit.`
+    : `${names[0] ?? 'Deine CLI'} in einer eigenen Oberfläche, mit Dateien, Browser und Verlauf.`
+})
 
 async function pickFolder(): Promise<void> {
   const path = await window.api.app.pickDirectory(settings.settings.defaults.projectsFolder || undefined)
@@ -146,7 +157,7 @@ async function start(input: { text: string; images: string[] }): Promise<void> {
       <div class="flex flex-col items-center gap-3 text-center">
         <AppLogo class="size-12" />
         <h1 class="text-2xl font-semibold tracking-tight">Woran arbeiten wir?</h1>
-        <p class="text-sm text-muted-foreground">Claude Code und Codex in einer Oberfläche – wechsle mitten im Chat, der Verlauf geht mit.</p>
+        <p class="text-sm text-muted-foreground">{{ tagline }}</p>
       </div>
 
       <div class="flex flex-col gap-2">
@@ -187,20 +198,12 @@ async function start(input: { text: string; images: string[] }): Promise<void> {
           autofocus
           @send="start"
         />
-        <p v-if="!project" class="text-xs text-muted-foreground">Mit dem ersten Prompt fragt Nexa nach dem Ordner, in dem gearbeitet wird.</p>
-      </div>
-
-      <div class="flex flex-col gap-3">
-        <div class="flex items-center justify-between">
-          <h2 class="text-sm font-medium text-muted-foreground">Installierte CLIs</h2>
-          <Button variant="ghost" size="xs" :disabled="providers.detecting" @click="providers.refresh()">
-            <Spinner v-if="providers.detecting" />
-            <RefreshCwIcon v-else />
-            Erneut prüfen
-          </Button>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <ProviderCard v-for="id in PROVIDER_IDS" :key="id" :provider="id" compact />
+        <p v-if="!project && anyReady" class="text-xs text-muted-foreground">Mit dem ersten Prompt fragt Nexa nach dem Ordner, in dem gearbeitet wird.</p>
+        <!-- What the CLIs lack is in the settings; here only that something does. -->
+        <div v-if="providers.checked && !anyReady" class="flex items-center gap-3 rounded-xl border border-warning/40 bg-card/60 px-4 py-3 text-sm">
+          <TriangleAlertIcon class="size-4 shrink-0 text-warning" />
+          <span class="min-w-0 flex-1 text-muted-foreground">Keine CLI ist bereit. Unter Einstellungen › CLIs siehst du, was fehlt.</span>
+          <Button variant="outline" size="sm" @click="ui.openSettings('providers')">Öffnen</Button>
         </div>
       </div>
     </div>

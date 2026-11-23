@@ -241,6 +241,8 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsRespond, (_e, id: unknown, itemId: unknown, response: unknown) =>
     sessions.respond(str(id, 'Die Session'), str(itemId, 'Die Frage'), response as never),
   )
+  handle(IpcInvoke.sessionsShellOutput, (_e, id: unknown, itemId: unknown) => sessions.shellOutput(str(id, 'Die Session'), str(itemId, 'Die Shell')))
+  handle(IpcInvoke.sessionsStopShell, (_e, id: unknown, itemId: unknown) => sessions.stopShell(str(id, 'Die Session'), str(itemId, 'Die Shell')))
   handle(IpcInvoke.sessionsUpdate, (_e, id: unknown, patch: unknown) => sessions.update(str(id, 'Die Session'), (patch ?? {}) as never))
   handle(IpcInvoke.sessionsRemove, (_e, id: unknown) => sessions.remove(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))

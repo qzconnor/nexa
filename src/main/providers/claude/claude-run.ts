@@ -9,9 +9,11 @@ import type {
   PermissionMode,
   PermissionOption,
   Question,
+  ShellState,
+  ShellStatus,
   ToolItem,
 } from '@shared/chat'
-import type { SendInput, UsageWindow } from '@shared/types'
+import type { SendInput, ShellOutput, UsageWindow } from '@shared/types'
 import { renderSpecOf } from '@shared/render'
 import { isPlainObject } from '@shared/utils'
 import type { CliBinary } from '../cli-binary'
@@ -149,6 +151,17 @@ export class ClaudeRun implements AgentRun {
     if (!this.process.alive) return
     this.interrupting = true
     await this.request({ subtype: 'interrupt' }).catch(() => undefined)
+  }
+
+  async shellOutput(taskId: string): Promise<ShellOutput> {
+    if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr, die Ausgabe ist nicht mehr abrufbar.')
+    const answer = await this.request({ subtype: 'get_task_output', task_id: taskId })
+    return { text: str(answer.output) ?? '', truncated: answer.truncated === true }
+  }
+
+  async stopShell(taskId: string): Promise<void> {
+    if (!this.process.alive) return
+    await this.request({ subtype: 'stop_task', task_id: taskId })
   }
 
   async respond(itemId: string, response: InteractionResponse): Promise<void> {
@@ -380,6 +393,12 @@ export class ClaudeRun implements AgentRun {
     if (parentId) this.bumpAgent(parentId, view.title + (view.detail ? ` · ${view.detail}` : ''))
   }
 
+  private putShell(tool: ToolItem, shell: ShellState): void {
+    const next: ToolItem = { ...tool, shell }
+    this.tools.set(tool.id, next)
+    this.sink.item(next)
+  }
+
   private bumpAgent(agentId: string, activity: string): void {
     const agent = this.tools.get(agentId)
     if (agent?.kind !== 'agent') return
@@ -400,13 +419,25 @@ export class ClaudeRun implements AgentRun {
       const now = Date.now()
       if (known.kind === 'agent') {
         // A background agent answers at once that it was started; its end comes as a task event.
-        if (known.background && !isError) continue
+        // Its task_started says so; the answer itself too, should that event not have come.
+        if (!isError && (known.background || /^Async agent launched/i.test(text.trim()))) {
+          if (!known.background) {
+            const next: AgentItem = { ...known, background: true }
+            this.tools.set(known.id, next)
+            this.sink.item(next)
+          }
+          continue
+        }
         const next: AgentItem = { ...known, status: isError ? 'error' : 'done', result: text, endedAt: now, activity: undefined }
         this.tools.set(known.id, next)
         this.sink.item(next)
       } else {
         const denied = isError && /permission|denied|abgelehnt|rejected/i.test(text) && text.length < 400
         const next: ToolItem = { ...known, status: denied ? 'denied' : isError ? 'error' : 'done', output: text, endedAt: now }
+        // A shell in the foreground ends with its call; one in the background runs on.
+        if (next.shell && !next.shell.background && next.shell.status === 'running') {
+          next.shell = { ...next.shell, status: isError ? 'error' : 'done', endedAt: now }
+        }
         this.tools.set(known.id, next)
         this.sink.item(next)
       }
@@ -455,7 +486,53 @@ export class ClaudeRun implements AgentRun {
         return
       case 'task_started': {
         const toolId = str(m.tool_use_id)
-        if (toolId && typeof m.task_id === 'string') this.tasks.set(m.task_id, toolId)
+        if (!toolId || typeof m.task_id !== 'string') return
+        this.tasks.set(m.task_id, toolId)
+        const tool = this.tools.get(toolId)
+        // A shell (Bash, also in the foreground): its process gets an id to read and stop it by.
+        if (tool?.kind === 'tool' && (m.task_type === 'local_bash' || tool.tool === 'bash')) {
+          const background = m.is_backgrounded === true || (isPlainObject(tool.input) && tool.input.run_in_background === true)
+          this.putShell(tool, { taskId: m.task_id, background, status: 'running' })
+        }
+        // Claude Code runs agents in the background unless told otherwise: its call returns at once
+        // („Async agent launched“), the agent works on until its task_notification.
+        if (tool?.kind === 'agent' && m.is_backgrounded === true && !tool.background) {
+          const next: AgentItem = { ...tool, background: true }
+          this.tools.set(tool.id, next)
+          this.sink.item(next)
+        }
+        return
+      }
+      case 'task_updated': {
+        const tool = typeof m.task_id === 'string' ? this.tools.get(this.tasks.get(m.task_id) ?? '') : undefined
+        const patch = isPlainObject(m.patch) ? m.patch : {}
+        if (tool?.kind !== 'tool' || !tool.shell) return
+        const status = shellStatusOf(patch.status)
+        if (status && status !== 'running') {
+          this.putShell(tool, { ...tool.shell, status, endedAt: tool.shell.endedAt ?? Date.now() })
+        } else if (patch.is_backgrounded === true) {
+          // Sent to the background: its call returned (and may have looked like its end), the process runs on.
+          this.putShell(tool, { ...tool.shell, background: true, status: 'running', endedAt: undefined })
+        }
+        return
+      }
+      case 'background_tasks_changed': {
+        // The level of what runs in the background: a shell that left it has ended, also when its
+        // own notification got lost (that one, if it still comes, tells how).
+        if (!Array.isArray(m.tasks)) return
+        const live = new Set(m.tasks.filter(isPlainObject).map((t) => str(t.task_id)))
+        for (const [, tool] of this.tools) {
+          if (tool.kind !== 'tool' || !tool.shell?.background || tool.shell.status !== 'running' || live.has(tool.shell.taskId)) continue
+          this.putShell(tool, { ...tool.shell, status: 'done', endedAt: Date.now() })
+        }
+        // An agent in the background as well.
+        for (const [taskId, toolId] of this.tasks) {
+          const agent = this.tools.get(toolId)
+          if (agent?.kind !== 'agent' || !agent.background || agent.status !== 'running' || live.has(taskId)) continue
+          const next: AgentItem = { ...agent, status: 'done', endedAt: Date.now(), activity: undefined }
+          this.tools.set(agent.id, next)
+          this.sink.item(next)
+        }
         return
       }
       case 'task_progress': {
@@ -465,7 +542,8 @@ export class ClaudeRun implements AgentRun {
         const usage = isPlainObject(m.usage) ? m.usage : {}
         const next: AgentItem = {
           ...agent,
-          activity: str(m.summary) ?? str(m.last_tool_name) ?? agent.activity,
+          // Its own tool calls (streamed into its thread) say better what it does than the tool's name.
+          activity: agent.activity || str(m.summary) || str(m.last_tool_name),
           toolCount: typeof usage.tool_uses === 'number' ? usage.tool_uses : agent.toolCount,
         }
         this.tools.set(agent.id, next)
@@ -475,6 +553,11 @@ export class ClaudeRun implements AgentRun {
       case 'task_notification': {
         const toolId = str(m.tool_use_id) ?? (typeof m.task_id === 'string' ? this.tasks.get(m.task_id) : undefined)
         const agent = toolId ? this.tools.get(toolId) : undefined
+        if (agent?.kind === 'tool' && agent.shell) {
+          const status = m.status === 'failed' ? 'error' : m.status === 'stopped' ? 'stopped' : 'done'
+          this.putShell(agent, { ...agent.shell, status, endedAt: agent.shell.endedAt ?? Date.now() })
+          return
+        }
         if (agent?.kind !== 'agent') return
         const status = m.status === 'failed' ? 'error' : m.status === 'stopped' ? 'stopped' : 'done'
         const next: AgentItem = { ...agent, status, result: str(m.summary) ?? agent.result, endedAt: Date.now(), activity: undefined }
@@ -674,6 +757,9 @@ export class ClaudeRun implements AgentRun {
     for (const [id, tool] of this.tools) {
       if (tool.kind === 'tool' && (tool.status === 'running' || tool.status === 'pending')) {
         const next: ToolItem = { ...tool, status: this.interrupting ? 'denied' : 'done', endedAt: now }
+        if (next.shell && !next.shell.background && next.shell.status === 'running') {
+          next.shell = { ...next.shell, status: this.interrupting ? 'stopped' : 'done', endedAt: now }
+        }
         this.tools.set(id, next)
         this.sink.item(next)
       } else if (tool.kind === 'agent' && tool.status === 'running' && !tool.background) {
@@ -695,6 +781,15 @@ export class ClaudeRun implements AgentRun {
     const wasRunning = this.turnStartedAt !== null
     this.finishStreaming()
     this.cancelInteractions()
+    // Its shells and agents in the background ran in this process.
+    for (const [, tool] of this.tools) {
+      if (tool.kind === 'tool' && tool.shell?.status === 'running') this.putShell(tool, { ...tool.shell, status: 'stopped', endedAt: Date.now() })
+      if (tool.kind === 'agent' && tool.status === 'running') {
+        const next: AgentItem = { ...tool, status: 'stopped', endedAt: Date.now(), activity: undefined }
+        this.tools.set(tool.id, next)
+        this.sink.item(next)
+      }
+    }
     this.turnStartedAt = null
     const error = this.stopping || code === 0 ? undefined : lastLines(stderr) || `Claude Code wurde beendet (Code ${code ?? 'unbekannt'}).`
     if (error && wasRunning) {
@@ -719,6 +814,24 @@ function questionsOf(input: Json): Question[] {
       preview: str(o.preview),
     })),
   }))
+}
+
+/** A task's state in `task_updated` as a shell's; undefined for what isn't one. */
+function shellStatusOf(status: unknown): ShellStatus | undefined {
+  switch (status) {
+    case 'pending':
+    case 'running':
+    case 'paused':
+      return 'running'
+    case 'completed':
+      return 'done'
+    case 'failed':
+      return 'error'
+    case 'killed':
+      return 'stopped'
+    default:
+      return undefined
+  }
 }
 
 function lastLines(text: string, count = 6): string {

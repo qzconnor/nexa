@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ChatItem } from '@shared/chat'
+import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
 import { chatBlocks } from '@/lib/tools'
 import { useSettingsStore } from '@/stores/settings'
@@ -20,6 +21,11 @@ const props = defineProps<{ items: ChatItem[]; sessionId: string; parentId?: str
 const settings = useSettingsStore()
 
 const blocks = computed(() => chatBlocks(props.items, props.parentId ?? null, settings.settings.chat.showThinking))
+/** The newest browser card shows the page live; the others as it was when they ended. */
+const liveBrowser = computed(() => {
+  const last = blocks.value.findLast((b) => b.type === 'browser')
+  return last?.type === 'browser' ? last.id : null
+})
 
 /** The CLI a prompt went to shows when it differs from the one before. */
 const providerChanges = computed(() => {
@@ -36,8 +42,9 @@ const providerChanges = computed(() => {
 
 <template>
   <div class="flex flex-col">
-    <template v-for="block in blocks" :key="block.type === 'tools' ? block.id : block.item.id">
+    <template v-for="block in blocks" :key="block.type === 'item' ? block.item.id : block.id">
       <ToolGroup v-if="block.type === 'tools'" :tools="block.tools" />
+      <BrowserCard v-else-if="block.type === 'browser'" :tools="block.tools" :block-id="block.id" :session-id="sessionId" :live="block.id === liveBrowser" />
       <template v-else>
         <UserMessage v-if="block.item.kind === 'user'" :item="block.item" :show-provider="providerChanges.has(block.item.id)" />
         <div

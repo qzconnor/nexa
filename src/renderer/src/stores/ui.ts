@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { ThemeContent } from '@shared/themes/types'
 
 export type MainView = 'chat' | 'home'
@@ -45,8 +45,13 @@ function remember(key: string, value: string): void {
 export const useUiStore = defineStore('ui', () => {
   const view = ref<MainView>('home')
   const sidebarOpen = ref(stored('nexa.sidebar', 'open') === 'open')
-  /** The agent item shown in the side panel. */
+  /** The agent whose work the chat shows in place of the main thread; null: the main thread. */
   const agentId = ref<string | null>(null)
+  /** The shell (its tool item) shown in the side panel. */
+  const shellId = ref<string | null>(null)
+  /** The shells above the composer as one line: a server runs for hours, folded once is enough. */
+  const shellDockFolded = ref(stored<'open' | 'folded'>('nexa.shellDock', 'open') === 'folded')
+  watch(shellDockFolded, (folded) => remember('nexa.shellDock', folded ? 'folded' : 'open'))
   /** The project a new chat goes to (home view). */
   const homeProjectId = ref<string | null>(null)
 
@@ -104,6 +109,8 @@ export const useUiStore = defineStore('ui', () => {
     view,
     sidebarOpen,
     agentId,
+    shellId,
+    shellDockFolded,
     homeProjectId,
     settingsOpen,
     settingsSection,

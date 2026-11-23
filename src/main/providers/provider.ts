@@ -1,5 +1,5 @@
 import type { ChatItem, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
-import type { ModelOption, ProviderStatus, ProviderUsage, SendInput } from '@shared/types'
+import type { ModelOption, ProviderStatus, ProviderUsage, SendInput, ShellOutput } from '@shared/types'
 import type { AccountEnv } from '../accounts/account-env'
 import type { ResolvedCommand } from './cli-binary'
 
@@ -62,6 +62,10 @@ export interface AgentRun {
   respond(itemId: string, response: InteractionResponse): Promise<void>
   setModel(model: string | undefined, effort: string | undefined): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
+  /** The end of a shell task's output (`ShellState.taskId`), for CLIs that keep it. */
+  shellOutput?(taskId: string): Promise<ShellOutput>
+  /** Ends a shell task. */
+  stopShell?(taskId: string): Promise<void>
   stop(): Promise<void>
   readonly alive: boolean
 }

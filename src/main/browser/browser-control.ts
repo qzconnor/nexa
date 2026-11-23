@@ -227,6 +227,12 @@ export class BrowserControl extends TypedEmitter<Events> {
     browser.waiters.clear()
   }
 
+  /** The page of a tab, while the window has it attached. */
+  pageOf(browserId: string): WebContents | null {
+    const contents = this.browsers.get(browserId)?.contents
+    return contents && !contents.isDestroyed() ? contents : null
+  }
+
   log(browserId: string): BrowserActivity[] {
     return [...(this.browsers.get(browserId)?.log ?? [])]
   }

@@ -1,6 +1,6 @@
 import { cp, mkdir, readdir, stat } from 'node:fs/promises'
-import { basename, dirname, join, relative } from 'node:path'
-import { claudeProjectKey, type ClaudePaths } from './cli-files'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+import { claudePaths, claudeProjectKey, codexPaths, type ClaudePaths, type CodexPaths } from './cli-files'
 
 /**
  * Moves a conversation to another account: each account keeps its conversations in its own config
@@ -61,6 +61,39 @@ export async function copyClaudeSession(from: ClaudePaths, to: ClaudePaths, sess
   await mkdir(dirname(target), { recursive: true })
   await cp(transcript, target, options)
   return true
+}
+
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => resolve(p).replace(/[\\/]+$/, '')
+  return process.platform === 'win32' ? norm(a).toLowerCase() === norm(b).toLowerCase() : norm(a) === norm(b)
+}
+
+/**
+ * Makes sure Claude Code finds a session in the folder it starts with (`paths`): there already, or
+ * copied from `savedIn`, the folder it was saved in. The standard account's folder is whatever
+ * CLAUDE_CONFIG_DIR Nexa was started with, e.g. another account manager's when `npm run dev` ran in
+ * one of its terminals. False when the session is in neither, and `--resume` would fail.
+ */
+export async function ensureClaudeSession(paths: ClaudePaths, savedIn: string | undefined, sessionId: string, cwd: string): Promise<boolean> {
+  if (await findClaudeTranscript(paths.projectsDir, sessionId, cwd)) return true
+  if (!savedIn || samePath(savedIn, paths.configDir)) return false
+  return copyClaudeSession(claudePaths(savedIn, true), paths, sessionId, cwd)
+}
+
+/**
+ * The same for a Codex thread: `found` when Codex can resume it, `copiedTo` the file to resume from
+ * when it had to be copied from `savedIn`.
+ */
+export async function ensureCodexThread(
+  paths: CodexPaths,
+  savedIn: string | undefined,
+  threadId: string,
+  knownPath?: string,
+): Promise<{ found: boolean; copiedTo?: string }> {
+  if ((knownPath && (await isFile(knownPath))) || (await findCodexRollout(paths.sessionsDir, threadId))) return { found: true }
+  if (!savedIn || samePath(savedIn, paths.configDir)) return { found: false }
+  const copiedTo = await copyCodexThread(codexPaths(savedIn).sessionsDir, paths.sessionsDir, threadId)
+  return copiedTo ? { found: true, copiedTo } : { found: false }
 }
 
 /** Codex's conversation file of a thread (`sessions/<yyyy>/<mm>/<dd>/rollout-<time>-<thread>.jsonl`). */

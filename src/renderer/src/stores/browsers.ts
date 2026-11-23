@@ -7,6 +7,7 @@ import {
   type BrowserCredentials,
   type BrowserDownload,
   type BrowserDownloadAction,
+  type BrowserFrame,
   type BrowserHighlight,
   type BrowserLoginRequest,
   type BrowserShortcut,
@@ -111,6 +112,8 @@ export const useBrowsersStore = defineStore('browsers', () => {
 
   const views = shallowReactive(new Map<string, BrowserView>())
   const controls = reactive(new Map<string, BrowserControlState>())
+  /** The tab each chat's agent drove last. */
+  const lastDriven = reactive(new Map<string, string>())
   const logs = reactive(new Map<string, BrowserActivity[]>())
   const highlights = reactive(new Map<string, ShownHighlight>())
   let highlightCount = 0
@@ -127,6 +130,14 @@ export const useBrowsersStore = defineStore('browsers', () => {
     for (const id of [...awake]) if (!ids.has(id)) awake.delete(id)
     // What an agent did in a tab goes with it.
     for (const map of [controls, logs, highlights]) for (const id of [...map.keys()]) if (!ids.has(id)) map.delete(id)
+    // A browser without tabs isn't shown, and doesn't come back by itself with the agent's next tab.
+    const withTabs = new Set(state.tabs.map((t) => t.sessionId))
+    const empty = [...panels].filter((id) => !withTabs.has(id))
+    if (empty.length) {
+      for (const id of empty) panels.delete(id)
+      savePanels()
+    }
+    if (fullscreen.value && !withTabs.has(fullscreen.value)) fullscreen.value = null
   }
   window.api.browser.onTabs(applyTabs)
   void window.api.browser.tabs().then((state) => {
@@ -148,8 +159,11 @@ export const useBrowsersStore = defineStore('browsers', () => {
   const width = ref(Math.max(MIN_PANEL_WIDTH, Number(readJson<number>(WIDTH_KEY, DEFAULT_PANEL_WIDTH)) || DEFAULT_PANEL_WIDTH))
   /** Where the shown chat's panel has room for its page; null while none is shown. */
   const slot = ref<BrowserSlot | null>(null)
-  /** The size of the last slot: a page an agent drives while no panel shows it keeps it. */
-  const lastSize = ref({ width: DEFAULT_PANEL_WIDTH, height: 700 })
+  /**
+   * The size of a page an agent drives while no panel shows it: a desktop window's, the way the chat's
+   * preview (BrowserCard) shows it, and the same for every chat, so the page doesn't change its layout.
+   */
+  const lastSize = ref({ width: 1280, height: 800 })
 
   function savePanels(): void {
     // Chats that are gone don't need to be remembered.
@@ -162,7 +176,9 @@ export const useBrowsersStore = defineStore('browsers', () => {
 
   const isOpen = (sessionId: string | null | undefined) => !!sessionId && panels.has(sessionId)
 
+  /** Opens or closes a chat's browser panel; without tabs it stays closed (there is nothing to show). */
   function setOpen(sessionId: string, open: boolean, focus = false): void {
+    if (open && !tabsOf(sessionId).length) return
     if (open === panels.has(sessionId)) {
       if (open && focus) focusShown(sessionId)
       return
@@ -195,7 +211,6 @@ export const useBrowsersStore = defineStore('browsers', () => {
       return
     }
     slot.value = next
-    if (next && next.width > 0 && next.height > 0) lastSize.value = { width: next.width, height: next.height }
   }
 
   /** The tab whose page the user sees right now, if any. */
@@ -220,12 +235,9 @@ export const useBrowsersStore = defineStore('browsers', () => {
   }
 
   /** A chat whose empty browser (no tab yet) should take the keyboard, counted so a repeat counts too. */
-  const emptyFocus = ref<{ sessionId: string; seq: number } | null>(null)
-
   function focusShown(sessionId: string): void {
     const id = shownOf(sessionId)
     if (id) requestFocus(id, 'content')
-    else emptyFocus.value = { sessionId, seq: (emptyFocus.value?.seq ?? 0) + 1 }
   }
 
   async function openTab(sessionId: string, url?: string | null, background = false): Promise<BrowserTabInfo | undefined> {
@@ -248,17 +260,13 @@ export const useBrowsersStore = defineStore('browsers', () => {
 
   // What the agents do in the browsers.
   window.api.browser.onControl((id, control) => {
-    const before = controls.get(id)
     if (control) controls.set(id, control)
     else controls.delete(id)
     if (!control) return
-    // A page an agent drives must be loaded, also when no panel shows it.
+    // A page an agent drives must be loaded, also when no panel shows it. The chat shows what it does
+    // (BrowserCard); the panel opens only when the user asks for it.
     awake.add(id)
-    // The agent starts using the browser (again): its chat's panel opens, unless the user closed it meanwhile.
-    if (control.busy && !before?.busy && !before?.active) {
-      const owner = tab(id)?.sessionId ?? control.sessionId
-      if (!panels.has(owner)) setOpen(owner, true)
-    }
+    if (control.busy) lastDriven.set(control.sessionId, id)
   })
   window.api.browser.onActivity((id, activity) => {
     const log = logs.get(id)
@@ -366,6 +374,51 @@ export const useBrowsersStore = defineStore('browsers', () => {
   /** An agent works in a page of the chat's browser right now. */
   const busyIn = (sessionId: string) => tabsOf(sessionId).some((t) => controls.get(t.id)?.busy === true)
 
+  // ── The browser in the chat (BrowserCard): live pictures, the agent's tab, full screen ──
+
+  /** The tab the chat's agent works in: the one it drives, else the one it drove last, else the shown one. */
+  function agentTab(sessionId: string): string | null {
+    const own = tabsOf(sessionId)
+    const driving = own.find((t) => controls.get(t.id)?.busy) ?? own.find((t) => controls.get(t.id)?.active)
+    if (driving) return driving.id
+    const last = lastDriven.get(sessionId)
+    if (last && own.some((t) => t.id === last)) return last
+    return shownOf(sessionId)
+  }
+
+  /** The newest picture of each watched tab's page. */
+  const frames = shallowReactive(new Map<string, BrowserFrame>())
+  window.api.browser.onFrame((id, frame) => frames.set(id, frame))
+  /** Pictures cards keep of how the page looked when their part of the chat was over (this run only). */
+  const stills = shallowReactive(new Map<string, BrowserFrame>())
+
+  /** Live pictures of a tab's page come while watched; returns the end of watching. */
+  function watchFrames(id: string): () => void {
+    void window.api.browser.watchFrames(id, true).catch(() => undefined)
+    let done = false
+    return () => {
+      if (done) return
+      done = true
+      void window.api.browser.watchFrames(id, false).catch(() => undefined)
+    }
+  }
+
+  /** The chat whose browser fills its whole area, to use the page (e.g. to log in). */
+  const fullscreen = ref<string | null>(null)
+
+  /** Shows the tab in the chat's browser panel, to use it there. */
+  function openInPanel(sessionId: string, tabId: string | null): void {
+    if (tabId && shownOf(sessionId) !== tabId) showTab(sessionId, tabId)
+    if (fullscreen.value === sessionId) fullscreen.value = null
+    setOpen(sessionId, true, true)
+  }
+
+  function openFullscreen(sessionId: string, tabId: string | null): void {
+    if (tabId && shownOf(sessionId) !== tabId) showTab(sessionId, tabId)
+    fullscreen.value = sessionId
+    focusShown(sessionId)
+  }
+
   return {
     tabs,
     shown,
@@ -378,7 +431,14 @@ export const useBrowsersStore = defineStore('browsers', () => {
     width,
     slot,
     lastSize,
-    emptyFocus,
+    frames,
+    stills,
+    fullscreen,
+    agentTab,
+    watchFrames,
+    openInPanel,
+    openFullscreen,
+    closeFullscreen: () => (fullscreen.value = null),
     visibleTab,
     downloads,
     logins,

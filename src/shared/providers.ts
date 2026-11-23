@@ -1,4 +1,5 @@
-import type { PermissionMode, ProviderId } from './chat'
+import { PROVIDER_IDS, type PermissionMode, type ProviderId } from './chat'
+import type { AppSettings, DeepPartial } from './types'
 
 /**
  * What Nexa knows of each CLI without asking it. The models come from the CLI itself at runtime
@@ -52,4 +53,24 @@ export const PERMISSION_MODES: Record<PermissionMode, { label: string; descripti
 
 export function providerName(id: ProviderId): string {
   return PROVIDERS[id].name
+}
+
+type ProviderToggles = Pick<AppSettings, ProviderId | 'defaults'>
+
+/** The CLIs switched on in the settings, in their order. */
+export function enabledProviders(settings: Pick<AppSettings, ProviderId>): ProviderId[] {
+  return PROVIDER_IDS.filter((id) => settings[id].enabled)
+}
+
+/**
+ * The settings change that switches a CLI on or off. New chats can't start with one that is off, so
+ * the default moves to one that is on. The last one stays on: without a CLI Nexa can do nothing.
+ */
+export function providerTogglePatch(settings: ProviderToggles, id: ProviderId, enabled: boolean): DeepPartial<AppSettings> | null {
+  if (settings[id].enabled === enabled) return null
+  const others = enabledProviders(settings).filter((other) => other !== id)
+  if (!enabled && !others.length) return null
+  const patch: DeepPartial<AppSettings> = { [id]: { enabled } }
+  if (!enabled && settings.defaults.provider === id) patch.defaults = { provider: others[0] }
+  return patch
 }

@@ -34,6 +34,8 @@ const props = defineProps<{
   draftKey?: string
   autofocus?: boolean
   disabled?: boolean
+  /** Floats over the chat, frosted (in a `.frost-backing` wrapper). */
+  floating?: boolean
 }>()
 const emit = defineEmits<{
   send: [input: { text: string; images: string[] }]
@@ -172,7 +174,8 @@ defineExpose({ focus: () => input.value?.focus() })
   <div
     :class="
       cn(
-        'flex flex-col rounded-2xl border bg-card shadow-lg shadow-black/5 transition-colors focus-within:border-ring/60',
+        'flex flex-col rounded-2xl border transition-colors focus-within:border-ring/60',
+        floating ? 'bg-card/40 shadow-lg shadow-black/15 backdrop-blur-lg' : 'bg-card shadow-lg shadow-black/5',
         dragging && 'border-primary bg-primary/5',
       )
     "
