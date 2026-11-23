@@ -18,6 +18,7 @@ import SettingsAccounts from './SettingsAccounts.vue'
 import SettingsApi from './SettingsApi.vue'
 import SettingsAppearance from './SettingsAppearance.vue'
 import SettingsChat from './SettingsChat.vue'
+import SettingsGeneral from './SettingsGeneral.vue'
 import SettingsNotifications from './SettingsNotifications.vue'
 import SettingsProviders from './SettingsProviders.vue'
 import SettingsUpdates from './SettingsUpdates.vue'
@@ -32,6 +33,7 @@ const ui = useUiStore()
 const accounts = useAccountsStore()
 
 const SECTIONS: { id: SettingsSection; label: string; description: string; icon: Component; page: Component }[] = [
+  { id: 'general', label: 'Allgemein', description: 'Fenster, Infobereich und Start', icon: SETTINGS_ICONS.general, page: SettingsGeneral },
   { id: 'appearance', label: 'Darstellung', description: 'Theme, Fenster und Chat-Breite', icon: SETTINGS_ICONS.appearance, page: SettingsAppearance },
   { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
   { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },

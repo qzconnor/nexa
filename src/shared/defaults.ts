@@ -7,6 +7,10 @@ const provider = (): ProviderSettings => ({ enabled: true, path: '', model: '', 
 /** Settings of a fresh install; the folder for new projects is filled in by the main process. */
 export function defaultSettings(): AppSettings {
   return {
+    general: {
+      runInTray: false,
+      launchAtLogin: false,
+    },
     appearance: {
       theme: DEFAULT_THEME_ID,
       material: 'mica',

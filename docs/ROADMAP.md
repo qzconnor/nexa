@@ -113,6 +113,9 @@
       Rückfrage hat oder an ein Limit stößt, auf Wunsch mit Vorschau; ein Klick öffnet den Chat. Ton,
       blinkende Taskleiste, „nur im Hintergrund“ oder „auch, wenn der Chat nicht offen ist“, Warnung ab
       einer Schwelle je Account (80 %), „Login abgelaufen“, Glocke in der Titelleiste zum Stummschalten
+- [x] Im Infobereich weiterlaufen und mit Windows starten (Einstellungen „Allgemein“): Schließen blendet
+      das Fenster nur aus, Chats, API und Benachrichtigungen laufen weiter; der Start bei der Anmeldung
+      bleibt dann unsichtbar, bis man Nexa öffnet. Auch unter Linux (Statusbereich, XDG-Autostart)
 
 ## Als Nächstes
 
@@ -143,8 +146,6 @@
 
 Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/src/`).
 
-- [ ] **Im Infobereich weiterlaufen** und **mit Windows starten** (versteckt): Schließen blendet das
-      Fenster nur aus, Chats und API laufen weiter (`window/tray.ts`, `lib/login-item.ts`).
 - [ ] **Übersicht aller Chats nach Zustand** (wartet auf dich, arbeitet, fertig) mit der offenen Frage,
       dem laufenden Werkzeug, Kontext und Limit je Karte; Strg+Umschalt+J springt zum nächsten wartenden
       Chat (`OverviewView.vue`, `lib/overview.ts`, `lib/attention.ts`).

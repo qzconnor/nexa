@@ -23,6 +23,11 @@ export function linuxPackage(): LinuxPackage | null {
   return cachedPackage
 }
 
+/** What starts the app again: the AppImage file itself, not the binary in its temporary mount. */
+export function launchExecutable(): string {
+  return (process.platform === 'linux' && process.env.APPIMAGE) || process.execPath
+}
+
 /** Variables the AppImage runtime and its AppRun script set for the app only, not for programs it starts. */
 const APPIMAGE_ONLY_ENV = ['APPDIR', 'APPIMAGE', 'ARGV0', 'OWD']
 /** Search paths AppRun extends with folders inside the mounted AppImage. */
