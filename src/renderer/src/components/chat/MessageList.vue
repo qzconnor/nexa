@@ -111,6 +111,21 @@ onMounted(() => {
 
 onBeforeUnmount(() => observer?.disconnect())
 
+/** All blocks at once, for the search in the chat; what the user was looking at stays in view. */
+async function showAll(): Promise<void> {
+  if (!first.value) return
+  const el = scroller
+  const fromBottom = el ? el.scrollHeight - el.scrollTop : 0
+  anchor.value = keyOf(blocks.value[0]!)
+  await nextTick()
+  if (el) el.scrollTop = el.scrollHeight - fromBottom
+}
+
+/** Blocks not shown yet (older ones above the page). */
+const hidden = computed(() => first.value)
+
+defineExpose({ hidden, showAll })
+
 /** The newest browser card shows the page live; the others as it was when they ended. */
 const liveBrowser = computed(() => {
   const last = blocks.value.findLast((b) => b.type === 'browser')
@@ -131,11 +146,13 @@ const providerChanges = computed(() => {
 </script>
 
 <template>
-  <div ref="root" class="flex flex-col">
+  <!-- Its children are what the search in the chat reads, each as one text (useDomFind). -->
+  <div ref="root" class="flex flex-col" data-find-blocks>
     <div ref="top" />
     <button
       v-if="first"
       type="button"
+      data-find-skip
       class="mx-auto mb-2 rounded-full px-3 py-1 text-[0.78rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       @click="showOlder"
     >

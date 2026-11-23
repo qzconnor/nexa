@@ -125,6 +125,12 @@ export const useUiStore = defineStore('ui', () => {
     remember('nexa.settingsSection', section)
   }
 
+  /** Counts the requests for the search in the open chat (from the quick open); the chat opens it. */
+  const findRequest = ref(0)
+  function findInChat(): void {
+    findRequest.value++
+  }
+
   /** The project or separator whose prompt the prompt dialog edits; null: closed. */
   const promptTarget = ref<PromptTarget | null>(null)
 
@@ -186,6 +192,8 @@ export const useUiStore = defineStore('ui', () => {
     paletteOpen,
     paletteQuery,
     openPalette,
+    findRequest,
+    findInChat,
     themeEditorRequest,
     promptTarget,
     confirmState,

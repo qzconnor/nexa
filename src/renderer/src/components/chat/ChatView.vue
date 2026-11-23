@@ -13,6 +13,7 @@ import {
   PencilIcon,
   PowerIcon,
   RefreshCwIcon,
+  SearchIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from '@lucide/vue'
@@ -22,6 +23,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { AgentItem, ChatItem, TodoItem } from '@shared/chat'
 import type { SessionUpdateInput } from '@shared/types'
 import { PROVIDERS } from '@shared/providers'
+import BrowserFind from '@/components/browser/BrowserFind.vue'
 import BrowserPanel from '@/components/browser/BrowserPanel.vue'
 import BrowserToggle from '@/components/browser/BrowserToggle.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
@@ -34,6 +36,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Kbd } from '@/components/ui/kbd'
@@ -41,6 +44,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { useChatActions } from '@/composables/useChatActions'
 import { useChatCommands } from '@/composables/useChatCommands'
 import { useClock } from '@/composables/useClock'
+import { useDomFind } from '@/composables/useDomFind'
 import { provideProjectPath } from '@/composables/useProjectPath'
 import { useStickToBottom } from '@/composables/useStickToBottom'
 import type { AppCommand } from '@/lib/chat-commands'
@@ -342,6 +346,60 @@ async function remove(): Promise<void> {
   await attempt(() => sessions.remove(id), 'Löschen fehlgeschlagen')
   ui.view = 'home'
 }
+
+// ── Find in the chat (Ctrl+F, F3), as in a browser ──
+
+const list = ref<InstanceType<typeof MessageList> | null>(null)
+const findBar = ref<InstanceType<typeof BrowserFind> | null>(null)
+const findOpen = ref(false)
+const find = useDomFind(() => (findOpen.value ? content.value : null), '[data-find-blocks] > *')
+/** Older messages of the main thread aren't rendered (MessageList's pages): the search can't see them. */
+const unshown = computed(() => (findOpen.value && !viewed.value ? (list.value?.hidden ?? 0) : 0))
+
+function openFind(): void {
+  findOpen.value = true
+  void nextTick(() => findBar.value?.focus())
+}
+
+function closeFind(): void {
+  findOpen.value = false
+  find.clear()
+  composer.value?.focus()
+}
+
+async function showAllForFind(): Promise<void> {
+  await list.value?.showAll()
+  // Searched again over all of them, from what is in view.
+  if (find.query.value) find.search(find.query.value)
+}
+
+// Another chat: its own search.
+watch(
+  () => meta.value?.id,
+  () => {
+    if (!findOpen.value) return
+    findOpen.value = false
+    find.clear()
+  },
+)
+watch(
+  () => ui.findRequest,
+  () => openFind(),
+)
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  // Taken by what has the keyboard (the browser's page search, a dialog's own), or the chat is covered.
+  if (event.defaultPrevented || diff.value || (event.target instanceof Element && event.target.closest('[role=dialog]'))) return
+  const ctrl = event.ctrlKey || event.metaKey
+  if (ctrl && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'f') {
+    event.preventDefault()
+    openFind()
+  } else if (event.key === 'F3' && !ctrl && !event.altKey) {
+    event.preventDefault()
+    if (findOpen.value && findBar.value?.query) findBar.value.step(!event.shiftKey)
+    else openFind()
+  }
+})
 </script>
 
 <template>
@@ -417,6 +475,7 @@ async function remove(): Promise<void> {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="w-56">
               <DropdownMenuItem @select="startRename"><PencilIcon /> Umbenennen</DropdownMenuItem>
+              <DropdownMenuItem :disabled="!!diff" @select="openFind"><SearchIcon /> Im Chat suchen <DropdownMenuShortcut>Strg+F</DropdownMenuShortcut></DropdownMenuItem>
               <DropdownMenuItem :disabled="busy" @select="chatActions.fork(meta.id)"><GitForkIcon /> Chat abzweigen</DropdownMenuItem>
               <DropdownMenuItem v-if="project" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
               <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit Claude Code abgleichen</DropdownMenuItem>
@@ -442,7 +501,7 @@ async function remove(): Promise<void> {
             <template v-else>
               <AgentThread v-if="viewed" :key="viewed.id" :agent="viewed" :items="items" :session-id="meta.id" />
               <!-- Kept while a subagent's thread shows: back, the same older messages are there to return to. -->
-              <MessageList v-show="!viewed" :items="items" :session-id="meta.id" />
+              <MessageList v-show="!viewed" ref="list" :items="items" :session-id="meta.id" />
             </template>
             <div v-if="working" class="flex items-center gap-2 py-2 text-[0.85rem] text-muted-foreground">
               <Spinner class="size-3.5" />
@@ -452,6 +511,17 @@ async function remove(): Promise<void> {
             <div v-if="runError && !viewed" class="selectable my-2 rounded-lg bg-destructive/10 px-3 py-2 text-[0.82rem] text-destructive">
               {{ runError }}
             </div>
+          </div>
+        </div>
+        <!-- The search in the chat, in its corner as in a browser (clear of the scroll bar). -->
+        <div
+          v-if="findOpen && !diff"
+          class="absolute top-2 right-[calc(10px+0.75rem)] z-40 flex max-w-[calc(100%-2rem)] animate-in flex-col items-end gap-1.5 duration-150 fade-in slide-in-from-top-1"
+        >
+          <BrowserFind ref="findBar" label="Im Chat suchen" :matches="find.matches.value" @search="find.search" @close="closeFind" />
+          <div v-if="unshown" class="flex items-center gap-2 rounded-lg bg-popover py-1 pr-1 pl-3 text-xs text-muted-foreground shadow-md ring-1 ring-foreground/10">
+            <span>Ältere Nachrichten sind nicht geladen</span>
+            <Button variant="outline" size="xs" @click="showAllForFind">Alle laden</Button>
           </div>
         </div>
         <!-- A chat without a prompt yet: one started with „+“ beside a project, not from the start page. -->

@@ -282,6 +282,15 @@
   color: var(--primary);
 }
 
+/* The search in the open chat (useDomFind): every match, and the current one stronger. */
+::highlight(find-match) {
+  background-color: color-mix(in oklch, var(--primary) 28%, transparent);
+}
+::highlight(find-current) {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
 /* A setting chosen in the quick open: marked for a moment where the settings scrolled to it. */
 [data-setting][data-revealed] {
   border-radius: var(--radius-lg);
