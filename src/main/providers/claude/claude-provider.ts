@@ -6,7 +6,7 @@ import { fetchClaudeUsage } from '../../accounts/claude-usage'
 import { CliBinary, cliEnv, type ResolvedCommand } from '../cli-binary'
 import { claudeMcpServers } from '../mcp-servers'
 import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
-import { claudeCommands, probeClaude } from './claude-probe'
+import { claudeCommands, claudeModels, probeClaude } from './claude-probe'
 import { ClaudeRun } from './claude-run'
 
 /** The MCP servers of a folder without a running chat are asked again after this. */
@@ -106,7 +106,7 @@ export class ClaudeProvider implements AgentProvider {
 
   private async loadModels(account: AccountContext): Promise<ModelOption[]> {
     const answers = await probeClaude(this.binary, account, { cwd: homedir() })
-    const models = modelsOf(answers?.[0]?.models)
+    const models = claudeModels(answers?.[0]?.models)
     if (models?.length) this.modelCache.set(account.accountId, { models, at: Date.now() })
     return models?.length ? models : (this.modelCache.get(account.accountId)?.models ?? FALLBACK_MODELS)
   }
@@ -208,18 +208,3 @@ function planName(type: string): string {
   return names[type.toLowerCase()] ?? type
 }
 
-function modelsOf(raw: unknown): ModelOption[] | null {
-  if (!Array.isArray(raw)) return null
-  const models: ModelOption[] = []
-  for (const m of raw) {
-    if (!isPlainObject(m) || typeof m.value !== 'string') continue
-    models.push({
-      id: m.value === 'default' ? '' : m.value,
-      label: typeof m.displayName === 'string' ? m.displayName.replace(/\s*\(recommended\)/i, '') : m.value,
-      description: typeof m.description === 'string' ? m.description : undefined,
-      efforts: Array.isArray(m.supportedEffortLevels) ? m.supportedEffortLevels.filter((e): e is string => typeof e === 'string') : undefined,
-      isDefault: m.value === 'default',
-    })
-  }
-  return models
-}

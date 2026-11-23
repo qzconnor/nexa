@@ -84,6 +84,10 @@
       Claude Code abgleichen“ im Menü des Chats; nur fertige Turns, mit einer Notiz „Außerhalb von Nexa
       weitergeführt“. Ist die Sitzung gerade woanders offen (`<config>/sessions/<pid>.json`), steht ein
       Hinweis über der Eingabe, und fertige Antworten von dort kommen alle paar Sekunden
+- [x] Modellnamen: Claudes „Default“ heißt nach dem Modell, für das es steht („Standard (Opus 5.5)“,
+      aus `resolvedModel`)
+- [x] Systemfarben: `nativeTheme` folgt dem Modus des Themes (Mica, native Menüs, `prefers-color-scheme`
+      der Seiten im Browser), schon beim Start
 
 ## Als Nächstes
 
@@ -106,9 +110,7 @@
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
 - [ ] **Bestehende CLI-Sessions importieren** ohne Claude Manager (`~/.claude/projects`, `~/.codex/sessions`);
   aus dem Claude Manager geht es schon (siehe oben), der Transkript-Leser für Claude ist da.
-- [ ] **Modellnamen**: „Default“ durch das tatsächliche Standardmodell der CLI ersetzen.
 - [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
-- [ ] **Systemfarben**: `nativeTheme` folgt dem Modus des Themes (hell/dunkel).
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt „Konnektoren verwalten“.
 

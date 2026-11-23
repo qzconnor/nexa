@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { claudeCommands } from './claude-probe'
+import { claudeCommands, claudeModels } from './claude-probe'
 
 describe('claudeCommands', () => {
   it('maps commands and MCP prompts', () => {
@@ -21,5 +21,30 @@ describe('claudeCommands', () => {
 
   it('is null without a list', () => {
     expect(claudeCommands(undefined)).toBeNull()
+  })
+})
+
+describe('claudeModels', () => {
+  const opus = { value: 'opus', resolvedModel: 'claude-opus-5-5', displayName: 'Opus 5.5', description: 'For complex work', supportedEffortLevels: ['low', 'high'] }
+
+  it('names the default after the model it stands for', () => {
+    const models = claudeModels([
+      { value: 'default', resolvedModel: 'claude-opus-5-5', displayName: 'Default (recommended)', description: 'Opus 5.5 · Best for everyday, complex tasks', supportedEffortLevels: ['low', 'high'] },
+      opus,
+    ])
+    expect(models).toEqual([
+      { id: '', label: 'Standard (Opus 5.5)', description: 'Best for everyday, complex tasks', efforts: ['low', 'high'], isDefault: true },
+      { id: 'opus', label: 'Opus 5.5', description: 'For complex work', efforts: ['low', 'high'] },
+    ])
+  })
+
+  it('takes the name from the description when no model in the list is the same', () => {
+    const [model] = claudeModels([{ value: 'default', resolvedModel: 'claude-x', displayName: 'Default', description: 'Sonnet 9 · Fast' }])!
+    expect(model).toMatchObject({ label: 'Standard (Sonnet 9)', description: 'Fast' })
+  })
+
+  it('stays „Standard“ when nothing names the model', () => {
+    const [model] = claudeModels([{ value: 'default', displayName: 'Default (recommended)', description: 'The model from your settings' }])!
+    expect(model).toMatchObject({ id: '', label: 'Standard', description: 'The model from your settings' })
   })
 })

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandOption } from '@shared/types'
+import type { CommandOption, ModelOption } from '@shared/types'
 import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import { cliEnv, type CliBinary } from '../cli-binary'
@@ -110,4 +110,34 @@ export function claudeCommands(raw: unknown): CommandOption[] | null {
     })
   }
   return commands
+}
+
+/**
+ * Claude Code's models (`initialize`). Its own default („Default (recommended)“) is named after the
+ * model it stands for, as `resolvedModel` says: „Standard (Opus 5.5)“, without that name again at the
+ * start of its description („Opus 5.5 · Best for …“).
+ */
+export function claudeModels(raw: unknown): ModelOption[] | null {
+  if (!Array.isArray(raw)) return null
+  const entries = raw.filter(isPlainObject).filter((m) => typeof m.value === 'string')
+  const nameOf = (resolved: unknown): string | undefined => {
+    const named = entries.find((m) => m.value !== 'default' && resolved && m.resolvedModel === resolved && typeof m.displayName === 'string')
+    return named?.displayName as string | undefined
+  }
+  return entries.map((m) => {
+    const description = typeof m.description === 'string' && m.description ? m.description : undefined
+    const efforts = Array.isArray(m.supportedEffortLevels) ? m.supportedEffortLevels.filter((e): e is string => typeof e === 'string') : undefined
+    if (m.value !== 'default') {
+      return { id: m.value as string, label: typeof m.displayName === 'string' ? m.displayName : (m.value as string), description, efforts }
+    }
+    // Without a model of its own in the list, the description's start names it.
+    const actual = nameOf(m.resolvedModel) ?? (description?.includes(' · ') ? description.split(' · ')[0] : undefined)
+    return {
+      id: '',
+      label: actual ? `Standard (${actual})` : 'Standard',
+      description: actual && description?.startsWith(`${actual} · `) ? description.slice(actual.length + 3) : description,
+      efforts,
+      isDefault: true,
+    }
+  })
 }

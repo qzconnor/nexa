@@ -188,7 +188,8 @@ export interface NexaApi {
     minimize(): Promise<void>
     toggleMaximize(): Promise<void>
     state(): Promise<WindowState>
-    setTitleBarColors(colors: { color: string; symbolColor: string }): Promise<void>
+    /** The caption buttons' colors, and whether the theme is dark (the native backdrop and menus follow it). */
+    setTitleBarColors(colors: { color: string; symbolColor: string; dark?: boolean }): Promise<void>
     onState(cb: (state: WindowState) => void): Unsubscribe
   }
   settings: {

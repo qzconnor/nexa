@@ -16,7 +16,7 @@ export function useThemeSync() {
   })
 
   watchEffect(() => {
-    void window.api.window.setTitleBarColors({ color: '#00000000', symbolColor: theme.value.colors.foreground })
+    void window.api.window.setTitleBarColors({ color: '#00000000', symbolColor: theme.value.colors.foreground, dark: theme.value.mode === 'dark' })
   })
 
   return { theme }
