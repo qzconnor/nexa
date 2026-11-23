@@ -6,6 +6,7 @@ import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { CommandOption, ModelDefaults } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { useProjectPath } from '@/composables/useProjectPath'
+import { appCommandOf, appCommandOptions, mergeCommands, type AppCommand } from '@/lib/chat-commands'
 import { applySuggestion, filterCommands, findPaths, triggerAt, type Suggestion, type SuggestTrigger } from '@/lib/composer-suggest'
 import { effortLabel, effortTone } from '@/lib/effort'
 import { attempt } from '@/lib/errors'
@@ -51,6 +52,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   send: [input: { text: string; images: string[] }]
+  /** One of Nexa's own commands (lib/chat-commands.ts), in a chat only: the chat runs it, the CLI never sees it. */
+  command: [input: { command: AppCommand; args: string }]
   /** Text put in from elsewhere (a file mentioned in the tree, review comments): it wants to be seen. */
   inserted: []
   stop: []
@@ -138,7 +141,9 @@ function resize(): void {
 
 const trigger = ref<SuggestTrigger | null>(null)
 const active = ref(0)
-const commandList = shallowRef<CommandOption[]>([])
+const cliCommands = shallowRef<CommandOption[]>([])
+/** In a chat, Nexa's own commands first; they are there at once, the CLI's come when it answered. */
+const commandList = computed(() => (props.sessionId ? mergeCommands(appCommandOptions(props.provider), cliCommands.value) : cliCommands.value))
 const fileList = shallowRef<readonly string[]>([])
 const suggestLoading = ref(false)
 /** The trigger closed with Esc: it stays closed until another one is typed. */
@@ -186,7 +191,7 @@ async function loadSuggestions(kind: SuggestTrigger['kind']): Promise<void> {
       if (token === loadToken) fileList.value = list
     } else {
       const list = await providers.commands(props.provider, props.account, projectRoot.value)
-      if (token === loadToken) commandList.value = list
+      if (token === loadToken) cliCommands.value = list
     }
   } finally {
     if (token === loadToken) suggestLoading.value = false
@@ -218,6 +223,11 @@ function suggestKey(event: KeyboardEvent): boolean {
     if (count) active.value = (active.value + (event.key === 'ArrowDown' ? 1 : count - 1)) % count
   } else if ((event.key === 'Enter' || event.key === 'Tab') && plain) {
     if (!count) return false
+    // A command typed out in full runs with Enter, as in the CLI; Tab only completes.
+    if (event.key === 'Enter' && typedOut()) {
+      closeSuggest()
+      return false
+    }
     pickSuggestion(active.value)
   } else if (event.key === 'Escape') {
     // Only the list closes; the chat's Esc (stop the agent, close a view) waits for the next one.
@@ -231,6 +241,13 @@ function suggestKey(event: KeyboardEvent): boolean {
   return true
 }
 
+/** The command chosen in the list is what was typed already, to the letter. */
+function typedOut(): boolean {
+  const t = trigger.value
+  const item = suggestions.value[active.value]
+  return t?.kind === 'command' && item?.type === 'command' && item.option.insert === `/${t.query}` && text.value.slice(t.to).trim() === ''
+}
+
 // Another chat's draft: what was being completed belongs to the one before.
 watch(() => props.draftKey, closeSuggest)
 
@@ -238,7 +255,7 @@ watch(() => props.draftKey, closeSuggest)
 watch(
   () => [props.provider, props.account, projectRoot.value] as const,
   () => {
-    commandList.value = []
+    cliCommands.value = []
     closeSuggest()
   },
 )
@@ -282,12 +299,17 @@ const chips = computed(() => {
 
 function send(): void {
   if (!canSend.value) return
-  emit('send', { text: text.value.trim(), images: [...images.value] })
+  const command = props.sessionId ? appCommandOf(text.value, props.provider) : null
+  const input = { text: text.value.trim(), images: [...images.value] }
   text.value = ''
-  images.value = []
+  // Attached pictures wait for the next prompt when a command goes instead.
+  if (!command) images.value = []
   closeSuggest()
-  if (props.draftKey) composer.saveDraft(props.draftKey, { text: '', images: [] })
+  if (props.draftKey) composer.saveDraft(props.draftKey, { text: '', images: [...images.value] })
   void nextTick(resize)
+  // Last: a command may put something into the field itself (`/help` the list of commands).
+  if (command) emit('command', command)
+  else emit('send', input)
 }
 
 function onInput(): void {
@@ -381,7 +403,18 @@ function startCommand(): void {
 
 const folderName = (dir: string) => dir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || dir
 
-defineExpose({ focus: () => input.value?.focus() })
+const addMenu = ref<InstanceType<typeof ComposerAddMenu> | null>(null)
+
+defineExpose({
+  focus: () => input.value?.focus(),
+  openSettings: () => (settingsOpen.value = true),
+  openConnectors: () => addMenu.value?.openConnectors(),
+  showCommands: () => {
+    text.value = ''
+    startCommand()
+  },
+  addFolder: () => void addFolder(),
+})
 </script>
 
 <template>
@@ -453,7 +486,7 @@ defineExpose({ focus: () => input.value?.focus() })
       @paste="onPaste"
     />
     <div class="flex items-center gap-1 px-2 pb-2">
-      <ComposerAddMenu :session-id="sessionId" :provider="provider" :disabled="disabled" @files="pickFiles" @folder="addFolder" @commands="startCommand" />
+      <ComposerAddMenu ref="addMenu" :session-id="sessionId" :provider="provider" :disabled="disabled" @files="pickFiles" @folder="addFolder" @commands="startCommand" />
       <ComposerControls
         :provider="provider"
         :account="account"

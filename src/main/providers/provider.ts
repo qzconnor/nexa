@@ -84,6 +84,11 @@ export interface AgentRun {
    * start (the next prompt starts it anew, see `mcpOff`).
    */
   setMcpEnabled?(name: string, enabled: boolean): Promise<boolean>
+  /**
+   * Compacts the conversation now, as a turn of its own, for CLIs that have a call for it (Codex);
+   * the others take `/compact` as a prompt.
+   */
+  compact?(): Promise<void>
   stop(): Promise<void>
   readonly alive: boolean
   /** The CLI's process, to tell it from others that have the same conversation open. */

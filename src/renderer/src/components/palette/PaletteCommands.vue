@@ -4,6 +4,8 @@ import {
   ArchiveRestoreIcon,
   ArrowRightLeftIcon,
   CircleStopIcon,
+  CopyIcon,
+  FileDownIcon,
   FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
@@ -189,6 +191,14 @@ const switchChoices = computed(() => {
           <CommandItem value="chat-folder" filter-text="Ordner des Chats öffnen Explorer Projektordner" @select="run(openFolder)">
             <FolderOpenIcon />
             Ordner öffnen
+          </CommandItem>
+          <CommandItem value="chat-copy-answer" filter-text="Letzte Antwort kopieren Zwischenablage copy" @select="run(() => chat.copyLastAnswer(meta!.id))">
+            <CopyIcon />
+            Letzte Antwort kopieren
+          </CommandItem>
+          <CommandItem value="chat-export" filter-text="Chat als Markdown speichern exportieren Export Datei" @select="run(() => chat.exportMarkdown(meta!.id))">
+            <FileDownIcon />
+            Als Markdown speichern …
           </CommandItem>
           <CommandItem
             v-for="choice in switchChoices"

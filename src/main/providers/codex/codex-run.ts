@@ -263,6 +263,20 @@ export class CodexRun implements AgentRun {
     }
   }
 
+  /** `thread/compact/start` runs as a turn of its own: `turn/started`, a `contextCompaction` item, `turn/completed`. */
+  async compact(): Promise<void> {
+    if (this.turnId) throw new Error('Codex arbeitet gerade. Fasse den Kontext zusammen, wenn es fertig ist.')
+    this.turnStartedAt = Date.now()
+    this.sink.runtime({ status: 'running', turnStartedAt: this.turnStartedAt, error: undefined })
+    try {
+      await this.client.request('thread/compact/start', { threadId: this.threadId })
+    } catch (error) {
+      this.turnStartedAt = null
+      this.sink.runtime({ status: 'idle', turnStartedAt: undefined })
+      throw error
+    }
+  }
+
   async interrupt(): Promise<void> {
     if (!this.turnId) return
     await this.client.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }).catch(() => undefined)

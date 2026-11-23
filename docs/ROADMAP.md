@@ -84,6 +84,15 @@
       Claude Code abgleichen“ im Menü des Chats; nur fertige Turns, mit einer Notiz „Außerhalb von Nexa
       weitergeführt“. Ist die Sitzung gerade woanders offen (`<config>/sessions/<pid>.json`), steht ein
       Hinweis über der Eingabe, und fertige Antworten von dort kommen alle paar Sekunden
+- [x] Slash-Befehle, die die CLIs ohne Terminal nicht können, führt Nexa selbst aus, für Claude und Codex:
+      `/clear` (`/new`, `/reset`: neuer Chat im selben Ordner mit denselben Einstellungen), `/diff` (alle
+      Änderungen), `/rename`, `/model` und `/effort` (mit Namen gleich gesetzt, ohne das Zahnrad), `/plan`,
+      `/permissions`, `/mcp` (Konnektoren), `/add-dir`, `/copy`, `/export`, `/status`, `/resume`, `/tasks`,
+      `/login`, `/settings`, `/theme`, `/help`, `/exit`; bei Codex auch `/compact` (`thread/compact/start`)
+      und `/usage`. Sie stehen zuerst in der Vervollständigung; ein ausgeschriebener Befehl läuft mit Enter
+- [x] Chat als Markdown exportieren (Ordner, Branch, Modell, Zeitraum, Nachrichten nach Tagen) und letzte
+      Antwort kopieren: im Menü des Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als
+      `/export` und `/copy`
 - [x] Modellnamen: Claudes „Default“ heißt nach dem Modell, für das es steht („Standard (Opus 5.5)“,
       aus `resolvedModel`)
 - [x] Systemfarben: `nativeTheme` folgt dem Modus des Themes (Mica, native Menüs, `prefers-color-scheme`
@@ -136,8 +145,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] **Chat abzweigen** als neuen Chat ab hier (Claude `--fork-session`, Codex `thread/fork`).
 - [ ] **Suche im offenen Chat** (Strg+F, F3 / Umschalt+F3, alle Treffer markiert, lädt ältere Nachrichten
       nach; `composables/useDomFind.ts`).
-- [ ] **Chat als Markdown exportieren** (Ordner, Branch, Modell, Zeitraum, Nachrichten nach Tagen) und
-      **letzte Antwort kopieren** im Kontextmenü und in der Befehlsliste (`shared/session-markdown.ts`).
 - [ ] **Tastenkürzel**: Strg+Tab und Strg+1–9 zwischen Chats, Strg+Umschalt+T neuer Chat, Pfeiltasten in
       Listen (`shared/shortcuts.ts`, `useShortcuts.ts`, `useListKeys.ts`).
 - [ ] **Löschen samt Transkript der CLI** (in den Papierkorb, mit Subagents und Checkpoints), mehrere auf

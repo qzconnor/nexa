@@ -143,8 +143,11 @@ export interface CommandOption {
   /** What may follow it, as the CLI words it (`[issue description]`). */
   argumentHint?: string
   aliases?: string[]
-  /** A prompt of an MCP server, a skill (Codex) or a command or skill of Claude Code. */
-  kind: 'mcp' | 'skill' | 'command'
+  /**
+   * A prompt of an MCP server, a skill (Codex), a command or skill of Claude Code, or a command Nexa
+   * runs itself (renderer `lib/chat-commands.ts`).
+   */
+  kind: 'mcp' | 'skill' | 'command' | 'app'
   /** What goes into the prompt: `/name` for Claude Code, `$name` for a skill of Codex. */
   insert: string
   /** Codex: the skill's file, sent with the prompt that names it. */
