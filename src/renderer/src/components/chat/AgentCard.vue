@@ -8,7 +8,7 @@ import { formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui'
 
-/** A subagent: what it does right now, how many tools it used; a click opens its work at the side. */
+/** A subagent: what it does right now, how many tools it used; a click shows its work in place of the chat. */
 const props = defineProps<{ item: AgentItem }>()
 const ui = useUiStore()
 const now = useClock(1000)

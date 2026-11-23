@@ -17,6 +17,7 @@ import type {
   SessionDetail,
   SessionMeta,
   SessionUpdateInput,
+  ShellOutput,
   WindowState,
 } from './types'
 import type { FilesApi, GitApi } from './files-ipc'
@@ -80,6 +81,8 @@ export const IpcInvoke = {
   sessionsSend: 'sessions:send',
   sessionsInterrupt: 'sessions:interrupt',
   sessionsRespond: 'sessions:respond',
+  sessionsShellOutput: 'sessions:shell-output',
+  sessionsStopShell: 'sessions:stop-shell',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
   sessionsStop: 'sessions:stop',
@@ -219,6 +222,9 @@ export interface NexaApi {
     send(id: string, input: SendInput): Promise<void>
     interrupt(id: string): Promise<void>
     respond(id: string, itemId: string, response: InteractionResponse): Promise<void>
+    /** The end of a shell's output (`itemId`: its tool item, see `ToolItem.shell`). */
+    shellOutput(id: string, itemId: string): Promise<ShellOutput>
+    stopShell(id: string, itemId: string): Promise<void>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
     remove(id: string): Promise<void>
     /** Ends the CLI process of the session; the next prompt resumes it. */

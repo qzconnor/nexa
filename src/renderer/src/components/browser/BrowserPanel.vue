@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoaderCircleIcon, PanelRightCloseIcon, PlusIcon, SparklesIcon, XIcon } from '@lucide/vue'
+import { LoaderCircleIcon, Maximize2Icon, Minimize2Icon, PanelRightCloseIcon, PlusIcon, SparklesIcon, XIcon } from '@lucide/vue'
 import { useEventListener, useResizeObserver } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { BLANK_PAGE, type BrowserTabInfo } from '@shared/browser'
@@ -8,14 +8,14 @@ import { separatorValue } from '@/lib/separator-keys'
 import { cn } from '@/lib/utils'
 import { MIN_PANEL_WIDTH, useBrowsersStore } from '@/stores/browsers'
 import { useSessionsStore } from '@/stores/sessions'
-import BrowserEmpty from './BrowserEmpty.vue'
 import BrowserFavicon from './BrowserFavicon.vue'
 
 /**
  * The chat's browser, right of the chat: its tabs, and the room for the page that is shown. The page
  * itself lies in BrowserLayer over this room (a `<webview>` can't move with the chat without loading
  * anew); the panel tells the layer where the room is. Open or closed per chat, its width for all;
- * its left edge drags it wider or narrower.
+ * its left edge drags it wider or narrower. In full screen it covers the whole chat, to use the page
+ * (a login, say) with room; Esc or its button ends that.
  */
 const props = defineProps<{ sessionId: string }>()
 
@@ -26,7 +26,9 @@ const sessions = useSessionsStore()
 const MIN_CHAT_WIDTH = 360
 const DEFAULT_WIDTH = 560
 
-const open = computed(() => browsers.isOpen(props.sessionId))
+const fullscreen = computed(() => browsers.fullscreen === props.sessionId)
+/** Only with a tab: the browser has nothing to show without one, and isn't opened empty. */
+const open = computed(() => (browsers.isOpen(props.sessionId) || fullscreen.value) && browsers.tabsOf(props.sessionId).length > 0)
 const agent = computed(() => PROVIDERS[sessions.metas.find((m) => m.id === props.sessionId)?.provider ?? 'claude'].short)
 const tabs = computed(() => browsers.tabsOf(props.sessionId))
 const shown = computed(() => browsers.shownOf(props.sessionId))
@@ -91,7 +93,19 @@ onBeforeUnmount(() => {
   const slot = browsers.slot
   if (slot && (slot.sessionId === props.sessionId || slot.sessionId === reported)) browsers.setSlot(null)
 })
-watch([open, () => props.sessionId, () => browsers.width], () => void nextTick(measure), { flush: 'post' })
+watch([open, fullscreen, () => props.sessionId, () => browsers.width], () => void nextTick(measure), { flush: 'post' })
+
+// Esc ends the full screen while the window has the keyboard (in the page, the page gets its keys).
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || !fullscreen.value || event.defaultPrevented) return
+  event.preventDefault()
+  browsers.closeFullscreen()
+})
+
+function hide(): void {
+  if (fullscreen.value) browsers.closeFullscreen()
+  else browsers.setOpen(props.sessionId, false)
+}
 
 // ── Width ──
 
@@ -189,11 +203,17 @@ const iconButton =
     ref="panel"
     data-slot="browser-panel"
     aria-label="Browser"
-    class="relative flex h-full max-w-[calc(100%-22.5rem)] shrink-0 flex-col border-l"
-    :style="{ width: `${browsers.width}px`, minWidth: `${MIN_PANEL_WIDTH}px` }"
+    :class="
+      cn(
+        'flex flex-col',
+        fullscreen ? 'absolute inset-0 z-30 bg-(--surface-solid)' : 'relative h-full max-w-[calc(100%-22.5rem)] shrink-0 border-l',
+      )
+    "
+    :style="fullscreen ? undefined : { width: `${browsers.width}px`, minWidth: `${MIN_PANEL_WIDTH}px` }"
   >
     <!-- The panel's left edge: a line to drag its width by. -->
     <div
+      v-if="!fullscreen"
       role="separator"
       aria-orientation="vertical"
       aria-label="Breite des Browsers ändern"
@@ -268,18 +288,28 @@ const iconButton =
       <div class="min-w-2 flex-1" />
       <button
         type="button"
-        aria-label="Browser ausblenden"
-        v-tooltip.bottom="'Browser ausblenden'"
+        :aria-label="fullscreen ? 'Vollbild beenden' : 'Vollbild'"
+        :aria-pressed="fullscreen"
+        v-tooltip.bottom="fullscreen ? 'Vollbild beenden (Esc)' : 'Vollbild: der Browser über dem ganzen Chat'"
         :class="iconButton"
-        @click="browsers.setOpen(sessionId, false)"
+        @click="fullscreen ? browsers.closeFullscreen() : browsers.openFullscreen(sessionId, null)"
       >
-        <PanelRightCloseIcon class="size-4" />
+        <Minimize2Icon v-if="fullscreen" class="size-4" />
+        <Maximize2Icon v-else class="size-4" />
+      </button>
+      <button
+        type="button"
+        :aria-label="fullscreen ? 'Vollbild schließen' : 'Browser ausblenden'"
+        v-tooltip.bottom="fullscreen ? 'Vollbild schließen' : 'Browser ausblenden'"
+        :class="iconButton"
+        @click="hide"
+      >
+        <XIcon v-if="fullscreen" class="size-4" />
+        <PanelRightCloseIcon v-else class="size-4" />
       </button>
     </div>
 
-    <!-- The room for the page (BrowserLayer draws it here), or the start without a tab. -->
-    <div ref="room" class="relative min-h-0 flex-1">
-      <BrowserEmpty v-if="tabs.length === 0" :session-id="sessionId" :agent="agent" />
-    </div>
+    <!-- The room for the page (BrowserLayer draws it here). -->
+    <div ref="room" class="relative min-h-0 flex-1" />
   </aside>
 </template>

@@ -46,6 +46,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `browser/browser-control.ts` | Aus dem Claude Manager: steuert die Seiten für die Agents über das DevTools-Protokoll (`page-driver.ts`, Frames, Netzwerk, Routen, Dialoge, Emulation), Protokoll, Übernehmen |
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |
 | `browser/browser-ipc.ts` | Kanäle `browser:*` (Tabs, Seiten, Downloads, Logins, Übernehmen) |
+| `browser/browser-frames.ts` | Live-Bilder der Seiten für die Browser-Karten im Chat (`beginFrameSubscription`, JPEG, gedrosselt), solange ein Fenster zusieht |
 | `api/api-server.ts` | Lokale REST-API mit Token |
 | `files/file-tree-service.ts` | Dateibaum aus dem Claude Manager: Ordner lesen und überwachen, Git-Status, Diffs, Suche, Vormerken/Verwerfen, angefasste Dateien (`touched`) |
 | `files/git-service.ts` | Branch, Checkouts, Web-Adresse und Hauptordner eines Repositorys |
@@ -128,6 +129,20 @@ der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`.
   laden erst, wenn sie gezeigt oder bedient werden (`browsers.awake`). `stores/browsers.ts` hält Tabs
   (von Main), Panel offen je Chat und Breite (localStorage), Steuerung, Protokoll und Markierungen der
   Agents, Downloads und Logins.
+  Im Chat zeigt `BrowserCard` (ein Block aus `chatBlocks()` für Browser-Werkzeuge in Folge) ein Live-Bild
+  der Seite aus `browser-frames.ts`; nur die neueste Karte ist live, ältere behalten ihr letztes Bild
+  (`browsers.stills`). Zum Bedienen öffnet sie den Tab im Panel oder im Vollbild (`browsers.fullscreen`,
+  das Panel liegt dann über dem ganzen Chat); solange pausiert ihr Bild. Ohne Tab bleibt das Panel zu.
+- **Shells** (`ShellPanel`, `lib/shells.ts`): laufende Befehle aus den `tool`-Items (`ToolItem.shell`
+  hält Task-ID und Zustand des Prozesses). Die Ausgabe holt `sessions.shellOutput` von der CLI (Claude:
+  `get_task_output`), `sessions.stopShell` beendet sie (`stop_task`). Solange eine im Hintergrund läuft,
+  steht `ShellDock` (`dockShells()`) über dem Eingabefeld, neben dem `AgentDock`. `ShellPanel` zeigt nur,
+  was läuft: Endet die gezeigte Shell, wechselt es zu einer anderen laufenden oder schließt sich. Fertige
+  öffnen sich nur aus dem Chat (die „Hintergrund“-Marke am Befehl).
+- **Subagents** (`AgentDock`, `AgentThread`): Ein Klick im Dock oder auf die Agent-Karte zeigt den Verlauf
+  des Agents an Stelle des Hauptchats (`ui.agentId`), wie die Agent-Liste der Claude-CLI; zurück geht es über
+  „Hauptchat“ im Dock, die Pfadleiste im Kopf oder Esc. Ist der gezeigte Agent fertig, kehrt der Chat zu
+  dem Verlauf zurück, aus dem er kam.
 - `stores/composer.ts`: Entwürfe je Chat und Text, den andere Teile in die Eingabe setzen (`@`-Erwähnung
   aus dem Baum, Review-Kommentare aus `stores/review.ts`).
 - **Updates** (`components/settings/SettingsUpdates.vue`, `components/updates/*`, `stores/updates.ts`): Zustand

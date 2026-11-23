@@ -5,6 +5,7 @@ import { browserDownloads } from '../window/browser-downloads'
 import { clearBrowserData, loadFavicon } from '../window/browser-guests'
 import { browserLogins } from '../window/browser-logins'
 import type { BrowserControl } from './browser-control'
+import { BrowserFrames } from './browser-frames'
 import type { BrowserTabs } from './browser-tabs'
 
 /** A page's icon address; inline icons are data URLs of up to the largest icon (see browser-policy.ts). */
@@ -60,6 +61,8 @@ export function registerBrowserIpc(tabs: BrowserTabs, control: BrowserControl, s
   })
   handle(BrowserInvoke.clearDownloads, () => browserDownloads.clear())
   handle(BrowserInvoke.loginAnswer, (_e, id: unknown, credentials: unknown) => browserLogins.answer(requireId(id, 'id'), credentialsOf(credentials)))
+  const frames = new BrowserFrames((id) => control.pageOf(id))
+  handle(BrowserInvoke.watchFrames, (event, id: unknown, on: unknown) => frames.watch(requireId(id, 'id'), event.sender, on === true))
 
   tabs.on('changed', (state) => broadcast(BrowserEvent.tabs, state))
   browserDownloads.on('changed', (downloads) => broadcast(BrowserEvent.downloads, downloads))

@@ -36,8 +36,67 @@ export const TOOL_META: Record<ToolKind, { icon: Component; color: string }> = {
 
 export const AGENT_ICON = BotIcon
 
-/** A block of the timeline: one item, or tool calls in a row. */
-export type ChatBlock = { type: 'item'; item: ChatItem } | { type: 'tools'; id: string; tools: ToolItem[] }
+/** A block of the timeline: one item, tool calls in a row, or what an agent did in the browser in a row. */
+export type ChatBlock = { type: 'item'; item: ChatItem } | { type: 'tools'; id: string; tools: ToolItem[] } | { type: 'browser'; id: string; tools: ToolItem[] }
+
+/**
+ * The action of one of the browser tools of Nexa's MCP server (`navigate` for `browser_navigate`), as
+ * Claude (`mcp__nexa__browser_…`) or Codex (`nexa.browser_…`) names it; null for other tools.
+ */
+export function browserAction(tool: ToolItem): string | null {
+  if (tool.server !== 'nexa') return null
+  return /(?:^|__|\.)browser_([a-z_]+)$/.exec(tool.name)?.[1] ?? null
+}
+
+const BROWSER_STEPS: Record<string, string> = {
+  navigate: 'Seite öffnen',
+  history: 'Vor oder zurück',
+  tabs: 'Tabs',
+  snapshot: 'Seite lesen',
+  take_screenshot: 'Screenshot',
+  find: 'Auf der Seite suchen',
+  click: 'Klicken',
+  type: 'Eintippen',
+  fill_form: 'Formular ausfüllen',
+  press_key: 'Taste drücken',
+  hover: 'Zeigen',
+  select_option: 'Auswählen',
+  scroll: 'Scrollen',
+  drag: 'Ziehen',
+  file_upload: 'Datei hochladen',
+  handle_dialog: 'Dialog beantworten',
+  wait_for: 'Warten',
+  evaluate: 'Skript ausführen',
+  resize: 'Größe ändern',
+  emulate: 'Umgebung nachstellen',
+  inspect: 'Element prüfen',
+  check_accessibility: 'Barrierefreiheit prüfen',
+  console_messages: 'Konsole lesen',
+  network_requests: 'Netzwerk lesen',
+  network_request: 'Anfrage lesen',
+  performance: 'Leistung messen',
+  storage: 'Speicher der Seite',
+  route: 'Anfragen umleiten',
+  clear_site_data: 'Daten der Seite löschen',
+  pdf_save: 'Als PDF speichern',
+  generate_test: 'Test erzeugen',
+}
+
+/** Claude Code's ToolSearch for one of the browser tools (it loads them when it needs them). */
+function loadsBrowserTool(tool: ToolItem): boolean {
+  if (tool.name !== 'ToolSearch') return false
+  const query = (tool.input as { query?: unknown } | undefined)?.query
+  return typeof query === 'string' && /browser_/.test(query)
+}
+
+/** A browser tool call as a step of the browser card: what it does, and to what. */
+export function browserStep(tool: ToolItem): { title: string; detail?: string } {
+  const action = browserAction(tool) ?? ''
+  const input = (tool.input ?? {}) as Record<string, unknown>
+  const text = (key: string) => (typeof input[key] === 'string' && input[key] ? (input[key] as string) : undefined)
+  const detail = text('url') ?? text('element') ?? text('key') ?? text('text') ?? text('selector') ?? text('ref')
+  return { title: BROWSER_STEPS[action] ?? action.replace(/_/g, ' '), detail }
+}
 
 /**
  * The items of one thread (the main one or a subagent's) as blocks: tool calls in a row form a
@@ -53,10 +112,27 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
   }
   const blocks: ChatBlock[] = []
   let group: ToolItem[] | null = null
+  // The browser's steps in a row: one card with the page, not a row each.
+  let browser: ToolItem[] | null = null
   for (const item of items) {
     if ((item.parentId ?? null) !== parentId) continue
     if (item.kind === 'tool') {
       if (item.tool === 'todo' || answeredTools.has(item.id)) continue
+      if (browserAction(item)) {
+        group = null
+        if (!browser) {
+          browser = []
+          blocks.push({ type: 'browser', id: `browser:${item.id}`, tools: browser })
+        }
+        browser.push(item)
+        continue
+      }
+      // Claude loading the next browser tool doesn't end the agent's work in the page.
+      if (browser && loadsBrowserTool(item)) {
+        browser.push(item)
+        continue
+      }
+      browser = null
       if (item.render) {
         group = null
         blocks.push({ type: 'item', item })
@@ -72,7 +148,10 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
     if (item.kind === 'thinking' && (!showThinking || !item.text.trim())) continue
     if (item.kind === 'assistant' && !item.text.trim() && !item.streaming) continue
     // Thinking between tool calls doesn't break their group.
-    if (item.kind !== 'thinking') group = null
+    if (item.kind !== 'thinking') {
+      group = null
+      browser = null
+    }
     blocks.push({ type: 'item', item })
   }
   return blocks

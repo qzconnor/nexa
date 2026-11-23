@@ -8,6 +8,7 @@ import { TOOL_META } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 import { useProjectPath } from '@/composables/useProjectPath'
 import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 import DiffView from './DiffView.vue'
 
 /**
@@ -16,6 +17,7 @@ import DiffView from './DiffView.vue'
  */
 const props = defineProps<{ tool: ToolItem }>()
 const settings = useSettingsStore()
+const ui = useUiStore()
 const { shorten } = useProjectPath()
 const detail = computed(() => (props.tool.detail ? shorten(props.tool.detail) : ''))
 
@@ -35,6 +37,9 @@ const inputText = computed(() => {
   }
 })
 const expandable = computed(() => hasChanges.value || !!output.value || (!!inputText.value && props.tool.tool !== 'read'))
+/** A shell that runs on in the background: its state, and the way to its output. */
+const background = computed(() => (props.tool.shell?.background ? props.tool.shell.status : null))
+const BACKGROUND_STATE = { running: 'läuft', done: 'beendet', error: 'fehlgeschlagen', stopped: 'abgebrochen' } as const
 const duration = computed(() => (props.tool.endedAt ? props.tool.endedAt - props.tool.startedAt : null))
 
 // Edits open by themselves (unless tools stay folded), failures always.
@@ -57,6 +62,31 @@ watch(hasChanges, (now) => now && !settings.settings.chat.collapseTools && (open
       <span v-if="detail" class="min-w-0 truncate font-mono text-[0.78rem] text-muted-foreground" :title="tool.detail">{{ detail }}</span>
       <span v-if="tool.server && tool.tool === 'mcp'" class="shrink-0 rounded bg-muted px-1.5 text-[0.7rem] text-muted-foreground">{{ tool.server }}</span>
       <span class="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-xs text-muted-foreground">
+        <!-- Inside the row's button, so no button of its own. -->
+        <span
+          v-if="background"
+          role="button"
+          tabindex="0"
+          :class="
+            cn(
+              'flex items-center gap-1.5 rounded-full border px-2 py-px text-[0.7rem] hover:bg-muted hover:text-foreground',
+              ui.shellId === tool.id && 'bg-muted text-foreground',
+            )
+          "
+          v-tooltip="'Shell im Hintergrund: Ausgabe zeigen'"
+          @click.stop="ui.shellId = ui.shellId === tool.id ? null : tool.id"
+          @keydown.enter.stop.prevent="ui.shellId = ui.shellId === tool.id ? null : tool.id"
+        >
+          <span
+            :class="
+              cn(
+                'size-1.5 rounded-full',
+                background === 'running' ? 'animate-pulse bg-(--tool-run)' : background === 'error' ? 'bg-destructive' : 'bg-muted-foreground/60',
+              )
+            "
+          />
+          Hintergrund · {{ BACKGROUND_STATE[background] }}
+        </span>
         <span v-if="duration !== null && duration > 1500" class="tabular-nums opacity-0 transition-opacity group-hover/tool:opacity-100">{{ formatDuration(duration) }}</span>
         <span v-if="tool.exitCode !== undefined && tool.exitCode !== null && tool.exitCode !== 0" class="font-mono text-destructive">exit {{ tool.exitCode }}</span>
         <Spinner v-if="running" class="size-3.5" />

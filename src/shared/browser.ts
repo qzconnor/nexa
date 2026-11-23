@@ -183,6 +183,15 @@ export interface BrowserEmulation {
   permissions: Partial<Record<BrowserPermission, 'granted' | 'denied'>>
 }
 
+/** A picture of a page for the chat's preview of the browser. */
+export interface BrowserFrame {
+  /** JPEG data URL. */
+  url: string
+  /** The page's size as drawn (device pixels), for the preview's proportions. */
+  width: number
+  height: number
+}
+
 /** Where the agent acts in the page, for the highlight over it; in pixels of the view. */
 export interface BrowserHighlight {
   label: string

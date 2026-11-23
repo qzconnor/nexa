@@ -104,6 +104,8 @@
   --success: oklch(0.62 0.17 150);
   --warning: oklch(0.75 0.15 75);
   --window-bg: var(--background);
+  /* The surface as it looks over the window, without the material showing through (.frost-backing). */
+  --surface-solid: var(--background);
   --titlebar-height: 40px;
   --caption-buttons-width: 140px;
   /* Nav rail with labels, used when the tabs are in the sidebar. */
@@ -453,6 +455,38 @@
   .markdown hr {
     margin-block: 1em;
     border-color: var(--border);
+  }
+}
+
+/*
+ * The end of the chat under the floating composer (ChatView): the text itself fades out towards the
+ * window's edge, which works over any background (also Mica and Acrylic, where the panel is
+ * translucent and no gradient could match it). The second layer keeps the scroll bar whole.
+ */
+@layer components {
+  .chat-fade {
+    mask-image: linear-gradient(to top, transparent var(--fade-from, 0px), black var(--fade-to, 0px)), linear-gradient(black, black);
+    mask-size: 100% 100%, 10px 100%;
+    mask-position: 0 0, 100% 0;
+    mask-repeat: no-repeat;
+  }
+  /*
+   * Goes on the wrapper of something frosted that floats over the chat: puts an opaque copy of the
+   * panel, in the wrapper's shape, under the chat's text. The window is see-through (Mica, Acrylic),
+   * so the backdrop a backdrop-filter blurs has holes, and the sharp text would show through them.
+   * On a wrapper because the frosted element is a stacking context its pseudo element couldn't leave.
+   */
+  .frost-backing {
+    position: relative;
+  }
+  .frost-backing::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--surface-solid);
+    pointer-events: none;
   }
 }
 

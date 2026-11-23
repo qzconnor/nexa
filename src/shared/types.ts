@@ -26,6 +26,11 @@ export interface AppearanceSettings {
 }
 
 export interface ProviderSettings {
+  /**
+   * Used in Nexa: off, the CLI can't be picked for chats and Nexa doesn't ask it for its limits. It
+   * is still looked for, so the settings can tell whether it is there.
+   */
+  enabled: boolean
   /** Path to the CLI; empty: found on the PATH. */
   path: string
   /** Model for new sessions; empty: the CLI's default. */
@@ -77,6 +82,10 @@ export interface AppSettings {
   chat: ChatSettings
   tools: ToolSettings
   api: ApiSettings
+  setup: {
+    /** The first start's setup (which CLIs to use) is through; until then it takes the start page's place. */
+    done: boolean
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -196,6 +205,11 @@ export interface CliLink {
   accountId?: string
   /** Codex: the conversation file to resume from, after it was copied to another account. */
   resumePath?: string
+  /**
+   * The config folder the conversation was saved in. The standard account's folder is whatever
+   * CLAUDE_CONFIG_DIR or CODEX_HOME Nexa was started with and can differ from one start to the next.
+   */
+  configDir?: string
 }
 
 export interface SessionMeta {
@@ -251,6 +265,14 @@ export interface SessionDetail {
 export interface SendInput {
   text: string
   images?: string[]
+}
+
+/** The end of what a shell task wrote, as its CLI keeps it. */
+export interface ShellOutput {
+  /** Plain text, escape sequences included. */
+  text: string
+  /** Only the end of a longer output. */
+  truncated: boolean
 }
 
 // ---------------------------------------------------------------------------------------------

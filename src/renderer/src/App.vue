@@ -28,6 +28,7 @@ import { useThemesStore } from '@/stores/themes'
 import { useUiStore } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
 import HomeView from '@/views/HomeView.vue'
+import SetupView from '@/views/SetupView.vue'
 
 const settings = useSettingsStore()
 const themes = useThemesStore()
@@ -86,6 +87,8 @@ onMounted(async () => {
           "
         >
           <ChatView v-if="ui.view === 'chat' && sessions.active" />
+          <!-- Chats stay reachable; only the start page waits for the setup. -->
+          <SetupView v-else-if="!settings.settings.setup.done" />
           <HomeView v-else />
           <!-- The pages of the chats' browsers, placed over the open chat's browser panel. -->
           <BrowserLayer />

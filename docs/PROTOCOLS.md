@@ -21,13 +21,27 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   Thinking), `assistant`/`user` (fertige Blöcke, `tool_use`/`tool_result`), `result` (Turn-Ende mit
   Kosten und Tokens), `rate_limit_event` (Usage-Fenster mit Prozent und Reset).
 - **Control-Protokoll** (`control_request`/`control_response`):
-  - an Claude: `initialize`, `interrupt`, `set_model`, `set_permission_mode`
+  - an Claude: `initialize`, `interrupt`, `set_model`, `set_permission_mode`, `get_task_output`,
+    `stop_task`
   - von Claude: `can_use_tool` (Freigabe, Antwort `allow` mit ggf. geänderter Eingabe oder `deny` mit
     Nachricht). `AskUserQuestion` und `ExitPlanMode` kommen ebenfalls hierüber und werden als Frage bzw.
     Plan angezeigt.
 - Der Denkaufwand (`--effort`) lässt sich nicht im laufenden Prozess ändern: Nexa beendet den Prozess,
   der nächste Turn startet mit `--resume`.
-- Subagents: `tool_use` von `Task`/`Agent`, ihre Nachrichten tragen `parent_tool_use_id`.
+- Subagents: `tool_use` von `Task`/`Agent`, ihre Nachrichten tragen `parent_tool_use_id`. Seit 2.1.x laufen
+  sie auch ohne `run_in_background` im Hintergrund: `system/task_started` mit `task_type: "local_agent"` und
+  `is_backgrounded: true`, das `tool_result` kommt sofort („Async agent launched successfully. agentId: …“),
+  der Turn endet, während der Agent weiterläuft. `task_progress` meldet Werkzeuge (`last_tool_name`,
+  `usage.tool_uses`), `task_notification` das Ende (`status`, `summary` mit dem Bericht des Agents); danach
+  setzt Claude Code den Hauptchat mit einem eigenen Turn fort.
+- **Shells** (Bash, auch im Vordergrund) sind Tasks: `system/task_started` mit `task_type: "local_bash"`,
+  `tool_use_id` und `is_backgrounded`. Im Hintergrund kommt das `tool_result` sofort („Command running in
+  background with ID: … Output is being written to: …“), das Ende später: `task_updated`
+  (`patch.status`: `completed`, `failed`, `killed`; `patch.is_backgrounded`, wenn ein Befehl nachträglich in
+  den Hintergrund geht), `task_notification` (`status`: `completed`, `failed`, `stopped`) und
+  `background_tasks_changed` (die ganze Liste, die noch läuft). `get_task_output { task_id }` liefert die
+  letzten 8 KiB der Ausgabe (`output`, `truncated`), auch nach dem Ende, solange der Prozess lebt;
+  `stop_task { task_id }` beendet die Shell. Mit dem Prozess von Claude Code enden auch seine Shells.
 - `--allowedTools` nennt Nexas Werkzeuge einzeln (in der `=`-Form, sonst nimmt die Option die folgenden
   Argumente mit). Nicht genannte, z. B. die heiklen Browser-Werkzeuge, fragen über `can_use_tool` und
   erscheinen als Freigabe im Chat. `--no-chrome` schaltet „Claude in Chrome“ ab, damit Claude den

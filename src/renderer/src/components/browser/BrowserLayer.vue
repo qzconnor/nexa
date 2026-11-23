@@ -10,8 +10,8 @@ import BrowserPane from './BrowserPane.vue'
  * moves to another parent, so the pages don't live in the chat's panel (which goes with the chat):
  * they stay here, in the order their tabs were opened, and the shown one is placed over the panel's
  * room for it (BrowserPanel measures it). A page an agent drives while no panel shows it is drawn
- * unseen in its last size: a page that isn't drawn has no size, and neither its screenshots nor the
- * clicks on it would work.
+ * unseen in a desktop window's size (`lastSize`): a page that isn't drawn has no size, and neither its
+ * screenshots, the clicks on it nor the chat's live picture of it (BrowserCard) would work.
  */
 const browsers = useBrowsersStore()
 const ui = useUiStore()

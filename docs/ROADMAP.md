@@ -22,6 +22,9 @@
       Review-Kommentare als Panel neben dem Chat
 - [x] Eigener Browser aus dem Claude Manager als Panel rechts neben dem Chat, mit allen Browser-Werkzeugen
       im Nexa-MCP-Server (Claude und Codex) und im Systemprompt
+- [x] Browser im Chat: was der Agent im Browser tut, als Karte mit Live-Bild der Seite (nur zum Zusehen);
+      zum Bedienen in der Seitenleiste oder im Vollbild, die Karte pausiert solange
+- [x] Agents und Shells im Hintergrund über dem Eingabefeld, Übersicht der Shells (laufend, Ausgabe, Beenden) neben dem Chat
 - [x] Releases wie im Claude Manager: semantic-release auf `main`, Installer für Windows (mit `nx` im PATH),
       AppImage/deb/rpm für Linux, Auto-Update mit Versionshinweisen in den Einstellungen
 

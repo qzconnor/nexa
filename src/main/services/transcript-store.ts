@@ -77,8 +77,11 @@ function settle(item: ChatItem): ChatItem {
     case 'assistant':
     case 'thinking':
       return item.streaming ? { ...item, streaming: false } : item
-    case 'tool':
-      return item.status === 'running' || item.status === 'pending' ? { ...item, status: 'denied' } : item
+    case 'tool': {
+      const settled = item.status === 'running' || item.status === 'pending' ? { ...item, status: 'denied' as const } : item
+      // Its shell ended with the CLI's process.
+      return settled.shell?.status === 'running' ? { ...settled, shell: { ...settled.shell, status: 'stopped' } } : settled
+    }
     case 'agent':
       return item.status === 'running' ? { ...item, status: 'stopped' } : item
     case 'interaction':

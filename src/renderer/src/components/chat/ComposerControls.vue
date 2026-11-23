@@ -34,6 +34,9 @@ const providers = useProvidersStore()
 const accounts = useAccountsStore()
 const ui = useUiStore()
 
+/** The CLIs that are on; one that is off only while this chat still has it. */
+const cliChoices = computed(() => PROVIDER_IDS.filter((id) => providers.enabled.includes(id) || id === props.provider))
+
 /** The accounts of the CLI; the menu only shows when there is a choice. */
 const choices = computed(() => accounts.ofProvider(props.provider))
 const account = computed(() => accounts.get(props.account) ?? accounts.get(accounts.defaultId(props.provider)))
@@ -96,9 +99,9 @@ function pickModel(id: string): void {
       <DropdownMenuContent align="start" class="w-64">
         <DropdownMenuLabel>CLI für diesen Chat</DropdownMenuLabel>
         <DropdownMenuItem
-          v-for="id in PROVIDER_IDS"
+          v-for="id in cliChoices"
           :key="id"
-          :disabled="!providers.status(id)?.installed"
+          :disabled="!providers.available.includes(id)"
           class="gap-2"
           @select="emit('update:provider', id)"
         >
@@ -106,13 +109,16 @@ function pickModel(id: string): void {
           <span class="flex flex-col">
             <span>{{ PROVIDERS[id].name }}</span>
             <span class="text-xs text-muted-foreground">
-              {{ providers.status(id)?.installed ? (providers.status(id)?.version ?? 'installiert') : 'nicht installiert' }}
+              <template v-if="!providers.enabled.includes(id)">in den Einstellungen ausgeschaltet</template>
+              <template v-else>{{ providers.status(id)?.installed ? (providers.status(id)?.version ?? 'installiert') : 'nicht installiert' }}</template>
             </span>
           </span>
           <CheckIcon v-if="id === provider" class="ml-auto" />
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <p class="px-2 py-1.5 text-xs text-muted-foreground">Beim Wechsel bekommt die andere CLI den bisherigen Verlauf als Kontext.</p>
+        <template v-if="cliChoices.length > 1">
+          <DropdownMenuSeparator />
+          <p class="px-2 py-1.5 text-xs text-muted-foreground">Beim Wechsel bekommt die andere CLI den bisherigen Verlauf als Kontext.</p>
+        </template>
       </DropdownMenuContent>
     </DropdownMenu>
 
