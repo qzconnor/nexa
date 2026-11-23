@@ -10,6 +10,7 @@ import ProjectPicker from '@/components/common/ProjectPicker.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { attempt } from '@/lib/errors'
+import { provideProjectPath } from '@/composables/useProjectPath'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
@@ -38,6 +39,8 @@ const model = ref(settings.settings[provider.value].model)
 const effort = ref(settings.settings[provider.value].effort)
 const mode = ref<PermissionMode>(supportedMode(provider.value, settings.settings.defaults.permissionMode))
 const account = ref(accounts.defaultId(provider.value))
+/** Claude's Ultracode for the chat to start; missing: as the CLI's settings say. */
+const ultracode = ref<boolean | undefined>(undefined)
 const starting = ref(false)
 
 // The default CLI isn't usable but another one is: take that one (without making it the default).
@@ -106,6 +109,8 @@ function pickAccount(id: string): void {
 }
 
 const project = computed(() => projects.get(ui.homeProjectId) ?? projects.projects[0])
+// `@` completes files of the project picked here.
+provideProjectPath(computed(() => project.value?.path ?? null))
 const anyReady = computed(() => providers.available.length > 0)
 /** The switch mid-chat is only worth telling about with more than one CLI on. */
 const tagline = computed(() => {
@@ -132,7 +137,16 @@ async function start(input: { text: string; images: string[] }): Promise<void> {
   starting.value = true
   try {
     const meta = await attempt(
-      () => sessions.create({ projectId: target.id, provider: provider.value, account: account.value, model: model.value, effort: effort.value, permissionMode: mode.value }),
+      () =>
+        sessions.create({
+          projectId: target.id,
+          provider: provider.value,
+          account: account.value,
+          model: model.value,
+          effort: effort.value,
+          permissionMode: mode.value,
+          ultracode: provider.value === 'claude' ? ultracode.value : undefined,
+        }),
       'Chat ließ sich nicht anlegen',
     )
     if (!meta) return
@@ -164,11 +178,13 @@ async function start(input: { text: string; images: string[] }): Promise<void> {
           :model="model"
           :effort="effort"
           :mode="mode"
+          :ultracode="ultracode"
           @update:provider="pickProvider"
           @update:account="pickAccount"
           @update:model="pickModel"
           @update:effort="pickEffort"
           @update:mode="pickMode"
+          @update:ultracode="ultracode = $event"
           :disabled="!anyReady || starting"
           autofocus
           @send="start"

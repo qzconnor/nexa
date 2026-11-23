@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { systemAccountId, type AccountKind } from '@shared/accounts'
+import { sameLogin, systemAccountId, type Account, type AccountIdentity, type AccountKind } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
 import { childFolder, folderKey, innermostFolder, subfolderSegments } from '@shared/folders'
 import type { ClaudeManagerFound, ImportAccount, ImportGroup, ImportInput, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
@@ -191,6 +191,51 @@ interface Scan {
   preview: ImportPreview
 }
 
+/** A login an account brings: one of Nexa's (`id`), or one of the Claude Manager's this import adds. */
+export interface KnownLogin {
+  provider: ProviderId
+  identity: AccountIdentity
+  name: string
+  id?: string
+  added?: CmAccount
+}
+
+/** What becomes of a Claude Manager account (`ImportAccount.action`); `into`: the login it joins. */
+export interface AccountPlan {
+  account: CmAccount
+  action: ImportAccount['action']
+  into?: KnownLogin
+}
+
+/**
+ * What account of Nexa each Claude Manager account becomes. A login Nexa has already in another
+ * folder (or that an account before it in the list brings) isn't added twice: its sessions go on with
+ * that account, which copies their conversations over when they go on. `identityAt`: who is signed in
+ * in a folder.
+ */
+export function planAccounts(
+  list: readonly CmAccount[],
+  existing: readonly Pick<Account, 'id' | 'name' | 'provider' | 'kind' | 'configDir' | 'identity'>[],
+  identityAt: (provider: ProviderId, configDir: string) => AccountIdentity,
+): AccountPlan[] {
+  const folders = new Set(existing.map((a) => folderKey(a.configDir)))
+  const logins: KnownLogin[] = existing
+    .filter((a) => a.kind !== 'system')
+    .map((a) => ({ provider: a.provider, identity: a.identity, name: a.name, id: a.id }))
+  return list.map((account): AccountPlan => {
+    if (account.kind === 'system') return { account, action: 'standard' }
+    if (account.kind !== 'oauth') return { account, action: 'skip' }
+    const key = folderKey(account.configDir)
+    if (folders.has(key)) return { account, action: 'exists' }
+    const login = { provider: account.provider, identity: identityAt(account.provider, account.configDir) }
+    const twin = logins.find((known) => sameLogin(known, login))
+    if (twin) return { account, action: 'merge', into: twin }
+    folders.add(key)
+    logins.push({ ...login, name: account.name, added: account })
+    return { account, action: 'create' }
+  })
+}
+
 export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgress] }> {
   private last: Scan | null = null
 
@@ -211,12 +256,8 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
     return { dir, workspaces: data.workspaces.length, accounts: data.accounts.filter((a) => a.kind !== 'system').length }
   }
 
-  /** What account of Nexa a Claude Manager account becomes. */
-  private accountAction(account: CmAccount): ImportAccount['action'] {
-    if (account.kind === 'system') return 'standard'
-    if (account.kind !== 'oauth') return 'skip'
-    const key = folderKey(account.configDir)
-    return this.accounts.list().some((a) => folderKey(a.configDir) === key) ? 'exists' : 'create'
+  private planAccounts(list: readonly CmAccount[]): AccountPlan[] {
+    return planAccounts(list, this.accounts.list(), (provider, dir) => this.accounts.identityAt(provider, dir))
   }
 
   async scan(): Promise<ImportPreview> {
@@ -253,7 +294,14 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
     )
     const preview: ImportPreview = {
       dir,
-      accounts: data.accounts.map((a) => ({ name: a.name, provider: a.provider, kind: a.kind, color: a.color, action: this.accountAction(a) })),
+      accounts: this.planAccounts(data.accounts).map(({ account: a, action, into }) => ({
+        name: a.name,
+        provider: a.provider,
+        kind: a.kind,
+        color: a.color,
+        action,
+        ...(into ? { into: into.name } : {}),
+      })),
       groups: groups.map(({ members: _members, ...group }) => group),
       known: newest.size - todo.length,
       skipped,
@@ -272,19 +320,24 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
     const byFolder = new Map<string, string>()
     for (const account of this.accounts.list()) byFolder.set(folderKey(account.configDir), account.id)
     let accounts = 0
-    for (const account of scan.data.accounts) {
+    const added = new Map<CmAccount, string>()
+    for (const { account, action, into } of this.planAccounts(scan.data.accounts)) {
       const key = folderKey(account.configDir)
-      if (account.kind === 'system') {
+      if (action === 'standard') {
         byFolder.set(key, systemAccountId(account.provider))
-        continue
-      }
-      if (account.kind !== 'oauth' || byFolder.has(key) || !isDirectory(account.configDir)) continue
-      try {
-        const created = await this.accounts.create({ provider: account.provider, kind: 'oauth', name: account.name, color: account.color, configDir: account.configDir })
-        byFolder.set(key, created.id)
-        accounts++
-      } catch (error) {
-        console.warn('[import] account could not be taken over', error)
+      } else if (action === 'merge' && into) {
+        // The same login in another folder: the sessions saved here go on with the account Nexa has.
+        const id = into.id ?? (into.added && added.get(into.added))
+        if (id) byFolder.set(key, id)
+      } else if (action === 'create' && isDirectory(account.configDir)) {
+        try {
+          const created = await this.accounts.create({ provider: account.provider, kind: 'oauth', name: account.name, color: account.color, configDir: account.configDir })
+          byFolder.set(key, created.id)
+          added.set(account, created.id)
+          accounts++
+        } catch (error) {
+          console.warn('[import] account could not be taken over', error)
+        }
       }
     }
 

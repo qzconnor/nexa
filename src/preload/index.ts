@@ -132,6 +132,8 @@ const api: NexaApi = {
     list: () => invoke(IpcInvoke.providersList),
     refresh: () => invoke(IpcInvoke.providersRefresh),
     models: (provider) => invoke(IpcInvoke.providersModels, provider),
+    modelDefaults: (provider, account, model) => invoke(IpcInvoke.providersModelDefaults, provider, account, model),
+    commands: (provider, account, cwd) => invoke(IpcInvoke.providersCommands, provider, account, cwd),
     onChanged: (cb) => subscribe(IpcEvent.providersChanged, cb),
   },
   accounts: {
@@ -140,6 +142,7 @@ const api: NexaApi = {
     create: (input) => invoke(IpcInvoke.accountsCreate, input),
     update: (id, patch) => invoke(IpcInvoke.accountsUpdate, id, patch),
     remove: (id, deleteFolder) => invoke(IpcInvoke.accountsRemove, id, deleteFolder),
+    merge: (from, into) => invoke(IpcInvoke.accountsMerge, from, into),
     logins: () => invoke(IpcInvoke.accountsLogins),
     login: (id) => invoke(IpcInvoke.accountsLogin, id),
     loginCode: (id, code) => invoke(IpcInvoke.accountsLoginCode, id, code),

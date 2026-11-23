@@ -122,7 +122,9 @@ Manager`, sonst `Signalbox`) nur:
   schon ein Projekt für den Workspace-Ordner, wird es zum Trenner gemacht. Sessions außerhalb aller
   Workspaces werden je Ordner ein Projekt unter „Projekte“.
 - `oauth`-Accounts werden Nexa-Accounts mit demselben Ordner (Login und Unterhaltungen bleiben, wo sie
-  sind); der Standard-Account ist Nexas Standard. Token und API-Keys sind mit `safeStorage` für den
+  sind); der Standard-Account ist Nexas Standard. Hat Nexa denselben Login schon in einem anderen Ordner
+  (oder bringt ihn ein Account davor in der Liste mit), kommt kein zweiter dazu (`planAccounts`): Die
+  Sessions laufen mit dem vorhandenen weiter, ihr Transkript wird beim ersten Prompt kopiert. Token und API-Keys sind mit `safeStorage` für den
   Claude Manager verschlüsselt und lassen sich nicht übernehmen; ihre Sessions laufen mit dem
   Vorgabe-Account weiter (das Transkript wird beim ersten Prompt kopiert).
 - Jede Session wird ein `SessionMeta` mit `cli.claude` (Sitzung, Account, Ordner) und `importedFrom`.
@@ -160,6 +162,12 @@ welchem Account die Sitzung der CLI entstand. Weichen beide ab, kopiert `session
 Unterhaltung (Claude: Transkript, Unterordner, `file-history`; Codex: Rollout unter `sessions/`) in den
 neuen Ordner und setzt sie dort fort (Codex mit `thread/resume { path }`). Klappt das nicht, verfällt
 der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`.
+
+Derselbe Login in zwei Ordnern (gleiche E-Mail und Organisation, `sameLogin`) ist ein Account zu viel:
+Der jüngere zeigt in den Einstellungen „Gleicher Login wie …“ (`duplicateOf`) und lässt sich in den
+älteren zusammenführen (`account-merge.ts`). Seine Chats laufen mit dem anderen weiter
+(`SessionService.reassignAccount`, die Unterhaltung kopiert der nächste Prompt), die Vorgabe geht mit,
+der Ordner bleibt auf der Platte.
 
 ## Renderer
 
@@ -219,8 +227,19 @@ der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`.
   des Agents an Stelle des Hauptchats (`ui.agentId`), wie die Agent-Liste der Claude-CLI; zurück geht es über
   „Hauptchat“ im Dock, die Pfadleiste im Kopf oder Esc. Ist der gezeigte Agent fertig, kehrt der Chat zu
   dem Verlauf zurück, aus dem er kam.
-- `stores/composer.ts`: Entwürfe je Chat und Text, den andere Teile in die Eingabe setzen (`@`-Erwähnung
-  aus dem Baum, Review-Kommentare aus `stores/review.ts`).
+- `stores/composer.ts`: Entwürfe je Chat, Text, den andere Teile in die Eingabe setzen (`@`-Erwähnung
+  aus dem Baum, Review-Kommentare aus `stores/review.ts`), und die Dateien eines Projekts für `@`.
+- **Eingabefeld** (`Composer`): `ComposerSuggest` vervollständigt an der Schreibmarke
+  (`lib/composer-suggest.ts`): `/` am Anfang Befehle, Skills und MCP-Prompts der CLI
+  (`providers.commands`; Main fragt Claude Code über `claude-probe.ts`, Codex über `skills/list`), `$` die
+  Skills von Codex, `@` Dateien und Ordner des Projekts (`composer.filesOf`, die Liste der Dateisuche).
+  Hinter dem Zahnrad (`ComposerSettings`) liegen Modell, Denkaufwand als Schieberegler (`EffortSlider`,
+  Namen und Farben in `lib/effort.ts`, „Standard“ von der CLI über `providers.modelDefaults`), Ultracode
+  (Claude) und Freigaben; CLI und Account bleiben in der Leiste (`ComposerControls`).
+- **Lange Chats** (`MessageList`): Gezeigt werden die neuesten 40 Blöcke, beim Hochscrollen je 40 ältere
+  (ein `IntersectionObserver` am oberen Ende, 1200 px voraus), ohne dass der sichtbare Inhalt springt. Das
+  Fenster hängt am ältesten gezeigten Block, neue kommen dazu. Unter dem Verlauf eines Agents bleibt der
+  Hauptchat versteckt stehen, zurück ist er so, wie er war.
 - **Updates** (`components/settings/SettingsUpdates.vue`, `components/updates/*`, `stores/updates.ts`): Zustand
   des Updaters, Herunterladen und Neustart (mit Rückfrage, wenn noch Antworten laufen), Versionshinweise der
   Releases mit den PR-Beschreibungen als „Details“. Ein Punkt am Einstellungen-Knopf der Sidebar zeigt ein

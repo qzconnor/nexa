@@ -125,6 +125,32 @@ export interface ModelOption {
   isDefault?: boolean
 }
 
+/**
+ * What a model runs with when Nexa names no effort: the CLI's settings decide (Claude Code's
+ * `effortLevel`, per model), so Nexa asks the CLI. Ultracode: Claude Code's dynamic workflows on every
+ * task, which only some models can do.
+ */
+export interface ModelDefaults {
+  effort?: string
+  ultracode?: { available: boolean; on: boolean }
+}
+
+/** A command the composer offers after `/` (Codex: its skills, also after `$`). */
+export interface CommandOption {
+  /** As the list shows it, without the `(MCP)` of an MCP server's prompt. */
+  name: string
+  description?: string
+  /** What may follow it, as the CLI words it (`[issue description]`). */
+  argumentHint?: string
+  aliases?: string[]
+  /** A prompt of an MCP server, a skill (Codex) or a command or skill of Claude Code. */
+  kind: 'mcp' | 'skill' | 'command'
+  /** What goes into the prompt: `/name` for Claude Code, `$name` for a skill of Codex. */
+  insert: string
+  /** Codex: the skill's file, sent with the prompt that names it. */
+  path?: string
+}
+
 export interface ProviderInfo {
   id: ProviderId
   name: string
@@ -237,6 +263,8 @@ export interface SessionMeta {
   provider: ProviderId
   model: string
   effort: string
+  /** Claude Code's Ultracode, on or off; missing: as the CLI's settings say. */
+  ultracode?: boolean
   permissionMode: PermissionMode
   createdAt: number
   updatedAt: number
@@ -268,6 +296,7 @@ export interface SessionCreateInput {
   account?: string
   model?: string
   effort?: string
+  ultracode?: boolean
   permissionMode?: PermissionMode
 }
 
@@ -278,6 +307,7 @@ export interface SessionUpdateInput {
   account?: string
   model?: string
   effort?: string
+  ultracode?: boolean
   permissionMode?: PermissionMode
   pinned?: boolean
   archived?: boolean

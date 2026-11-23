@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
 import { enabledProviders, providerTogglePatch } from '@shared/providers'
-import type { ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
+import type { CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
 import { useSettingsStore } from './settings'
 
 /** The CLIs: installed and logged in, switched on or off, their models, the usage of every account's plan. */
@@ -83,5 +83,52 @@ export const useProvidersStore = defineStore('providers', () => {
     return pending
   }
 
-  return { statuses, usage, models, detecting, checked, installed, enabled, available, status, usageOf, setEnabled, load, refresh, loadModels }
+  // The CLI answers these from caches of its own, but every question is a round trip to main; a chat
+  // that asks again on every keystroke would wait for nothing new.
+  const commandCache = new Map<string, { at: number; list: Promise<CommandOption[]> }>()
+  const defaultsCache = new Map<string, Promise<ModelDefaults>>()
+
+  /** The slash commands, MCP prompts and skills of a CLI in a folder; asked again after `maxAgeMs`. */
+  function commands(id: ProviderId, account: string | undefined, cwd: string | null, maxAgeMs = 30_000): Promise<CommandOption[]> {
+    const key = `${id}\0${account ?? ''}\0${cwd}`
+    const cached = commandCache.get(key)
+    if (cached && Date.now() - cached.at < maxAgeMs) return cached.list
+    const list = window.api.providers.commands(id, account, cwd).catch(() => cached?.list ?? ([] as CommandOption[]))
+    commandCache.set(key, { at: Date.now(), list })
+    return list
+  }
+
+  /** What a model starts with when nothing is chosen: its effort, Claude's Ultracode. */
+  function modelDefaults(id: ProviderId, account: string | undefined, model: string): Promise<ModelDefaults> {
+    const key = `${id}\0${account ?? ''}\0${model}`
+    let pending = defaultsCache.get(key)
+    if (!pending) {
+      pending = window.api.providers.modelDefaults(id, account, model).catch(() => {
+        // A failed probe is asked again next time instead of staying empty.
+        defaultsCache.delete(key)
+        return {} as ModelDefaults
+      })
+      defaultsCache.set(key, pending)
+    }
+    return pending
+  }
+
+  return {
+    statuses,
+    usage,
+    models,
+    detecting,
+    checked,
+    installed,
+    enabled,
+    available,
+    status,
+    usageOf,
+    setEnabled,
+    load,
+    refresh,
+    loadModels,
+    commands,
+    modelDefaults,
+  }
 })

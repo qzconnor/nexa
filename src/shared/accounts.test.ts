@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { identityLabel, isSystemAccountId, maskSecret, pickAccount, planLabel, systemAccountId, visibleAccounts } from './accounts'
+import { duplicateOf, identityLabel, isSystemAccountId, maskSecret, pickAccount, planLabel, sameLogin, systemAccountId, visibleAccounts, type AccountIdentity } from './accounts'
 
 describe('accounts', () => {
   it('gives each CLI a fixed standard account', () => {
@@ -38,5 +38,43 @@ describe('accounts', () => {
 
   it('masks a secret', () => {
     expect(maskSecret('sk-ant-oat01-abcdefghijklmnop')).toBe('sk-ant-oat01…mnop')
+  })
+})
+
+describe('sameLogin and duplicateOf', () => {
+  const who = (email: string | null, organizationName: string | null = 'Team GmbH'): AccountIdentity => ({
+    email,
+    displayName: null,
+    organizationName,
+    organizationType: null,
+    subscriptionType: null,
+  })
+  const account = (id: string, createdAt: number, identity: AccountIdentity, kind: 'oauth' | 'system' = 'oauth', provider: 'claude' | 'codex' = 'claude') => ({
+    id,
+    kind,
+    provider,
+    createdAt,
+    identity,
+  })
+
+  it('matches the same person in the same organisation', () => {
+    expect(sameLogin(account('a', 1, who('A@x.de')), account('b', 2, who('a@x.de')))).toBe(true)
+    expect(sameLogin(account('a', 1, who('a@x.de', 'Privat')), account('b', 2, who('a@x.de')))).toBe(false)
+    expect(sameLogin(account('a', 1, who('a@x.de')), account('b', 2, who('a@x.de'), 'oauth', 'codex'))).toBe(false)
+    expect(sameLogin(account('a', 1, who(null)), account('b', 2, who(null)))).toBe(false)
+  })
+
+  it('names the oldest earlier twin, never the standard account', () => {
+    const system = account('system', 0, who('a@x.de'), 'system')
+    const first = account('first', 5, who('a@x.de'))
+    const second = account('second', 3, who('a@x.de'))
+    const third = account('third', 9, who('a@x.de'))
+    const other = account('other', 1, who('b@x.de'))
+    const list = [system, first, second, third, other]
+    expect(duplicateOf(list, third)?.id).toBe('second')
+    expect(duplicateOf(list, first)?.id).toBe('second')
+    expect(duplicateOf(list, second)).toBeNull()
+    expect(duplicateOf(list, other)).toBeNull()
+    expect(duplicateOf(list, system)).toBeNull()
   })
 })

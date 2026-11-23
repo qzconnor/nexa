@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { codexMcpConfig, commandView, unwrapShell } from './codex-run'
+import { codexMcpConfig, commandView, skillInputs, unwrapShell } from './codex-run'
 
 describe('unwrapShell', () => {
   it('takes the command out of PowerShell', () => {
@@ -87,5 +87,24 @@ describe('codexMcpConfig', () => {
   it('asks for nothing with full permissions', () => {
     const config = codexMcpConfig(mcp, 'full') as Record<string, unknown>
     expect(config['mcp_servers.nexa.tools']).not.toHaveProperty('browser_evaluate')
+  })
+})
+
+describe('skillInputs', () => {
+  const skills = [
+    { name: 'pdf', kind: 'skill' as const, insert: '$pdf', path: '/skills/pdf/SKILL.md' },
+    { name: 'deploy.prod', kind: 'skill' as const, insert: '$deploy.prod', path: '/skills/deploy/SKILL.md' },
+    { name: 'nopath', kind: 'skill' as const, insert: '$nopath' },
+  ]
+
+  it('adds the skills named with $ to the input', () => {
+    expect(skillInputs('$pdf lies das und dann $deploy.prod', skills)).toEqual([
+      { type: 'skill', name: 'pdf', path: '/skills/pdf/SKILL.md' },
+      { type: 'skill', name: 'deploy.prod', path: '/skills/deploy/SKILL.md' },
+    ])
+  })
+
+  it('ignores prices, unknown names and skills without a file', () => {
+    expect(skillInputs('kostet 5$pdf, $unbekannt, $nopath', skills)).toEqual([])
   })
 })

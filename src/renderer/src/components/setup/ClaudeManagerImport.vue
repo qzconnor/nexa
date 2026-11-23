@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ArrowRightLeftIcon, CheckIcon, FolderIcon, FolderTreeIcon } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { ClaudeManagerFound, ImportGroup, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
+import type { ClaudeManagerFound, ImportAccount, ImportGroup, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
@@ -49,7 +49,18 @@ const selected = computed(() => (preview.value?.groups ?? []).filter((g) => g.ex
 const selectedSessions = computed(() => selected.value.reduce((sum, g) => sum + g.sessions, 0))
 const progressValue = computed(() => (progress.value.total ? Math.round((progress.value.done / progress.value.total) * 100) : 0))
 
-const ACCOUNT_ACTIONS = { create: 'wird übernommen', exists: 'hat Nexa schon', standard: 'Standard', skip: 'nicht übertragbar' } as const
+const ACCOUNT_ACTIONS = { create: 'wird übernommen', exists: 'hat Nexa schon', merge: 'hat Nexa schon', standard: 'Standard', skip: 'nicht übertragbar' } as const
+
+/** What becomes of an account, as the chip under the preview says it. */
+function accountAction(account: ImportAccount): string {
+  return account.action === 'merge' && account.into ? `wird mit „${account.into}“ zusammengefasst` : ACCOUNT_ACTIONS[account.action]
+}
+
+function accountHint(account: ImportAccount): string | undefined {
+  if (account.action === 'skip') return 'Token und API-Keys sind für den Claude Manager verschlüsselt. Lege den Account in Nexa neu an.'
+  if (account.action === 'merge') return 'Derselbe Login ist in Nexa schon da. Kein zweiter Account: Die Chats laufen mit diesem weiter.'
+  return undefined
+}
 
 async function scan(): Promise<void> {
   step.value = 'scanning'
@@ -147,11 +158,11 @@ const resultText = computed(() => {
             v-for="(account, i) in preview.accounts"
             :key="i"
             :class="cn('inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs', account.action === 'skip' && 'opacity-60')"
-            v-tooltip="account.action === 'skip' ? 'Token und API-Keys sind für den Claude Manager verschlüsselt. Lege den Account in Nexa neu an.' : undefined"
+            v-tooltip="accountHint(account)"
           >
             <span class="size-2 rounded-full" :style="{ background: account.color }" />
             {{ account.name }}
-            <span class="text-muted-foreground">· {{ ACCOUNT_ACTIONS[account.action] }}</span>
+            <span class="text-muted-foreground">· {{ accountAction(account) }}</span>
           </span>
         </div>
       </div>

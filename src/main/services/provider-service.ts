@@ -1,7 +1,7 @@
 import { canLogin, type AccountLoginState } from '@shared/accounts'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
-import type { AppSettings, ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
+import type { AppSettings, CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
 import { AccountLogins } from '../accounts/account-login'
 import type { AccountService } from '../accounts/account-service'
 import { TypedEmitter } from '../lib/typed-emitter'
@@ -107,6 +107,19 @@ export class ProviderService extends TypedEmitter<Events> {
 
   models(id: ProviderId): Promise<ModelOption[]> {
     return this.providers[id].models(this.context(this.defaultAccount(id)))
+  }
+
+  /** An account of the CLI, or its default account when none (or an unknown one) is named. */
+  private accountOf(id: ProviderId, account: string | undefined): string {
+    return this.accounts.resolve(id, account, this.defaultAccount(id))
+  }
+
+  modelDefaults(id: ProviderId, account: string | undefined, model: string): Promise<ModelDefaults> {
+    return this.providers[id].modelDefaults(this.context(this.accountOf(id, account)), model)
+  }
+
+  commands(id: ProviderId, account: string | undefined, cwd: string): Promise<CommandOption[]> {
+    return this.providers[id].commands(this.context(this.accountOf(id, account)), cwd)
   }
 
   usage(): ProviderUsage[] {

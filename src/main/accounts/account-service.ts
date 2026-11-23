@@ -12,6 +12,7 @@ import {
   usesSecret,
   type Account,
   type AccountCreateInput,
+  type AccountIdentity,
   type AccountKind,
   type AccountUpdateInput,
 } from '@shared/accounts'
@@ -268,6 +269,13 @@ export class AccountService extends TypedEmitter<Events> {
     if (account.provider === 'codex') return readCodexLogin(readJsonSync<unknown>(this.codexPaths(id).authFile))
     const paths = this.claudePaths(id)
     return readClaudeLogin(readJsonSync<unknown>(paths.credentialsFile), readJsonSync<unknown>(paths.globalConfigFile))
+  }
+
+  /** Who is signed in in a config folder Nexa has no account for (yet), as the CLI would run with it. */
+  identityAt(provider: ProviderId, configDir: string): AccountIdentity {
+    if (provider === 'codex') return readCodexLogin(readJsonSync<unknown>(codexPaths(configDir).authFile)).identity
+    const paths = claudePaths(configDir, true)
+    return readClaudeLogin(readJsonSync<unknown>(paths.credentialsFile), readJsonSync<unknown>(paths.globalConfigFile)).identity
   }
 
   private configDir(account: StoredAccount): string {

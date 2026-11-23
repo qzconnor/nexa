@@ -1,7 +1,8 @@
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptSummary } from '../providers/claude/claude-transcript'
-import { cmAccounts, planGroups, projectFolder, sessionTitle, type FoundSession } from './claude-manager'
+import type { AccountIdentity } from '@shared/accounts'
+import { cmAccounts, planAccounts, planGroups, projectFolder, sessionTitle, type CmAccount, type FoundSession } from './claude-manager'
 
 const summary = (cwd: string | null, updatedAt: number, patch: Partial<TranscriptSummary> = {}): TranscriptSummary => ({
   cwd,
@@ -103,5 +104,51 @@ describe('sessionTitle', () => {
     expect(sessionTitle(summary('x', 1, { title: 'Von Claude' }), undefined)).toEqual({ title: 'Von Claude', titleSource: 'user' })
     expect(sessionTitle(summary('x', 1, { firstPrompt: 'Wie geht das?\nMehr' }), undefined)).toEqual({ title: 'Wie geht das?', titleSource: 'auto' })
     expect(sessionTitle(summary('x', 1, { firstPrompt: null }), undefined)).toEqual({ title: 'Ohne Titel', titleSource: 'auto' })
+  })
+})
+
+describe('planAccounts', () => {
+  const who = (email: string | null): AccountIdentity => ({ email, displayName: null, organizationName: 'Team', organizationType: null, subscriptionType: 'team' })
+  const cm = (id: string, kind: CmAccount['kind'], configDir: string): CmAccount => ({ id, name: `CM ${id}`, provider: 'claude', kind, color: '#123456', configDir })
+  const logins: Record<string, AccountIdentity> = {
+    [resolve('/cm/same')]: who('a@x.de'),
+    [resolve('/cm/new')]: who('b@x.de'),
+    [resolve('/cm/new-again')]: who('b@x.de'),
+    [resolve('/cm/nobody')]: who(null),
+  }
+  const existing = [
+    { id: 'system', name: 'Standard', provider: 'claude' as const, kind: 'system' as const, configDir: resolve('/home/.claude'), identity: who('c@x.de') },
+    { id: 'n1', name: 'Nexa Team', provider: 'claude' as const, kind: 'oauth' as const, configDir: resolve('/nexa/n1'), identity: who('a@x.de') },
+    { id: 'n2', name: 'Geteilt', provider: 'claude' as const, kind: 'oauth' as const, configDir: resolve('/cm/shared'), identity: who('d@x.de') },
+  ]
+
+  it('joins a login Nexa has in another folder instead of adding it again', () => {
+    const plan = planAccounts(
+      [
+        cm('s', 'system', resolve('/home/.claude')),
+        cm('same', 'oauth', resolve('/cm/same')),
+        cm('shared', 'oauth', resolve('/cm/shared')),
+        cm('new', 'oauth', resolve('/cm/new')),
+        cm('again', 'oauth', resolve('/cm/new-again')),
+        cm('nobody', 'oauth', resolve('/cm/nobody')),
+        cm('token', 'token', resolve('/cm/token')),
+      ],
+      existing,
+      (_provider, dir) => logins[dir] ?? who(null),
+    )
+    expect(plan.map((p) => [p.account.id, p.action, p.into?.id ?? p.into?.added?.id ?? null])).toEqual([
+      ['s', 'standard', null],
+      ['same', 'merge', 'n1'],
+      ['shared', 'exists', null],
+      ['new', 'create', null],
+      ['again', 'merge', 'new'],
+      ['nobody', 'create', null],
+      ['token', 'skip', null],
+    ])
+  })
+
+  it('never joins the standard account (it is out of sight once others are there)', () => {
+    const plan = planAccounts([cm('x', 'oauth', resolve('/cm/x'))], existing, () => who('c@x.de'))
+    expect(plan[0]!.action).toBe('create')
   })
 })

@@ -185,6 +185,7 @@ export class SessionService extends TypedEmitter<Events> {
       provider,
       model: input.model ?? settings[provider].model,
       effort: input.effort ?? settings[provider].effort,
+      ...(provider === 'claude' && typeof input.ultracode === 'boolean' ? { ultracode: input.ultracode } : {}),
       permissionMode: input.permissionMode ?? settings.defaults.permissionMode,
       createdAt: now,
       updatedAt: now,
@@ -568,6 +569,7 @@ export class SessionService extends TypedEmitter<Events> {
           cwd,
           model: meta.model || undefined,
           effort: meta.effort || undefined,
+          ultracode: provider === 'claude' ? meta.ultracode : undefined,
           permissionMode: meta.permissionMode,
           resumeId: meta.cli[provider]?.sessionId,
           resumePath: meta.cli[provider]?.resumePath,
@@ -656,12 +658,14 @@ export class SessionService extends TypedEmitter<Events> {
         await old.stop().catch(() => undefined)
         this.setRuntime(s, { ...IDLE })
       }
-    } else if (patch.model !== undefined || patch.effort !== undefined) {
+    } else if (patch.model !== undefined || patch.effort !== undefined || typeof patch.ultracode === 'boolean') {
       const effortChanged = patch.effort !== undefined && patch.effort !== meta.effort
+      const ultracodeChanged = typeof patch.ultracode === 'boolean' && patch.ultracode !== meta.ultracode
       if (patch.model !== undefined) meta.model = patch.model
       if (patch.effort !== undefined) meta.effort = patch.effort
-      if (s.run && s.runProvider === 'claude' && effortChanged) {
-        // Claude Code takes the effort only at its start; the next prompt resumes with the new one.
+      if (typeof patch.ultracode === 'boolean') meta.ultracode = patch.ultracode
+      if (s.run && s.runProvider === 'claude' && (effortChanged || ultracodeChanged)) {
+        // Claude Code takes the effort and Ultracode only at its start; the next prompt resumes with the new ones.
         await this.stop(id)
       } else {
         await s.run?.setModel(meta.model || undefined, meta.effort || undefined).catch(() => undefined)
@@ -673,6 +677,23 @@ export class SessionService extends TypedEmitter<Events> {
     }
     this.saveSoon()
     return meta
+  }
+
+  /**
+   * The chats of an account that goes (merged into another with the same login) go on with `to`. Their
+   * conversations stay where they were saved; the next prompt copies them over (see useAccount), and a
+   * run that works now finishes its turn with the old folder.
+   */
+  reassignAccount(provider: ProviderId, from: string, to: string): number {
+    let moved = 0
+    for (const s of this.sessions.values()) {
+      const meta = s.meta
+      if ((meta.accounts?.[provider] ?? meta.cli[provider]?.accountId) !== from) continue
+      meta.accounts = { ...meta.accounts, [provider]: to }
+      moved++
+    }
+    if (moved) this.saveSoon()
+    return moved
   }
 
   async stop(id: string): Promise<void> {

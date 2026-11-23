@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import type { ChatItem } from '@shared/chat'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
-import { chatBlocks } from '@/lib/tools'
+import { chatBlocks, type ChatBlock } from '@/lib/tools'
 import { useSettingsStore } from '@/stores/settings'
 import AgentCard from './AgentCard.vue'
 import InteractionCard from './InteractionCard.vue'
@@ -21,6 +21,87 @@ const props = defineProps<{ items: ChatItem[]; sessionId: string; parentId?: str
 const settings = useSettingsStore()
 
 const blocks = computed(() => chatBlocks(props.items, props.parentId ?? null, settings.settings.chat.showThinking))
+// A long chat renders its newest blocks only and older ones as the user scrolls up: hundreds of
+// Markdown blocks with highlighted code take seconds to lay out, the last screens are what is read.
+const PAGE = 40
+/** How close (px) the top of what is shown may come before the next page is added. */
+const LOAD_AHEAD = 1200
+
+function keyOf(block: ChatBlock): string {
+  return block.type === 'item' ? block.item.id : block.id
+}
+
+/** The key of the oldest block shown; a key, not an index, so blocks coming in don't move the window. */
+const anchor = ref<string | null>(null)
+const first = computed(() => {
+  const list = blocks.value
+  const at = anchor.value === null ? -1 : list.findIndex((b) => keyOf(b) === anchor.value)
+  // Not placed yet, or gone (another chat, a rewind): the newest page.
+  return at >= 0 ? at : Math.max(0, list.length - PAGE)
+})
+const shown = computed(() => (first.value ? blocks.value.slice(first.value) : blocks.value))
+
+watch(
+  () => [props.sessionId, blocks.value.length] as const,
+  ([id], before) => {
+    if (id !== before?.[0]) anchor.value = null
+    const list = blocks.value
+    if (anchor.value === null && list.length) anchor.value = keyOf(list[first.value]!)
+    if (id !== before?.[0]) void nextTick(watchTop)
+  },
+  { immediate: true },
+)
+
+const root = useTemplateRef<HTMLElement>('root')
+const top = useTemplateRef<HTMLElement>('top')
+let scroller: HTMLElement | null = null
+let observer: IntersectionObserver | null = null
+
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement; node; node = node.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node
+  }
+  return null
+}
+
+/** Observes the top again: its first answer says whether it is still within reach after a change. */
+function watchTop(): void {
+  if (!observer || !top.value) return
+  observer.unobserve(top.value)
+  observer.observe(top.value)
+}
+
+let adding = false
+/** Adds the page before the shown blocks, keeping in view what the user was looking at. */
+async function showOlder(): Promise<void> {
+  if (!first.value || adding) return
+  adding = true
+  const el = scroller
+  const fromBottom = el ? el.scrollHeight - el.scrollTop : 0
+  anchor.value = keyOf(blocks.value[Math.max(0, first.value - PAGE)]!)
+  await nextTick()
+  if (el) el.scrollTop = el.scrollHeight - fromBottom
+  adding = false
+  watchTop()
+}
+
+onMounted(() => {
+  scroller = scrollParent(root.value)
+  // Measured after the chat has scrolled to its end (its ResizeObserver runs before these answers).
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.at(-1)?.isIntersecting) void showOlder()
+    },
+    {
+      root: scroller,
+      rootMargin: `${LOAD_AHEAD}px 0px 0px 0px`,
+    },
+  )
+  watchTop()
+})
+
+onBeforeUnmount(() => observer?.disconnect())
+
 /** The newest browser card shows the page live; the others as it was when they ended. */
 const liveBrowser = computed(() => {
   const last = blocks.value.findLast((b) => b.type === 'browser')
@@ -41,8 +122,17 @@ const providerChanges = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col">
-    <template v-for="block in blocks" :key="block.type === 'item' ? block.item.id : block.id">
+  <div ref="root" class="flex flex-col">
+    <div ref="top" />
+    <button
+      v-if="first"
+      type="button"
+      class="mx-auto mb-2 rounded-full px-3 py-1 text-[0.78rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      @click="showOlder"
+    >
+      Ältere Nachrichten laden
+    </button>
+    <template v-for="block in shown" :key="keyOf(block)">
       <ToolGroup v-if="block.type === 'tools'" :tools="block.tools" />
       <BrowserCard v-else-if="block.type === 'browser'" :tools="block.tools" :block-id="block.id" :session-id="sessionId" :live="block.id === liveBrowser" />
       <template v-else>

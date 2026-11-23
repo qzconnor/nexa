@@ -27,7 +27,19 @@ claude -p --input-format stream-json --output-format stream-json --verbose
     Nachricht). `AskUserQuestion` und `ExitPlanMode` kommen ebenfalls hierüber und werden als Frage bzw.
     Plan angezeigt.
 - Der Denkaufwand (`--effort`) lässt sich nicht im laufenden Prozess ändern: Nexa beendet den Prozess,
-  der nächste Turn startet mit `--resume`.
+  der nächste Turn startet mit `--resume`. Ebenso Ultracode: `--settings '{"ultracode":true}'` (bzw.
+  `false`) gilt für den Prozess, ohne die Option gilt, was in den Einstellungen der CLI steht.
+- **Befehle für die Eingabe**: Die Antwort auf `initialize` enthält `commands` (`name`, `description`,
+  `argumentHint`, `aliases`), also was im Modus `-p` geht, Skills und eigene Befehle eingeschlossen.
+  Prompts der MCP-Server heißen `server:prompt (MCP)` und kommen erst, wenn ihr Server verbunden ist:
+  `system/commands_changed` mit der ganzen Liste. Aufgerufen wird ein Befehl als Text am Anfang des
+  Prompts (`/<name> …`, ein MCP-Prompt mit „ (MCP)“ im Namen). Nexa fragt einen kurzen eigenen Prozess
+  (`--no-session-persistence`, nur `initialize`) je Account und Ordner und hört ihm 20 s auf
+  `commands_changed` zu (`claude-probe.ts`).
+- **Vorgaben eines Modells**: `get_settings` liefert unter `applied` den Denkaufwand ohne `--effort`
+  (`effort`, abhängig von Modell und Einstellungen) sowie `ultracode` und `ultracodeAvailable`. `set_model`
+  im selben Prozess behält den bisherigen Denkaufwand, deshalb fragt Nexa einen Prozess je Modell
+  (`--model`).
 - Subagents: `tool_use` von `Task`/`Agent`, ihre Nachrichten tragen `parent_tool_use_id`. Seit 2.1.x laufen
   sie auch ohne `run_in_background` im Hintergrund: `system/task_started` mit `task_type: "local_agent"` und
   `is_backgrounded: true`, das `tool_result` kommt sofort („Async agent launched successfully. agentId: …“),
@@ -128,6 +140,10 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   erkennt Lesen (`read` mit `path`), Auflisten (`listFiles`) und Suchen (`search` mit `query`, `path`) als
   eigene Werkzeugart. Ohne `commandActions` wird die Shell-Hülle entfernt (`unwrapShell`).
 - **Dateiänderungen**: `fileChange.changes[]` mit `path`, `kind` und Unified Diff.
+- **Skills**: `skills/list { cwds }` liefert `data[].skills[]` (`name`, `description`, `shortDescription`,
+  `interface.shortDescription`, `path`, `scope`, `enabled`), `skills/changed` meldet Änderungen. Im Prompt
+  steht ein Skill als `$name`; Nexa hängt dazu `{ type: "skill", name, path }` an die Eingabe von
+  `turn/start` bzw. `turn/steer`. Die Slash-Befehle der TUI kennt der App-Server nicht.
 
 ### Accounts und Login
 
