@@ -13,12 +13,13 @@ import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import TitleBarNotifications from './TitleBarNotifications.vue'
 import TitleBarSearch from './TitleBarSearch.vue'
 import TitleBarUsage from './TitleBarUsage.vue'
 
 /**
  * The title bar: logo, the sidebar's button, the open chat's project and branch, the quick open's
- * search, and the usage of the CLIs that count now. The caption buttons are Electron's titleBarOverlay on the right, so that
+ * search, the usage of the CLIs that count now and the bell of the notifications. The caption buttons are Electron's titleBarOverlay on the right, so that
  * area stays free.
  */
 const app = useAppStore()
@@ -88,6 +89,7 @@ function openProject(): void {
       <TitleBarSearch />
       <div class="mr-2 flex items-center justify-end gap-1 transition-opacity in-data-unfocused:opacity-75">
         <TitleBarUsage v-for="id in shown" :key="id" :provider="id" />
+        <TitleBarNotifications />
       </div>
     </div>
   </header>

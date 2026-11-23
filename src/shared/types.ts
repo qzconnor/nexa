@@ -65,6 +65,39 @@ export interface ToolSettings {
   noClaudeInChrome: boolean
 }
 
+/**
+ * When a chat interrupts with a notification and the flashing taskbar: `background` only while the
+ * window is in the background, `hidden` also while it shows another chat or the start page.
+ */
+export type NotifyWhen = 'background' | 'hidden'
+
+/** How Nexa points to chats that are done or need the user, and to limits and logins of the accounts. */
+export interface NotificationSettings {
+  /** Main switch (also the bell in the title bar): off, Nexa never interrupts. */
+  enabled: boolean
+  /** The agent finished its answer (or stopped at an error). */
+  onDone: boolean
+  /** A finished answer only interrupts after the agent worked at least this long (s); 0: always. */
+  minBusySeconds: number
+  /** The agent waits for a permission, the answer to a question or the approval of a plan. */
+  onInput: boolean
+  /** The chat stopped at a usage limit. */
+  onLimit: boolean
+  /** A limit of an account reached `nearLimitPercent`: once per account, window and reset. */
+  onNearLimit: boolean
+  /** Usage of a limit window (%) from which `onNearLimit` warns. */
+  nearLimitPercent: number
+  /** An account's browser login ended and can't be renewed: once per login. */
+  onLoginLost: boolean
+  when: NotifyWhen
+  /** The notification shows the beginning of the answer, the command waiting for permission or the question. */
+  preview: boolean
+  /** The notification plays the system sound. */
+  sound: boolean
+  /** The taskbar button flashes until the window is in front. */
+  flashTaskbar: boolean
+}
+
 export interface ApiSettings {
   enabled: boolean
   port: number
@@ -84,6 +117,7 @@ export interface AppSettings {
   codex: ProviderSettings
   chat: ChatSettings
   tools: ToolSettings
+  notifications: NotificationSettings
   api: ApiSettings
   setup: {
     /** The first start's setup (which CLIs to use) is through; until then it takes the start page's place. */

@@ -12,6 +12,7 @@ const props = defineProps<{
   max: number
   step?: number
   format?: (value: number) => string
+  disabled?: boolean
 }>()
 const model = defineModel<number>({ required: true })
 
@@ -32,9 +33,10 @@ const label = computed(() => (props.format ? props.format(model.value) : String(
       :min="min"
       :max="max"
       :step="step ?? 1"
+      :disabled="disabled"
       :thumb-attrs="{ 'aria-labelledby': id && `${id}-label`, 'aria-valuetext': label }"
       class="flex-1"
     />
-    <span class="w-12 text-right text-xs text-muted-foreground tabular-nums">{{ label }}</span>
+    <span :class="['w-12 text-right text-xs text-muted-foreground tabular-nums', disabled && 'opacity-50']">{{ label }}</span>
   </div>
 </template>

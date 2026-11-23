@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import AccountFormDialog from '@/components/accounts/AccountFormDialog.vue'
 import AccountLoginDialog from '@/components/accounts/AccountLoginDialog.vue'
 import BrowserLayer from '@/components/browser/BrowserLayer.vue'
@@ -48,6 +48,13 @@ const { theme } = useThemeSync()
 // Ctrl+, the settings, Ctrl+Shift+A/P the quick open, Ctrl+Tab and Ctrl+1–9 the chats (shared/shortcuts.ts).
 useShortcuts(ready)
 
+// The chat in view: its notification has been seen, and it gets none while the window is in front.
+watch(
+  () => (ready.value && ui.view === 'chat' ? (sessions.active?.id ?? null) : null),
+  (id) => void window.api.notifications.viewing(id).catch(() => undefined),
+  { immediate: true },
+)
+
 onMounted(async () => {
   try {
     await Promise.all([settings.load(), app.load(), themes.load().catch((error) => console.error('[themes]', error))])
@@ -57,6 +64,8 @@ onMounted(async () => {
       ui.view = 'chat'
       void attempt(() => sessions.open(id), 'Session ließ sich nicht öffnen')
     })
+    // A notification about an account's limits or login.
+    window.api.settings.onOpen((section) => ui.openSettings(section))
     ready.value = true
     // After the window is up: the hints about a new version or an update just installed are toasts.
     void useUpdatesStore()

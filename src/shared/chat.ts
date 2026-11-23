@@ -251,6 +251,8 @@ export interface TurnItem extends ItemBase {
   outputTokens?: number
   model?: string
   error?: string
+  /** It stopped at a usage limit of the account: the CLI refuses work until the limit resets. */
+  limit?: boolean
 }
 
 export type ChatItem =

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem } from './chat'
-import { chatMarkdown, fenced, inlineCode, lastAnswer, markdownFileName } from './chat-markdown'
+import { chatMarkdown, fenced, inlineCode, lastAnswer, markdownFileName, turnAnswer } from './chat-markdown'
 
 const at = (time: string) => Date.parse(`2026-11-23T${time}:00Z`)
 const base = { provider: 'claude' as const }
@@ -69,6 +69,19 @@ describe('lastAnswer', () => {
     ]
     expect(lastAnswer(items)).toBe('Erste')
     expect(lastAnswer([])).toBeNull()
+  })
+})
+
+describe('turnAnswer', () => {
+  it('takes only what came after the last prompt', () => {
+    const items: ChatItem[] = [
+      { ...base, kind: 'assistant', id: 'a1', ts: 1, text: 'Alt' },
+      { ...base, kind: 'user', id: 'u1', ts: 2, text: 'Weiter' },
+      { ...base, kind: 'assistant', id: 'a2', ts: 3, text: ' Neu ' },
+      { ...base, kind: 'assistant', id: 'a3', ts: 4, text: 'Vom Agent', parentId: 'g' },
+    ]
+    expect(turnAnswer(items)).toBe('Neu')
+    expect(turnAnswer(items.slice(0, 2))).toBeNull()
   })
 })
 

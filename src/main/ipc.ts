@@ -15,6 +15,7 @@ import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
 import type { GitService } from './files/git-service'
+import type { NotificationService } from './services/notification-service'
 import type { ProjectService } from './services/project-service'
 import { projectToSection } from './services/project-sections'
 import type { ProviderService } from './services/provider-service'
@@ -33,6 +34,7 @@ export interface AppContext {
   sessions: SessionService
   api: ApiServer
   git: GitService
+  notifications: NotificationService
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -331,6 +333,11 @@ export function registerIpc(ctx: AppContext): void {
   })
 
   handle(IpcInvoke.apiStatus, () => ctx.api.status())
+
+  handle(IpcInvoke.notificationsViewing, (_e, sessionId: unknown) =>
+    ctx.notifications.setViewing(typeof sessionId === 'string' && sessionId ? sessionId : null),
+  )
+  handle(IpcInvoke.notificationsTest, () => ctx.notifications.showTest())
 
   // Events -------------------------------------------------------------------------------------
   settings.on('changed', (next) => broadcast(IpcEvent.settingsChanged, next))

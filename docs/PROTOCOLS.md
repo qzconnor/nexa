@@ -125,6 +125,10 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   `percent`, `resets_at` und `scope.model.display_name`. Nur mit Browser-Login (nicht mit Setup-Token
   oder Key); 429 mit `retry-after`, Nexa wartet dann je Account. Ohne Browser-Login kommen die Limits wie
   bisher aus `rate_limit_event`.
+- **Turn am Limit**: `rate_limit_event` mit `rate_limit_info.status: "rejected"`, dann eine eigene Antwort
+  von Claude Code (`assistant` mit `error: "rate_limit"`, Text wie „You've hit your limit · resets …“)
+  und ein `result` mit `is_error`. Nexa markiert den Turn dann mit `limit` (Benachrichtigung „Limit
+  erreicht“, der Reset kommt aus den Usage-Fenstern des Accounts).
 
 ### Transkripte (`projects/<key>/<id>.jsonl`)
 
@@ -247,6 +251,9 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 - **Limits**: `account/rateLimits/read` je App-Server; `account/rateLimits/updated` kommt vom Server des
   Accounts, der gerade arbeitet. Für Accounts ohne laufenden Server fragt Nexa nur beim ausdrücklichen
   Aktualisieren (startet dafür den Server).
+- **Turn am Limit**: `turn/completed` mit `turn.status: "failed"` und `turn.error.codexErrorInfo:
+  "usageLimitExceeded"` (`CodexErrorInfo` aus `generate-ts`). Nexa markiert den Turn dann mit `limit`;
+  andere Fehler wie `rateLimitExceeded` oder `sessionBudgetExceeded` gelten als gewöhnlicher Fehler.
 
 ## Nexa-MCP-Server
 

@@ -23,6 +23,7 @@ import { NexaMcpServer } from './mcp/mcp-server'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { ProjectService } from './services/project-service'
 import { ProviderService } from './services/provider-service'
+import { NotificationService } from './services/notification-service'
 import { SessionService } from './services/session-service'
 import { SettingsService } from './services/settings-service'
 import { ThemeService } from './services/theme-service'
@@ -94,17 +95,30 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   registerBrowserIpc(browserTabs, browserControl, sessionExists)
 
   let mainWindow: BrowserWindow | null = null
-  const show = (sessionId?: string) => {
+  /** Brings the window to the front (a new one if there is none) and tells it what to show, once it can listen. */
+  const reveal = (channel?: string, arg?: string) => {
     const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : openWindow()
     revealWindow(win)
-    if (!sessionId) return
-    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.send(IpcEvent.showSession, sessionId))
-    else win.webContents.send(IpcEvent.showSession, sessionId)
+    if (!channel) return
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.send(channel, arg))
+    else win.webContents.send(channel, arg)
   }
+  const show = (sessionId?: string) => (sessionId ? reveal(IpcEvent.showSession, sessionId) : reveal())
+
+  // Windows notifications about chats that are done or need the user, and about limits and logins.
+  const notifications = new NotificationService({
+    sessions,
+    providers,
+    accounts,
+    settings,
+    userDataDir,
+    window: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+    open: { chat: (id) => show(id), settings: (section) => reveal(IpcEvent.openSettings, section) },
+  })
 
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
   const git = new GitService()
-  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git })
+  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications })
 
   // The file panel beside the chat: the project's tree with git's view, and what the agents do to files.
   const files = new FileTreeService((path) => shell.trashItem(path))
@@ -116,6 +130,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     return history ? fileActivity.history(history.items, history.cwd) : []
   })
   await api.init()
+  await notifications.init()
 
   // Taking over the Claude Manager's workspaces, accounts and sessions (first start, or later in the settings).
   registerImportIpc(new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, () => settings.get()))
@@ -165,6 +180,11 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     applyAppearance()
     const off = settings.on('changed', applyAppearance)
     forwardWindowState(win)
+    win.on('focus', () => {
+      // In front again: what a notification pointed to is seen.
+      win.flashFrame(false)
+      notifications.windowFocused()
+    })
     win.on('closed', () => {
       off()
       if (mainWindow === win) mainWindow = null
@@ -198,6 +218,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     void Promise.allSettled([sessions.dispose(), providers.dispose(), browserTabs.flush()])
       .then(() => {
         api.dispose()
+        notifications.dispose()
         mcp.dispose()
         themes.dispose()
         accounts.dispose()

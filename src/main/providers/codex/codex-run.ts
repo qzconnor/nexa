@@ -697,6 +697,7 @@ export class CodexRun implements AgentRun {
       outputTokens: this.lastTokens?.output,
       model: this.model,
       error: error ? (str(error.message) ?? 'Fehler') : undefined,
+      ...(error?.codexErrorInfo === 'usageLimitExceeded' ? { limit: true } : {}),
     })
     this.turnId = null
     this.turnStartedAt = null

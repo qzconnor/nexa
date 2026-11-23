@@ -109,6 +109,10 @@
       Seitenleiste gehen die Pfeiltasten von Zeile zu Zeile und klappen Trenner, Projekte und Ordner auf
       und zu, Pos1 und Ende springen an den Anfang und ans Ende, die Menütaste und Umschalt+F10 öffnen das
       Kontextmenü
+- [x] Benachrichtigungen: Windows-Meldung, wenn ein Chat fertig ist (ab einer Mindestdauer), eine
+      Rückfrage hat oder an ein Limit stößt, auf Wunsch mit Vorschau; ein Klick öffnet den Chat. Ton,
+      blinkende Taskleiste, „nur im Hintergrund“ oder „auch, wenn der Chat nicht offen ist“, Warnung ab
+      einer Schwelle je Account (80 %), „Login abgelaufen“, Glocke in der Titelleiste zum Stummschalten
 
 ## Als Nächstes
 
@@ -139,10 +143,6 @@
 
 Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/src/`).
 
-- [ ] **Benachrichtigungen**: Windows-Meldung, wenn ein Chat fertig ist, eine Rückfrage hat oder an ein
-      Limit stößt, auf Wunsch mit Vorschau; ein Klick öffnet den Chat. Mindestdauer für „fertig“, Ton,
-      blinkende Taskleiste, Warnung ab einer Schwelle je Account (80 %), „Login abgelaufen“, Glocke in der
-      Titelleiste zum Stummschalten (`notification-service.ts`, `near-limit.ts`, `TitleBarNotifications.vue`).
 - [ ] **Im Infobereich weiterlaufen** und **mit Windows starten** (versteckt): Schließen blendet das
       Fenster nur aus, Chats und API laufen weiter (`window/tray.ts`, `lib/login-item.ts`).
 - [ ] **Übersicht aller Chats nach Zustand** (wartet auf dich, arbeitet, fertig) mit der offenen Frage,

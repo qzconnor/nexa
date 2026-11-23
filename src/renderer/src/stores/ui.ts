@@ -5,7 +5,7 @@ import type { PromptTarget } from '@shared/types'
 import type { SettingsAnchor } from '@/lib/settings-index'
 
 export type MainView = 'chat' | 'home'
-export type SettingsSection = 'appearance' | 'accounts' | 'usage' | 'providers' | 'chat' | 'api' | 'updates' | 'about'
+export type SettingsSection = 'appearance' | 'accounts' | 'usage' | 'providers' | 'chat' | 'notifications' | 'api' | 'updates' | 'about'
 /** The quick open's modes by what the query starts with: chats (nothing), commands (`>`), help (`?`). */
 export type PalettePrefix = '' | '>' | '?'
 
