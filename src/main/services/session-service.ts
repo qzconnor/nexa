@@ -27,12 +27,13 @@ import type { AccountService } from '../accounts/account-service'
 import { claudePaths, codexPaths } from '../accounts/cli-files'
 import { relocateClaudeSession } from '../accounts/session-move'
 import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript } from '../accounts/session-transfer'
-import { readClaudeChat } from '../import/claude-sessions'
+import { readClaudeChat, readClaudeChatSince } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { pool } from '../lib/pool'
 import { TypedEmitter } from '../lib/typed-emitter'
 import type { NexaMcpServer } from '../mcp/mcp-server'
 import { nexaToolsOn, type NexaToolGrant } from '../mcp/tool-grant'
+import { claudeOpenElsewhere } from '../providers/claude/claude-presence'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { folderPromptText } from './folder-prompts'
 import { handoffContext, sessionInstructions } from './instructions'
@@ -58,6 +59,12 @@ interface SessionState {
   mcpToken: string | null
   /** The CLI takes a change only at its start (Codex's MCP servers): it ends after the turn that runs. */
   restartAfterTurn?: boolean
+  /** Claude Code's transcript as last read for what came from outside (its mtime): unchanged, it isn't read again. */
+  syncedMtime?: number
+  /** While one look at the transcript runs, the next asks for the same. */
+  syncing?: Promise<number>
+  /** The last turns taken in from outside: their note, how many prompts it counts, their last item. */
+  outside?: { noticeId: string; prompts: number; lastId: string }
 }
 
 interface Events extends Record<string, unknown[]> {
@@ -111,9 +118,10 @@ export class SessionService extends TypedEmitter<Events> {
     return { meta, items: null, loading: null, index: new Map(), runtime, run: null, runProvider: null, runAccount: null, generation: 0, starting: null, mcpToken: null }
   }
 
-  /** The runtime of a chat whose CLI is gone: at rest, with the context as last counted. */
+  /** The runtime of a chat whose CLI is gone: at rest, with the context as last counted and where else it is open. */
   private atRest(s: SessionState, patch: Partial<SessionRuntime> = {}): SessionRuntime {
-    return { ...IDLE, ...(s.runtime.context ? { context: s.runtime.context } : {}), ...patch }
+    const { context, openElsewhere } = s.runtime
+    return { ...IDLE, ...(context ? { context } : {}), ...(openElsewhere ? { openElsewhere } : {}), ...patch }
   }
 
   /** The folder a session's agent works in: its own folder in the project, else the project's. */
@@ -155,7 +163,10 @@ export class SessionService extends TypedEmitter<Events> {
       imported = await readClaudeChat(source)
       // Claude Code has seen all of it: the next prompt resumes its conversation without context.
       const link = meta.cli.claude
-      if (link) link.seenItems = imported.length
+      if (link) {
+        link.seenItems = imported.length
+        link.synced = Date.now()
+      }
     } catch (error) {
       console.warn('[sessions] transcript could not be read', error)
       imported = [
@@ -339,7 +350,84 @@ export class SessionService extends TypedEmitter<Events> {
 
   async open(id: string): Promise<SessionDetail> {
     const s = await this.loaded(id)
+    // With what was written to it outside Nexa since the chat was last open.
+    await this.syncCli(id).catch((error) => console.warn('[sessions] transcript could not be compared', error))
     return { meta: s.meta, items: s.items, runtime: s.runtime }
+  }
+
+  /**
+   * Takes into the chat what Claude Code's conversation gained outside Nexa (`claude --resume` in a
+   * terminal, Claude Desktop) since the chat last held it, finished turns only, and notes where else it
+   * is open now. Nexa's own CLI of the chat, idle, holds the conversation as it was: it ends, and the
+   * next prompt resumes with what came. The number of items added.
+   */
+  syncCli(id: string): Promise<number> {
+    const s = this.get(id)
+    s.syncing ??= this.readOutside(s).finally(() => (s.syncing = undefined))
+    return s.syncing
+  }
+
+  private async readOutside(s: SessionState): Promise<number> {
+    await this.loaded(s.meta.id)
+    const meta = s.meta
+    const link = meta.cli.claude
+    const project = this.projects.get(meta.projectId)
+    if (!link || !project || !s.items) return 0
+    // Not into a turn at work, of either CLI: its items would come between the turn's.
+    const busy = () => {
+      const status = s.runtime.status
+      return !!s.run?.alive && (status === 'running' || status === 'waiting' || status === 'starting')
+    }
+    const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(meta, 'claude'))
+    const own = s.run?.alive && s.runProvider === 'claude' ? s.run.pid : undefined
+    const elsewhere = (await claudeOpenElsewhere(paths.configDir, link.sessionId, own))?.where
+    if (elsewhere !== s.runtime.openElsewhere) {
+      const { openElsewhere: _, ...rest } = s.runtime
+      this.setRuntime(s, elsewhere ? { ...rest, openElsewhere: elsewhere } : rest)
+    }
+    if (busy()) return 0
+
+    const transcript = await findClaudeTranscript(paths.projectsDir, link.sessionId, this.cwdOf(meta, project))
+    const info = transcript ? await stat(transcript).catch(() => null) : null
+    // Sessions from before the mark: the chat's newest item, which came after what Claude Code wrote for it.
+    const since = link.synced ?? s.items.reduce((max, item) => Math.max(max, item.ts), 0)
+    if (!transcript || !info || !since || info.mtimeMs <= since || info.mtimeMs === s.syncedMtime) return 0
+    s.syncedMtime = info.mtimeMs
+    const added = await readClaudeChatSince(transcript, since, s.items)
+    if (!added || busy()) return 0
+    const fresh = added.items.filter((item) => !s.index.has(item.id))
+    if (fresh.length && s.run?.alive && s.runProvider === 'claude') await this.stop(meta.id)
+    if (fresh.length) {
+      // Turn after turn from a terminal next to Nexa: one note over all of them, as long as nothing
+      // came in Nexa between.
+      const earlier = s.outside && s.items.at(-1)?.id === s.outside.lastId ? s.items[s.index.get(s.outside.noticeId) ?? -1] : undefined
+      const prompts = (earlier ? s.outside!.prompts : 0) + fresh.filter((i) => i.kind === 'user').length
+      const noticeId = earlier?.id ?? randomUUID()
+      this.put(s, {
+        kind: 'notice',
+        id: noticeId,
+        ts: earlier?.ts ?? fresh[0]!.ts,
+        provider: 'claude',
+        level: 'info',
+        text: 'Außerhalb von Nexa weitergeführt',
+        detail:
+          prompts === 0
+            ? 'Antworten aus Claude Code übernommen'
+            : prompts === 1
+              ? 'Ein Prompt mit Antwort aus Claude Code übernommen'
+              : `${prompts} Prompts mit Antworten aus Claude Code übernommen`,
+      })
+      s.outside = { noticeId, prompts, lastId: fresh.at(-1)!.id }
+    }
+    for (const item of added.items) this.put(s, item)
+    // seenItems stays: Claude Code's own items don't count as unseen anyway, and what Codex said
+    // before them still has to reach it with the next prompt.
+    link.synced = added.last
+    const answer = fresh.findLast((i) => i.kind === 'assistant' && !i.parentId && i.text.trim())
+    if (answer?.kind === 'assistant') meta.preview = firstLine(answer.text, 100)
+    if (fresh.length) meta.updatedAt = Date.now()
+    this.saveSoon()
+    return fresh.length
   }
 
   /**
@@ -551,7 +639,11 @@ export class SessionService extends TypedEmitter<Events> {
         if (item.kind === 'turn') {
           this.emit('turnEnded', meta.id)
           const link = meta.cli[provider]
-          if (link) link.seenItems = s.items?.length ?? 0
+          if (link) {
+            link.seenItems = s.items?.length ?? 0
+            // What Claude Code wrote to its transcript up to here is in the chat already.
+            if (provider === 'claude') link.synced = Date.now()
+          }
           meta.updatedAt = Date.now()
           this.saveSoon()
           if (s.restartAfterTurn && current()) {
@@ -576,12 +668,17 @@ export class SessionService extends TypedEmitter<Events> {
           accountId,
           configDir: savedIn,
           ...(same && link.resumePath ? { resumePath: link.resumePath } : {}),
+          ...(same && link.synced ? { synced: link.synced } : {}),
         }
         this.saveSoon()
       },
       usage: (usage) => this.providers.setUsage(accountId, usage),
       exited: (error) => {
         if (!current()) return
+        // A turn cut off by the end of the process: what it wrote is Nexa's own, not from outside.
+        const status = s.runtime.status
+        const link = meta.cli[provider]
+        if (provider === 'claude' && link && (status === 'running' || status === 'waiting' || status === 'starting')) link.synced = Date.now()
         s.run = null
         s.runProvider = null
         s.runAccount = null
@@ -791,6 +888,10 @@ export class SessionService extends TypedEmitter<Events> {
   async stop(id: string): Promise<void> {
     const s = this.get(id)
     const run = s.run
+    // Stopped in the middle of a turn: what it wrote to the transcript is Nexa's own (see `exited`).
+    const link = s.meta.cli.claude
+    const status = s.runtime.status
+    if (run && s.runProvider === 'claude' && link && (status === 'running' || status === 'waiting' || status === 'starting')) link.synced = Date.now()
     s.run = null
     s.runProvider = null
     s.runAccount = null

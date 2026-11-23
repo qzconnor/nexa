@@ -161,6 +161,10 @@ export class ClaudeRun implements AgentRun {
     return this.process.alive
   }
 
+  get pid(): number | undefined {
+    return this.process.pid
+  }
+
   // ------------------------------------------------------------------------------------------
   // Commands from Nexa
 

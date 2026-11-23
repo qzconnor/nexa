@@ -135,6 +135,26 @@ Was Claude Code selbst speichert und Nexa beim Übernehmen liest (`claude-transc
 - Viele Zeilen braucht der Chat nicht (`api-request*`, `file-history-*`, `permission-mode`, `mode`,
   `queue-operation` …); sie sind der größte Teil der Datei und werden am Zeilenanfang erkannt und
   übersprungen.
+- **Ende eines Turns**: `message.stop_reason` jeder `assistant`-Zeile, `tool_use` mitten im Turn, sonst
+  (`end_turn`, `max_tokens` …) die letzte Antwort; dazu `[Request interrupted by user …]` und, wo
+  vorhanden, `turn_duration`. `--resume` schreibt in dieselbe Datei weiter (dieselbe Session-ID; nur
+  `--fork-session` legt eine neue an).
+- **Abgleich** (`transcriptSince`, `SessionService.syncCli`): Der Link des Chats merkt sich in `synced`,
+  bis wann (ms) der Chat das Transkript kennt, gesetzt am Ende jedes Turns in Nexa und nach jedem
+  Abgleich. Neuer ist, was außerhalb dazukam. Nexa liest die Datei von hinten bis zur ersten
+  `user`/`assistant`/`system`-Zeile, die nicht neuer ist (Titel und Buchhaltung schreibt Claude Code auch
+  später mit älterer oder ohne Zeit), und schneidet nach dem letzten Turn-Ende ab: Ein Turn, der noch
+  läuft, kommt erst, wenn er fertig ist. Ergebnisse und Benachrichtigungen zu Aufrufen, die der Chat schon
+  hat (ein Hintergrund-Agent aus Nexa), landen auf diesen Items. Gleiche mtime: nicht neu gelesen.
+
+### Laufende Sitzungen (`<config>/sessions/<pid>.json`)
+
+Jeder Prozess von Claude Code legt für seine Laufzeit eine Datei an: `pid`, `sessionId`, `cwd`,
+`kind: "interactive"`, `entrypoint` (`cli` im Terminal, `claude-desktop`, `claude-vscode`, `sdk-ts` für
+Nexa und andere SDK-Programme), `status`. Nach einem Absturz bleibt sie liegen; ob der Prozess noch
+lebt, zeigt erst `process.kill(pid, 0)` (EPERM heißt: lebt, unter anderem Benutzer). Nexa nimmt den
+eigenen Prozess des Chats aus und zeigt sonst „Auch in … offen“ (`claude-presence.ts`). Zwei Prozesse auf
+einer Sitzung schreiben beide ins Transkript, und jeder macht mit dem weiter, was er kennt.
 
 ## Codex (`codex app-server`)
 

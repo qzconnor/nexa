@@ -93,7 +93,11 @@ export const useSessionsStore = defineStore('sessions', () => {
   async function open(id: string): Promise<void> {
     activeId.value = id
     unread.delete(id)
-    if (chats.get(id)?.loaded) return
+    if (chats.get(id)?.loaded) {
+      // Opened before: its CLI may have gone on outside Nexa since; what came arrives as events.
+      void sync(id).catch((error) => console.warn('[sessions] sync failed', error))
+      return
+    }
     const chat: SessionChat = reactive({ items: [], index: new Map(), loaded: false }) as SessionChat
     chats.set(id, chat)
     try {
@@ -106,6 +110,14 @@ export const useSessionsStore = defineStore('sessions', () => {
       chats.delete(id)
       throw error
     }
+  }
+
+  /**
+   * Takes into a loaded chat what its CLI conversation gained outside Nexa; the items come as events.
+   * The number of items taken.
+   */
+  async function sync(id: string): Promise<number> {
+    return chats.get(id)?.loaded ? window.api.sessions.sync(id) : 0
   }
 
   function close(): void {
@@ -163,6 +175,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     cwdOf,
     load,
     open,
+    sync,
     close,
     create,
     send,

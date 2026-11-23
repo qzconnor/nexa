@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentItem, ToolItem, TurnItem } from '@shared/chat'
-import { claudeTranscriptItems, promptOf, summarizeClaudeTranscript } from './claude-transcript'
+import { claudeTranscriptItems, promptOf, summarizeClaudeTranscript, transcriptSince } from './claude-transcript'
 
 const at = (s: number) => new Date(Date.UTC(2026, 10, 1, 10, 0, s)).toISOString()
 const lines = (...entries: object[]) => entries.map((e) => JSON.stringify(e)).join('\n') + '\n'
@@ -142,5 +142,66 @@ describe('claudeTranscriptItems', () => {
     )
     expect(items.find((i) => i.kind === 'tool')).toMatchObject({ status: 'denied' })
     expect(items.at(-1)).toMatchObject({ kind: 'turn', status: 'interrupted' })
+  })
+
+  it('reads on from where the chat is: a later notification lands on the agent it already has', () => {
+    const agent: AgentItem = { kind: 'agent', id: 'a1', ts: Date.parse(at(2)), provider: 'claude', agentType: 'Explore', description: 'Suche', background: true, status: 'running', startedAt: Date.parse(at(2)) }
+    const items = claudeTranscriptItems(
+      lines(
+        user('u5', 20, '<task-notification>\n<tool-use-id>a1</tool-use-id>\n<status>completed</status>\n<result>Gefunden</result>\n</task-notification>'),
+        user('u6', 21, 'Und jetzt?'),
+        assistant('m6', 22, [{ type: 'text', text: 'Weiter.' }], { message: { id: 'm6', role: 'assistant', content: [{ type: 'text', text: 'Weiter.' }], stop_reason: 'end_turn' } }),
+      ),
+      [],
+      [agent],
+    )
+    expect(items.find((i) => i.id === 'a1')).toMatchObject({ kind: 'agent', status: 'done', result: 'Gefunden', endedAt: Date.parse(at(20)) })
+    expect(items.filter((i) => i.kind === 'user').map((i) => i.id)).toEqual(['u6'])
+  })
+})
+
+describe('transcriptSince', () => {
+  const end = (id: string, s: number, text: string) => ({
+    type: 'assistant',
+    uuid: `${id}-${s}`,
+    timestamp: at(s),
+    message: { id, role: 'assistant', content: [{ type: 'text', text }], stop_reason: 'end_turn' },
+  })
+  const call = (id: string, s: number, tool: string) => ({
+    type: 'assistant',
+    uuid: `${id}-${s}`,
+    timestamp: at(s),
+    message: { id, role: 'assistant', content: [{ type: 'tool_use', id: tool, name: 'Read', input: { file_path: 'a.ts' } }], stop_reason: 'tool_use' },
+  })
+  const text = lines(
+    user('u1', 1, 'In Nexa gefragt'),
+    end('m1', 2, 'In Nexa beantwortet'),
+    { type: 'ai-title', aiTitle: 'Spät geschrieben' },
+    user('u2', 10, 'Im Terminal gefragt'),
+    call('m2', 11, 't1'),
+    user('u3', 12, [{ type: 'tool_result', tool_use_id: 't1', content: 'x' }]),
+    end('m3', 13, 'Im Terminal beantwortet'),
+    user('u4', 20, 'Noch in Arbeit'),
+    call('m4', 21, 't2'),
+  )
+
+  it('takes the turns finished after the mark and leaves out one still at work', () => {
+    const since = Date.parse(at(5))
+    const added = transcriptSince(text, since)
+    expect(added?.last).toBe(Date.parse(at(13)))
+    const ids = (added?.text ?? '').split('\n').map((line) => (JSON.parse(line) as { uuid?: string; type: string }))
+    // Bookkeeping without a time comes along; the chat leaves it out anyway.
+    expect(ids.map((e) => e.uuid ?? e.type)).toEqual(['ai-title', 'u2', 'm2-11', 'u3', 'm3-13'])
+    expect(claudeTranscriptItems(added!.text).map((i) => i.kind)).toEqual(['user', 'tool', 'assistant', 'turn'])
+  })
+
+  it('has nothing while the only turn since is still at work, and counts an interruption as its end', () => {
+    expect(transcriptSince(text, Date.parse(at(13)))).toBeNull()
+    const stopped = text + lines(user('u5', 22, [{ type: 'text', text: '[Request interrupted by user for tool use]' }]))
+    expect(transcriptSince(stopped, Date.parse(at(13)))?.last).toBe(Date.parse(at(22)))
+  })
+
+  it('has nothing when no turn came after the mark', () => {
+    expect(transcriptSince(lines(user('u1', 1, 'Frage'), end('m1', 2, 'Antwort')), Date.parse(at(2)))).toBeNull()
   })
 })

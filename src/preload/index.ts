@@ -185,6 +185,7 @@ const api: NexaApi = {
     context: (id) => invoke(IpcInvoke.sessionsContext, id),
     mcpServers: (id) => invoke(IpcInvoke.sessionsMcpServers, id),
     setMcp: (id, name, enabled) => invoke(IpcInvoke.sessionsSetMcp, id, name, enabled),
+    sync: (id) => invoke(IpcInvoke.sessionsSync, id),
     update: (id, patch) => invoke(IpcInvoke.sessionsUpdate, id, patch),
     remove: (id) => invoke(IpcInvoke.sessionsRemove, id),
     stop: (id) => invoke(IpcInvoke.sessionsStop, id),

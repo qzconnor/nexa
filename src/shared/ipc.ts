@@ -108,6 +108,7 @@ export const IpcInvoke = {
   sessionsContext: 'sessions:context',
   sessionsMcpServers: 'sessions:mcp-servers',
   sessionsSetMcp: 'sessions:set-mcp',
+  sessionsSync: 'sessions:sync',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
   sessionsStop: 'sessions:stop',
@@ -295,6 +296,11 @@ export interface NexaApi {
     mcpServers(id: string): Promise<McpServerInfo[]>
     /** Switches a server on or off for the chat's project (its running chats take it at once or with the next prompt). */
     setMcp(id: string, name: string, enabled: boolean): Promise<void>
+    /**
+     * Takes what was added to the chat's Claude Code conversation outside Nexa into the chat, and looks
+     * where else it is open (`SessionRuntime.openElsewhere`); the number of items added.
+     */
+    sync(id: string): Promise<number>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
     remove(id: string): Promise<void>
     /** Ends the CLI process of the session; the next prompt resumes it. */

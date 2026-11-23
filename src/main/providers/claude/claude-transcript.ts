@@ -193,6 +193,8 @@ interface Turn {
 class ChatBuilder {
   readonly items: ChatItem[] = []
   private readonly index = new Map<string, number>()
+  /** Items the chat has already (reading on from where it is): found for results, put again when they change. */
+  private readonly known = new Map<string, ChatItem>()
   /** Blocks of each message so far: their items are `<message>:<n>`. */
   private readonly blocks = new Map<string, number>()
   private turn: Turn | null = null
@@ -203,7 +205,11 @@ class ChatBuilder {
 
   get<T extends ChatItem>(id: string): T | undefined {
     const at = this.index.get(id)
-    return at === undefined ? undefined : (this.items[at] as T)
+    return at === undefined ? (this.known.get(id) as T | undefined) : (this.items[at] as T)
+  }
+
+  seed(items: readonly ChatItem[]): void {
+    for (const item of items) if (item.kind === 'tool' || item.kind === 'agent' || item.kind === 'todo') this.known.set(item.id, item)
   }
 
   put(item: ChatItem): void {
@@ -463,10 +469,12 @@ function startOf(text: string): number {
 /**
  * The chat of a Claude Code transcript as Nexa shows it: prompts, answers, thinking, tool calls with
  * their results, subagents with their work (from their own transcripts), compactions and a footer per
- * turn. Subagent entries in the main transcript (older versions) are left out.
+ * turn. Subagent entries in the main transcript (older versions) are left out. `known`: the chat's items
+ * when it reads on from where the chat is, so later results land on the calls they answer.
  */
-export function claudeTranscriptItems(text: string, subagents: readonly SubagentTranscript[] = []): ChatItem[] {
+export function claudeTranscriptItems(text: string, subagents: readonly SubagentTranscript[] = [], known: readonly ChatItem[] = []): ChatItem[] {
   const chat = new ChatBuilder()
+  chat.seed(known)
   eachEntry(text, (e) => chat.entry(e, null))
   chat.closeTurn()
   const ordered = [...subagents].sort((a, b) => startOf(a.text) - startOf(b.text))
@@ -476,4 +484,53 @@ export function claudeTranscriptItems(text: string, subagents: readonly Subagent
   }
   chat.settle()
   return chat.items
+}
+
+/** Entries that carry the chat; the rest (titles, bookkeeping) may be written late with older times. */
+const CHAT_TYPES = new Set(['user', 'assistant', 'system'])
+
+/** Where a turn of the main thread ends: the model's last answer, an interruption, Claude Code's own mark. */
+function endsTurn(e: Json): boolean {
+  if (e.isSidechain || e.isMeta) return false
+  if (e.type === 'assistant') {
+    const reason = isPlainObject(e.message) ? e.message.stop_reason : undefined
+    return typeof reason === 'string' && reason !== 'tool_use'
+  }
+  if (e.type === 'user') return INTERRUPTED.test(textOf(isPlainObject(e.message) ? e.message.content : undefined).trim())
+  return e.type === 'system' && e.subtype === 'turn_duration'
+}
+
+/**
+ * What a transcript gained after `since` (ms), up to the end of its last finished turn: the turns a
+ * CLI outside Nexa added, `last` the time to read on from. A turn still at work waits for its end, as
+ * its calls would read as cut off. Null when no turn has finished since. Only the tail is parsed.
+ */
+export function transcriptSince(text: string, since: number): { text: string; last: number } | null {
+  const lines = text.split('\n')
+  const entries: { at: number; entry: Json | null }[] = []
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const raw = lines[i]!
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
+    if (line.length < 2 || SKIP_PREFIXES.some((prefix) => line.startsWith(prefix))) continue
+    let entry: Json | null = null
+    try {
+      const parsed = JSON.parse(line) as unknown
+      if (isPlainObject(parsed)) entry = parsed
+    } catch {
+      // A line cut off while it was written.
+    }
+    const ts = entry ? time(entry.timestamp) : null
+    if (entry && ts !== null && ts <= since && CHAT_TYPES.has(entry.type as string)) break
+    entries.push({ at: i, entry })
+  }
+  entries.reverse()
+  let end = -1
+  let last = since
+  for (const [n, { entry }] of entries.entries()) {
+    if (!entry || !endsTurn(entry)) continue
+    end = n
+    last = Math.max(last, time(entry.timestamp) ?? last)
+  }
+  if (end < 0) return null
+  return { text: entries.slice(0, end + 1).map(({ at }) => lines[at]).join('\n'), last }
 }

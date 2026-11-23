@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { ChatItem } from '@shared/chat'
 import { isPlainObject } from '@shared/utils'
-import { claudeTranscriptItems, type SubagentTranscript } from '../providers/claude/claude-transcript'
+import { claudeTranscriptItems, transcriptSince, type SubagentTranscript } from '../providers/claude/claude-transcript'
 
 /** A Claude Code transcript in a config folder (`projects/<key>/<id>.jsonl`). */
 export interface TranscriptFile {
@@ -39,11 +39,30 @@ export async function listTranscripts(configDir: string): Promise<TranscriptFile
  */
 export async function readClaudeChat(file: string): Promise<ChatItem[]> {
   const text = await readFile(file, 'utf8')
+  return claudeTranscriptItems(text, await readSubagents(file))
+}
+
+/**
+ * The turns a Claude Code transcript gained after `since` (ms), finished ones only, as items to add to
+ * a chat that holds `known`; `last`: the time to read on from next. Null when there is nothing new.
+ */
+export async function readClaudeChatSince(file: string, since: number, known: readonly ChatItem[]): Promise<{ items: ChatItem[]; last: number } | null> {
+  const added = transcriptSince(await readFile(file, 'utf8'), since)
+  if (!added) return null
+  return { items: claudeTranscriptItems(added.text, await readSubagents(file, since), known), last: added.last }
+}
+
+/** The subagents' transcripts beside a session's; with `since`, only those written to after it. */
+async function readSubagents(file: string, since?: number): Promise<SubagentTranscript[]> {
   const dir = join(dirname(file), basename(file, '.jsonl'), 'subagents')
   const names = await readdir(dir).catch(() => [] as string[])
   const subagents: SubagentTranscript[] = []
   for (const name of names) {
     if (!name.endsWith('.jsonl')) continue
+    if (since !== undefined) {
+      const info = await stat(join(dir, name)).catch(() => null)
+      if (!info || info.mtimeMs <= since) continue
+    }
     const meta = await readFile(join(dir, `${name.slice(0, -'.jsonl'.length)}.meta.json`), 'utf8')
       .then((raw) => JSON.parse(raw) as unknown)
       .catch(() => null)
@@ -52,5 +71,5 @@ export async function readClaudeChat(file: string): Promise<ChatItem[]> {
     const agent = await readFile(join(dir, name), 'utf8').catch(() => null)
     if (agent) subagents.push({ toolUseId, text: agent })
   }
-  return claudeTranscriptItems(text, subagents)
+  return subagents
 }

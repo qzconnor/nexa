@@ -86,6 +86,8 @@ export interface AgentRun {
   setMcpEnabled?(name: string, enabled: boolean): Promise<boolean>
   stop(): Promise<void>
   readonly alive: boolean
+  /** The CLI's process, to tell it from others that have the same conversation open. */
+  readonly pid?: number
 }
 
 /**
