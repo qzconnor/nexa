@@ -6,6 +6,7 @@ import BrowserLayer from '@/components/browser/BrowserLayer.vue'
 import ChatView from '@/components/chat/ChatView.vue'
 import AppTooltip from '@/components/common/AppTooltip.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import ChatCleanupDialog from '@/components/layout/ChatCleanupDialog.vue'
 import FolderPromptDialog from '@/components/layout/FolderPromptDialog.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
@@ -117,6 +118,7 @@ onMounted(async () => {
       <AccountFormDialog />
       <AccountLoginDialog />
       <FolderPromptDialog />
+      <ChatCleanupDialog />
     </template>
     <ConfirmDialog />
     <AppTooltip />

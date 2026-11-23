@@ -116,6 +116,10 @@
 - [x] Im Infobereich weiterlaufen und mit Windows starten (Einstellungen „Allgemein“): Schließen blendet
       das Fenster nur aus, Chats, API und Benachrichtigungen laufen weiter; der Start bei der Anmeldung
       bleibt dann unsichtbar, bis man Nexa öffnet. Auch unter Linux (Statusbereich, XDG-Autostart)
+- [x] Löschen samt Transkript der CLI: Die Unterhaltung in Claude Code oder Codex kommt mit Subagents und
+      Checkpoints in den Papierkorb, aus jedem Account mit einer Kopie (abschaltbar unter Einstellungen →
+      Chat). Gelöschte Chats verschwinden sofort und lassen sich 8 s lang zurückholen. „Chats aufräumen“
+      filtert nach Projekt, Alter, Größe und Archiv und löscht mehrere auf einmal
 
 ## Als Nächstes
 
@@ -155,9 +159,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] **Neuer Chat in einem Worktree** (`claude --worktree <name>`): Dialog mit Repository, Name (geprüft
       wie ein Branch) und vorhandenen Worktrees (`WorktreeDialog.vue`, `lib/worktree.ts`); `worktreeCheck`
       in `files/git-service.ts` ist schon da, aber nicht in Preload und UI.
-- [ ] **Löschen samt Transkript der CLI** (in den Papierkorb, mit Subagents und Checkpoints), mehrere auf
-      einmal und 8 s rückgängig; Filter nach Alter und Größe (`useSessionRemoval.ts`, `SessionFilterChip.vue`).
-      Heute löscht Nexa nur den eigenen Verlauf.
 - [ ] **Werkzeuge der App für die Agents** im Nexa-MCP-Server: `limits` (eigene Limits und die der anderen
       Accounts), `sessions_search` / `session_read` (frühere Chats durchsuchen und lesen)
       (`browser/app-tools/*`).

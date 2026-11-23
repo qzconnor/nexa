@@ -38,7 +38,7 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
   { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
   { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
   { id: 'providers', label: 'CLIs', description: 'Claude Code und Codex', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
-  { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe und Nexa-Werkzeuge', icon: SETTINGS_ICONS.chat, page: SettingsChat },
+  { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe, Löschen und Nexa-Werkzeuge', icon: SETTINGS_ICONS.chat, page: SettingsChat },
   {
     id: 'notifications',
     label: 'Benachrichtigungen',

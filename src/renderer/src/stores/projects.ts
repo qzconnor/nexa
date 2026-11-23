@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { ProjectCreateInput, SectionCreateInput, SectionUpdateInput } from '@shared/ipc'
 import { applyLayout, type SectionLayout } from '@shared/sections'
-import type { Project, ProjectSection } from '@shared/types'
+import type { Project, ProjectSection, SessionRemoveResult } from '@shared/types'
 
 export const useProjectsStore = defineStore('projects', () => {
   /** In the sidebar's order: by separator, then as the user arranged them. */
@@ -33,9 +33,11 @@ export const useProjectsStore = defineStore('projects', () => {
     await window.api.projects.update(id, patch)
   }
 
-  async function remove(id: string): Promise<void> {
-    await window.api.projects.remove(id)
+  /** With its chats; what deleting them did, for the window's sessions store and the report. */
+  async function remove(id: string): Promise<SessionRemoveResult> {
+    const result = await window.api.projects.remove(id)
     projects.value = projects.value.filter((p) => p.id !== id)
+    return result
   }
 
   /** The order after a drag and drop, shown at once: nothing jumps back while the main process saves it. */

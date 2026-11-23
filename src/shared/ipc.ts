@@ -23,7 +23,9 @@ import type {
   SessionDetail,
   SessionMeta,
   SessionMoveInput,
+  SessionRemoveResult,
   SessionSearchHit,
+  SessionStorage,
   SessionUpdateInput,
   ShellOutput,
   WindowState,
@@ -111,6 +113,7 @@ export const IpcInvoke = {
   sessionsSync: 'sessions:sync',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
+  sessionsStorage: 'sessions:storage',
   sessionsStop: 'sessions:stop',
   sessionsSearch: 'sessions:search',
   sessionsMove: 'sessions:move',
@@ -288,7 +291,8 @@ export interface NexaApi {
     prompt(target: PromptTarget): Promise<FolderPromptInfo>
     /** Its chats get it from the next start of their CLI on. */
     setPrompt(target: PromptTarget, text: string): Promise<void>
-    remove(id: string): Promise<void>
+    /** With its chats (as `sessions.remove`). */
+    remove(id: string): Promise<SessionRemoveResult>
     onChanged(cb: (list: Project[]) => void): Unsubscribe
     /** The order of separators and projects after a drag and drop (shared/sections.ts). */
     arrange(layout: SectionLayout[]): Promise<void>
@@ -324,7 +328,10 @@ export interface NexaApi {
      */
     sync(id: string): Promise<number>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
-    remove(id: string): Promise<void>
+    /** Deletes chats, with their CLIs' conversations into the recycle bin (setting `chat.deleteCliConversations`). */
+    remove(ids: string[]): Promise<SessionRemoveResult>
+    /** What each chat takes on disk, for clearing up. */
+    storage(): Promise<SessionStorage[]>
     /** Ends the CLI process of the session; the next prompt resumes it. */
     stop(id: string): Promise<void>
     /** Chats whose prompts and answers hold every word of `query`; empty: reads them ahead for the next search. */

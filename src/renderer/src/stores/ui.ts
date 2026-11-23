@@ -134,6 +134,9 @@ export const useUiStore = defineStore('ui', () => {
   /** The project or separator whose prompt the prompt dialog edits; null: closed. */
   const promptTarget = ref<PromptTarget | null>(null)
 
+  /** The dialog for clearing up chats, with the project it starts with (null: all); undefined: closed. */
+  const cleanupProject = ref<string | null | undefined>(undefined)
+
   const confirmState = ref<(ConfirmOptions & { open: boolean }) | null>(null)
   /** The question shown, and those that wait for it: one never answers another one with No. */
   let shownConfirm: ((answer: ConfirmAnswer) => void) | null = null
@@ -196,6 +199,7 @@ export const useUiStore = defineStore('ui', () => {
     findInChat,
     themeEditorRequest,
     promptTarget,
+    cleanupProject,
     confirmState,
     confirmInput,
     toggleSidebar,

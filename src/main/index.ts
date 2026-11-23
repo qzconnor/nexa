@@ -71,8 +71,15 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools))
   await mcp.start().catch((error) => console.error('[mcp] server could not start', error))
 
-  const sessions = new SessionService(userDataDir, projects, providers, accounts, mcp, () => settings.get(), (tools) =>
-    grantFor(tools, browserTools),
+  const sessions = new SessionService(
+    userDataDir,
+    projects,
+    providers,
+    accounts,
+    mcp,
+    () => settings.get(),
+    (tools) => grantFor(tools, browserTools),
+    (path) => shell.trashItem(path),
   )
 
   // The browser beside each chat: its tabs (kept with the app's data) and what the agents do in them.

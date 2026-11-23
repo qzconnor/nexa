@@ -26,6 +26,12 @@ async function clearBrowserData(): Promise<void> {
   })
   if (confirmed) void attempt(() => window.api.browser.clearData(), 'Browserdaten nicht gelöscht')
 }
+
+/** In place of the settings: the list needs the room, and a dialog over a dialog over a dialog (its question) is too much. */
+function cleanUp(): void {
+  ui.settingsOpen = false
+  ui.cleanupProject = null
+}
 </script>
 
 <template>
@@ -42,6 +48,19 @@ async function clearBrowserData(): Promise<void> {
     <SettingsSection anchor="chat.input" title="Eingabe">
       <SettingField anchor="chat.enterSends" label="Enter sendet" description="Aus: Strg+Enter sendet, Enter macht eine neue Zeile.">
         <Switch :model-value="s.chat.enterSends" @update:model-value="(v: boolean) => update({ chat: { enterSends: v } })" />
+      </SettingField>
+    </SettingsSection>
+
+    <SettingsSection anchor="chat.removal" title="Löschen" description="Gelöschte Chats lassen sich 8 Sekunden lang zurückholen.">
+      <SettingField
+        anchor="chat.deleteCliConversations"
+        label="Transkripte der CLIs mitlöschen"
+        description="Die Unterhaltung in Claude Code oder Codex kommt mit in den Papierkorb, samt Subagents und Checkpoints, in jedem Account mit einer Kopie. Aus: Sie bleibt und lässt sich in der CLI weiter fortsetzen."
+      >
+        <Switch :model-value="s.chat.deleteCliConversations" @update:model-value="(v: boolean) => update({ chat: { deleteCliConversations: v } })" />
+      </SettingField>
+      <SettingField anchor="chat.cleanup" label="Chats aufräumen" description="Alte oder große Chats finden und mehrere auf einmal löschen.">
+        <Button variant="outline" size="sm" @click="cleanUp">Aufräumen …</Button>
       </SettingField>
     </SettingsSection>
 
