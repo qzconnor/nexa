@@ -4,7 +4,6 @@ const clock = new Intl.DateTimeFormat('de', { hour: '2-digit', minute: '2-digit'
 const weekdayClock = new Intl.DateTimeFormat('de', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
 const integer = new Intl.NumberFormat('de')
 const oneDecimal = new Intl.NumberFormat('de', { maximumFractionDigits: 1 })
-const usd = new Intl.NumberFormat('de', { style: 'currency', currency: 'USD', maximumFractionDigits: 2, minimumFractionDigits: 2 })
 
 function startOfDay(ms: number): number {
   const d = new Date(ms)
@@ -53,10 +52,6 @@ export function formatTokens(n: number): string {
   if (n < 10_000) return integer.format(n)
   if (n < 1_000_000) return `${(n / 1000).toLocaleString('de', { maximumFractionDigits: 1 })} k`
   return `${(n / 1_000_000).toLocaleString('de', { maximumFractionDigits: 2 })} M`
-}
-
-export function formatCost(amount: number): string {
-  return amount < 0.01 ? '< 0,01 $' : usd.format(amount)
 }
 
 export function formatClock(ms: number): string {

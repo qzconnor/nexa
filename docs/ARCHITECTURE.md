@@ -66,10 +66,14 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 Alles, was im Chat steht, ist ein `ChatItem` (`src/shared/chat.ts`):
 
 - `user`, `assistant` (Text, streamt per Delta), `thinking`
-- `tool` (Art, Titel, Detail, Eingabe, Ausgabe, Diffs, Status)
+- `tool` (Art, Titel, Detail, Eingabe, Ausgabe, Diffs, Status). Aufrufe von Nexas eigenem MCP-Server
+  (`mcp__nexa__*`, `nexa.*`) und Claudes `ToolSearch`, das sie lädt, zeigt `ToolRow` als Teil der App:
+  mit dem Nexa-Logo und in Worten (`nexaToolView` in `lib/tools.ts`), ohne Server-Badge. Das Laden
+  allein lässt sich nicht aufklappen und zählt in der Zusammenfassung einer Gruppe nicht mit.
 - `interaction` (Freigabe, Frage, Plan, Formular; offen oder beantwortet)
 - `agent` (Subagent mit eigenem Verlauf über `parentId`)
-- `todo`, `render` (Element des MCP-Servers), `notice`, `turn` (Dauer, Tokens, Kosten)
+- `todo`, `render` (Element des MCP-Servers), `notice`, `turn` (Dauer, Tokens, Kosten; die Kosten, die
+  die CLIs melden, sind ein API-Preis und werden nicht angezeigt)
 
 Provider liefern Items über `RunSink.item()` (neu oder ersetzt) und `RunSink.delta()` (Text anhängen). Der
 `SessionService` speichert, nummeriert und sendet sie als `SessionEvent` an die Fenster.
@@ -183,7 +187,10 @@ der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`.
 - `components/chat/ChatView.vue` stellt den Projektordner bereit (`useProjectPath`), damit Pfade relativ
   erscheinen.
 - **Dateien und Aktivität** (`components/files/*`, aus dem Claude Manager): `FileTreePanel` links im Chat,
-  `DiffView`/`ChangesView` über dem Verlauf. `stores/file-tree.ts` hält je Ordner einen Baum (geteilt von
+  `DiffView`/`ChangesView` über dem ganzen Verlauf samt Eingabefeld (das nur unsichtbar wird, sein Entwurf
+  bleibt). Zurück zum Chat geht es mit „Schließen“ (`ViewCloseButton`) oder Esc; Text, der ins Eingabefeld
+  kommt (Erwähnung aus dem Baum, Review-Kommentare), schließt die Ansicht ebenfalls. Die Auswahl im Baum
+  folgt der gezeigten Datei und geht mit ihr. `stores/file-tree.ts` hält je Ordner einen Baum (geteilt von
   allen Chats des Projekts) und je Session die Aktivität: live über `files.onTouched`, beim ersten
   Anzeigen ergänzt um `files.history(sessionId)`. Main leitet beides aus den `tool`-Items ab
   (`SessionService` meldet `tool` und `turnEnded`, `FileActivityTracker` wertet sie aus,

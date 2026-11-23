@@ -39,6 +39,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   send: [input: { text: string; images: string[] }]
+  /** Text put in from elsewhere (a file mentioned in the tree, review comments): it wants to be seen. */
+  inserted: []
   stop: []
   'update:provider': [ProviderId]
   'update:account': [string]
@@ -101,6 +103,8 @@ function insertText(snippet: string): void {
   const gap = before && !/\s$/.test(before) ? ' ' : ''
   text.value = `${before}${gap}${snippet}${text.value.slice(end)}`
   const cursor = before.length + gap.length + snippet.length
+  // First, so whatever hides the composer goes before it takes the keyboard.
+  emit('inserted')
   void nextTick(() => {
     resize()
     input.value?.focus()

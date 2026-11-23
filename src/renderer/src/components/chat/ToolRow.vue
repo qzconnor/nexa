@@ -4,7 +4,8 @@ import { computed, ref, watch } from 'vue'
 import type { ToolItem } from '@shared/chat'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDuration } from '@/lib/format'
-import { TOOL_META } from '@/lib/tools'
+import AppLogo from '@/components/common/AppLogo.vue'
+import { nexaToolView, TOOL_META } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 import { useProjectPath } from '@/composables/useProjectPath'
 import { useSettingsStore } from '@/stores/settings'
@@ -19,7 +20,13 @@ const props = defineProps<{ tool: ToolItem }>()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const { shorten } = useProjectPath()
-const detail = computed(() => (props.tool.detail ? shorten(props.tool.detail) : ''))
+/** Nexa's own tools are the app, not a server like any other: its mark, and what they do in words. */
+const nexa = computed(() => nexaToolView(props.tool))
+const title = computed(() => nexa.value?.title ?? props.tool.title)
+const detail = computed(() => {
+  const text = nexa.value ? nexa.value.detail : props.tool.detail
+  return text ? shorten(text) : ''
+})
 
 const meta = computed(() => TOOL_META[props.tool.tool])
 const running = computed(() => props.tool.status === 'running' || props.tool.status === 'pending')
@@ -36,7 +43,9 @@ const inputText = computed(() => {
     return String(input)
   }
 })
-const expandable = computed(() => hasChanges.value || !!output.value || (!!inputText.value && props.tool.tool !== 'read'))
+const expandable = computed(
+  () => !(nexa.value?.plumbing && !failed.value) && (hasChanges.value || !!output.value || (!!inputText.value && props.tool.tool !== 'read')),
+)
 /** A shell that runs on in the background: its state, and the way to its output. */
 const background = computed(() => (props.tool.shell?.background ? props.tool.shell.status : null))
 const BACKGROUND_STATE = { running: 'läuft', done: 'beendet', error: 'fehlgeschlagen', stopped: 'abgebrochen' } as const
@@ -59,10 +68,16 @@ const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : out
       :aria-expanded="expandable ? open : undefined"
       @click="open = !open"
     >
-      <component :is="meta.icon" :class="cn('size-3.5 shrink-0', meta.color)" />
-      <span :class="cn('shrink-0 font-medium', running && 'text-shimmer')">{{ tool.title }}</span>
-      <span v-if="detail" class="min-w-0 truncate font-mono text-[0.78rem] text-muted-foreground" :title="tool.detail">{{ detail }}</span>
-      <span v-if="tool.server && tool.tool === 'mcp'" class="shrink-0 rounded bg-muted px-1.5 text-[0.7rem] text-muted-foreground">{{ tool.server }}</span>
+      <AppLogo v-if="nexa" class="size-3.5 shrink-0" />
+      <component :is="meta.icon" v-else :class="cn('size-3.5 shrink-0', meta.color)" />
+      <span :class="cn('shrink-0 font-medium', running && 'text-shimmer')">{{ title }}</span>
+      <span
+        v-if="detail"
+        :class="cn('min-w-0 truncate text-muted-foreground', nexa?.plumbing ? 'text-[0.8rem]' : 'font-mono text-[0.78rem]')"
+        :title="nexa?.plumbing ? detail : tool.detail"
+        >{{ detail }}</span
+      >
+      <span v-if="tool.server && tool.tool === 'mcp' && !nexa" class="shrink-0 rounded bg-muted px-1.5 text-[0.7rem] text-muted-foreground">{{ tool.server }}</span>
       <span class="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-xs text-muted-foreground">
         <!-- Inside the row's button, so no button of its own. -->
         <span

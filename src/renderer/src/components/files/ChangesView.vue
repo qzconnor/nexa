@@ -52,7 +52,6 @@ import {
   GitCommitHorizontalIcon,
   GitPullRequestIcon,
   WrapTextIcon,
-  XIcon,
 } from '@lucide/vue'
 import { useElementSize } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowReactive, watch } from 'vue'
@@ -88,6 +87,7 @@ import DiffLineRow from './DiffLineRow.vue'
 import ImageDiff from './ImageDiff.vue'
 import ReviewBar from './ReviewBar.vue'
 import ReviewComposer from './ReviewComposer.vue'
+import ViewCloseButton from './ViewCloseButton.vue'
 
 /**
  * All changes of a folder since the last commit, file below file, to review them in one go like a
@@ -100,7 +100,7 @@ import ReviewComposer from './ReviewComposer.vue'
  */
 const props = defineProps<{
   root: string
-  /** Shows a button that closes it (beside a terminal; as a tab it closes with its tab). */
+  /** Shows the button that closes it, back to the chat. */
   closable?: boolean
 }>()
 const emit = defineEmits<{ close: [] }>()
@@ -783,14 +783,7 @@ const iconButton =
         </TooltipTrigger>
         <TooltipContent>{{ allCollapsed ? 'Alle aufklappen' : 'Alle zuklappen' }}</TooltipContent>
       </Tooltip>
-      <Tooltip v-if="closable">
-        <TooltipTrigger as-child>
-          <button type="button" aria-label="Änderungen schließen" :class="iconButton" @click="emit('close')">
-            <XIcon class="size-[16px]" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>Schließen</TooltipContent>
-      </Tooltip>
+      <ViewCloseButton v-if="closable" @close="emit('close')" />
     </header>
 
     <!-- On a branch: the uncommitted changes or all since it started, its commits, its pull request. -->

@@ -476,11 +476,13 @@ function showDiff(path: string) {
   fileTree.showDiff(props.target, path)
 }
 
-// The file whose changes are shown is the selected one.
+// The file whose changes are shown is the selected one. Closed, it isn't any more, unless the keyboard
+// moved on from it; a selection left behind would look as if it were still open.
 watch(
-  () => props.current,
-  (path) => {
+  () => [props.target.root, props.current] as const,
+  ([root, path], before) => {
     if (path && path !== selected.value) select(path)
+    else if (!path && before?.[0] === root && before[1] && before[1] === selected.value) select(null)
   },
   { immediate: true },
 )

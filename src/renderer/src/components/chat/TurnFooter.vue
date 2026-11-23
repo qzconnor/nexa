@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TurnItem } from '@shared/chat'
-import { formatCost, formatDuration, formatTokens } from '@/lib/format'
+import { formatDuration, formatTokens } from '@/lib/format'
 
-/** The end of a turn: how long it took, the tokens and what it cost. */
+/**
+ * The end of a turn: how long it took and the tokens. No price: the CLIs report what the API would
+ * charge, which isn't what a subscription costs.
+ */
 const props = defineProps<{ item: TurnItem }>()
 
 const parts = computed(() => {
@@ -13,7 +16,6 @@ const parts = computed(() => {
   else if (t.status === 'error') out.push('Fehlgeschlagen')
   if (t.durationMs) out.push(formatDuration(t.durationMs))
   if (t.inputTokens || t.outputTokens) out.push(`${formatTokens(t.inputTokens ?? 0)} ein · ${formatTokens(t.outputTokens ?? 0)} aus`)
-  if (t.costUsd) out.push(formatCost(t.costUsd))
   return out
 })
 </script>

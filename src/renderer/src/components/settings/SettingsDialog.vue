@@ -33,7 +33,7 @@ const accounts = useAccountsStore()
 const SECTIONS: { id: SettingsSection; label: string; description: string; icon: Component; page: Component }[] = [
   { id: 'appearance', label: 'Darstellung', description: 'Theme, Fenster und Chat-Breite', icon: SETTINGS_ICONS.appearance, page: SettingsAppearance },
   { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
-  { id: 'usage', label: 'Verbrauch', description: 'Limits je Account, Tokens und Kosten der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
+  { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
   { id: 'providers', label: 'CLIs', description: 'Claude Code und Codex', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
   { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe und Nexa-Werkzeuge', icon: SETTINGS_ICONS.chat, page: SettingsChat },
   { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: SETTINGS_ICONS.api, page: SettingsApi },
