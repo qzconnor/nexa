@@ -33,10 +33,13 @@ export interface ImportAccount {
   color: string
   /**
    * `create`: becomes a Nexa account with the same folder; `exists`: Nexa has an account with it;
+   * `merge`: Nexa has its login in another folder (`into`), its sessions go on with that account;
    * `standard`: the CLI's standard account, which Nexa has too; `skip`: can't be taken over (its token
    * or key is encrypted for the Claude Manager alone).
    */
-  action: 'create' | 'exists' | 'standard' | 'skip'
+  action: 'create' | 'exists' | 'merge' | 'standard' | 'skip'
+  /** `merge`: the name of the account it joins. */
+  into?: string
 }
 
 /** A folder whose sessions become one project. */

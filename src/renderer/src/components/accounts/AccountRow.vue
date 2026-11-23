@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { EllipsisIcon, FolderOpenIcon, KeyRoundIcon, LogInIcon, PencilIcon, StarIcon, Trash2Icon } from '@lucide/vue'
+import { CopyIcon, EllipsisIcon, FolderOpenIcon, KeyRoundIcon, LogInIcon, MergeIcon, PencilIcon, StarIcon, Trash2Icon } from '@lucide/vue'
 import { computed } from 'vue'
-import { accountKindLabel, canLogin, identityLabel, isSystemAccountId, planLabel, usesSecret, type Account } from '@shared/accounts'
+import { accountKindLabel, canLogin, duplicateOf, identityLabel, isSystemAccountId, planLabel, usesSecret, type Account } from '@shared/accounts'
 import { PROVIDERS } from '@shared/providers'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,7 @@ import { clampPercent, shortWindowLabel, usageFillClass, usageLevel, usageTextCl
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProvidersStore } from '@/stores/providers'
+import { useUiStore } from '@/stores/ui'
 import AccountAuthStatus from './AccountAuthStatus.vue'
 import AccountDot from './AccountDot.vue'
 
@@ -29,6 +30,7 @@ const emit = defineEmits<{ remove: [] }>()
 
 const accounts = useAccountsStore()
 const providers = useProvidersStore()
+const ui = useUiStore()
 const now = useClock(30_000)
 
 const plan = computed(() => planLabel(props.account.identity.subscriptionType))
@@ -46,6 +48,26 @@ const startLogin = () => void attempt(() => accounts.login(props.account.id), 'A
 const edit = () => (accounts.formRequest = { account: props.account, provider: props.account.provider })
 const makeDefault = () => void attempt(() => accounts.setDefault(props.account))
 const openFolder = () => void attempt(() => window.api.app.openPath(props.account.configDir), 'Ordner ließ sich nicht öffnen')
+
+/** An older account with the same login (e.g. one taken over from the Claude Manager twice): this one can go into it. */
+const twin = computed(() => duplicateOf(accounts.accounts, props.account))
+/** The other one as the texts name it: two accounts taken over twice usually have the same name. */
+const twinLabel = computed(() => (twin.value ? (twin.value.name === props.account.name ? `dem anderen „${twin.value.name}“` : `„${twin.value.name}“`) : ''))
+
+async function mergeIntoTwin(): Promise<void> {
+  const into = twin.value
+  if (!into) return
+  const same = into.name === props.account.name
+  const ok = await ui.confirm({
+    title: same ? `Die beiden „${into.name}“ zusammenführen?` : `„${props.account.name}“ mit „${into.name}“ zusammenführen?`,
+    description:
+      `Beide sind mit demselben Login angemeldet. Dieser Account (Ordner ${props.account.configDir}) verschwindet aus Nexa, ` +
+      `seine Chats laufen mit ${same ? 'dem anderen' : `„${into.name}“`} weiter (Ordner ${into.configDir}). ` +
+      'Der Ordner dieses Accounts bleibt auf der Platte.',
+    confirmText: 'Zusammenführen',
+  })
+  if (ok) await attempt(() => accounts.merge(props.account.id, into.id), 'Zusammenführen fehlgeschlagen')
+}
 </script>
 
 <template>
@@ -62,6 +84,10 @@ const openFolder = () => void attempt(() => window.api.app.openPath(props.accoun
         </div>
         <span class="truncate text-xs text-muted-foreground" v-tooltip="account.configDir">{{ who }}</span>
         <AccountAuthStatus :account="account" class="mt-0.5" />
+        <div v-if="twin" class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span class="flex items-center gap-1.5"><CopyIcon class="size-3.5" /> Gleicher Login wie {{ twin.name === account.name ? 'der andere' : '' }} „{{ twin.name }}“</span>
+          <Button size="xs" variant="outline" @click="mergeIntoTwin"><MergeIcon data-icon="inline-start" /> Zusammenführen</Button>
+        </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <Button v-if="needsLogin" size="sm" variant="outline" :disabled="loggingIn" @click="startLogin">
@@ -82,6 +108,7 @@ const openFolder = () => void attempt(() => window.api.app.openPath(props.accoun
             <DropdownMenuItem @select="edit"><PencilIcon /> Bearbeiten</DropdownMenuItem>
             <DropdownMenuItem v-if="canLogin(account.kind)" :disabled="loggingIn" @select="startLogin"><LogInIcon /> Neu anmelden</DropdownMenuItem>
             <DropdownMenuItem @select="openFolder"><FolderOpenIcon /> Konfigurationsordner öffnen</DropdownMenuItem>
+            <DropdownMenuItem v-if="twin" @select="mergeIntoTwin"><MergeIcon /> Mit {{ twinLabel }} zusammenführen</DropdownMenuItem>
             <template v-if="!isSystemAccountId(account.id)">
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" @select="emit('remove')"><Trash2Icon /> Entfernen</DropdownMenuItem>

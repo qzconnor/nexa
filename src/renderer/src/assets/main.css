@@ -232,6 +232,39 @@
       color: var(--foreground);
     }
   }
+  /* The highest effort, as the CLI shows it: a rainbow that runs (text with .effort-rainbow-text). */
+  .effort-rainbow {
+    background: linear-gradient(
+        90deg,
+        var(--syn-red),
+        var(--syn-yellow),
+        var(--syn-green),
+        var(--syn-cyan),
+        var(--syn-blue),
+        var(--syn-magenta),
+        var(--syn-red)
+      )
+      0 0 / 200% 100%;
+    animation: effort-rainbow 3s linear infinite;
+  }
+  .effort-rainbow-text {
+    background-clip: text;
+    color: transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .effort-rainbow {
+      animation: none;
+    }
+  }
+}
+
+@keyframes effort-rainbow {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
 }
 
 @keyframes text-shimmer {

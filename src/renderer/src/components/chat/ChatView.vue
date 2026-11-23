@@ -353,8 +353,11 @@ async function remove(): Promise<void> {
         <div ref="viewport" :class="cn('chat-fade h-full overflow-y-auto [scrollbar-gutter:stable]', diff && 'invisible')" :style="fadeStyle">
           <div ref="content" class="mx-auto w-full max-w-(--chat-width) px-6 pt-6" :style="{ paddingBottom: `${dockHeight + 16}px` }">
             <div v-if="chat && !chat.loaded" class="flex justify-center py-10"><Spinner class="size-5 text-muted-foreground" /></div>
-            <AgentThread v-else-if="viewed" :key="viewed.id" :agent="viewed" :items="items" :session-id="meta.id" />
-            <MessageList v-else :items="items" :session-id="meta.id" />
+            <template v-else>
+              <AgentThread v-if="viewed" :key="viewed.id" :agent="viewed" :items="items" :session-id="meta.id" />
+              <!-- Kept while a subagent's thread shows: back, the same older messages are there to return to. -->
+              <MessageList v-show="!viewed" :items="items" :session-id="meta.id" />
+            </template>
             <div v-if="working" class="flex items-center gap-2 py-2 text-[0.85rem] text-muted-foreground">
               <Spinner class="size-3.5" />
               <span class="text-shimmer">{{ working }}</span>
@@ -416,7 +419,7 @@ async function remove(): Promise<void> {
         -->
         <div
           ref="dock"
-          :class="cn('pointer-events-none absolute right-[10px] bottom-0 left-0 mx-auto max-w-(--chat-width) px-6 pb-5', diff && 'invisible')"
+          :class="cn('pointer-events-none absolute right-[10px] bottom-0 left-0 z-30 mx-auto max-w-(--chat-width) px-6 pb-5', diff && 'invisible')"
         >
           <div v-if="showTodo && todo" class="frost-backing pointer-events-auto mb-2 rounded-xl">
             <TodoCard :item="todo" compact />
@@ -457,6 +460,7 @@ async function remove(): Promise<void> {
               :model="meta.model"
               :effort="meta.effort"
               :mode="meta.permissionMode"
+              :ultracode="meta.ultracode"
               :busy="busy"
               :context="runtime.context"
               autofocus
@@ -468,6 +472,7 @@ async function remove(): Promise<void> {
               @update:model="(model) => update({ model })"
               @update:effort="(effort) => update({ effort })"
               @update:mode="(permissionMode) => update({ permissionMode })"
+              @update:ultracode="(ultracode) => update({ ultracode })"
             />
           </div>
         </div>

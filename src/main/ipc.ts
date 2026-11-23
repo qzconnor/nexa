@@ -11,6 +11,7 @@ import { parseThemeFile } from '@shared/themes/file'
 import type { ThemeContent } from '@shared/themes/types'
 import type { AppInfo, SessionMoveInput } from '@shared/types'
 import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
+import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
 import type { ProjectService } from './services/project-service'
@@ -227,6 +228,13 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.providersList, () => providers.list())
   handle(IpcInvoke.providersRefresh, () => providers.detect())
   handle(IpcInvoke.providersModels, (_e, id: unknown) => providers.models(providerId(id)))
+  handle(IpcInvoke.providersModelDefaults, (_e, id: unknown, account: unknown, model: unknown) =>
+    providers.modelDefaults(providerId(id), typeof account === 'string' ? account : undefined, str(model, 'Das Modell').slice(0, 200)),
+  )
+  handle(IpcInvoke.providersCommands, (_e, id: unknown, account: unknown, cwd: unknown) =>
+    // Without a project (the start page before one is picked), the user's own skills and commands.
+    providers.commands(providerId(id), typeof account === 'string' ? account : undefined, cwd == null ? homedir() : absolutePath(cwd, 'Der Ordner')),
+  )
   handle(IpcInvoke.usageGet, () => providers.usage())
   handle(IpcInvoke.usageRefresh, () => providers.refreshUsage(true))
 
@@ -236,6 +244,9 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.accountsCreate, (_e, input: unknown) => accounts.create(objectArg<AccountCreateInput>(input, 'Der Account')))
   handle(IpcInvoke.accountsUpdate, (_e, id: unknown, patch: unknown) => accounts.update(str(id, 'Der Account'), objectArg<AccountUpdateInput>(patch, 'Die Änderung')))
   handle(IpcInvoke.accountsRemove, (_e, id: unknown, deleteFolder: unknown) => accounts.remove(str(id, 'Der Account'), deleteFolder === true))
+  handle(IpcInvoke.accountsMerge, (_e, from: unknown, into: unknown) =>
+    mergeAccounts(accounts, sessions, settings, str(from, 'Der Account'), str(into, 'Der Account')),
+  )
   handle(IpcInvoke.accountsLogins, () => providers.loginStates())
   handle(IpcInvoke.accountsLogin, (_e, id: unknown) => providers.login(str(id, 'Der Account')))
   handle(IpcInvoke.accountsLoginCode, (_e, id: unknown, code: unknown) => providers.loginCode(str(id, 'Der Account'), str(code, 'Der Code')))

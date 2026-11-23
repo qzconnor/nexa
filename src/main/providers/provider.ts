@@ -1,5 +1,5 @@
 import type { ChatItem, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
-import type { ModelOption, ProviderStatus, ProviderUsage, SendInput, ShellOutput } from '@shared/types'
+import type { CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage, SendInput, ShellOutput } from '@shared/types'
 import type { AccountEnv } from '../accounts/account-env'
 import type { ResolvedCommand } from './cli-binary'
 
@@ -34,6 +34,8 @@ export interface RunOptions {
   cwd: string
   model?: string
   effort?: string
+  /** Claude: Ultracode on or off; missing: as its settings say. */
+  ultracode?: boolean
   permissionMode: PermissionMode
   /** Resume this conversation of the CLI. */
   resumeId?: string
@@ -79,6 +81,10 @@ export interface AgentProvider {
   /** Is the CLI installed, which version, who is logged in with this account. */
   detect(account: AccountContext): Promise<ProviderStatus>
   models(account: AccountContext): Promise<ModelOption[]>
+  /** What a model runs with when Nexa names no effort (and, for Claude Code, Ultracode). */
+  modelDefaults(account: AccountContext, model: string): Promise<ModelDefaults>
+  /** The commands and skills the composer offers in a folder. */
+  commands(account: AccountContext, cwd: string): Promise<CommandOption[]>
   start(options: RunOptions, sink: RunSink): Promise<AgentRun>
   /**
    * Limits of the account's plan without a running session, if the CLI can tell. `wake`: also when

@@ -75,6 +75,8 @@ export function claudeArgs(options: RunOptions): string[] {
   ]
   if (options.model) args.push('--model', options.model)
   if (options.effort) args.push('--effort', options.effort)
+  // Only for the session, without touching the user's settings.
+  if (options.ultracode !== undefined) args.push('--settings', JSON.stringify({ ultracode: options.ultracode }))
   if (options.resumeId) args.push('--resume', options.resumeId)
   if (options.instructions) args.push('--append-system-prompt', options.instructions)
   if (options.mcp) {

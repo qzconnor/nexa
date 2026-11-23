@@ -82,6 +82,12 @@ export const useAccountsStore = defineStore('accounts', () => {
     accounts.value = accounts.value.filter((a) => a.id !== id)
   }
 
+  /** Folds `from` into `into` (the same login): its chats go on with `into`, its folder stays. */
+  async function merge(from: string, into: string): Promise<void> {
+    await window.api.accounts.merge(from, into)
+    accounts.value = accounts.value.filter((a) => a.id !== from)
+  }
+
   /** Starts the browser login and shows its dialog. */
   async function login(id: string): Promise<void> {
     loginId.value = id
@@ -91,5 +97,5 @@ export const useAccountsStore = defineStore('accounts', () => {
     if (!logins.has(id)) logins.set(id, state)
   }
 
-  return { accounts, logins, loginId, formRequest, get, ofProvider, defaultId, sessionAccount, setDefault, load, refresh, create, update, remove, login }
+  return { accounts, logins, loginId, formRequest, get, ofProvider, defaultId, sessionAccount, setDefault, load, refresh, create, update, remove, merge, login }
 })

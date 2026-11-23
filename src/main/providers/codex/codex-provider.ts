@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import type { ModelOption, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
+import type { CommandOption, ModelDefaults, ModelOption, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
 import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import { CliBinary, type ResolvedCommand } from '../cli-binary'
@@ -61,6 +61,8 @@ export class CodexProvider implements AgentProvider {
   private readonly servers = new Map<string, AccountServer>()
   private readonly routes = new Map<string, CodexRun>()
   private modelCache: { models: ModelOption[]; at: number } | null = null
+  /** By account and folder. */
+  private readonly skillCache = new Map<string, { skills: CommandOption[]; at: number }>()
   /** Limits a server reported on its own, with the account they belong to. */
   onUsage: ((accountId: string, usage: RunUsage) => void) | null = null
 
@@ -156,6 +158,36 @@ export class CodexProvider implements AgentProvider {
     }
   }
 
+  /** Codex names each model's default effort in its list; Ultracode is Claude Code's. */
+  async modelDefaults(account: AccountContext, model: string): Promise<ModelDefaults> {
+    const models = await this.models(account)
+    const found = models.find((m) => m.id === model) ?? (model ? undefined : models.find((m) => m.isDefault))
+    return { effort: found?.defaultEffort }
+  }
+
+  /** The skills Codex finds for a folder (the user's, the repository's, its own), offered after `/` and `$`. */
+  async commands(account: AccountContext, cwd: string): Promise<CommandOption[]> {
+    const key = `${account.accountId}\0${cwd}`
+    const cached = this.skillCache.get(key)
+    if (cached && Date.now() - cached.at < 60_000) return cached.skills
+    try {
+      const response = await this.server(account).client.request('skills/list', { cwds: [cwd] })
+      const entries = Array.isArray(response.data) ? response.data.filter(isPlainObject) : []
+      const skills = entries
+        .flatMap((entry) => (Array.isArray(entry.skills) ? entry.skills.filter(isPlainObject) : []))
+        .filter((s) => s.enabled !== false && typeof s.name === 'string' && typeof s.path === 'string')
+        .map((s): CommandOption => {
+          const face = isPlainObject(s.interface) ? s.interface : {}
+          const short = [face.shortDescription, s.shortDescription, s.description].find((d) => typeof d === 'string' && d)
+          return { name: s.name as string, description: short as string | undefined, kind: 'skill', insert: `$${s.name as string}`, path: s.path as string }
+        })
+      this.skillCache.set(key, { skills, at: Date.now() })
+      return skills
+    } catch {
+      return cached?.skills ?? []
+    }
+  }
+
   /** The default model of the account: Codex's own config may name one this plan can't use. */
   private async defaultModel(account: AccountEnv): Promise<string | undefined> {
     const models = await this.models({ ...account, accessToken: null })
@@ -165,13 +197,19 @@ export class CodexProvider implements AgentProvider {
   async start(options: RunOptions, sink: RunSink): Promise<AgentRun> {
     const model = options.model || (await this.defaultModel(options.account))
     const server = this.server(options.account)
-    const run = new CodexRun(server.client, { ...options, model }, sink, {
-      add: (threadId, r) => this.routes.set(threadId, r),
-      remove: (r) => {
-        for (const [threadId, routed] of this.routes) if (routed === r) this.routes.delete(threadId)
-        server.runs.delete(r)
+    const run = new CodexRun(
+      server.client,
+      { ...options, model },
+      sink,
+      {
+        add: (threadId, r) => this.routes.set(threadId, r),
+        remove: (r) => {
+          for (const [threadId, routed] of this.routes) if (routed === r) this.routes.delete(threadId)
+          server.runs.delete(r)
+        },
       },
-    })
+      () => this.commands({ ...options.account, accessToken: null }, options.cwd),
+    )
     server.runs.add(run)
     try {
       await run.connect()
@@ -199,6 +237,7 @@ export class CodexProvider implements AgentProvider {
 
   /** The server of a removed account ends, with what still runs on it. */
   async forget(accountId: string): Promise<void> {
+    for (const key of this.skillCache.keys()) if (key.startsWith(`${accountId}\0`)) this.skillCache.delete(key)
     const server = this.servers.get(accountId)
     if (!server) return
     this.servers.delete(accountId)

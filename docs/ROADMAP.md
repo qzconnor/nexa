@@ -44,6 +44,12 @@
       keine Kosten in Dollar mehr (Turn-Fuß, Verbrauch)
 - [x] Dateiansicht über den ganzen Chat ohne Eingabefeld, „Schließen“ gut sichtbar und mit Esc; die Datei
       ist im Baum nach dem Schließen nicht mehr ausgewählt
+- [x] Lange Chats öffnen schnell: ältere Nachrichten kommen erst beim Hochscrollen
+- [x] Vervollständigung in der Eingabe: Befehle, Skills und MCP-Prompts der CLIs (`/`, bei Codex auch `$`),
+      Dateien und Ordner des Projekts (`@`)
+- [x] Modell, Denkaufwand (Schieberegler wie in der CLI), Ultracode und Freigaben hinter einem Zahnrad
+- [x] Derselbe Login nur einmal: die Übernahme aus dem Claude Manager legt ihn nicht doppelt an, doppelte
+      Accounts lassen sich in den Einstellungen zusammenführen
 
 ## Als Nächstes
 
@@ -56,7 +62,6 @@
 - [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
 - [ ] **Systemfarben**: `nativeTheme` folgt dem Modus des Themes (hell/dunkel).
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten.
-- [ ] Slash-Befehle und Skills der CLIs in der Eingabe (`/`-Menü).
 
 ## Später
 

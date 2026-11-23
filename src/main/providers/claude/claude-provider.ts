@@ -1,13 +1,23 @@
-import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ModelOption, ProviderSettings, ProviderStatus } from '@shared/types'
+import type { CommandOption, ModelDefaults, ModelOption, ProviderSettings, ProviderStatus } from '@shared/types'
 import { isPlainObject } from '@shared/utils'
 import { fetchClaudeUsage } from '../../accounts/claude-usage'
 import { CliBinary, cliEnv, type ResolvedCommand } from '../cli-binary'
-import { JsonlProcess } from '../jsonl-process'
 import type { AccountContext, AgentProvider, AgentRun, RunOptions, RunSink, RunUsage } from '../provider'
+import { claudeCommands, probeClaude } from './claude-probe'
 import { ClaudeRun } from './claude-run'
+
+/** The commands of a folder are asked again after this; skills added meanwhile come then. */
+const COMMANDS_TTL_MS = 5 * 60_000
+/** How long the process that asked for them waits for the prompts of MCP servers. */
+const COMMANDS_WATCH_MS = 20_000
+
+interface CachedCommands {
+  commands: CommandOption[]
+  at: number
+  loading?: Promise<CommandOption[]>
+}
 
 const FALLBACK_MODELS: ModelOption[] = [
   { id: '', label: 'Standard', description: 'Das Modell aus den Einstellungen von Claude Code', isDefault: true },
@@ -22,6 +32,10 @@ export class ClaudeProvider implements AgentProvider {
   /** By account: a plan may offer other models. */
   private readonly modelCache = new Map<string, { models: ModelOption[]; at: number }>()
   private readonly modelsLoading = new Map<string, Promise<ModelOption[]>>()
+  /** By account and folder. */
+  private readonly commandCache = new Map<string, CachedCommands>()
+  /** By account and model. */
+  private readonly defaultsCache = new Map<string, { defaults: ModelDefaults; at: number }>()
   /** The usage API answered 429: not asked again for this account before then. */
   private readonly backoff = new Map<string, number>()
 
@@ -82,36 +96,56 @@ export class ClaudeProvider implements AgentProvider {
     return loading
   }
 
-  private loadModels(account: AccountContext): Promise<ModelOption[]> {
-    return new Promise((resolve) => {
-      let proc: JsonlProcess
-      const id = randomUUID()
-      const done = (models: ModelOption[] | null) => {
-        clearTimeout(timer)
-        if (models?.length) this.modelCache.set(account.accountId, { models, at: Date.now() })
-        resolve(models?.length ? models : (this.modelCache.get(account.accountId)?.models ?? FALLBACK_MODELS))
-        if (proc?.alive) void proc.stop(1000)
-      }
-      const timer = setTimeout(() => done(null), 20_000)
-      try {
-        proc = new JsonlProcess(
-          this.binary.command(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence']),
-          {
-            cwd: homedir(),
-            env: cliEnv(account.set, account.unset),
-            onMessage: (m) => {
-              if (!isPlainObject(m) || m.type !== 'control_response' || !isPlainObject(m.response) || m.response.request_id !== id) return
-              const response = isPlainObject(m.response.response) ? m.response.response : {}
-              done(modelsOf(response.models))
-            },
-            onExit: () => done(null),
-          },
-        )
-        proc.write({ type: 'control_request', request_id: id, request: { subtype: 'initialize' } })
-      } catch {
-        done(null)
-      }
+  private async loadModels(account: AccountContext): Promise<ModelOption[]> {
+    const answers = await probeClaude(this.binary, account, { cwd: homedir() })
+    const models = modelsOf(answers?.[0]?.models)
+    if (models?.length) this.modelCache.set(account.accountId, { models, at: Date.now() })
+    return models?.length ? models : (this.modelCache.get(account.accountId)?.models ?? FALLBACK_MODELS)
+  }
+
+  /**
+   * The commands Claude Code offers in a folder: its own, the skills and commands of the user and the
+   * project, the prompts of MCP servers. These come once the servers are connected: the process stays
+   * a while for them, and the list asked for next has them.
+   */
+  async commands(account: AccountContext, cwd: string): Promise<CommandOption[]> {
+    const key = `${account.accountId}\0${cwd}`
+    const cached = this.commandCache.get(key)
+    if (cached && Date.now() - cached.at < COMMANDS_TTL_MS) return cached.loading ?? cached.commands
+    const entry: CachedCommands = { commands: cached?.commands ?? [], at: Date.now() }
+    const keep = (raw: unknown) => {
+      const commands = claudeCommands(raw)
+      if (commands && this.commandCache.get(key) === entry) entry.commands = commands
+    }
+    entry.loading = probeClaude(this.binary, account, { cwd, watchMs: COMMANDS_WATCH_MS, onCommands: keep }).then((answers) => {
+      entry.loading = undefined
+      if (answers) keep(answers[0]?.commands)
+      // Failed: asked again next time.
+      else entry.at = 0
+      return entry.commands
     })
+    this.commandCache.set(key, entry)
+    return entry.loading
+  }
+
+  /**
+   * The effort a model runs with when Nexa names none, and whether Ultracode can run with it and is on,
+   * as Claude Code's settings make it (`get_settings`). Its own process with the model, as it starts in
+   * a chat: switching the model in a running process keeps the effort before.
+   */
+  async modelDefaults(account: AccountContext, model: string): Promise<ModelDefaults> {
+    const key = `${account.accountId}\0${model}`
+    const cached = this.defaultsCache.get(key)
+    if (cached && Date.now() - cached.at < 30 * 60_000) return cached.defaults
+    const answers = await probeClaude(this.binary, account, { cwd: homedir(), args: model ? ['--model', model] : [], requests: [{ subtype: 'get_settings' }] })
+    const applied = isPlainObject(answers?.[1]?.applied) ? answers[1].applied : null
+    if (!applied) return cached?.defaults ?? {}
+    const defaults: ModelDefaults = {
+      effort: typeof applied.effort === 'string' ? applied.effort : undefined,
+      ultracode: { available: applied.ultracodeAvailable === true, on: applied.ultracode === true },
+    }
+    this.defaultsCache.set(key, { defaults, at: Date.now() })
+    return defaults
   }
 
   async start(options: RunOptions, sink: RunSink): Promise<AgentRun> {
@@ -138,6 +172,9 @@ export class ClaudeProvider implements AgentProvider {
 
   async forget(accountId: string): Promise<void> {
     this.modelCache.delete(accountId)
+    for (const cache of [this.commandCache, this.defaultsCache]) {
+      for (const key of cache.keys()) if (key.startsWith(`${accountId}\0`)) cache.delete(key)
+    }
   }
 
   async dispose(): Promise<void> {}

@@ -126,6 +126,34 @@ export function pickAccount(
   return shown[0]?.id ?? systemAccountId(provider)
 }
 
+type LoginOf = Pick<Account, 'provider' | 'identity'>
+
+/**
+ * Signed in as the same person in the same organisation: one login in two config folders, e.g. an
+ * account taken over from the Claude Manager next to one made in Nexa. Logins without an email never match.
+ */
+export function sameLogin(a: LoginOf, b: LoginOf): boolean {
+  const email = a.identity.email?.toLowerCase()
+  return (
+    a.provider === b.provider &&
+    !!email &&
+    email === b.identity.email?.toLowerCase() &&
+    (a.identity.organizationName?.toLowerCase() ?? null) === (b.identity.organizationName?.toLowerCase() ?? null)
+  )
+}
+
+/**
+ * The account an added one doubles: the oldest other added account with the same login, made before
+ * it. The standard account never counts (it is out of sight once others are there).
+ */
+export function duplicateOf<T extends Pick<Account, 'id' | 'kind' | 'createdAt'> & LoginOf>(list: readonly T[], account: T): T | null {
+  if (account.kind === 'system') return null
+  const at = list.indexOf(account)
+  const earlier = (other: T) => other.createdAt < account.createdAt || (other.createdAt === account.createdAt && list.indexOf(other) < at)
+  const twins = list.filter((other) => other !== account && other.kind !== 'system' && earlier(other) && sameLogin(other, account))
+  return twins.sort((a, b) => a.createdAt - b.createdAt)[0] ?? null
+}
+
 /** Tokens and API keys can be lent to another config folder; a browser login only works in its own. */
 export function usesSecret(kind: AccountKind): boolean {
   return kind === 'token' || kind === 'apiKey'

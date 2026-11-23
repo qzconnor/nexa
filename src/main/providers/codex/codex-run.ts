@@ -12,7 +12,7 @@ import type {
   ToolStatus,
 } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
-import type { SendInput } from '@shared/types'
+import type { CommandOption, SendInput } from '@shared/types'
 import { firstLine, isPlainObject } from '@shared/utils'
 import { codexToolApprovals } from '../../mcp/tool-grant'
 import type { AgentRun, RunOptions, RunSink } from '../provider'
@@ -124,6 +124,15 @@ function mcpResultText(result: unknown, error: unknown): string | undefined {
     .join('\n')
 }
 
+/**
+ * The skills a prompt names with `$name`, as input items next to its text: that is how Codex's own
+ * composer hands them over, the text alone only names them.
+ */
+export function skillInputs(text: string, skills: readonly CommandOption[]): Json[] {
+  const named = new Set([...text.matchAll(/(?:^|\s)\$([\w.:-]+)/g)].map((m) => m[1]!))
+  return skills.filter((s) => s.kind === 'skill' && s.path && named.has(s.name)).map((s) => ({ type: 'skill', name: s.name, path: s.path }))
+}
+
 interface OpenRequest {
   request: CodexServerRequest
   item: InteractionItem
@@ -154,6 +163,8 @@ export class CodexRun implements AgentRun {
     private readonly options: RunOptions,
     private readonly sink: RunSink,
     private readonly routes: { add(threadId: string, run: CodexRun): void; remove(run: CodexRun): void },
+    /** The skills of the thread's folder, for the ones a prompt names. */
+    private readonly skills: () => Promise<CommandOption[]> = async () => [],
   ) {
     this.model = options.model || undefined
     this.effort = options.effort || undefined
@@ -200,6 +211,7 @@ export class CodexRun implements AgentRun {
   async send(input: SendInput): Promise<void> {
     const items: Json[] = [{ type: 'text', text: input.text, text_elements: [] }]
     for (const path of input.images ?? []) items.push({ type: 'localImage', path })
+    if (/\$[\w.:-]/.test(input.text)) items.push(...skillInputs(input.text, await this.skills().catch(() => [])))
     if (this.turnId) {
       // A prompt while Codex works joins the running turn.
       await this.client.request('turn/steer', { threadId: this.threadId, input: items, expectedTurnId: this.turnId })

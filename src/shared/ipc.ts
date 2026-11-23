@@ -5,7 +5,9 @@ import type {
   ApiStatus,
   AppInfo,
   AppSettings,
+  CommandOption,
   DeepPartial,
+  ModelDefaults,
   ModelOption,
   Platform,
   Project,
@@ -60,12 +62,15 @@ export const IpcInvoke = {
   providersList: 'providers:list',
   providersRefresh: 'providers:refresh',
   providersModels: 'providers:models',
+  providersModelDefaults: 'providers:model-defaults',
+  providersCommands: 'providers:commands',
 
   accountsList: 'accounts:list',
   accountsRefresh: 'accounts:refresh',
   accountsCreate: 'accounts:create',
   accountsUpdate: 'accounts:update',
   accountsRemove: 'accounts:remove',
+  accountsMerge: 'accounts:merge',
   accountsLogins: 'accounts:logins',
   accountsLogin: 'accounts:login',
   accountsLoginCode: 'accounts:login-code',
@@ -206,6 +211,10 @@ export interface NexaApi {
     list(): Promise<ProviderStatus[]>
     refresh(): Promise<ProviderStatus[]>
     models(provider: ProviderId): Promise<ModelOption[]>
+    /** What a model runs with when no effort is named; `account`: one of the CLI's, else its default. */
+    modelDefaults(provider: ProviderId, account: string | undefined, model: string): Promise<ModelDefaults>
+    /** The commands and skills the composer offers in a folder (null: the user's home, no project yet). */
+    commands(provider: ProviderId, account: string | undefined, cwd: string | null): Promise<CommandOption[]>
     onChanged(cb: (list: ProviderStatus[]) => void): Unsubscribe
   }
   /** Several logins per CLI, each with its own config folder (see shared/accounts.ts). */
@@ -217,6 +226,8 @@ export interface NexaApi {
     update(id: string, patch: AccountUpdateInput): Promise<Account>
     /** `deleteFolder`: also Nexa's profile folder of the account (never one the user picked). */
     remove(id: string, deleteFolder: boolean): Promise<void>
+    /** Folds `from` into `into` (the same login): its chats go on with `into`, its folder stays. */
+    merge(from: string, into: string): Promise<void>
     /** The browser logins that run. */
     logins(): Promise<AccountLoginState[]>
     /** Starts the CLI's browser login for the account. */
