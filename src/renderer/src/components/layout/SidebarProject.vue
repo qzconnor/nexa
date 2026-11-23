@@ -106,12 +106,18 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
 
 <template>
   <!-- A chat dropped anywhere on the project goes to its own folder (see Sidebar); bare, the separator's heading lights up for it. -->
-  <div :data-drop-project="project.id" :class="cn('flex flex-col rounded-lg', !bare && drag?.isTarget(project.id) && 'bg-primary/10 ring-1 ring-primary/50')">
+  <div
+    :data-drop-project="project.id"
+    :data-list-group="bare ? undefined : ''"
+    :class="cn('flex flex-col rounded-lg', !bare && drag?.isTarget(project.id) && 'bg-primary/10 ring-1 ring-primary/50')"
+  >
     <ContextMenu v-if="!bare">
       <ContextMenuTrigger as-child>
         <div data-drag-row class="group/project flex items-center rounded-lg hover:bg-sidebar-accent/60" :draggable="draggable">
           <button
             type="button"
+            data-list-row
+            :aria-expanded="open"
             class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-[0.85rem]"
             :title="project.path"
             @click="projects.update(project.id, { collapsed: !project.collapsed })"
@@ -161,6 +167,7 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
       <button
         v-if="entry.tree.sessions.length > LIMIT"
         type="button"
+        data-list-row
         class="rounded-lg px-2 py-1 text-left text-xs text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
         @click="showAll = !showAll"
       >

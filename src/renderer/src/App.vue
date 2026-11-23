@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useEventListener } from '@vueuse/core'
 import { onMounted, ref } from 'vue'
 import AccountFormDialog from '@/components/accounts/AccountFormDialog.vue'
 import AccountLoginDialog from '@/components/accounts/AccountLoginDialog.vue'
@@ -17,6 +16,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import { Toaster } from '@/components/ui/sonner'
 import { Spinner } from '@/components/ui/spinner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useShortcuts } from '@/composables/useShortcuts'
 import { useThemeSync } from '@/composables/useThemeSync'
 import { attempt, errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
@@ -45,22 +45,8 @@ const ready = ref(false)
 const fatal = ref<string | null>(null)
 const { theme } = useThemeSync()
 
-// Ctrl+, opens the settings, as in most desktop apps. Ctrl+Shift+A the quick open with the chats,
-// Ctrl+Shift+P with the commands, as in the Claude Manager (and VS Code).
-useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  const ctrl = (event.ctrlKey || event.metaKey) && !event.altKey
-  if (!ctrl || !ready.value) return
-  const key = event.key.toLowerCase()
-  if (!event.shiftKey && key === ',') {
-    event.preventDefault()
-    ui.openSettings()
-  } else if (event.shiftKey && (key === 'a' || key === 'p')) {
-    // A dialog that asks something keeps the keyboard; the quick open over the settings is fine.
-    if (ui.confirmState?.open) return
-    event.preventDefault()
-    ui.openPalette(key === 'p' ? '>' : '')
-  }
-})
+// Ctrl+, the settings, Ctrl+Shift+A/P the quick open, Ctrl+Tab and Ctrl+1–9 the chats (shared/shortcuts.ts).
+useShortcuts(ready)
 
 onMounted(async () => {
   try {

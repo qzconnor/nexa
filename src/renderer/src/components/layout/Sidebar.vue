@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
+import { useListKeys } from '@/composables/useListKeys'
 import { provideSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import { foldersOf, projectTree, type ProjectEntry } from '@/lib/session-tree'
@@ -147,6 +148,8 @@ type Drop = { kind: 'project'; section: string; before: string | null } | { kind
 const drag = ref<Drag | null>(null)
 const drop = ref<Drop | null>(null)
 const nav = ref<HTMLElement | null>(null)
+// The arrows from row to row, open and close what has rows in it (useListKeys).
+useListKeys(nav)
 
 function startDrag(event: DragEvent, kind: Drag['kind'], id: string): void {
   if (!event.dataTransfer) return
@@ -272,6 +275,7 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
       <section
         v-for="(group, index) in groups"
         :key="group.section.id"
+        data-list-group
         :class="cn('relative pb-1', drag?.id === group.section.id && 'opacity-50')"
         @dragover="overSection($event, index)"
       >
@@ -295,6 +299,8 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
             >
               <button
                 type="button"
+                data-list-row
+                :aria-expanded="!group.section.collapsed"
                 class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                 :title="group.section.path"
                 @click="projects.updateSection(group.section.id, { collapsed: !group.section.collapsed })"
