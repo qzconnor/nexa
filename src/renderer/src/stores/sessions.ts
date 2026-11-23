@@ -131,6 +131,14 @@ export const useSessionsStore = defineStore('sessions', () => {
     return meta
   }
 
+  /** A new chat that goes on from where this one is now; it opens. */
+  async function fork(id: string): Promise<SessionMeta> {
+    const meta = await window.api.sessions.fork(id)
+    if (!metas.value.some((m) => m.id === meta.id)) metas.value = [meta, ...metas.value]
+    await open(meta.id)
+    return meta
+  }
+
   async function send(id: string, input: SendInput): Promise<void> {
     await window.api.sessions.send(id, { text: input.text, images: input.images ? [...input.images] : undefined })
   }
@@ -178,6 +186,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     sync,
     close,
     create,
+    fork,
     send,
     update,
     move,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentItem, ToolItem, TurnItem } from '@shared/chat'
-import { claudeTranscriptItems, promptOf, summarizeClaudeTranscript, transcriptSince } from './claude-transcript'
+import { claudeTranscriptItems, forkPoint, promptOf, summarizeClaudeTranscript, transcriptSince } from './claude-transcript'
 
 const at = (s: number) => new Date(Date.UTC(2026, 10, 1, 10, 0, s)).toISOString()
 const lines = (...entries: object[]) => entries.map((e) => JSON.stringify(e)).join('\n') + '\n'
@@ -203,5 +203,35 @@ describe('transcriptSince', () => {
 
   it('has nothing when no turn came after the mark', () => {
     expect(transcriptSince(lines(user('u1', 1, 'Frage'), end('m1', 2, 'Antwort')), Date.parse(at(2)))).toBeNull()
+  })
+})
+
+describe('forkPoint', () => {
+  it('ends at the last answer of the main thread, after the bookkeeping behind it', () => {
+    const text = lines(
+      user('u1', 1, 'Frage'),
+      assistant('m1', 2, [{ type: 'text', text: 'Antwort' }]),
+      assistant('s1', 3, [{ type: 'text', text: 'Vom Agenten' }], { isSidechain: true }),
+      { type: 'system', subtype: 'turn_duration', uuid: 'd1', timestamp: at(4) },
+      { type: 'last-prompt', lastPrompt: 'Frage' },
+    )
+    expect(forkPoint(text)).toBe('m1-2')
+  })
+
+  it('leaves out a tool call cut off without its result', () => {
+    const text = lines(
+      user('u1', 1, 'Frage'),
+      assistant('m1', 2, [{ type: 'thinking', thinking: 'Hm' }]),
+      assistant('m1', 3, [{ type: 'text', text: 'Ich sehe nach' }]),
+      assistant('m1', 4, [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'git diff' } }]),
+      user('u2', 5, [{ type: 'tool_result', tool_use_id: 't1', content: 'abgebrochen', is_error: true }]),
+      user('u3', 6, [{ type: 'text', text: '[Request interrupted by user for tool use]' }]),
+    )
+    expect(forkPoint(text)).toBe('m1-3')
+  })
+
+  it('has none without an answer', () => {
+    expect(forkPoint(lines(user('u1', 1, 'Frage')))).toBeNull()
+    expect(forkPoint('')).toBeNull()
   })
 })

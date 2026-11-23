@@ -115,6 +115,7 @@ export const IpcInvoke = {
   sessionsSearch: 'sessions:search',
   sessionsMove: 'sessions:move',
   sessionsCompact: 'sessions:compact',
+  sessionsFork: 'sessions:fork',
   sessionsExportMarkdown: 'sessions:export-markdown',
   sessionsLastAnswer: 'sessions:last-answer',
 
@@ -315,6 +316,8 @@ export interface NexaApi {
     move(id: string, target: SessionMoveInput): Promise<SessionMeta>
     /** Has the chat's CLI compact its conversation now (Codex; Claude Code gets `/compact` as a prompt). */
     compact(id: string): Promise<void>
+    /** A new chat that goes on from where this one is now, with each CLI's conversation forked (not while its CLI works). */
+    fork(id: string): Promise<SessionMeta>
     /** Saves the chat as Markdown where the user picks; the file's path, or null when cancelled. */
     exportMarkdown(id: string): Promise<string | null>
     /** What the agent said last in the chat; null before it said anything. */

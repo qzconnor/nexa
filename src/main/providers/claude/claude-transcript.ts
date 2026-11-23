@@ -501,6 +501,31 @@ function endsTurn(e: Json): boolean {
 }
 
 /**
+ * Where a fork of the conversation ends (`--resume-session-at`): the uuid of the main thread's last
+ * message from the model that calls no tool. One that calls a tool would leave the call without its
+ * result, so a turn cut off in a tool call ends with the text before it. Null when there is none.
+ */
+export function forkPoint(text: string): string | null {
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!
+    // Only assistant lines are parsed; the rest of a long transcript isn't worth it.
+    if (!line.startsWith('{"') || !line.includes('"assistant"')) continue
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!isPlainObject(entry) || entry.type !== 'assistant' || entry.isSidechain || entry.isMeta || !str(entry.uuid)) continue
+    const content = isPlainObject(entry.message) ? entry.message.content : undefined
+    if (Array.isArray(content) && content.some((block) => isPlainObject(block) && block.type === 'tool_use')) continue
+    return entry.uuid as string
+  }
+  return null
+}
+
+/**
  * What a transcript gained after `since` (ms), up to the end of its last finished turn: the turns a
  * CLI outside Nexa added, `last` the time to read on from. A turn still at work waits for its end, as
  * its calls would read as cut off. Null when no turn has finished since. Only the tail is parsed.

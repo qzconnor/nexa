@@ -75,6 +75,13 @@ export function useChatCommands(options: {
     if (created && meta.dirs?.length) await update(created, { dirs: meta.dirs })
   }
 
+  /** As Claude Code's `/branch [name]`: a new chat from here, this one kept. */
+  async function fork(meta: SessionMeta, name: string): Promise<void> {
+    const forked = await chat.fork(meta.id)
+    const title = name.replace(/\s+/g, ' ')
+    if (forked && title) await update(forked, { title })
+  }
+
   function diff(meta: SessionMeta): void {
     const target = fileTree.targetOf(meta.id)
     if (!target) {
@@ -160,6 +167,8 @@ export function useChatCommands(options: {
     switch (command.id) {
       case 'clear':
         return clear(meta)
+      case 'fork':
+        return fork(meta, args)
       case 'compact':
         await attempt(() => window.api.sessions.compact(meta.id), 'Zusammenfassen ging nicht')
         return

@@ -84,7 +84,14 @@ export function claudeArgs(options: RunOptions): string[] {
   if (options.effort) args.push('--effort', options.effort)
   // Only for the session, without touching the user's settings.
   if (options.ultracode !== undefined) args.push('--settings', JSON.stringify({ ultracode: options.ultracode }))
-  if (options.resumeId) args.push('--resume', options.resumeId)
+  if (options.resumeId) {
+    args.push('--resume', options.resumeId)
+    if (options.fork) {
+      args.push('--fork-session')
+      // The Agent SDK's `resumeSessionAt`: the conversation up to this message only.
+      if (options.fork.at) args.push('--resume-session-at', options.fork.at)
+    }
+  }
   if (options.instructions) args.push('--append-system-prompt', options.instructions)
   if (options.mcp) {
     const config = {

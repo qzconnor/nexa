@@ -294,6 +294,13 @@ export interface CliLink {
    * the chat's last item (sessions from before).
    */
   synced?: number
+  /**
+   * A chat branched off another: `sessionId` is still the other chat's conversation, which the CLI's
+   * next start forks into one of its own (Claude `--fork-session`, Codex `thread/fork`), up to `at`
+   * (Claude: the uuid of the last answer's message, Codex: the last turn's id) so that what the other
+   * chat says meanwhile stays out. Gone once the CLI has named the new conversation.
+   */
+  fork?: { at?: string }
 }
 
 export interface SessionMeta {

@@ -11,7 +11,8 @@ Ein Prozess je Session:
 claude -p --input-format stream-json --output-format stream-json --verbose
        --include-partial-messages --forward-subagent-text
        --permission-prompt-tool stdio --permission-mode <modus>
-       [--model …] [--effort …] [--resume <id>] [--append-system-prompt …]
+       [--model …] [--effort …] [--resume <id> [--fork-session [--resume-session-at <uuid>]]]
+       [--append-system-prompt …]
        [--mcp-config <json> --allowedTools=<mcp__nexa__…,…>] [--no-chrome] [--add-dir=<ordner> …]
 ```
 
@@ -65,6 +66,12 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   eine neue Unterhaltung, von der der Chat nichts weiß. Deshalb führt Nexa diese Befehle selbst aus,
   bevor sie die CLI erreichen (renderer `lib/chat-commands.ts`); `/compact`, `/context`, `/usage`,
   `/init` und die Skills gehen weiter an Claude Code.
+- **Abzweigen** (geprüft mit 2.1.330): `--resume <id> --fork-session` setzt eine Kopie der Unterhaltung
+  unter neuer ID fort; `system/init` nennt gleich die neue `session_id`, die alte Datei bleibt unberührt.
+  `--resume-session-at <uuid>` (versteckt, im Agent SDK `resumeSessionAt`) nimmt die Unterhaltung nur
+  bis zu diesem Eintrag mit, der neue Prompt hängt direkt daran (`parentUuid`). Nexa merkt sich beim
+  Abzweigen die letzte `assistant`-Zeile des Hauptstrangs ohne `tool_use` (`forkPoint`), damit kein
+  Aufruf ohne Ergebnis übrig bleibt und spätere Turns des anderen Chats nicht mitkommen.
 - **Zusammenfassen des Kontexts** (automatisch oder mit `/compact`; geprüft mit 2.1.330):
   `system/status` mit `status: "compacting"` beim Start und danach alle 30 s erneut, am Ende `status: null`
   mit `compact_result` (`success`, `failed`, dann ggf. `compact_error`). Danach `system/compact_boundary`
@@ -205,6 +212,11 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   vorher die letzte Meldung davor. `thread/compacted` ist veraltet und kam in 0.169 nicht mehr; Nexa zeigt
   es nur ohne Items. `thread/compact/start { threadId }` startet es von Hand (Nexas `/compact`) und
   antwortet sofort mit `{}`; es läuft dann als eigener Turn: `turn/started`, das Item, `turn/completed`.
+- **Abzweigen**: `thread/fork` nimmt dieselben Parameter wie `thread/resume` (auch `path`) und dazu
+  `lastTurnId`: nur die Turns bis einschließlich diesem (er darf nicht mehr laufen). Die Antwort sieht aus
+  wie die von `thread/resume`, mit der neuen `thread.id`. Ein unbekannter Turn ergibt den Fehler
+  „turn not found: …“; Nexa zweigt dann den ganzen Thread ab. Mit `ephemeral: true` (nichts wird
+  gespeichert) verlangt der Server `excludeTurns: true`. Geprüft mit 0.169.
 - **Slash-Befehle** kennt der App-Server nicht: `/…` ginge als Text an das Modell. Nexa führt seine eigenen
   aus (renderer `lib/chat-commands.ts`), die Skills kommen mit `skills/list` und gehen als `$name`.
 - **Anfragen vom Server** (Antwort nötig): `item/commandExecution/requestApproval`,
