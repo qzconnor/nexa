@@ -1,20 +1,13 @@
 <script setup lang="ts">
-import { ChevronDownIcon, FolderIcon, FolderPlusIcon, TriangleAlertIcon } from '@lucide/vue'
+import { TriangleAlertIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import type { PermissionMode, ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import type { AppSettings, DeepPartial } from '@shared/types'
 import AppLogo from '@/components/common/AppLogo.vue'
 import Composer from '@/components/chat/Composer.vue'
+import ProjectPicker from '@/components/common/ProjectPicker.vue'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
 import { attempt } from '@/lib/errors'
 import { useAccountsStore } from '@/stores/accounts'
@@ -162,25 +155,7 @@ async function start(input: { text: string; images: string[] }): Promise<void> {
 
       <div class="flex flex-col gap-2">
         <div class="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <Button variant="outline" size="sm" class="max-w-full gap-2 bg-card/60">
-                <FolderIcon class="text-muted-foreground" />
-                <span class="truncate">{{ project?.name ?? 'Projekt wählen' }}</span>
-                <span v-if="project" class="hidden truncate text-xs text-muted-foreground sm:inline">{{ project.path }}</span>
-                <ChevronDownIcon class="opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" class="max-h-80 w-80 overflow-y-auto">
-              <DropdownMenuLabel>Projekt</DropdownMenuLabel>
-              <DropdownMenuItem v-for="p in projects.projects" :key="p.id" class="flex-col items-start gap-0" @select="ui.homeProjectId = p.id">
-                <span>{{ p.name }}</span>
-                <span class="max-w-full truncate text-xs text-muted-foreground">{{ p.path }}</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator v-if="projects.projects.length" />
-              <DropdownMenuItem @select="pickFolder"><FolderPlusIcon /> Ordner wählen …</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ProjectPicker :project="project" @select="(id) => (ui.homeProjectId = id)" @pick-folder="pickFolder" />
           <Spinner v-if="starting" class="size-4 text-muted-foreground" />
         </div>
         <Composer

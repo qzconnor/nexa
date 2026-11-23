@@ -141,7 +141,7 @@ const TREE = [
         title: 'Verlauf',
         fields: [
           { id: 'chat.showThinking', label: 'Gedanken anzeigen', keywords: 'Thinking Reasoning Denken Überlegungen' },
-          { id: 'chat.collapseTools', label: 'Werkzeuge eingeklappt', keywords: 'Tools Tool-Aufrufe Diffs zuklappen ausklappen' },
+          { id: 'chat.collapseDiffs', label: 'Änderungen eingeklappt', keywords: 'Diffs Dateien schreiben bearbeiten Werkzeuge Tools zuklappen ausklappen aufklappen' },
         ],
       },
       {
@@ -209,6 +209,8 @@ export interface SettingsEntry {
   label: string
   /** The card a row is in. */
   section?: SettingsAnchor
+  /** Where it is, for the quick open: the section of the dialog, and for a row its card. */
+  path: string[]
   /** Text the search terms are tested against (see `searchText`). */
   text: string
 }
@@ -224,6 +226,7 @@ export function settingsIndex(platform: string): SettingsEntry[] {
         kind: 'section',
         tab: tab.tab,
         label: section.title,
+        path: [tab.label],
         text: searchText(section.title, section.keywords, tab.label),
       })
       for (const field of section.fields ?? []) {
@@ -234,6 +237,7 @@ export function settingsIndex(platform: string): SettingsEntry[] {
           tab: tab.tab,
           label: field.label,
           section: section.id as SettingsAnchor,
+          path: [tab.label, section.title],
           text: searchText(field.label, field.keywords, section.title, tab.label),
         })
       }

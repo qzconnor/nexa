@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import type { InteractionItem, InteractionResponse, PermissionMode } from '@shared/chat'
 import { PERMISSION_MODES } from '@shared/providers'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { attempt } from '@/lib/errors'
 import { cn } from '@/lib/utils'
@@ -145,15 +146,14 @@ const heading = computed(() => {
         <Textarea v-model="feedback" placeholder="Änderungswünsche am Plan (zum Überarbeiten)" class="min-h-14 text-sm" />
         <div class="flex flex-wrap items-center gap-2">
           <Button size="sm" :disabled="busy" @click="answer({ type: 'plan', approve: true, mode: planMode })">Plan annehmen</Button>
-          <select
-            v-model="planMode"
-            class="h-7 rounded-md border bg-background/60 px-2 text-[0.8rem]"
-            aria-label="Danach arbeiten mit"
-          >
-            <option v-for="mode in (['edits', 'ask', 'auto', 'full'] as PermissionMode[])" :key="mode" :value="mode">
-              danach: {{ PERMISSION_MODES[mode].label }}
-            </option>
-          </select>
+          <Select v-model="planMode">
+            <SelectTrigger size="sm" class="bg-background/60 text-[0.8rem]" aria-label="Danach arbeiten mit"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="mode in (['edits', 'ask', 'auto', 'full'] as PermissionMode[])" :key="mode" :value="mode">
+                danach: {{ PERMISSION_MODES[mode].label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             size="sm"

@@ -13,18 +13,20 @@ import type {
   SessionCreateInput,
   SessionDetail,
   SessionMeta,
+  SessionSearchHit,
   SessionUpdateInput,
   ShellOutput,
   ToolSettings,
   UsageDay,
   UsageStats,
 } from '@shared/types'
-import { firstLine } from '@shared/utils'
+import { firstLine, searchTerms } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { claudePaths, codexPaths } from '../accounts/cli-files'
 import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread } from '../accounts/session-transfer'
 import { readClaudeChat } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
+import { pool } from '../lib/pool'
 import { TypedEmitter } from '../lib/typed-emitter'
 import type { NexaMcpServer } from '../mcp/mcp-server'
 import { nexaToolsOn, type NexaToolGrant } from '../mcp/tool-grant'
@@ -32,6 +34,7 @@ import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { handoffContext, sessionInstructions } from './instructions'
 import type { ProjectService } from './project-service'
 import type { ProviderService } from './provider-service'
+import { chatTexts, findInChat, type ChatText } from './session-search'
 import { TranscriptStore } from './transcript-store'
 
 interface SessionState {
@@ -61,6 +64,8 @@ interface Events extends Record<string, unknown[]> {
 }
 
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
+/** Chats a search returns at most; with more, another word narrows it down better than scrolling. */
+const MAX_SEARCH_HITS = 200
 
 /**
  * The sessions of all projects: their chat (kept by TranscriptStore), the run of the CLI that
@@ -72,6 +77,8 @@ export class SessionService extends TypedEmitter<Events> {
   private readonly file: string
   private readonly store: TranscriptStore
   private readonly sessions = new Map<string, SessionState>()
+  /** The prompts and answers of every chat for the search, by session, while `stamp` says the chat is unchanged. */
+  private readonly searchCache = new Map<string, { stamp: string; texts: Promise<ChatText[]> }>()
   private saveTimer: NodeJS.Timeout | null = null
 
   constructor(
@@ -255,6 +262,59 @@ export class SessionService extends TypedEmitter<Events> {
   async open(id: string): Promise<SessionDetail> {
     const s = await this.loaded(id)
     return { meta: s.meta, items: s.items, runtime: s.runtime }
+  }
+
+  /**
+   * The chats whose prompts and answers hold every word of `query`, newest first. An empty query only
+   * reads the chats ahead, so the first word typed into the quick open finds them at once.
+   */
+  async search(query: string): Promise<SessionSearchHit[]> {
+    const terms = searchTerms(query)
+    const states = [...this.sessions.values()].sort((a, b) => b.meta.updatedAt - a.meta.updatedAt)
+    for (const id of this.searchCache.keys()) if (!this.sessions.has(id)) this.searchCache.delete(id)
+    const hits: SessionSearchHit[] = []
+    await pool(states, 4, async (s) => {
+      try {
+        const texts = await this.searchTexts(s)
+        const hit = terms.length ? findInChat(texts, terms) : null
+        if (hit) hits.push({ sessionId: s.meta.id, ...hit })
+      } catch (error) {
+        console.warn('[sessions] chat could not be searched', s.meta.id, error)
+      }
+    })
+    const order = new Map(states.map((s, i) => [s.meta.id, i]))
+    return hits.sort((a, b) => order.get(a.sessionId)! - order.get(b.sessionId)!).slice(0, MAX_SEARCH_HITS)
+  }
+
+  /** A chat's prompts and answers for the search: read once, again only after it changed. */
+  private searchTexts(s: SessionState): Promise<ChatText[]> {
+    const items = s.items
+    const last = items?.at(-1)
+    // An open chat grows while it runs; one that isn't open changes only through `updatedAt`.
+    const stamp = items
+      ? `open:${items.length}:${last?.kind === 'assistant' || last?.kind === 'user' ? last.text.length : 0}:${s.meta.updatedAt}`
+      : `saved:${s.meta.updatedAt}`
+    const cached = this.searchCache.get(s.meta.id)
+    if (cached?.stamp === stamp) return cached.texts
+    const texts = items ? Promise.resolve(chatTexts(items)) : this.savedItems(s).then(chatTexts)
+    const entry = { stamp, texts }
+    this.searchCache.set(s.meta.id, entry)
+    // A failed read is tried again with the next search.
+    texts.catch(() => this.searchCache.get(s.meta.id) === entry && this.searchCache.delete(s.meta.id))
+    return texts
+  }
+
+  /** The chat as saved, without loading it into the session; an imported one not opened yet from Claude Code's transcript. */
+  private async savedItems(s: SessionState): Promise<ChatItem[]> {
+    // No rewrite of the file: the session may load and write to it meanwhile.
+    const items = await this.store.load(s.meta.id, { compact: false })
+    const source = s.meta.importedFrom
+    if (items.length || !source) return items
+    try {
+      return await readClaudeChat(source)
+    } catch {
+      return []
+    }
   }
 
   async send(id: string, input: SendInput): Promise<void> {

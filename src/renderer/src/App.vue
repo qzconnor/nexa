@@ -9,6 +9,7 @@ import AppTooltip from '@/components/common/AppTooltip.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
+import CommandPalette from '@/components/palette/CommandPalette.vue'
 import SettingsDialog from '@/components/settings/SettingsDialog.vue'
 import ThemeEditorDialog from '@/components/themes/ThemeEditorDialog.vue'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
@@ -43,11 +44,20 @@ const ready = ref(false)
 const fatal = ref<string | null>(null)
 const { theme } = useThemeSync()
 
-// Ctrl+, opens the settings, as in most desktop apps.
+// Ctrl+, opens the settings, as in most desktop apps. Ctrl+Shift+A the quick open with the chats,
+// Ctrl+Shift+P with the commands, as in the Claude Manager (and VS Code).
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key === ',') {
+  const ctrl = (event.ctrlKey || event.metaKey) && !event.altKey
+  if (!ctrl || !ready.value) return
+  const key = event.key.toLowerCase()
+  if (!event.shiftKey && key === ',') {
     event.preventDefault()
-    if (ready.value) ui.openSettings()
+    ui.openSettings()
+  } else if (event.shiftKey && (key === 'a' || key === 'p')) {
+    // A dialog that asks something keeps the keyboard; the quick open over the settings is fine.
+    if (ui.confirmState?.open) return
+    event.preventDefault()
+    ui.openPalette(key === 'p' ? '>' : '')
   }
 })
 
@@ -105,6 +115,7 @@ onMounted(async () => {
       <Spinner v-else class="size-6 text-muted-foreground" />
     </div>
     <template v-if="ready">
+      <CommandPalette />
       <SettingsDialog />
       <ThemeEditorDialog />
       <AccountFormDialog />

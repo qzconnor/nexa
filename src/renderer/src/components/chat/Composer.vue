@@ -199,6 +199,7 @@ defineExpose({ focus: () => input.value?.focus() })
     <textarea
       ref="input"
       v-model="text"
+      data-composer-input
       rows="1"
       :placeholder="placeholder"
       :disabled="disabled"

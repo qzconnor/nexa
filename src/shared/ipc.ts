@@ -17,6 +17,7 @@ import type {
   SessionCreateInput,
   SessionDetail,
   SessionMeta,
+  SessionSearchHit,
   SessionUpdateInput,
   ShellOutput,
   WindowState,
@@ -95,6 +96,7 @@ export const IpcInvoke = {
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
   sessionsStop: 'sessions:stop',
+  sessionsSearch: 'sessions:search',
 
   apiStatus: 'api:status',
 } as const
@@ -263,6 +265,8 @@ export interface NexaApi {
     remove(id: string): Promise<void>
     /** Ends the CLI process of the session; the next prompt resumes it. */
     stop(id: string): Promise<void>
+    /** Chats whose prompts and answers hold every word of `query`; empty: reads them ahead for the next search. */
+    search(query: string): Promise<SessionSearchHit[]>
     onChanged(cb: (list: SessionMeta[]) => void): Unsubscribe
     onEvent(cb: (event: SessionEvent) => void): Unsubscribe
     onShow(cb: (id: string) => void): Unsubscribe

@@ -13,11 +13,12 @@ import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import TitleBarSearch from './TitleBarSearch.vue'
 import TitleBarUsage from './TitleBarUsage.vue'
 
 /**
- * The title bar: logo, the sidebar's button, the open chat's project and branch, and the usage of
- * the CLIs that count now. The caption buttons are Electron's titleBarOverlay on the right, so that
+ * The title bar: logo, the sidebar's button, the open chat's project and branch, the quick open's
+ * search, and the usage of the CLIs that count now. The caption buttons are Electron's titleBarOverlay on the right, so that
  * area stays free.
  */
 const app = useAppStore()
@@ -65,23 +66,29 @@ function openProject(): void {
         <PanelLeftIcon />
       </Button>
     </div>
-    <div v-if="project" :class="cn('flex min-w-0 items-center gap-1.5 transition-opacity in-data-unfocused:opacity-75', !ui.sidebarOpen && 'ml-2')">
-      <button
-        type="button"
-        class="app-no-drag flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[0.8rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        :aria-label="`Projektordner ${project.name} öffnen`"
-        v-tooltip="`${cwd} · Klicken öffnet den Ordner`"
-        @click="openProject"
-      >
-        <FolderIcon class="size-3.5 shrink-0" />
-        <span class="truncate font-medium">{{ project.name }}</span>
-        <span v-if="subfolder" class="truncate">/ {{ subfolder }}</span>
-      </button>
-      <GitBranchChip :cwd="cwd ?? project.path" class="min-w-0" />
-    </div>
-    <div class="h-full min-w-8 flex-1" />
-    <div class="mr-2 flex items-center gap-1 transition-opacity in-data-unfocused:opacity-75">
-      <TitleBarUsage v-for="id in shown" :key="id" :provider="id" />
+    <!-- The search in the middle above the page, between the open chat's place and the usage. The right
+         column never gets narrower than the usage: the search moves left rather than cover it. -->
+    <div class="grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(11rem,min(30rem,42%))_minmax(max-content,1fr)] items-center gap-2">
+      <div :class="cn('flex min-w-0 items-center gap-1.5 transition-opacity in-data-unfocused:opacity-75', !ui.sidebarOpen && 'ml-2')">
+        <template v-if="project">
+          <button
+            type="button"
+            class="app-no-drag flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[0.8rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            :aria-label="`Projektordner ${project.name} öffnen`"
+            v-tooltip="`${cwd} · Klicken öffnet den Ordner`"
+            @click="openProject"
+          >
+            <FolderIcon class="size-3.5 shrink-0" />
+            <span class="truncate font-medium">{{ project.name }}</span>
+            <span v-if="subfolder" class="truncate">/ {{ subfolder }}</span>
+          </button>
+          <GitBranchChip :cwd="cwd ?? project.path" class="min-w-0" />
+        </template>
+      </div>
+      <TitleBarSearch />
+      <div class="mr-2 flex items-center justify-end gap-1 transition-opacity in-data-unfocused:opacity-75">
+        <TitleBarUsage v-for="id in shown" :key="id" :provider="id" />
+      </div>
     </div>
   </header>
 </template>

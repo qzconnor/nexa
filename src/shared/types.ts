@@ -44,8 +44,11 @@ export interface ProviderSettings {
 export interface ChatSettings {
   /** Thinking blocks of the model, folded. */
   showThinking: boolean
-  /** Output of finished tools stays folded unless it failed. */
-  collapseTools: boolean
+  /**
+   * What a tool changed in files (its diff) starts folded. Off, as in the CLIs, every change shows at
+   * once; other tools' output is folded either way until it fails.
+   */
+  collapseDiffs: boolean
   /** Enter sends; with Shift+Enter a new line. Off: Ctrl+Enter sends. */
   enterSends: boolean
 }
@@ -287,6 +290,17 @@ export interface SessionDetail {
   runtime: SessionRuntime
 }
 
+/** A chat whose conversation holds every word searched for (the quick open's search). */
+export interface SessionSearchHit {
+  sessionId: string
+  /** Who wrote the message the snippet is from. */
+  role: 'user' | 'assistant'
+  /** The provider that answered, for "Claude:" or "Codex:". */
+  provider: ProviderId
+  /** The words around the first place found, on one line. */
+  snippet: string
+}
+
 export interface SendInput {
   text: string
   images?: string[]
@@ -307,6 +321,8 @@ export interface AppInfo {
   version: string
   platform: Platform
   userData: string
+  /** The user's home folder, which paths show as `~`. */
+  homeDir: string
   /** Windows build number, for the window material. */
   windowsBuild: number | null
 }

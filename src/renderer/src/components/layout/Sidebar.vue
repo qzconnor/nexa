@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon, SearchIcon, SettingsIcon, SquarePenIcon, Trash2Icon } from '@lucide/vue'
+import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon, SettingsIcon, SquarePenIcon, Trash2Icon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { DEFAULT_SECTION_ID, isSectionRoot, layoutOf, moveProject, moveSection, sectionIdOf } from '@shared/sections'
 import type { ProjectSection } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
 import { attempt } from '@/lib/errors'
 import { foldersOf, projectTree, type ProjectEntry } from '@/lib/session-tree'
@@ -18,7 +19,7 @@ import SidebarProject from './SidebarProject.vue'
 
 /**
  * Projects with their chats, as in Claude, under separators like the workspaces of the Claude Manager:
- * a new chat, search, the separators with their projects in the order the user dragged them into, every
+ * a new chat, the separators with their projects in the order the user dragged them into, every
  * project with its sessions (pinned first, then the latest) and their state at a glance.
  */
 const projects = useProjectsStore()
@@ -26,6 +27,7 @@ const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const updates = useUpdatesStore()
+const chat = useChatActions()
 
 /**
  * The updates are a section of the settings: a waiting update pulses on their button, release notes
@@ -40,7 +42,6 @@ const settingsHint = computed(() =>
 )
 const openSettings = () => ui.openSettings(updates.hasUpdate || updates.unseen ? 'updates' : undefined)
 const now = useClock(60_000)
-const query = ref('')
 
 interface SectionGroup {
   section: ProjectSection
@@ -53,24 +54,15 @@ interface SectionGroup {
 
 /** Every separator with its projects and their chats, in the folders they work in (lib/session-tree.ts). */
 const groups = computed<SectionGroup[]>(() => {
-  const q = query.value.trim().toLowerCase()
   const entries = projects.projects.map((project): ProjectEntry => {
-    let list = sessions.byProject(project.id)
-    if (q) list = list.filter((s) => s.title.toLowerCase().includes(q) || s.preview?.toLowerCase().includes(q))
+    const list = sessions.byProject(project.id)
     return { project, count: list.length, tree: projectTree(project.id, project.path, list) }
   })
-  return projects.sections
-    .map((section) => {
-      const own = entries.filter((e) => sectionIdOf(e.project, projects.sections) === section.id)
-      const root = own.find((e) => isSectionRoot(e.project, section)) ?? null
-      return {
-        section,
-        root: root && (!q || root.count) ? root : null,
-        projects: own.filter((e) => e !== root && (!q || e.count > 0 || e.project.name.toLowerCase().includes(q))),
-        count: own.reduce((sum, e) => sum + e.count, 0),
-      }
-    })
-    .filter((g) => !q || g.root || g.projects.length)
+  return projects.sections.map((section) => {
+    const own = entries.filter((e) => sectionIdOf(e.project, projects.sections) === section.id)
+    const root = own.find((e) => isSectionRoot(e.project, section)) ?? null
+    return { section, root, projects: own.filter((e) => e !== root), count: own.reduce((sum, e) => sum + e.count, 0) }
+  })
 })
 
 // The folders of the chat on screen open, so it shows where it is (also when opened from elsewhere).
@@ -83,11 +75,9 @@ watch(
   },
 )
 
-function newChat(): void {
-  ui.homeProjectId = null
-  sessions.close()
-  ui.view = 'home'
-}
+const newChat = () => chat.newChat()
+/** The start page is where a new chat begins: its button shows it as the page on screen, as a chat's row does. */
+const onStartPage = computed(() => !(ui.view === 'chat' && sessions.active) && settings.settings.setup.done)
 
 /** The folder a separator stands for, as the Claude Manager shows a workspace: where it lies. */
 function parentOf(section: ProjectSection): string | null {
@@ -154,7 +144,7 @@ const drop = ref<Drop | null>(null)
 const nav = ref<HTMLElement | null>(null)
 
 function startDrag(event: DragEvent, kind: Drag['kind'], id: string): void {
-  if (query.value || !event.dataTransfer) return
+  if (!event.dataTransfer) return
   // A project moves by its row only, not by a chat or folder below it.
   if (kind === 'project' && !(event.target as HTMLElement).closest?.('[data-drag-row]')) return
   drag.value = { kind, id }
@@ -233,18 +223,15 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
 <template>
   <aside class="flex h-full w-(--sidebar-width) shrink-0 flex-col">
     <div class="flex flex-col gap-1 p-2">
-      <Button variant="ghost" class="justify-start gap-2 px-2.5" @click="newChat">
+      <Button
+        variant="ghost"
+        :class="cn('justify-start gap-2 px-2.5', onStartPage && 'bg-sidebar-accent')"
+        :aria-current="onStartPage ? 'page' : undefined"
+        @click="newChat"
+      >
         <SquarePenIcon />
         Neuer Chat
       </Button>
-      <div class="relative">
-        <SearchIcon class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <input
-          v-model="query"
-          placeholder="Chats durchsuchen"
-          class="h-8 w-full rounded-lg bg-transparent pr-2 pl-8 text-sm outline-none placeholder:text-muted-foreground hover:bg-sidebar-accent/60 focus:bg-sidebar-accent"
-        />
-      </div>
     </div>
 
     <nav ref="nav" class="min-h-0 flex-1 overflow-y-auto px-2 pb-2" @dragleave="leaveNav" @drop="dropHere">
@@ -260,7 +247,7 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
             <div
               data-section-head
               class="group/section flex items-center gap-1 pt-2.5 pr-1 pb-1 pl-2"
-              :draggable="!query"
+              draggable="true"
               @dragstart="startDrag($event, 'section', group.section.id)"
               @dragend="endDrag"
               @dragover="drag?.kind === 'project' && overTop($event, group)"
@@ -313,9 +300,9 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
           </ContextMenuContent>
         </ContextMenu>
 
-        <div v-if="!group.section.collapsed || query" class="flex flex-col gap-px">
+        <div v-if="!group.section.collapsed" class="flex flex-col gap-px">
           <div v-if="group.root" @dragover="overTop($event, group)">
-            <SidebarProject :entry="group.root" :now="now" :searching="!!query" bare />
+            <SidebarProject :entry="group.root" :now="now" bare />
           </div>
           <div
             v-for="(entry, i) in group.projects"
@@ -326,10 +313,10 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
             @dragover="overProject($event, group, i)"
           >
             <div v-if="lineBeforeProject(group.section.id, entry.project.id)" class="pointer-events-none absolute inset-x-1 -top-px h-0.5 rounded-full bg-primary" />
-            <SidebarProject :entry="entry" :now="now" :searching="!!query" :draggable="!query" />
+            <SidebarProject :entry="entry" :now="now" draggable />
           </div>
           <div v-if="lineBeforeProject(group.section.id, null)" class="pointer-events-none mx-1 h-0.5 rounded-full bg-primary" />
-          <p v-if="!group.root && !group.projects.length && !query" class="px-2 py-1 text-xs text-muted-foreground">
+          <p v-if="!group.root && !group.projects.length" class="px-2 py-1 text-xs text-muted-foreground">
             {{
               group.section.id === DEFAULT_SECTION_ID && !projects.projects.length
                 ? 'Noch keine Projekte. Ein Projekt ist ein Ordner, in dem die Agents arbeiten.'
@@ -341,7 +328,6 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
       </section>
 
       <button
-        v-if="!query"
         type="button"
         class="mt-1 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
         @click="newSection()"

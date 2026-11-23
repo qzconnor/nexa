@@ -34,8 +34,8 @@ async function clearBrowserData(): Promise<void> {
       <SettingField anchor="chat.showThinking" label="Gedanken anzeigen" description="Was das Modell denkt, eingeklappt im Verlauf.">
         <Switch :model-value="s.chat.showThinking" @update:model-value="(v: boolean) => update({ chat: { showThinking: v } })" />
       </SettingField>
-      <SettingField anchor="chat.collapseTools" label="Werkzeuge eingeklappt" description="Auch Änderungen an Dateien erst nach einem Klick zeigen.">
-        <Switch :model-value="s.chat.collapseTools" @update:model-value="(v: boolean) => update({ chat: { collapseTools: v } })" />
+      <SettingField anchor="chat.collapseDiffs" label="Änderungen eingeklappt" description="Diffs geänderter Dateien erst nach einem Klick zeigen.">
+        <Switch :model-value="s.chat.collapseDiffs" @update:model-value="(v: boolean) => update({ chat: { collapseDiffs: v } })" />
       </SettingField>
     </SettingsSection>
 

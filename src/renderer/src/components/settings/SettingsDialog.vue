@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BotIcon, ChartColumnIcon, CircleArrowDownIcon, InfoIcon, MessageSquareIcon, PaletteIcon, PlugIcon, SearchIcon, SearchXIcon, UsersIcon, XIcon } from '@lucide/vue'
+import { SearchIcon, SearchXIcon, XIcon } from '@lucide/vue'
 import { computed, nextTick, ref, watch, type Component } from 'vue'
 import { searchTerms } from '@shared/utils'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { matchSettings } from '@/lib/settings-index'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useUiStore, type SettingsSection } from '@/stores/ui'
+import { SETTINGS_ICONS } from './settings-icons'
 import SettingsAbout from './SettingsAbout.vue'
 import SettingsAccounts from './SettingsAccounts.vue'
 import SettingsApi from './SettingsApi.vue'
@@ -30,14 +31,14 @@ const ui = useUiStore()
 const accounts = useAccountsStore()
 
 const SECTIONS: { id: SettingsSection; label: string; description: string; icon: Component; page: Component }[] = [
-  { id: 'appearance', label: 'Darstellung', description: 'Theme, Fenster und Chat-Breite', icon: PaletteIcon, page: SettingsAppearance },
-  { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: UsersIcon, page: SettingsAccounts },
-  { id: 'usage', label: 'Verbrauch', description: 'Limits je Account, Tokens und Kosten der Chats', icon: ChartColumnIcon, page: SettingsUsage },
-  { id: 'providers', label: 'CLIs', description: 'Claude Code und Codex', icon: BotIcon, page: SettingsProviders },
-  { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe und Nexa-Werkzeuge', icon: MessageSquareIcon, page: SettingsChat },
-  { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: PlugIcon, page: SettingsApi },
-  { id: 'updates', label: 'Updates', description: 'Neue Versionen und was sich geändert hat', icon: CircleArrowDownIcon, page: SettingsUpdates },
-  { id: 'about', label: 'Info', description: 'Version und Befehl nx', icon: InfoIcon, page: SettingsAbout },
+  { id: 'appearance', label: 'Darstellung', description: 'Theme, Fenster und Chat-Breite', icon: SETTINGS_ICONS.appearance, page: SettingsAppearance },
+  { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
+  { id: 'usage', label: 'Verbrauch', description: 'Limits je Account, Tokens und Kosten der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
+  { id: 'providers', label: 'CLIs', description: 'Claude Code und Codex', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
+  { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe und Nexa-Werkzeuge', icon: SETTINGS_ICONS.chat, page: SettingsChat },
+  { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: SETTINGS_ICONS.api, page: SettingsApi },
+  { id: 'updates', label: 'Updates', description: 'Neue Versionen und was sich geändert hat', icon: SETTINGS_ICONS.updates, page: SettingsUpdates },
+  { id: 'about', label: 'Info', description: 'Version und Befehl nx', icon: SETTINGS_ICONS.about, page: SettingsAbout },
 ]
 const current = computed(() => SECTIONS.find((s) => s.id === ui.settingsSection) ?? SECTIONS[0])
 
@@ -78,10 +79,46 @@ function select(id: SettingsSection): void {
   ui.selectSettings(id)
 }
 
+/** How long a card or row asked for from the quick open stays marked. */
+const REVEAL_MS = 1600
+
+/**
+ * A card or row asked for from the quick open: it scrolls into view, briefly marked, and a row's
+ * control gets the keyboard. False when nothing was asked for or it isn't there.
+ */
+async function reveal(): Promise<boolean> {
+  const anchor = ui.settingsAnchor
+  if (!anchor) return false
+  ui.settingsAnchor = null
+  await nextTick()
+  const target = content.value?.querySelector<HTMLElement>(`[data-setting="${CSS.escape(anchor)}"]`)
+  if (!target) return false
+  target.scrollIntoView({ block: 'center' })
+  target.dataset.revealed = ''
+  setTimeout(() => delete target.dataset.revealed, REVEAL_MS)
+  const control = target.matches('[data-slot=card]')
+    ? null
+    : target.querySelector<HTMLElement>('input, select, textarea, button, [role=switch], [role=combobox], [tabindex="0"]')
+  ;(control ?? content.value)?.focus({ preventScroll: true })
+  return true
+}
+
+// Asked for while the settings are open already (the quick open over them).
+watch(
+  () => ui.settingsAnchor,
+  (anchor) => {
+    if (!anchor || !ui.settingsOpen || !content.value) return
+    query.value = ''
+    void reveal()
+  },
+)
+
 /** Focus goes to the search, as in the settings of most apps: typing finds a setting right away. */
 function onOpen(event: Event): void {
   event.preventDefault()
-  void nextTick(focusSearch)
+  void nextTick(async () => {
+    if (!(await reveal())) focusSearch()
+  })
 }
 
 /** Escape clears the search first; while a dialog is open on top (theme editor, account, question), it belongs to it. */

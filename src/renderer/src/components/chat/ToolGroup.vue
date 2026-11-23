@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import type { ToolItem } from '@shared/chat'
 import { toolSummary } from '@/lib/tools'
 import { cn } from '@/lib/utils'
+import { useSettingsStore } from '@/stores/settings'
 import ToolRow from './ToolRow.vue'
 
 /**
@@ -11,14 +12,21 @@ import ToolRow from './ToolRow.vue'
  * last calls still visible while it works.
  */
 const props = defineProps<{ tools: ToolItem[] }>()
+const settings = useSettingsStore()
 
 const FOLD_FROM = 6
 const SHOWN_WHILE_FOLDED = 3
 const open = ref(false)
 const running = computed(() => props.tools.some((t) => t.status === 'running' || t.status === 'pending'))
 const foldable = computed(() => props.tools.length >= FOLD_FROM)
-const hidden = computed(() => (foldable.value && !open.value ? props.tools.length - SHOWN_WHILE_FOLDED : 0))
-const shown = computed(() => props.tools.slice(hidden.value))
+/** Folded, the last calls show, and every change to a file: in the CLIs no diff hides in a summary. */
+const shown = computed(() => {
+  if (!foldable.value || open.value) return props.tools
+  const tail = props.tools.length - SHOWN_WHILE_FOLDED
+  const diffsOpen = !settings.settings.chat.collapseDiffs
+  return props.tools.filter((tool, i) => i >= tail || (diffsOpen && !!tool.changes?.length))
+})
+const hidden = computed(() => props.tools.length - shown.value.length)
 const summary = computed(() => toolSummary(props.tools))
 </script>
 

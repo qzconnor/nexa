@@ -71,6 +71,28 @@ export function childFolder(folder: string, name: string): string {
   return trimmed.endsWith(separator) ? `${trimmed}${name}` : `${trimmed}${separator}${name}`
 }
 
+/** The folder `path` lies in, as `path` writes it; null for a root like `C:\` or `/`. */
+export function parentFolder(path: string): string | null {
+  const trimmed = path.trim().replace(TRAILING_SEPARATORS, '')
+  const at = Math.max(trimmed.lastIndexOf('\\'), trimmed.lastIndexOf('/'))
+  if (at < 0 || at === trimmed.length - 1) return null
+  const parent = trimmed.slice(0, at)
+  // Empty and `C:` are the roots themselves: `/` and `C:\`.
+  if (parent === '') return '/'
+  return DRIVE.test(parent) && parent.length === 2 ? `${parent}\\` : parent
+}
+
+/**
+ * A path as short as it stays clear: `~` for the home folder at its start (`~\Projekte\app`). Paths
+ * outside it stay as they are.
+ */
+export function shortenPath(path: string, home: string | null | undefined): string {
+  if (!home || !inFolder(path, home)) return path
+  const rest = subfolderSegments(path, home)
+  const separator = path.includes('\\') || DRIVE.test(path) ? '\\' : '/'
+  return rest.length ? `~${separator}${rest.join(separator)}` : '~'
+}
+
 /**
  * Where `path` is once the folder `from` it lies in (or is) has moved to `to`, with the separators of
  * `to`; null when it doesn't lie in `from`.

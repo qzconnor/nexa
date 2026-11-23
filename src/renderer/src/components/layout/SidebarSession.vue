@@ -4,7 +4,7 @@ import type { SessionMeta } from '@shared/types'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Spinner } from '@/components/ui/spinner'
-import { attempt } from '@/lib/errors'
+import { useChatActions } from '@/composables/useChatActions'
 import { formatAge } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
@@ -15,29 +15,11 @@ const props = defineProps<{ meta: SessionMeta; now: number }>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 
-function state(): 'running' | 'waiting' | 'unread' | 'error' | null {
-  const status = sessions.runtime(props.meta.id).status
-  if (status === 'running' || status === 'starting') return 'running'
-  if (status === 'waiting') return 'waiting'
-  if (status === 'error') return 'error'
-  return sessions.unread.has(props.meta.id) ? 'unread' : null
-}
-
-async function open(): Promise<void> {
-  ui.view = 'chat'
-  await attempt(() => sessions.open(props.meta.id), 'Session ließ sich nicht öffnen')
-}
-
-async function rename(): Promise<void> {
-  const title = await ui.ask({ title: 'Chat umbenennen', input: { value: props.meta.title }, confirmText: 'Umbenennen' })
-  if (title && title !== props.meta.title) await attempt(() => sessions.update(props.meta.id, { title }))
-}
-
-async function remove(): Promise<void> {
-  if (!(await ui.confirm({ title: `„${props.meta.title}“ löschen?`, description: 'Der Verlauf in Nexa geht verloren.', confirmText: 'Löschen', destructive: true }))) return
-  await attempt(() => sessions.remove(props.meta.id), 'Löschen fehlgeschlagen')
-  if (!sessions.activeId && ui.view === 'chat') ui.view = 'home'
-}
+const chat = useChatActions()
+const state = () => chat.state(props.meta.id)
+const open = () => chat.open(props.meta.id)
+const rename = () => chat.rename(props.meta)
+const remove = () => chat.remove(props.meta)
 </script>
 
 <template>
