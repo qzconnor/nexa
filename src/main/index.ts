@@ -11,6 +11,8 @@ import { FileActivityTracker } from './files/activity-tracker'
 import { FileTreeService } from './files/file-tree-service'
 import { registerFilesIpc } from './files/files-ipc'
 import { GitService } from './files/git-service'
+import { ClaudeManagerImport } from './import/claude-manager'
+import { registerImportIpc } from './import/import-ipc'
 import { forwardWindowState, registerIpc } from './ipc'
 import { isLaunchRequest, parseLaunch, readLaunchRequest, type LaunchRequest } from './launch'
 import { AccountService } from './accounts/account-service'
@@ -78,7 +80,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     exists: sessionExists,
     title: (id) => sessionMeta(id)?.title ?? 'Chat',
     agent: (id) => PROVIDERS[sessionMeta(id)?.provider ?? 'claude'].short,
-    folder: (id) => projects.get(sessionMeta(id)?.projectId ?? '')?.path ?? null,
+    folder: (id) => {
+      const meta = sessionMeta(id)
+      return meta?.cwd ?? projects.get(meta?.projectId ?? '')?.path ?? null
+    },
   })
   browserTools = new BrowserTools(browserControl)
   sessions.on('changed', () => {
@@ -110,6 +115,9 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     return history ? fileActivity.history(history.items, history.cwd) : []
   })
   await api.init()
+
+  // Taking over the Claude Manager's workspaces, accounts and sessions (first start, or later in the settings).
+  registerImportIpc(new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, () => settings.get()))
 
   // New versions from the GitHub releases: checked after the start and every 4 hours (installed app only).
   const updates = new UpdateService(`nexa/${app.getVersion()}`)

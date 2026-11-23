@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
+import { folderKey, inFolder } from '@shared/folders'
 import type { ChatItem, InteractionResponse, ProviderId, SessionEvent, SessionRuntime, ToolItem, UserItem } from '@shared/chat'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
   CliLink,
+  Project,
   SendInput,
   SessionCreateInput,
   SessionDetail,
@@ -20,6 +23,7 @@ import { firstLine } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { claudePaths, codexPaths } from '../accounts/cli-files'
 import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread } from '../accounts/session-transfer'
+import { readClaudeChat } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { TypedEmitter } from '../lib/typed-emitter'
 import type { NexaMcpServer } from '../mcp/mcp-server'
@@ -33,6 +37,8 @@ import { TranscriptStore } from './transcript-store'
 interface SessionState {
   meta: SessionMeta
   items: ChatItem[] | null
+  /** While the chat is read (an imported one is built from Claude Code's transcript the first time). */
+  loading: Promise<ChatItem[]> | null
   index: Map<string, number>
   runtime: SessionRuntime
   run: AgentRun | null
@@ -88,7 +94,12 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   private state(meta: SessionMeta): SessionState {
-    return { meta, items: null, index: new Map(), runtime: { ...IDLE }, run: null, runProvider: null, runAccount: null, generation: 0, starting: null, mcpToken: null }
+    return { meta, items: null, loading: null, index: new Map(), runtime: { ...IDLE }, run: null, runProvider: null, runAccount: null, generation: 0, starting: null, mcpToken: null }
+  }
+
+  /** The folder a session's agent works in: its own folder in the project, else the project's. */
+  private cwdOf(meta: SessionMeta, project: Project): string {
+    return meta.cwd ?? project.path
   }
 
   list(): SessionMeta[] {
@@ -104,7 +115,8 @@ export class SessionService extends TypedEmitter<Events> {
   private async loaded(id: string): Promise<SessionState & { items: ChatItem[] }> {
     const s = this.get(id)
     if (!s.items) {
-      const items = await this.store.load(id)
+      s.loading ??= this.read(s).finally(() => (s.loading = null))
+      const items = await s.loading
       if (!s.items) {
         s.items = items
         s.index = new Map(items.map((item, i) => [item.id, i]))
@@ -113,9 +125,42 @@ export class SessionService extends TypedEmitter<Events> {
     return s as SessionState & { items: ChatItem[] }
   }
 
+  /** The saved chat; for a session taken over from Claude Code, its transcript read once into one. */
+  private async read(s: SessionState): Promise<ChatItem[]> {
+    const items = await this.store.load(s.meta.id)
+    const source = s.meta.importedFrom
+    if (items.length || !source) return items
+    const meta = s.meta
+    let imported: ChatItem[]
+    try {
+      imported = await readClaudeChat(source)
+      // Claude Code has seen all of it: the next prompt resumes its conversation without context.
+      const link = meta.cli.claude
+      if (link) link.seenItems = imported.length
+    } catch (error) {
+      console.warn('[sessions] transcript could not be read', error)
+      imported = [
+        {
+          kind: 'notice',
+          id: randomUUID(),
+          ts: Date.now(),
+          provider: 'claude',
+          level: 'warning',
+          text: 'Der Verlauf dieser Session ist nicht mehr da',
+          detail: 'Claude Code hat sein Transkript gelöscht oder es liegt nicht mehr am alten Ort.',
+        },
+      ]
+    }
+    delete meta.importedFrom
+    await this.store.rewrite(meta.id, imported)
+    this.saveSoon()
+    return imported
+  }
+
   async create(input: SessionCreateInput): Promise<SessionMeta> {
     const project = this.projects.get(input.projectId)
     if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
+    const cwd = input.cwd ? await this.subfolder(project, input.cwd) : undefined
     const settings = this.settings()
     const chosen = input.account && this.accounts.has(input.account) ? this.accounts.get(input.account).provider : undefined
     const asked = input.provider ?? chosen
@@ -136,6 +181,7 @@ export class SessionService extends TypedEmitter<Events> {
       updatedAt: now,
       cli: {},
       accounts: { [provider]: this.accounts.resolve(provider, input.account, this.providers.defaultAccount(provider)) },
+      ...(cwd ? { cwd } : {}),
     }
     const s = this.state(meta)
     s.items = []
@@ -144,12 +190,66 @@ export class SessionService extends TypedEmitter<Events> {
     return meta
   }
 
+  /** A folder in the project for a chat to work in; undefined for the project's own. */
+  private async subfolder(project: Project, path: string): Promise<string | undefined> {
+    const folder = resolve(path)
+    if (!inFolder(folder, project.path)) throw new Error(`„${folder}“ liegt nicht im Projekt „${project.name}“.`)
+    const isDirectory = await stat(folder).then(
+      (st) => st.isDirectory(),
+      () => false,
+    )
+    if (!isDirectory) throw new Error(`Den Ordner „${folder}“ gibt es nicht.`)
+    return folderKey(folder) === folderKey(project.path) ? undefined : folder
+  }
+
+  /**
+   * Sessions taken over from elsewhere (the Claude Manager), with the CLI's conversation each continues;
+   * their chats are read from it when they are opened first. Those whose conversation Nexa knows already are left out.
+   */
+  adopt(metas: readonly Omit<SessionMeta, 'id'>[]): number {
+    const known = this.knownCliSessions()
+    let added = 0
+    for (const partial of metas) {
+      const ids = Object.values(partial.cli).map((link) => link.sessionId)
+      if (ids.some((id) => known.has(id)) || !this.projects.get(partial.projectId)) continue
+      ids.forEach((id) => known.add(id))
+      const meta: SessionMeta = { ...partial, id: randomUUID() }
+      this.sessions.set(meta.id, this.state(meta))
+      added++
+    }
+    if (added) this.saveSoon()
+    return added
+  }
+
+  /**
+   * Moves chats to other projects, each keeping the folder it works in (`cwd`, absolute): the CLI goes
+   * on where it was, only the sidebar shows it elsewhere.
+   */
+  relocate(moves: readonly { id: string; projectId: string; cwd: string }[]): void {
+    let moved = 0
+    for (const move of moves) {
+      const s = this.sessions.get(move.id)
+      const project = this.projects.get(move.projectId)
+      if (!s || !project) continue
+      s.meta.projectId = project.id
+      if (folderKey(move.cwd) === folderKey(project.path)) delete s.meta.cwd
+      else s.meta.cwd = move.cwd
+      moved++
+    }
+    if (moved) this.saveSoon()
+  }
+
+  /** The CLI conversations Nexa's sessions continue, to tell which are taken over already. */
+  knownCliSessions(): Set<string> {
+    return new Set([...this.sessions.values()].flatMap((s) => Object.values(s.meta.cli).map((link) => link.sessionId)))
+  }
+
   /** The items of a session with the folder it works in, for what can be derived from its history. */
   async history(id: string): Promise<{ items: readonly ChatItem[]; cwd: string } | null> {
     if (!this.sessions.has(id)) return null
     const s = await this.loaded(id)
     const project = this.projects.get(s.meta.projectId)
-    return project ? { items: s.items, cwd: project.path } : null
+    return project ? { items: s.items, cwd: this.cwdOf(s.meta, project) } : null
   }
 
   async open(id: string): Promise<SessionDetail> {
@@ -168,7 +268,7 @@ export class SessionService extends TypedEmitter<Events> {
     const text = input.text.trim()
     if (!text && !input.images?.length) return
 
-    const accountId = await this.useAccount(s, provider, project.path)
+    const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
     // What this CLI hasn't seen of the chat yet (another CLI answered meanwhile).
     const link = meta.cli[provider]
     const unseen = s.items.slice(link?.seenItems ?? 0).filter((i) => i.provider !== provider || !link)
@@ -283,6 +383,7 @@ export class SessionService extends TypedEmitter<Events> {
     const project = this.projects.get(meta.projectId)
     if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
     const settings = this.settings()
+    const cwd = this.cwdOf(meta, project)
     const generation = ++s.generation
     const current = () => s.generation === generation
     const tools = settings.tools
@@ -297,7 +398,7 @@ export class SessionService extends TypedEmitter<Events> {
     const sink: RunSink = {
       item: (item) => {
         this.put(s, item)
-        if (item.kind === 'tool') this.emit('tool', meta.id, item, project.path)
+        if (item.kind === 'tool') this.emit('tool', meta.id, item, cwd)
         if (item.kind === 'turn') {
           this.emit('turnEnded', meta.id)
           const link = meta.cli[provider]
@@ -337,7 +438,7 @@ export class SessionService extends TypedEmitter<Events> {
       const run = await this.providers.get(provider).start(
         {
           sessionId: meta.id,
-          cwd: project.path,
+          cwd,
           model: meta.model || undefined,
           effort: meta.effort || undefined,
           permissionMode: meta.permissionMode,

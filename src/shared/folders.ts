@@ -37,6 +37,40 @@ export function inFolder(path: string, folder: string): boolean {
   return a.startsWith(b.endsWith(separator) ? b : `${b}${separator}`)
 }
 
+/** The parts of a path, without empty ones: `C:\a\b` → `C:`, `a`, `b`; `/home/me` → `home`, `me`. */
+export function pathSegments(path: string): string[] {
+  return path.split(/[\\/]+/).filter(Boolean)
+}
+
+/** The innermost of `folders` that `path` lies in (or is), as in the Claude Manager's workspaces; undefined outside all. */
+export function innermostFolder<T>(path: string, folders: readonly T[], pathOf: (folder: T) => string): T | undefined {
+  let best: T | undefined
+  let depth = -1
+  for (const folder of folders) {
+    const own = pathOf(folder)
+    if (!inFolder(path, own)) continue
+    const segments = pathSegments(folderKey(own)).length
+    if (segments > depth) {
+      best = folder
+      depth = segments
+    }
+  }
+  return best
+}
+
+/** The folders between `folder` and `path` in it, as `path` writes them: `F:\a`, `F:\a\b\c` → `b`, `c`. Empty for the folder itself or outside it. */
+export function subfolderSegments(path: string, folder: string): string[] {
+  if (!inFolder(path, folder)) return []
+  return pathSegments(path).slice(pathSegments(folderKey(folder)).length)
+}
+
+/** The folder `name` in `folder`, with the separator `folder` writes: a Windows path stays one on any system. */
+export function childFolder(folder: string, name: string): string {
+  const trimmed = folder.trim().replace(TRAILING_SEPARATORS, '')
+  const separator = trimmed.includes('\\') || DRIVE.test(trimmed) ? '\\' : '/'
+  return trimmed.endsWith(separator) ? `${trimmed}${name}` : `${trimmed}${separator}${name}`
+}
+
 /**
  * Where `path` is once the folder `from` it lies in (or is) has moved to `to`, with the separators of
  * `to`; null when it doesn't lie in `from`.

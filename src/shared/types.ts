@@ -192,7 +192,20 @@ export interface Project {
   /** Last activity of one of its sessions. */
   updatedAt: number
   collapsed?: boolean
-  pinned?: boolean
+  /** The separator it shows under; none (or one that's gone) is the default one (shared/sections.ts). */
+  sectionId?: string
+}
+
+/** A separator in the sidebar: a heading with projects under it, like the workspaces of the Claude Manager. */
+export interface ProjectSection {
+  id: string
+  name: string
+  /**
+   * The folder it stands for, if any (a workspace whose subfolders are its projects): new projects in
+   * that folder land under it, and the chats of the folder itself show right below the heading.
+   */
+  path?: string
+  collapsed?: boolean
 }
 
 /** What a CLI knows of a Nexa session: its own session/thread and how much of the chat it has seen. */
@@ -231,10 +244,22 @@ export interface SessionMeta {
   cli: Partial<Record<ProviderId, CliLink>>
   /** The account each CLI runs this chat with; missing: the default account of the CLI. */
   accounts?: Partial<Record<ProviderId, string>>
+  /**
+   * The folder the agent works in when it isn't the project's own: a folder in it, which the sidebar
+   * shows as a level of its own under the project (as the Claude Manager does).
+   */
+  cwd?: string
+  /**
+   * A session taken over from Claude Code (the Claude Manager): its transcript, read into the chat the
+   * first time the session opens.
+   */
+  importedFrom?: string
 }
 
 export interface SessionCreateInput {
   projectId: string
+  /** A folder in the project to work in; missing: the project's own. */
+  cwd?: string
   provider?: ProviderId
   /** An account of the CLI; missing: its default account. */
   account?: string

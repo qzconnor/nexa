@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { folderKey, inFolder, movedPath, windowsPath } from './folders'
+import { childFolder, folderKey, inFolder, innermostFolder, movedPath, subfolderSegments, windowsPath } from './folders'
 
 describe('windowsPath', () => {
   it('writes every drive as Windows does, also from Git Bash and Cygwin', () => {
@@ -40,6 +40,17 @@ describe('inFolder', () => {
   })
 })
 
+describe('childFolder', () => {
+  it('writes the separator of the folder, on any system', () => {
+    expect(childFolder('F:\\Projekte', 'app')).toBe('F:\\Projekte\\app')
+    expect(childFolder('F:\\Projekte\\', 'app')).toBe('F:\\Projekte\\app')
+    expect(childFolder('f:/projekte', 'app')).toBe('f:/projekte\\app')
+    expect(childFolder('C:\\', 'app')).toBe('C:\\app')
+    expect(childFolder('/home/me/', 'app')).toBe('/home/me/app')
+    expect(childFolder('/', 'app')).toBe('/app')
+  })
+})
+
 describe('movedPath', () => {
   it('moves what lies in the folder along with it', () => {
     expect(movedPath('F:\\Kunden\\shop', 'F:\\Kunden\\shop', 'F:\\Andere\\shop')).toBe('F:\\Andere\\shop')
@@ -51,5 +62,23 @@ describe('movedPath', () => {
   it('is null outside of it', () => {
     expect(movedPath('F:\\Kunden\\shop-alt', 'F:\\Kunden\\shop', 'F:\\Andere\\shop')).toBeNull()
     expect(movedPath('F:\\Kunden', 'F:\\Kunden\\shop', 'F:\\Andere\\shop')).toBeNull()
+  })
+})
+
+describe('innermostFolder', () => {
+  it('finds the deepest folder a path lies in, as with nested workspaces', () => {
+    const folders = ['F:\\Projekte', 'f:/projekte/apps', 'F:\\Andere']
+    expect(innermostFolder('F:\\Projekte\\Apps\\nexa\\src', folders, (f) => f)).toBe('f:/projekte/apps')
+    expect(innermostFolder('F:\\Projekte\\Flowtech', folders, (f) => f)).toBe('F:\\Projekte')
+    expect(innermostFolder('F:\\Projekte', folders, (f) => f)).toBe('F:\\Projekte')
+    expect(innermostFolder('F:\\Projekte2', folders, (f) => f)).toBeUndefined()
+  })
+})
+
+describe('subfolderSegments', () => {
+  it('names the folders between a folder and a path in it, as the path writes them', () => {
+    expect(subfolderSegments('F:\\Projekte\\Apps\\Nexa\\src', 'f:/projekte/apps')).toEqual(['Nexa', 'src'])
+    expect(subfolderSegments('F:\\Projekte\\Apps\\', 'F:\\Projekte\\Apps')).toEqual([])
+    expect(subfolderSegments('F:\\Anders', 'F:\\Projekte')).toEqual([])
   })
 })

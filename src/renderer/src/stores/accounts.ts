@@ -1,6 +1,14 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
-import { systemAccountId, type Account, type AccountCreateInput, type AccountLoginState, type AccountUpdateInput } from '@shared/accounts'
+import {
+  pickAccount,
+  systemAccountId,
+  visibleAccounts,
+  type Account,
+  type AccountCreateInput,
+  type AccountLoginState,
+  type AccountUpdateInput,
+} from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
 import type { SessionMeta } from '@shared/types'
 import { useSettingsStore } from './settings'
@@ -24,23 +32,21 @@ export const useAccountsStore = defineStore('accounts', () => {
     return id ? byId.value.get(id) : undefined
   }
 
+  /** The accounts of a CLI the user sees: without the standard one once they added their own. */
   function ofProvider(provider: ProviderId): Account[] {
-    return accounts.value.filter((a) => a.provider === provider)
+    return visibleAccounts(accounts.value, provider)
   }
 
-  /** The account new chats of a CLI start with (the standard account when the chosen one is gone). */
+  /** The account new chats of a CLI start with (the first visible one when the chosen one is gone or hidden). */
   function defaultId(provider: ProviderId): string {
-    const chosen = settings.settings.defaults.accounts?.[provider]
-    const account = get(chosen)
-    return account?.provider === provider ? account.id : systemAccountId(provider)
+    return pickAccount(accounts.value, provider, [settings.settings.defaults.accounts?.[provider]])
   }
 
   /** The account a chat runs with for its current CLI (as the main process picks it, see SessionService.accountFor). */
   function sessionAccount(meta: SessionMeta): string {
     const link = meta.cli[meta.provider]
     const chosen = meta.accounts?.[meta.provider] ?? (link ? (link.accountId ?? systemAccountId(meta.provider)) : undefined)
-    const account = get(chosen)
-    return account?.provider === meta.provider ? account.id : defaultId(meta.provider)
+    return pickAccount(accounts.value, meta.provider, [chosen, defaultId(meta.provider)])
   }
 
   async function setDefault(account: Account): Promise<void> {

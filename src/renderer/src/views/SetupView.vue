@@ -5,6 +5,7 @@ import { PROVIDER_IDS } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import AppLogo from '@/components/common/AppLogo.vue'
 import ProviderCard from '@/components/providers/ProviderCard.vue'
+import ClaudeManagerImport from '@/components/setup/ClaudeManagerImport.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { attempt } from '@/lib/errors'
@@ -12,8 +13,9 @@ import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
 
 /**
- * The first start: which CLIs Nexa found (installed, version, login) and which of them to use. It
- * takes the start page's place until it is through; the same switches are in the settings („CLIs“).
+ * The first start: which CLIs Nexa found (installed, version, login) and which of them to use, and
+ * what to take over from the Claude Manager if it was used before. It takes the start page's place
+ * until it is through; the same switches are in the settings („CLIs“, „Accounts“).
  */
 const providers = useProvidersStore()
 const settings = useSettingsStore()
@@ -57,6 +59,8 @@ function finish(): void {
         </div>
         <p class="text-xs text-muted-foreground">Ausgeschaltete CLIs stehen nicht zur Wahl, und Nexa fragt ihre Limits nicht ab. Ändern lässt sich das jederzeit unter Einstellungen&nbsp;›&nbsp;CLIs.</p>
       </div>
+
+      <ClaudeManagerImport />
 
       <div class="flex flex-col items-center gap-2">
         <Button size="lg" :disabled="checking" @click="finish">

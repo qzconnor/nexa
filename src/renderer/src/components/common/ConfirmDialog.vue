@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useUiStore } from '@/stores/ui'
 
 /**
@@ -39,6 +40,14 @@ function onOpenChange(open: boolean) {
         </AlertDialogDescription>
       </AlertDialogHeader>
       <p v-if="state.code" class="selectable rounded-md bg-muted px-2.5 py-1.5 font-mono text-xs break-all whitespace-pre-wrap">{{ state.code }}</p>
+      <!-- First in the dialog, so it has the focus; the old name selected, to type over it. -->
+      <Input
+        v-if="state.input"
+        v-model="ui.confirmInput"
+        :placeholder="state.input.placeholder"
+        @focus="($event.target as HTMLInputElement).select()"
+        @keydown.enter.prevent="ui.settleConfirm(true)"
+      />
       <AlertDialogFooter>
         <Button v-if="state.kind !== 'alert'" variant="outline" @click="ui.settleConfirm(false)">
           {{ state.cancelText ?? 'Abbrechen' }}

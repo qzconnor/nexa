@@ -33,7 +33,7 @@ const api = {
   settings: { onChanged: () => () => {} },
   app: { onQuitting: () => () => {}, info: vi.fn(async () => null) },
   window: { state: vi.fn(async () => ({ maximized: false, focused: true, fullscreen: false })), onState: () => () => {} },
-  projects: { list: vi.fn(async () => [{ id: 'p', name: 'dev', path: 'C:\\dev' }]), onChanged: () => () => {} },
+  projects: { list: vi.fn(async () => [{ id: 'p', name: 'dev', path: 'C:\\dev' }]), onChanged: () => () => {}, sections: vi.fn(async () => []), onSectionsChanged: () => () => {} },
   sessions: {
     list: vi.fn(async () => metas),
     onChanged: (cb: typeof metasChanged) => {

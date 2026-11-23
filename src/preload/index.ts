@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
+import { ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
 
@@ -44,6 +45,12 @@ const api: NexaApi = {
     reference: (number) => invoke(UpdatesInvoke.reference, number),
     onChanged: (cb) => subscribe(UpdatesEvent.changed, cb),
     onShow: (cb) => subscribe(UpdatesEvent.show, cb),
+  },
+  claudeManager: {
+    detect: () => invoke(ImportInvoke.detect),
+    scan: () => invoke(ImportInvoke.scan),
+    run: (input) => invoke(ImportInvoke.run, input),
+    onProgress: (cb) => subscribe(ImportEvent.progress, cb),
   },
   git: {
     branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),
@@ -152,6 +159,13 @@ const api: NexaApi = {
     update: (id, patch) => invoke(IpcInvoke.projectsUpdate, id, patch),
     remove: (id) => invoke(IpcInvoke.projectsRemove, id),
     onChanged: (cb) => subscribe(IpcEvent.projectsChanged, cb),
+    arrange: (layout) => invoke(IpcInvoke.projectsArrange, layout),
+    toSection: (id) => invoke(IpcInvoke.projectsToSection, id),
+    sections: () => invoke(IpcInvoke.sectionsList),
+    createSection: (input) => invoke(IpcInvoke.sectionsCreate, input),
+    updateSection: (id, patch) => invoke(IpcInvoke.sectionsUpdate, id, patch),
+    removeSection: (id) => invoke(IpcInvoke.sectionsRemove, id),
+    onSectionsChanged: (cb) => subscribe(IpcEvent.sectionsChanged, cb),
   },
   sessions: {
     list: () => invoke(IpcInvoke.sessionsList),
