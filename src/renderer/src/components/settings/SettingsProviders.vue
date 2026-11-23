@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RefreshCwIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { PROVIDER_IDS, type PermissionMode, type ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { AppSettings, DeepPartial } from '@shared/types'
@@ -8,6 +8,7 @@ import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import ProviderCard from '@/components/providers/ProviderCard.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { attempt } from '@/lib/errors'
 import { useProvidersStore } from '@/stores/providers'
@@ -31,7 +32,21 @@ const cliAnchor = (id: ProviderId, row: 'enabled' | 'model' | 'path' | 'extraArg
 const lastOn = (id: ProviderId) => providers.enabled.length === 1 && providers.enabled[0] === id
 const setEnabled = (id: ProviderId, on: boolean) => void attempt(() => providers.setEnabled(id, on), 'Speichern fehlgeschlagen')
 
-const selectClass = 'h-8 rounded-md border bg-background/60 px-2 text-sm'
+const selectClass = 'min-w-44 bg-background/60'
+/** The CLI's own model: an empty setting, which a select item can't carry as its value. */
+const CLI_DEFAULT = 'cli-default'
+
+/** The models of a CLI, and the one set even before the list is there (or when the CLI no longer offers it). */
+function modelChoices(id: ProviderId): { id: string; label: string }[] {
+  const list = (providers.models[id] ?? []).filter((m) => m.id)
+  const set = s.value[id].model
+  return set && !list.some((m) => m.id === set) ? [{ id: set, label: set }, ...list] : list
+}
+
+// The models' names for the selects, not their ids: loaded once for the CLIs that are there.
+onMounted(() => {
+  for (const id of providers.installed) if (!providers.models[id]) void providers.loadModels(id)
+})
 const extraArgs = (id: ProviderId) => s.value[id].extraArgs.join(' ')
 const setExtraArgs = (id: ProviderId, value: string) => update({ [id]: { extraArgs: value.split(/\s+/).filter(Boolean) } })
 async function pickCli(id: ProviderId): Promise<void> {
@@ -58,14 +73,15 @@ async function pickCli(id: ProviderId): Promise<void> {
         />
       </SettingField>
       <SettingField anchor="providers.permissionMode" label="Freigaben" description="Was die CLI ohne Rückfrage darf.">
-        <select
-          :value="s.defaults.permissionMode"
-          :class="selectClass"
-          aria-label="Freigaben für neue Chats"
-          @change="update({ defaults: { permissionMode: ($event.target as HTMLSelectElement).value as PermissionMode } })"
+        <Select
+          :model-value="s.defaults.permissionMode"
+          @update:model-value="(mode) => update({ defaults: { permissionMode: mode as PermissionMode } })"
         >
-          <option v-for="(mode, id) in PERMISSION_MODES" :key="id" :value="id">{{ mode.label }}</option>
-        </select>
+          <SelectTrigger :class="selectClass" aria-label="Freigaben für neue Chats"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="(mode, id) in PERMISSION_MODES" :key="id" :value="id">{{ mode.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingField>
     </SettingsSection>
 
@@ -84,16 +100,17 @@ async function pickCli(id: ProviderId): Promise<void> {
       </SettingField>
       <ProviderCard :provider="id" />
       <SettingField :anchor="cliAnchor(id, 'model')" label="Modell" description="Für neue Chats.">
-        <select
-          :value="s[id].model"
-          :class="selectClass"
-          aria-label="Modell"
-          @focus="providers.loadModels(id)"
-          @change="update({ [id]: { model: ($event.target as HTMLSelectElement).value } })"
+        <Select
+          :model-value="s[id].model || CLI_DEFAULT"
+          @update:open="(open) => open && providers.loadModels(id)"
+          @update:model-value="(model) => update({ [id]: { model: model === CLI_DEFAULT ? '' : String(model) } })"
         >
-          <option value="">Standard der CLI</option>
-          <option v-for="m in (providers.models[id] ?? []).filter((m) => m.id)" :key="m.id" :value="m.id">{{ m.label }}</option>
-        </select>
+          <SelectTrigger :class="selectClass" :aria-label="`Modell von ${PROVIDERS[id].name}`"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="CLI_DEFAULT">Standard der CLI</SelectItem>
+            <SelectItem v-for="m in modelChoices(id)" :key="m.id" :value="m.id">{{ m.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </SettingField>
       <SettingField :anchor="cliAnchor(id, 'path')" label="Pfad zur CLI" description="Leer: wird im PATH gesucht.">
         <Input

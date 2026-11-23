@@ -1,9 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import type { ThemeContent } from '@shared/themes/types'
+import type { SettingsAnchor } from '@/lib/settings-index'
 
 export type MainView = 'chat' | 'home'
 export type SettingsSection = 'appearance' | 'accounts' | 'usage' | 'providers' | 'chat' | 'api' | 'updates' | 'about'
+/** The quick open's modes by what the query starts with: chats (nothing), commands (`>`), help (`?`). */
+export type PalettePrefix = '' | '>' | '?'
+
+export function palettePrefix(query: string): PalettePrefix {
+  return query.startsWith('>') ? '>' : query.startsWith('?') ? '?' : ''
+}
 
 /** What `ThemeEditorDialog` edits: a theme of the user (`id`), or a new one that starts with the colors of `from`. */
 export type ThemeEditorRequest = { mode: 'edit'; id: string } | { mode: 'create'; from: ThemeContent }
@@ -83,6 +90,8 @@ export const useUiStore = defineStore('ui', () => {
   /** The settings are a dialog over whatever the window shows. */
   const settingsOpen = ref(false)
   const settingsSection = ref<SettingsSection>(stored<SettingsSection>('nexa.settingsSection', 'appearance'))
+  /** A card or row the settings scroll to once they show it (from the quick open); cleared there. */
+  const settingsAnchor = ref<SettingsAnchor | null>(null)
   const themeEditorRequest = ref<ThemeEditorRequest | null>(null)
 
   function toggleSidebar(): void {
@@ -90,9 +99,24 @@ export const useUiStore = defineStore('ui', () => {
     remember('nexa.sidebar', sidebarOpen.value ? 'open' : 'closed')
   }
 
-  function openSettings(section?: SettingsSection): void {
+  function openSettings(section?: SettingsSection, anchor?: SettingsAnchor): void {
     if (section) selectSettings(section)
+    settingsAnchor.value = anchor ?? null
     settingsOpen.value = true
+  }
+
+  /** The quick open at the top of the window; what is typed decides what it searches. */
+  const paletteOpen = ref(false)
+  const paletteQuery = ref('')
+
+  /** Opens the quick open in a mode; its shortcut again while it shows that mode closes it, as in VS Code. */
+  function openPalette(prefix: PalettePrefix = ''): void {
+    if (paletteOpen.value && palettePrefix(paletteQuery.value) === prefix) {
+      paletteOpen.value = false
+      return
+    }
+    paletteQuery.value = prefix
+    paletteOpen.value = true
   }
 
   function selectSettings(section: SettingsSection): void {
@@ -154,6 +178,10 @@ export const useUiStore = defineStore('ui', () => {
     toggleFolder,
     settingsOpen,
     settingsSection,
+    settingsAnchor,
+    paletteOpen,
+    paletteQuery,
+    openPalette,
     themeEditorRequest,
     confirmState,
     confirmInput,

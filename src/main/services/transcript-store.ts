@@ -19,7 +19,8 @@ export class TranscriptStore {
     return join(this.dir, `${sessionId}.jsonl`)
   }
 
-  async load(sessionId: string): Promise<ChatItem[]> {
+  /** `compact`: a file with many old states is rewritten without them; only for the one that owns the chat. */
+  async load(sessionId: string, { compact = true } = {}): Promise<ChatItem[]> {
     let text: string
     try {
       text = await readFile(this.file(sessionId), 'utf8')
@@ -39,7 +40,7 @@ export class TranscriptStore {
       }
     }
     const result = [...items.values()].map((item) => settle(item))
-    if (lines > result.length * 3 + 20) void this.rewrite(sessionId, result)
+    if (compact && lines > result.length * 3 + 20) void this.rewrite(sessionId, result)
     return result
   }
 

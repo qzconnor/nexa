@@ -10,6 +10,7 @@ import { DEFAULT_SECTION_ID } from '@shared/sections'
 import { baseName, firstLine, isPlainObject } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { defaultClaudeConfigDir, defaultCodexHome } from '../accounts/cli-files'
+import { pool } from '../lib/pool'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { summarizeClaudeTranscript, type TranscriptSummary } from '../providers/claude/claude-transcript'
 import type { ProjectService } from '../services/project-service'
@@ -182,15 +183,6 @@ function isDirectory(path: string): boolean {
   } catch {
     return false
   }
-}
-
-/** Runs `task` on every item, `limit` at a time. */
-async function pool<T>(items: readonly T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
-  let next = 0
-  const worker = async () => {
-    while (next < items.length) await task(items[next++]!)
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
 }
 
 interface Scan {

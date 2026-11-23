@@ -179,6 +179,7 @@ const api: NexaApi = {
     update: (id, patch) => invoke(IpcInvoke.sessionsUpdate, id, patch),
     remove: (id) => invoke(IpcInvoke.sessionsRemove, id),
     stop: (id) => invoke(IpcInvoke.sessionsStop, id),
+    search: (query) => invoke(IpcInvoke.sessionsSearch, query),
     onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),
     onEvent: (cb) => subscribe(IpcEvent.sessionEvent, cb),
     onShow: (cb) => subscribe(IpcEvent.showSession, cb),

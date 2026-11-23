@@ -26,7 +26,7 @@ export function defaultSettings(): AppSettings {
     codex: provider(),
     chat: {
       showThinking: true,
-      collapseTools: true,
+      collapseDiffs: false,
       enterSends: true,
     },
     tools: {

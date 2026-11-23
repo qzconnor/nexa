@@ -243,6 +243,27 @@
   }
 }
 
+/* Where the search terms occur in the quick open's rows (useMatchHighlight): only the text's colour,
+   so the rows keep the DOM Vue rendered. */
+::highlight(search-match) {
+  color: var(--primary);
+}
+
+/* A setting chosen in the quick open: marked for a moment where the settings scrolled to it. */
+[data-setting][data-revealed] {
+  border-radius: var(--radius-lg);
+  animation: setting-reveal 1.6s ease-out;
+}
+@keyframes setting-reveal {
+  from,
+  40% {
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 70%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
 /* The agent's click in the browser beside the chat: a soft ripple that widens from the pointer's tip and fades. */
 @keyframes browser-click {
   from {

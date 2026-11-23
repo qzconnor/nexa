@@ -42,10 +42,12 @@ const background = computed(() => (props.tool.shell?.background ? props.tool.she
 const BACKGROUND_STATE = { running: 'läuft', done: 'beendet', error: 'fehlgeschlagen', stopped: 'abgebrochen' } as const
 const duration = computed(() => (props.tool.endedAt ? props.tool.endedAt - props.tool.startedAt : null))
 
-// Edits open by themselves (unless tools stay folded), failures always.
-const open = ref((hasChanges.value && !settings.settings.chat.collapseTools) || failed.value)
+// Edits open by themselves, as in the CLIs (unless diffs stay folded), failures always.
+const open = ref((hasChanges.value && !settings.settings.chat.collapseDiffs) || failed.value)
 watch(failed, (now) => now && (open.value = true))
-watch(hasChanges, (now) => now && !settings.settings.chat.collapseTools && (open.value = true))
+watch(hasChanges, (now) => now && !settings.settings.chat.collapseDiffs && (open.value = true))
+/** "File created successfully at …" under a diff only repeats it; what went wrong stays. */
+const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : output.value))
 </script>
 
 <template>
@@ -105,14 +107,14 @@ watch(hasChanges, (now) => now && !settings.settings.chat.collapseTools && (open
         class="selectable max-h-48 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)"
       ><span v-if="tool.tool === 'bash'" class="text-(--syn-comment) select-none">$ </span>{{ inputText }}</pre>
       <pre
-        v-if="output"
+        v-if="shownOutput"
         :class="
           cn(
             'selectable max-h-72 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)',
             failed && 'border-destructive/40',
           )
         "
-        >{{ output.length > 20000 ? output.slice(0, 20000) + '\n…' : output }}</pre
+        >{{ shownOutput.length > 20000 ? shownOutput.slice(0, 20000) + '\n…' : shownOutput }}</pre
       >
     </div>
   </div>

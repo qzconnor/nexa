@@ -35,6 +35,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen |
 | `providers/claude/claude-transcript.ts` | Claude-Code-Transkript (`projects/<key>/<id>.jsonl`) → `ChatItem`s wie aus dem Stream, plus Kurzfassung (Ordner, Titel, Zeiten) |
 | `services/session-service.ts` | Sessions: Metadaten, Items, Runs starten/stoppen, Wechsel der CLI, Statistik |
+| `services/session-search.ts` | Suche in den Prompts und Antworten der Chats (für die Schnellsuche), Ausschnitt um den Treffer |
 | `services/transcript-store.ts` | Verlauf je Session als JSONL |
 | `services/instructions.ts` | Systemprompt-Zusatz und Übergabe-Kontext beim CLI-Wechsel |
 | `providers/provider.ts` | Schnittstellen `AgentProvider`, `AgentRun`, `RunSink` |
@@ -151,6 +152,16 @@ der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`.
   Dialoge: Einstellungen (`components/settings/SettingsDialog.vue`, `ui.settingsOpen`), Theme-Editor
   (`ui.themeEditorRequest`), Account-Formular (`accounts.formRequest`), Browser-Login
   (`accounts.loginId`) und Rückfragen (`ui.confirm()`).
+- **Schnellsuche** (`components/palette/*`, aus dem Claude Manager): das Suchfeld in der Mitte der
+  Titelleiste (`TitleBarSearch`) öffnet `CommandPalette` (`ui.openPalette()`, Strg+Umschalt+A; mit `>`
+  Strg+Umschalt+P). Was getippt ist, bestimmt den Modus: ohne Präfix Chats und Projekte (`ChatSearchList`),
+  `>` Befehle (`PaletteCommands`: Aktionen, der offene Chat, jede Einstellung, neuer Chat je Projekt), `?`
+  die Präfixe. Chats findet sie über Titel, Vorschau, Projekt und Ordner sofort, über ihre Prompts und
+  Antworten kurz nach dem Tippen: `sessions.search` (`SessionService.search`, `services/session-search.ts`)
+  liest den Verlauf jedes Chats einmal (importierte, noch nie geöffnete aus dem Transkript von Claude Code)
+  und hält ihn, bis sich der Chat ändert. Treffer färbt `useMatchHighlight` über die CSS Custom Highlight
+  API. Eine Einstellung öffnet den Dialog an ihrer Karte oder Zeile (`ui.settingsAnchor`). Die Textsuche
+  (Groß-/Kleinschreibung und Akzente egal) liegt in `shared/search.ts`, für Main und Renderer.
 - `stores/accounts.ts`: Accounts, laufende Logins, Vorgabe je CLI, Account eines Chats (`sessionAccount`).
 - Themes: eingebaute in `shared/themes/builtin.ts`, eigene als JSON-Dateien im Ordner `themes` der
   App-Daten (Format des Claude Managers, `ThemeService` überwacht den Ordner). `themes/apply.ts` setzt

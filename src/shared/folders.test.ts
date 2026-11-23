@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { childFolder, folderKey, inFolder, innermostFolder, movedPath, subfolderSegments, windowsPath } from './folders'
+import { childFolder, folderKey, inFolder, innermostFolder, movedPath, parentFolder, shortenPath, subfolderSegments, windowsPath } from './folders'
 
 describe('windowsPath', () => {
   it('writes every drive as Windows does, also from Git Bash and Cygwin', () => {
@@ -48,6 +48,33 @@ describe('childFolder', () => {
     expect(childFolder('C:\\', 'app')).toBe('C:\\app')
     expect(childFolder('/home/me/', 'app')).toBe('/home/me/app')
     expect(childFolder('/', 'app')).toBe('/app')
+  })
+})
+
+describe('parentFolder', () => {
+  it('is the folder a path lies in, roots included', () => {
+    expect(parentFolder('F:\\Projekte\\app\\')).toBe('F:\\Projekte')
+    expect(parentFolder('C:\\app')).toBe('C:\\')
+    expect(parentFolder('/home/me')).toBe('/home')
+    expect(parentFolder('/home')).toBe('/')
+  })
+
+  it('is null for a root and a bare name', () => {
+    for (const path of ['C:\\', '/', 'app']) expect(parentFolder(path)).toBeNull()
+  })
+})
+
+describe('shortenPath', () => {
+  it('writes the home folder as ~', () => {
+    expect(shortenPath('C:\\Users\\me\\Projekte\\app', 'c:\\users\\me')).toBe('~\\Projekte\\app')
+    expect(shortenPath('C:\\Users\\me', 'C:\\Users\\me\\')).toBe('~')
+    expect(shortenPath('/home/me/dev', '/home/me')).toBe('~/dev')
+  })
+
+  it('leaves other paths alone', () => {
+    expect(shortenPath('C:\\Users\\meier\\app', 'C:\\Users\\me')).toBe('C:\\Users\\meier\\app')
+    expect(shortenPath('F:\\Projekte', 'C:\\Users\\me')).toBe('F:\\Projekte')
+    expect(shortenPath('F:\\Projekte', null)).toBe('F:\\Projekte')
   })
 })
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { release } from 'node:os'
+import { homedir, release } from 'node:os'
 import { existsSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
@@ -107,6 +107,7 @@ export function appInfo(userDataDir: string): AppInfo {
     version: app.getVersion(),
     platform: process.platform,
     userData: userDataDir,
+    homeDir: homedir(),
     windowsBuild: process.platform === 'win32' ? Number(release().split('.')[2]) || null : null,
   }
 }
@@ -266,6 +267,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsUpdate, (_e, id: unknown, patch: unknown) => sessions.update(str(id, 'Die Session'), (patch ?? {}) as never))
   handle(IpcInvoke.sessionsRemove, (_e, id: unknown) => sessions.remove(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsSearch, (_e, query: unknown) => sessions.search(typeof query === 'string' ? query.slice(0, 200) : ''))
 
   handle(IpcInvoke.apiStatus, () => ctx.api.status())
 

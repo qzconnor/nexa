@@ -3,6 +3,7 @@ import { ExternalLinkIcon } from '@lucide/vue'
 import { computed, reactive } from 'vue'
 import type { InteractionRequest } from '@shared/chat'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 
@@ -67,13 +68,12 @@ const complete = computed(() => fields.value.every((f) => !f.required || (values
         <span class="text-[0.82rem] font-medium">{{ field.title }}<span v-if="field.required" class="text-destructive"> *</span></span>
         <span v-if="field.description" class="text-[0.75rem] text-muted-foreground">{{ field.description }}</span>
         <Switch v-if="field.type === 'boolean'" :model-value="!!values[field.key]" @update:model-value="(v: boolean) => (values[field.key] = v)" />
-        <select
-          v-else-if="field.type === 'enum'"
-          v-model="values[field.key]"
-          class="h-8 rounded-md border bg-background/60 px-2 text-sm"
-        >
-          <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
-        </select>
+        <Select v-else-if="field.type === 'enum'" v-model="values[field.key] as string">
+          <SelectTrigger class="w-full bg-background/60" :aria-label="field.title"><SelectValue placeholder="Auswählen" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in field.options" :key="option" :value="option">{{ option }}</SelectItem>
+          </SelectContent>
+        </Select>
         <Input v-else v-model="values[field.key] as string" :type="field.type === 'number' ? 'number' : 'text'" class="h-8 text-sm" />
       </label>
       <div class="flex gap-2">
