@@ -54,6 +54,12 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   `background_tasks_changed` (die ganze Liste, die noch läuft). `get_task_output { task_id }` liefert die
   letzten 8 KiB der Ausgabe (`output`, `truncated`), auch nach dem Ende, solange der Prozess lebt;
   `stop_task { task_id }` beendet die Shell. Mit dem Prozess von Claude Code enden auch seine Shells.
+- **Zusammenfassen des Kontexts** (automatisch oder mit `/compact`; geprüft mit 2.1.330):
+  `system/status` mit `status: "compacting"` beim Start und danach alle 30 s erneut, am Ende `status: null`
+  mit `compact_result` (`success`, `failed`, dann ggf. `compact_error`). Danach `system/compact_boundary`
+  mit `compact_metadata`: `trigger` (`auto`, `manual`), `pre_tokens`, `post_tokens`, `duration_ms`. Das
+  `result` von `/compact` hat keine Usage; Nexa setzt den Kontext auf `post_tokens`. `status` kommt auch
+  mit anderen Werten (`requesting`) und mit `null` bei einem Wechsel des Freigabe-Modus.
 - `--allowedTools` nennt Nexas Werkzeuge einzeln (in der `=`-Form, sonst nimmt die Option die folgenden
   Argumente mit). Nicht genannte, z. B. die heiklen Browser-Werkzeuge, fragen über `can_use_tool` und
   erscheinen als Freigabe im Chat. `--no-chrome` schaltet „Claude in Chrome“ ab, damit Claude den
@@ -94,7 +100,8 @@ Was Claude Code selbst speichert und Nexa beim Übernehmen liest (`claude-transc
   `<command-args>`, `! befehl` als `<bash-input>` mit der Ausgabe als eigener Eintrag
   (`<bash-stdout>`, `<bash-stderr>`), Abbrüche als `[Request interrupted by user …]`, eingefügter Text
   als `<pasted_content id="…">`. `isCompactSummary` ist die Zusammenfassung nach `/compact`.
-- `system`: `compact_boundary` (`compactMetadata.trigger`, `preTokens`), `turn_duration` (`durationMs`
+- `system`: `compact_boundary` (`compactMetadata.trigger`, `preTokens`, bei neueren Versionen auch
+  `postTokens` und `durationMs`), `turn_duration` (`durationMs`
   am Ende eines Turns), `local_command` (Slash-Befehle neuerer Versionen).
 - Titel: `custom-title` (`/rename`), `ai-title`, älter `summary`; `relocated.relocatedCwd`, wenn die
   Session in einen anderen Ordner zog (`--resume` geht nur von dort). Nexa schreibt diesen Eintrag
@@ -133,6 +140,11 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   `item/agentMessage/delta`, `item/reasoning/textDelta`, `item/reasoning/summaryTextDelta`,
   `item/commandExecution/outputDelta`, `turn/plan/updated`, `thread/tokenUsage/updated`,
   `thread/compacted`, `model/rerouted`, `account/rateLimits/updated`.
+- **Zusammenfassen des Kontexts**: ein Item `contextCompaction` (`id`, `startedAtMs`, `completedAtMs`)
+  mit `item/started` und `item/completed`, ohne Tokens oder Anlass (geprüft mit 0.169,
+  `thread/compact/start` startet es von Hand). Dazwischen kommt `thread/tokenUsage/updated` mit
+  `last.inputTokens` und `last.outputTokens` 0; Nexa nimmt als Größe vorher die letzte Meldung davor.
+  `thread/compacted` ist veraltet und kam in 0.169 nicht mehr; Nexa zeigt es nur ohne Items.
 - **Anfragen vom Server** (Antwort nötig): `item/commandExecution/requestApproval`,
   `item/fileChange/requestApproval`, `item/permissions/requestApproval`, `item/tool/requestUserInput`.
 - **Befehle**: `commandExecution.command` ist unter Windows die ganze Shell-Zeile

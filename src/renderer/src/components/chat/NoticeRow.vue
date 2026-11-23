@@ -1,16 +1,47 @@
 <script setup lang="ts">
-import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from '@lucide/vue'
+import { ChevronsDownUpIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { NoticeItem } from '@shared/chat'
+import { PROVIDERS } from '@shared/providers'
+import { formatDuration, formatTokens } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 /** Something the CLI or Nexa reports between the messages: a compaction, a retry, an error. */
 const props = defineProps<{ item: NoticeItem }>()
 const icon = computed(() => ({ info: InfoIcon, warning: TriangleAlertIcon, error: CircleAlertIcon })[props.item.level])
+
+// A compaction is a divider across the chat: what is above it, the CLI knows only as a summary.
+const compaction = computed(() => props.item.compaction)
+const tokens = computed(() => {
+  const c = compaction.value
+  if (c?.before === undefined) return ''
+  return c.after !== undefined ? `${formatTokens(c.before)} → ${formatTokens(c.after)} Tokens` : `${formatTokens(c.before)} Tokens vorher`
+})
+const hint = computed(() => {
+  const c = compaction.value
+  if (!c) return ''
+  return [
+    `Ab hier kennt ${PROVIDERS[props.item.provider].name} den Verlauf davor nur noch als Zusammenfassung.`,
+    c.trigger === 'auto' ? 'Automatisch, weil der Kontext voll wurde.' : c.trigger === 'manual' ? 'Mit /compact angestoßen.' : '',
+    c.durationMs ? `Dauer: ${formatDuration(c.durationMs)}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+})
 </script>
 
 <template>
+  <div v-if="compaction" role="separator" class="my-3 flex items-center gap-3 text-[0.78rem] text-muted-foreground">
+    <div class="h-px flex-1 bg-border" />
+    <span v-tooltip="hint" class="flex min-w-0 items-center gap-1.5">
+      <ChevronsDownUpIcon class="size-3.5 shrink-0" />
+      <span class="truncate">{{ compaction.trigger === 'auto' ? 'Kontext automatisch zusammengefasst' : 'Kontext zusammengefasst' }}</span>
+      <span v-if="tokens" class="shrink-0 tabular-nums opacity-80">· {{ tokens }}</span>
+    </span>
+    <div class="h-px flex-1 bg-border" />
+  </div>
   <div
+    v-else
     :class="
       cn(
         'my-1.5 flex items-start gap-2 rounded-lg px-3 py-2 text-[0.82rem]',

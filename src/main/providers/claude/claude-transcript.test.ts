@@ -67,7 +67,7 @@ describe('claudeTranscriptItems', () => {
         user('u3', 6, [{ type: 'tool_result', tool_use_id: 't2', is_error: true, content: 'The user rejected this tool use.' }]),
         assistant('m3', 7, [{ type: 'text', text: 'Fertig.' }]),
         { type: 'system', subtype: 'turn_duration', durationMs: 6000, uuid: 'd1', timestamp: at(7) },
-        { type: 'system', subtype: 'compact_boundary', uuid: 'c1', timestamp: at(8), compactMetadata: { trigger: 'auto', preTokens: 150000 } },
+        { type: 'system', subtype: 'compact_boundary', uuid: 'c1', timestamp: at(8), compactMetadata: { trigger: 'auto', preTokens: 150000, postTokens: 12000, durationMs: 44000 } },
         user('u4', 9, 'Kurzfassung', { isCompactSummary: true }),
       ),
     )
@@ -85,6 +85,11 @@ describe('claudeTranscriptItems', () => {
     expect(read).toMatchObject({ tool: 'read', title: 'Datei lesen', detail: 'a.ts', status: 'done', output: 'inhalt', startedAt: Date.parse(at(3)), endedAt: Date.parse(at(4)) })
     expect(bash.status).toBe('denied')
     expect(turn).toMatchObject({ status: 'done', durationMs: 6000, inputTokens: 300, outputTokens: 15, model: 'claude-sonnet-5-5' })
+    expect(items.at(-1)).toMatchObject({
+      text: 'Kontext wurde automatisch zusammengefasst',
+      detail: '150k → 12k Tokens',
+      compaction: { trigger: 'auto', before: 150000, after: 12000, durationMs: 44000 },
+    })
   })
 
   it('shows slash commands and the user’s own commands with their output', () => {

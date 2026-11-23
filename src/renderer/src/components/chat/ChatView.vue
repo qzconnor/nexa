@@ -198,6 +198,8 @@ const working = computed(() => {
     return last ? 'Arbeitet …' : 'Startet …'
   }
   if (!busy.value) return null
+  // Compacting takes a while and nothing streams meanwhile; the CLI says what it waits for, Nexa too.
+  if (runtime.value.compactingSince) return 'Kontext wird zusammengefasst …'
   const last = items.value[items.value.length - 1]
   if (last && (last.kind === 'assistant' || last.kind === 'thinking') && last.streaming) return null
   if (runtime.value.status === 'waiting') return 'Wartet auf deine Antwort'
@@ -205,7 +207,7 @@ const working = computed(() => {
   return 'Arbeitet …'
 })
 const elapsed = computed(() => {
-  const since = viewed.value ? viewed.value.startedAt : runtime.value.turnStartedAt
+  const since = viewed.value ? viewed.value.startedAt : (runtime.value.compactingSince ?? runtime.value.turnStartedAt)
   return since ? formatDuration(Math.max(0, now.value - since)) : ''
 })
 

@@ -206,6 +206,34 @@ export interface NoticeItem extends ItemBase {
   level: 'info' | 'warning' | 'error'
   text: string
   detail?: string
+  /** The CLI compacted the conversation here; `text` and `detail` say so in words as well. */
+  compaction?: Compaction
+}
+
+/**
+ * A compaction: the CLI replaced the conversation so far with a summary, and from here on knows only
+ * that. Each value is set when the CLI reports it (Codex reports neither trigger nor tokens).
+ */
+export interface Compaction {
+  trigger?: 'auto' | 'manual'
+  /** Tokens the conversation took up in the context before and after. */
+  before?: number
+  after?: number
+  durationMs?: number
+}
+
+/** The notice of a compaction, with its numbers in words for whatever reads only text. */
+export function compactionNotice(base: ItemBase, compaction: Compaction): NoticeItem {
+  const k = (n: number) => `${Math.round(n / 1000)}k`
+  const { before, after } = compaction
+  return {
+    ...base,
+    kind: 'notice',
+    level: 'info',
+    text: compaction.trigger === 'auto' ? 'Kontext wurde automatisch zusammengefasst' : 'Kontext wurde zusammengefasst',
+    detail: before !== undefined ? (after !== undefined ? `${k(before)} → ${k(after)} Tokens` : `${k(before)} Tokens vorher`) : undefined,
+    compaction,
+  }
 }
 
 /** The end of a turn: how long it took and what it cost. */
@@ -291,6 +319,8 @@ export interface SessionRuntime {
   error?: string
   /** Since when the current turn runs. */
   turnStartedAt?: number
+  /** Since when the CLI compacts the conversation; the turn waits for it. */
+  compactingSince?: number
 }
 
 export type SessionEvent =
