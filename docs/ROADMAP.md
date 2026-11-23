@@ -70,14 +70,15 @@
       `mcp_toggle`, gilt nur für den Prozess, daher wendet Nexa es bei jedem Start an); Codex über
       `mcp_servers.<name>.enabled` in der Konfiguration des Threads, ab dem nächsten Prompt
 - [x] Prompt je Projekt und Trenner wie der Workspace-Prompt im Claude Manager: „Prompt …“ im
-      Kontextmenü, der Text steht als `cm_prompts.md` im Ordner (dieselbe Datei wie im Claude Manager). Jeder
+      Kontextmenü, der Text steht als `prompts.md` im Ordner. Jeder
       Chat darunter bekommt ihn zusätzlich, der äußerste zuerst (Claude `--append-system-prompt`, Codex
       `developerInstructions`), ab dem nächsten Start seiner CLI
+- [x] Chat bleibt unten: Er folgt dem Neuen, bis man selbst nach oben scrollt. Vorher entschied der Abstand
+      zum Ende beim Scroll-Ereignis, und kam dazwischen mehr als eine Zeile dazu (eine Werkzeugkarte, ein
+      Codeblock), blieb die Ansicht mitten in der Session stehen
 
 ## Als Nächstes
 
-- [ ] **Chat bleibt unten**: Manchmal scrollt der Chat nicht mehr mit, die neuen Nachrichten laufen
-      unten weg und die Ansicht steht mitten in der Session statt dort, wo etwas passiert.
 - [ ] **„Plugins ›“ im „+“-Menü**: installierte Plugins der CLI zeigen und schalten (Claude Code
       `reload_plugins`, `enabledPlugins` in den Einstellungen; Codex `plugin/list`), „Konnektoren
       verwalten“ zu den Einstellungen der CLIs, `mcp_reconnect` und `mcp_authenticate` für Server, die
