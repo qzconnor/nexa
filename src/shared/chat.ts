@@ -364,6 +364,11 @@ export interface SessionRuntime {
   turnStartedAt?: number
   /** Since when the CLI compacts the conversation; the turn waits for it. */
   compactingSince?: number
+  /**
+   * Where else the CLI's conversation is open right now („Claude Code im Terminal“): both would write
+   * to it, each going on from what it knows. Looked at when the chat opens and the window gets focus.
+   */
+  openElsewhere?: string
 }
 
 export type SessionEvent =

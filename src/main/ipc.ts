@@ -304,6 +304,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsSetMcp, (_e, id: unknown, name: unknown, enabled: unknown) =>
     sessions.setMcpEnabled(str(id, 'Die Session'), str(name, 'Der Server'), enabled === true),
   )
+  handle(IpcInvoke.sessionsSync, (_e, id: unknown) => sessions.syncCli(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsUpdate, (_e, id: unknown, patch: unknown) => sessions.update(str(id, 'Die Session'), (patch ?? {}) as never))
   handle(IpcInvoke.sessionsRemove, (_e, id: unknown) => sessions.remove(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))

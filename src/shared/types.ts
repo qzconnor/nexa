@@ -285,6 +285,12 @@ export interface CliLink {
    * CLAUDE_CONFIG_DIR or CODEX_HOME Nexa was started with and can differ from one start to the next.
    */
   configDir?: string
+  /**
+   * Claude Code: the time (ms) up to which the chat holds its transcript. Entries after it came from a
+   * CLI outside Nexa (`claude --resume` in a terminal) and are read into the chat; missing: the time of
+   * the chat's last item (sessions from before).
+   */
+  synced?: number
 }
 
 export interface SessionMeta {

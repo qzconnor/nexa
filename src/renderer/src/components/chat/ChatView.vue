@@ -1,6 +1,19 @@
 <script setup lang="ts">
-import { ArrowDownIcon, BotIcon, ChevronRightIcon, FolderOpenIcon, MoreHorizontalIcon, PanelLeftIcon, PencilIcon, PowerIcon, Trash2Icon } from '@lucide/vue'
+import {
+  ArrowDownIcon,
+  BotIcon,
+  ChevronRightIcon,
+  FolderOpenIcon,
+  MoreHorizontalIcon,
+  PanelLeftIcon,
+  PencilIcon,
+  PowerIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+  TriangleAlertIcon,
+} from '@lucide/vue'
 import { useElementSize, useEventListener } from '@vueuse/core'
+import { toast } from 'vue-sonner'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { AgentItem, ChatItem, TodoItem } from '@shared/chat'
 import type { SessionUpdateInput } from '@shared/types'
@@ -232,6 +245,43 @@ watch(
   },
 )
 
+// ── Claude Code's conversation, gone on outside Nexa (a terminal, Claude Desktop) ──
+
+const syncable = computed(() => !!meta.value?.cli.claude)
+let lastSync = 0
+/** Takes in what came outside Nexa; quietly, as the chat comes back on screen. */
+function syncQuietly(): void {
+  const id = meta.value?.id
+  if (!id || !syncable.value || busy.value || Date.now() - lastSync < 2000) return
+  lastSync = Date.now()
+  void sessions.sync(id).catch((error) => console.warn('[chat] sync failed', error))
+}
+// Back from the terminal: what was said there shows.
+useEventListener(window, 'focus', syncQuietly)
+// Open elsewhere too: its finished turns come in while the chat is on screen, and the note goes once
+// it's closed there.
+watch(
+  () => (runtime.value.openElsewhere ? meta.value?.id : undefined),
+  (id, _before, onCleanup) => {
+    if (!id) return
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') syncQuietly()
+    }, 5000)
+    onCleanup(() => window.clearInterval(timer))
+  },
+  // The chat may have come with the note already, opened before this view was on screen.
+  { immediate: true },
+)
+
+async function syncNow(): Promise<void> {
+  const id = meta.value?.id
+  if (!id) return
+  lastSync = Date.now()
+  const taken = await attempt(() => sessions.sync(id), 'Abgleich fehlgeschlagen')
+  if (taken === 0) toast('Nichts Neues aus Claude Code', { description: 'Der Chat ist auf dem Stand der CLI.' })
+  else if (taken) scrollToBottom(true)
+}
+
 async function send(input: { text: string; images: string[] }): Promise<void> {
   const id = meta.value?.id
   if (!id) return
@@ -349,6 +399,7 @@ async function remove(): Promise<void> {
             <DropdownMenuContent align="end" class="w-56">
               <DropdownMenuItem @select="startRename"><PencilIcon /> Umbenennen</DropdownMenuItem>
               <DropdownMenuItem v-if="project" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
+              <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit Claude Code abgleichen</DropdownMenuItem>
               <DropdownMenuItem :disabled="!runtime.connected" @select="sessions.stop(meta.id)"><PowerIcon /> CLI beenden</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</DropdownMenuItem>
@@ -462,6 +513,17 @@ async function remove(): Promise<void> {
                 <ShellDock :shells="dockShellList" />
               </div>
             </Transition>
+          </div>
+          <div v-if="runtime.openElsewhere" class="frost-backing pointer-events-auto mb-2 rounded-xl" role="status">
+            <div class="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[0.8rem] leading-snug">
+              <TriangleAlertIcon class="mt-px size-3.5 shrink-0 text-warning" />
+              <p>
+                <span class="font-medium">Auch in {{ runtime.openElsewhere }} offen.</span>
+                <span class="text-muted-foreground">
+                  Schreib nur an einer Stelle weiter, sonst laufen die Unterhaltungen auseinander. Fertige Antworten von dort erscheinen hier.
+                </span>
+              </p>
+            </div>
           </div>
           <div class="frost-backing pointer-events-auto rounded-2xl">
             <Composer

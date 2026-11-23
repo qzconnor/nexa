@@ -36,7 +36,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/mcp-servers.ts` | Antworten der CLIs auf die Frage nach ihren MCP-Servern → `McpServerState` (ohne Nexas eigenen) |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |
-| `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen |
+| `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen, oder nur was seit einem Zeitpunkt dazukam |
+| `providers/claude/claude-presence.ts` | Ob eine Claude-Code-Sitzung gerade in einem anderen Prozess offen ist (`<config>/sessions/<pid>.json`) und wo |
 | `providers/claude/claude-transcript.ts` | Claude-Code-Transkript (`projects/<key>/<id>.jsonl`) → `ChatItem`s wie aus dem Stream, plus Kurzfassung (Ordner, Titel, Zeiten) |
 | `services/session-service.ts` | Sessions: Metadaten, Items, Runs starten/stoppen, Wechsel der CLI, Statistik |
 | `services/session-search.ts` | Suche in den Prompts und Antworten der Chats (für die Schnellsuche), Ausschnitt um den Treffer |
@@ -146,6 +147,22 @@ Manager`, sonst `Signalbox`) nur:
   `session-marks.json`; schon übernommene Sessions (gleiche Sitzungs-ID) werden übersprungen.
 
 Die Übernahme steht in der Einrichtung beim ersten Start und unter Einstellungen › Accounts.
+
+## Abgleich mit Claude Code
+
+Ein Chat mit `cli.claude` kann außerhalb von Nexa weitergehen (`claude --resume` im Terminal, Claude
+Desktop); das Transkript wächst dann ohne Nexa. `SessionService.syncCli` liest, was nach `CliLink.synced`
+dazukam (`transcriptSince`, `readClaudeChatSince`), nur fertige Turns, und hängt es mit einer Notiz
+„Außerhalb von Nexa weitergeführt“ an den Chat; folgen mehrere Turns von dort ohne etwas aus Nexa
+dazwischen, zählt dieselbe Notiz weiter. Läuft Nexas eigene CLI des Chats untätig, endet sie: Sie kennt
+die neuen Turns nicht, der nächste Prompt setzt mit `--resume` auf dem ganzen Transkript fort. Während ein
+Turn in Nexa läuft, wird nichts übernommen.
+
+Anlässe: `open()` (der Chat wird geladen), im Renderer der Wechsel in einen schon geladenen Chat, der Fokus
+des Fensters (`ChatView`, höchstens alle 2 s) und „Mit Claude Code abgleichen“ im Menü des Chats
+(`sessions:sync`, mit „Nichts Neues“ als Toast). Bei jedem Abgleich prüft `claude-presence.ts`, ob ein
+anderer Prozess die Sitzung offen hat (`SessionRuntime.openElsewhere`); solange, steht ein Hinweis über der
+Eingabe und der Chat gleicht alle 5 s ab. Codex fehlt noch (Roadmap).
 
 ## Wechsel der CLI
 

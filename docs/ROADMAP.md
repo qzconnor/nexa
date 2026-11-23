@@ -79,6 +79,11 @@
 - [x] Chat bleibt unten: Er folgt dem Neuen, bis man selbst nach oben scrollt. Vorher entschied der Abstand
       zum Ende beim Scroll-Ereignis, und kam dazwischen mehr als eine Zeile dazu (eine Werkzeugkarte, ein
       Codeblock), blieb die Ansicht mitten in der Session stehen
+- [x] Chats mit Claude Code abgleichen: Was im Terminal (`claude --resume`) oder in Claude Desktop dazukam,
+      übernimmt Nexa beim Öffnen des Chats, wenn das Fenster wieder in den Vordergrund kommt, und über „Mit
+      Claude Code abgleichen“ im Menü des Chats; nur fertige Turns, mit einer Notiz „Außerhalb von Nexa
+      weitergeführt“. Ist die Sitzung gerade woanders offen (`<config>/sessions/<pid>.json`), steht ein
+      Hinweis über der Eingabe, und fertige Antworten von dort kommen alle paar Sekunden
 
 ## Als Nächstes
 
@@ -86,12 +91,9 @@
       `reload_plugins`, `enabledPlugins` in den Einstellungen; Codex `plugin/list`), „Konnektoren
       verwalten“ zu den Einstellungen der CLIs, `mcp_reconnect` und `mcp_authenticate` für Server, die
       fehlschlagen oder eine Anmeldung brauchen.
-- [ ] **Chats mit der CLI abgleichen**: Wird ein Chat außerhalb von Nexa weitergeführt (`claude --resume`,
-      die Codex-TUI), fehlen Nexa die neuen Nachrichten. Transkript bzw. Rollout der verknüpften Sitzung
-      beobachten (wie der Claude Manager: Watcher auf `projects/`, nur Angehängtes lesen) und Neues über
-      `claude-transcript.ts` als Items nachtragen; dazu „Aktualisieren“ im Menü des Chats. Vor dem
-      Fortsetzen warnen, wenn die Sitzung gerade in einer CLI außerhalb offen ist (Claude:
-      `<config>/sessions/<pid>.json`). Codex: `thread/read`, `thread/turns/list`.
+- [ ] **Chats mit Codex abgleichen** wie mit Claude Code: Was in der Codex-TUI dazukam, aus dem Rollout
+      der verknüpften Sitzung nachtragen (`thread/read`, `thread/turns/list`), und warnen, wenn sie
+      gerade woanders offen ist.
 - [ ] **Artefakte und Sites** als eigener Eintrag unter „Neuer Chat“ in der Sidebar: Claudes Artefakte
       (claude.ai, je Account; die Seite „Artefakte“ des Claude Managers, `artifact-service.ts`) und die
       Sites von Codex in einer Liste mit Suche, Vorschau im Browser-Panel und Sprung in den Chat, aus dem
