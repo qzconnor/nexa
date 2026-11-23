@@ -119,6 +119,9 @@ export const IpcInvoke = {
   sessionsExportMarkdown: 'sessions:export-markdown',
   sessionsLastAnswer: 'sessions:last-answer',
 
+  notificationsViewing: 'notifications:viewing',
+  notificationsTest: 'notifications:test',
+
   apiStatus: 'api:status',
 } as const
 
@@ -141,7 +144,12 @@ export const IpcEvent = {
   sessionEvent: 'event:session',
   /** The `nx` command or the local API asks the window to show a session. */
   showSession: 'event:show-session',
+  /** A notification about an account's limits or login asks the window to show them in the settings. */
+  openSettings: 'event:open-settings',
 } as const
+
+/** The sections of the settings a notification leads to. */
+export type NotifiedSettings = 'usage' | 'accounts'
 
 export type Unsubscribe = () => void
 
@@ -200,6 +208,15 @@ export interface NexaApi {
     get(): Promise<AppSettings>
     update(patch: DeepPartial<AppSettings>): Promise<AppSettings>
     onChanged(cb: (settings: AppSettings) => void): Unsubscribe
+    /** A click on a notification about an account's limits or login: the window shows that section. */
+    onOpen(cb: (section: NotifiedSettings) => void): Unsubscribe
+  }
+  /** Notifications about chats that are done or need the user (main `notification-service.ts`). */
+  notifications: {
+    /** The chat the window shows (null: none); its notification has been seen then. */
+    viewing(sessionId: string | null): Promise<void>
+    /** Shows an example notification with the current settings. */
+    test(): Promise<void>
   }
   /** The user's own themes, one JSON file each in the folder `themes` of the app's data. */
   themes: {

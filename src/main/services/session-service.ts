@@ -3,8 +3,18 @@ import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import { folderKey, inFolder } from '@shared/folders'
-import type { ChatItem, ContextDetail, InteractionResponse, ProviderId, SessionEvent, SessionRuntime, ToolItem, UserItem } from '@shared/chat'
-import { chatMarkdown, lastAnswer, markdownFileName } from '@shared/chat-markdown'
+import type {
+  ChatItem,
+  ContextDetail,
+  InteractionRequest,
+  InteractionResponse,
+  ProviderId,
+  SessionEvent,
+  SessionRuntime,
+  ToolItem,
+  UserItem,
+} from '@shared/chat'
+import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
@@ -76,7 +86,24 @@ interface Events extends Record<string, unknown[]> {
   tool: [sessionId: string, item: ToolItem, cwd: string]
   /** A run's turn ended: no shell command of it runs any more. */
   turnEnded: [sessionId: string]
+  /** A run needs the user: its turn ended, it asks something, or it stopped at a limit (notifications). */
+  attention: [sessionId: string, attention: Attention]
 }
+
+/** Why a chat's run needs the user now; only from Nexa's own runs, never from what came from outside. */
+export type Attention =
+  | {
+      kind: 'done'
+      provider: ProviderId
+      /** How long the agent worked on the turn (ms). */
+      busyMs: number
+      /** What it said last in the turn, if anything. */
+      answer: string | null
+      /** The turn failed with this. */
+      error?: string
+    }
+  | { kind: 'limit'; provider: ProviderId; accountId: string; message: string | null }
+  | { kind: 'input'; provider: ProviderId; request: InteractionRequest }
 
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
 /** Chats a search returns at most; with more, another word narrows it down better than scrolling. */
@@ -749,10 +776,25 @@ export class SessionService extends TypedEmitter<Events> {
     }
     const sink: RunSink = {
       item: (item) => {
+        const fresh = !s.index.has(item.id)
+        // Before the turn's own runtime report, which clears when it started.
+        const busyMs = item.kind === 'turn' ? (item.durationMs ?? (s.runtime.turnStartedAt ? Date.now() - s.runtime.turnStartedAt : 0)) : 0
         this.put(s, item)
         if (item.kind === 'tool') this.emit('tool', meta.id, item, cwd)
+        if (item.kind === 'interaction' && item.state === 'pending' && fresh && current()) {
+          this.emit('attention', meta.id, { kind: 'input', provider, request: item.request })
+        }
         if (item.kind === 'turn') {
           this.emit('turnEnded', meta.id)
+          if (current() && item.status !== 'interrupted') {
+            this.emit(
+              'attention',
+              meta.id,
+              item.limit
+                ? { kind: 'limit', provider, accountId, message: item.error ?? null }
+                : { kind: 'done', provider, busyMs, answer: turnAnswer(s.items ?? []), ...(item.error ? { error: item.error } : {}) },
+            )
+          }
           const link = meta.cli[provider]
           if (link) {
             link.seenItems = s.items?.length ?? 0

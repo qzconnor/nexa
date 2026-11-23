@@ -1,4 +1,4 @@
-import { BotIcon, ChartColumnIcon, CircleArrowDownIcon, InfoIcon, MessageSquareIcon, PaletteIcon, PlugIcon, UsersIcon } from '@lucide/vue'
+import { BellIcon, BotIcon, ChartColumnIcon, CircleArrowDownIcon, InfoIcon, MessageSquareIcon, PaletteIcon, PlugIcon, UsersIcon } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { SettingsSection } from '@/stores/ui'
 
@@ -9,6 +9,7 @@ export const SETTINGS_ICONS: Record<SettingsSection, Component> = {
   usage: ChartColumnIcon,
   providers: BotIcon,
   chat: MessageSquareIcon,
+  notifications: BellIcon,
   api: PlugIcon,
   updates: CircleArrowDownIcon,
   about: InfoIcon,

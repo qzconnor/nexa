@@ -115,6 +115,11 @@ const api: NexaApi = {
     get: () => invoke(IpcInvoke.settingsGet),
     update: (patch) => invoke(IpcInvoke.settingsUpdate, patch),
     onChanged: (cb) => subscribe(IpcEvent.settingsChanged, cb),
+    onOpen: (cb) => subscribe(IpcEvent.openSettings, cb),
+  },
+  notifications: {
+    viewing: (sessionId) => invoke(IpcInvoke.notificationsViewing, sessionId),
+    test: () => invoke(IpcInvoke.notificationsTest),
   },
   themes: {
     list: () => invoke(IpcInvoke.themesList),

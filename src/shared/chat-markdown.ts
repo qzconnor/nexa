@@ -80,6 +80,19 @@ export function lastAnswer(items: readonly ChatItem[]): string | null {
 }
 
 /**
+ * The last answer of the turn that just ended. Only after the last prompt: an answer of an earlier
+ * turn would tell about something else.
+ */
+export function turnAnswer(items: readonly ChatItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!
+    if (item.kind === 'user') return null
+    if (item.kind === 'assistant' && !item.parentId && item.text.trim()) return item.text.trim()
+  }
+  return null
+}
+
+/**
  * A chat as a Markdown document: what it is about first (folder, branch, model, when), then the
  * messages by day, each author's turn under a heading of its own. The agent's tools and subagents are
  * a list under its words; its thoughts, questions and its subagents' own work stay out.

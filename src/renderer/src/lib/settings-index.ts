@@ -164,6 +164,46 @@ const TREE = [
     ],
   },
   {
+    tab: 'notifications',
+    label: 'Benachrichtigungen',
+    sections: [
+      {
+        id: 'notifications.main',
+        title: 'Benachrichtigungen',
+        keywords: 'Mitteilungen Hinweise Windows Toast Glocke stumm stummschalten Ruhe',
+        fields: [
+          { id: 'notifications.enabled', label: 'Benachrichtigungen', keywords: 'an aus einschalten ausschalten Glocke Titelleiste' },
+          { id: 'notifications.test', label: 'Ausprobieren', keywords: 'Test Beispiel' },
+        ],
+      },
+      {
+        id: 'notifications.events',
+        title: 'Ereignisse',
+        keywords: 'Agent Claude Codex',
+        fields: [
+          { id: 'notifications.onDone', label: 'Chat ist fertig', keywords: 'Antwort beendet abgeschlossen Fehler' },
+          { id: 'notifications.minBusy', label: 'Erst nach längerer Arbeit', keywords: 'Mindestdauer Sekunden Dauer kurz' },
+          { id: 'notifications.onInput', label: 'Agent braucht dich', keywords: 'Rückfrage Frage Erlaubnis Freigabe Plan Berechtigung warten' },
+          { id: 'notifications.onLimit', label: 'Limit erreicht', keywords: 'Nutzungslimit Usage Reset gestoppt' },
+          { id: 'notifications.onNearLimit', label: 'Limit fast verbraucht', keywords: 'Warnung Schwelle Usage Verbrauch Account 80' },
+          { id: 'notifications.nearLimitPercent', label: 'Schwelle', keywords: 'Prozent Grenze Warnung 80' },
+          { id: 'notifications.onLoginLost', label: 'Login abgelaufen', keywords: 'Anmeldung Account neu anmelden Token' },
+        ],
+      },
+      {
+        id: 'notifications.hints',
+        title: 'Hinweise',
+        keywords: 'Art Weise',
+        fields: [
+          { id: 'notifications.when', label: 'Benachrichtigen, wenn', keywords: 'Hintergrund Vordergrund anderer Chat minimiert' },
+          { id: 'notifications.preview', label: 'Vorschau', keywords: 'Inhalt Text Antwort Befehl Datenschutz' },
+          { id: 'notifications.sound', label: 'Ton', keywords: 'Klang Sound stumm leise' },
+          { id: 'notifications.flash', label: 'Taskleiste blinkt', keywords: 'Taskleiste blinken Fenster markieren' },
+        ],
+      },
+    ],
+  },
+  {
     tab: 'api',
     label: 'Lokale API',
     sections: [

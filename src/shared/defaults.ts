@@ -34,6 +34,21 @@ export function defaultSettings(): AppSettings {
       browserTools: true,
       noClaudeInChrome: true,
     },
+    notifications: {
+      enabled: true,
+      onDone: true,
+      // Short answers come while one watches anyway; long work is what one turns away from.
+      minBusySeconds: 20,
+      onInput: true,
+      onLimit: true,
+      onNearLimit: true,
+      nearLimitPercent: 80,
+      onLoginLost: true,
+      when: 'background',
+      preview: true,
+      sound: true,
+      flashTaskbar: true,
+    },
     api: {
       enabled: false,
       port: 47615,

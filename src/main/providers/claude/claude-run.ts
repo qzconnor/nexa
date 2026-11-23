@@ -136,6 +136,8 @@ export class ClaudeRun implements AgentRun {
   /** The last count of what fills the context (`get_context_usage`). */
   private lastDetail: ContextDetail | null = null
   private interrupting = false
+  /** The turn ran into a usage limit (`rate_limit_event` rejected, or an answer with `error: rate_limit`). */
+  private limitHit = false
   private model: string | undefined
   private stopping = false
 
@@ -386,6 +388,8 @@ export class ClaudeRun implements AgentRun {
     if (!message || !Array.isArray(message.content)) return
     const messageId = str(message.id) ?? randomUUID()
     const parentId = this.parentOf(m)
+    // Claude Code's own answer at a limit ("You've hit your limit · resets …").
+    if (m.error === 'rate_limit' && !parentId) this.limitHit = true
     if (typeof message.model === 'string' && !parentId) this.model = message.model
     if (!parentId && isPlainObject(message.usage)) {
       const used = contextOf(message.usage)
@@ -707,10 +711,12 @@ export class ClaudeRun implements AgentRun {
       outputTokens: output,
       model: this.model,
       error: errorText,
+      ...(status === 'error' && this.limitHit ? { limit: true } : {}),
     })
     this.turnStartedAt = null
     this.compactingSince = null
     this.interrupting = false
+    this.limitHit = false
     if (window) this.contextWindow = window
     const used = this.lastContext
     const max = this.contextLimit()
@@ -741,6 +747,7 @@ export class ClaudeRun implements AgentRun {
         resetsAt: typeof value.resetsAt === 'number' ? value.resetsAt * 1000 : undefined,
       })
     }
+    if (info.status === 'rejected') this.limitHit = true
     if (windows.length === 0) return
     this.sink.usage({ provider: 'claude', windows, limited: info.status === 'rejected', updatedAt: Date.now(), source: 'session' })
   }

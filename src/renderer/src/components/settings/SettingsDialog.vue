@@ -18,6 +18,7 @@ import SettingsAccounts from './SettingsAccounts.vue'
 import SettingsApi from './SettingsApi.vue'
 import SettingsAppearance from './SettingsAppearance.vue'
 import SettingsChat from './SettingsChat.vue'
+import SettingsNotifications from './SettingsNotifications.vue'
 import SettingsProviders from './SettingsProviders.vue'
 import SettingsUpdates from './SettingsUpdates.vue'
 import SettingsUsage from './SettingsUsage.vue'
@@ -36,6 +37,13 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
   { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
   { id: 'providers', label: 'CLIs', description: 'Claude Code und Codex', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
   { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe und Nexa-Werkzeuge', icon: SETTINGS_ICONS.chat, page: SettingsChat },
+  {
+    id: 'notifications',
+    label: 'Benachrichtigungen',
+    description: 'Fertige Chats, Rückfragen und Limits',
+    icon: SETTINGS_ICONS.notifications,
+    page: SettingsNotifications,
+  },
   { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: SETTINGS_ICONS.api, page: SettingsApi },
   { id: 'updates', label: 'Updates', description: 'Neue Versionen und was sich geändert hat', icon: SETTINGS_ICONS.updates, page: SettingsUpdates },
   { id: 'about', label: 'Info', description: 'Version und Befehl nx', icon: SETTINGS_ICONS.about, page: SettingsAbout },
