@@ -84,6 +84,10 @@
       Claude Code abgleichen“ im Menü des Chats; nur fertige Turns, mit einer Notiz „Außerhalb von Nexa
       weitergeführt“. Ist die Sitzung gerade woanders offen (`<config>/sessions/<pid>.json`), steht ein
       Hinweis über der Eingabe, und fertige Antworten von dort kommen alle paar Sekunden
+- [x] Chat abzweigen: ein neuer Chat „… (Abzweig)“ mit dem ganzen Verlauf geht von hier aus weiter, der
+      alte bleibt, wie er ist. Claude Code (`--fork-session`, `--resume-session-at` der letzten Antwort) und
+      Codex (`thread/fork` bis zum letzten Turn) setzen eine Kopie ihrer Unterhaltung fort. Im Menü des
+      Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als `/fork [Name]` (`/branch`)
 - [x] Slash-Befehle, die die CLIs ohne Terminal nicht können, führt Nexa selbst aus, für Claude und Codex:
       `/clear` (`/new`, `/reset`: neuer Chat im selben Ordner mit denselben Einstellungen), `/diff` (alle
       Änderungen), `/rename`, `/model` und `/effort` (mit Namen gleich gesetzt, ohne das Zahnrad), `/plan`,
@@ -93,10 +97,6 @@
 - [x] Chat als Markdown exportieren (Ordner, Branch, Modell, Zeitraum, Nachrichten nach Tagen) und letzte
       Antwort kopieren: im Menü des Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als
       `/export` und `/copy`
-- [x] Chat abzweigen: ein neuer Chat „… (Abzweig)“ mit dem ganzen Verlauf geht von hier aus weiter, der
-      alte bleibt, wie er ist. Claude Code (`--fork-session`, `--resume-session-at` der letzten Antwort) und
-      Codex (`thread/fork` bis zum letzten Turn) setzen eine Kopie ihrer Unterhaltung fort. Im Menü des
-      Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als `/fork [Name]` (`/branch`)
 
 ## Als Nächstes
 
