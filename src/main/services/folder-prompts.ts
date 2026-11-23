@@ -2,11 +2,8 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-/**
- * The file a project's or a separator's prompt lives in, in its folder. The Claude Manager's name, so
- * the prompts of its workspaces count in Nexa as they are, and one edited here counts there too.
- */
-export const PROMPT_FILE = 'cm_prompts.md'
+/** The file a project's or a separator's prompt lives in, in its folder. */
+export const PROMPT_FILE = 'prompts.md'
 
 /** Longer than any prompt anyone writes by hand; a bigger file isn't one. */
 const MAX_PROMPT_LENGTH = 100_000

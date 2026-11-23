@@ -227,7 +227,7 @@ export interface Project {
   mcpOff?: Partial<Record<ProviderId, string[]>>
 }
 
-/** Whose prompt (`cm_prompts.md` in its folder): a project's or a separator's that stands for a folder. */
+/** Whose prompt (`prompts.md` in its folder): a project's or a separator's that stands for a folder. */
 export interface PromptTarget {
   kind: 'project' | 'section'
   id: string

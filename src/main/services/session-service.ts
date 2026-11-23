@@ -600,7 +600,7 @@ export class SessionService extends TypedEmitter<Events> {
               browserTools: !!mcp && tools.browserTools,
               projectName: project.name,
             }),
-            // The user's own for the project and the separators around it (`cm_prompts.md`).
+            // The user's own for the project and the separators around it (`prompts.md`).
             folderPromptText(await this.projects.promptsFor(project.id)),
           ]
             .filter(Boolean)

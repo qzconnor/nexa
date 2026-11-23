@@ -11,7 +11,7 @@ import { useUiStore } from '@/stores/ui'
 /**
  * The prompt of a project or of a separator for a folder, as the Claude Manager's workspace prompt:
  * every chat in it gets the text in its system prompt, from the next start of its CLI on. It lives as
- * `cm_prompts.md` in the folder, so the Claude Manager reads the same one.
+ * `prompts.md` in the folder, beside the code it is about.
  */
 const ui = useUiStore()
 
@@ -115,7 +115,7 @@ function onKeydown(event: KeyboardEvent): void {
             @keydown="onKeydown"
           />
           <p class="text-[0.75rem] text-muted-foreground">
-            Steht als <code class="font-mono">{{ info.file }}</code> im Ordner, wie im Claude Manager.
+            Steht als <code class="font-mono">{{ info.file }}</code> im Ordner.
           </p>
         </div>
       </div>

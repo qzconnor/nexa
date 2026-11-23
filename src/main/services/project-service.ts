@@ -154,7 +154,7 @@ export class ProjectService extends TypedEmitter<{ changed: [Project[]]; section
   /**
    * The folders whose prompt a chat of the project gets, the outermost first: the separators for a
    * folder it lies in (a workspace in a workspace, too), then the project. Only folders Nexa knows:
-   * a `cm_prompts.md` that comes with a cloned repository in a subfolder stays out.
+   * a `prompts.md` that comes with a cloned repository in a subfolder stays out.
    */
   promptFolders(projectId: string): { name: string; path: string }[] {
     const project = this.get(projectId)

@@ -11,7 +11,7 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 describe('folder prompts', () => {
-  it('reads the Claude Manager’s file, without a BOM', async () => {
+  it('reads the file without a BOM', async () => {
     writeFileSync(join(dir, PROMPT_FILE), '\ufeffNur Open-Source-Bibliotheken.\n')
     expect(await readFolderPrompt(dir)).toBe('Nur Open-Source-Bibliotheken.\n')
   })
