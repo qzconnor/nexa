@@ -23,6 +23,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import type { ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
@@ -40,6 +41,7 @@ const props = defineProps<{ entry: ProjectEntry; now: number; bare?: boolean; dr
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const drag = useSessionDrag()
 
 const LIMIT = 8
 const showAll = ref(false)
@@ -102,7 +104,8 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
 </script>
 
 <template>
-  <div class="flex flex-col">
+  <!-- A chat dropped anywhere on the project goes to its own folder (see Sidebar); bare, the separator's heading lights up for it. -->
+  <div :data-drop-project="project.id" :class="cn('flex flex-col rounded-lg', !bare && drag?.isTarget(project.id) && 'bg-primary/10 ring-1 ring-primary/50')">
     <ContextMenu v-if="!bare">
       <ContextMenuTrigger as-child>
         <div data-drag-row class="group/project flex items-center rounded-lg hover:bg-sidebar-accent/60" :draggable="draggable">

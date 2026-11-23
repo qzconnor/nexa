@@ -71,4 +71,13 @@ describe('claudeProjectKey', () => {
     expect(claudeProjectKey('F:\\Projekte\\Apps\\nexa')).toBe('F--Projekte-Apps-nexa')
     expect(claudeProjectKey('/home/me/my.app')).toBe('-home-me-my-app')
   })
+
+  it('shortens long paths with a hash, like Claude Code', () => {
+    const long = `F:\\${'a'.repeat(250)}`
+    const key = claudeProjectKey(long)
+    expect(key.startsWith(`F--${'a'.repeat(197)}-`)).toBe(true)
+    expect(key.length).toBeGreaterThan(201)
+    expect(claudeProjectKey(long)).toBe(key)
+    expect(claudeProjectKey(`${long}b`)).not.toBe(key)
+  })
 })

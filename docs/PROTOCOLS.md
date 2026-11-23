@@ -52,7 +52,8 @@ claude -p --input-format stream-json --output-format stream-json --verbose
 - **Ordner**: `CLAUDE_CONFIG_DIR` legt alles in einen Ordner: `.credentials.json` (`claudeAiOauth` mit
   `accessToken`, `refreshToken`, `expiresAt`, `subscriptionType`), `.claude.json` (`oauthAccount` mit
   E-Mail, Organisation, `organizationType`), `projects/<cwd mit - statt Sonderzeichen>/<id>.jsonl`,
-  `file-history/<id>/`. Ohne die Variable liegt `.claude.json` im Home-Ordner statt in `~/.claude`.
+  `file-history/<id>/`. Ist der Name des Projektordners länger als 200 Zeichen, kürzt Claude Code ihn
+  und hängt einen Hash des Pfads an (`claudeProjectKey`). Ohne die Variable liegt `.claude.json` im Home-Ordner statt in `~/.claude`.
   `.claude.json` kann noch den vorigen Login nennen; Nexa nimmt ihn nur, wenn der Plan passt.
 - **Token und Key**: `CLAUDE_CODE_OAUTH_TOKEN` (aus `claude setup-token`, ein Jahr gültig) bzw.
   `ANTHROPIC_API_KEY`. Nexa entfernt beide (und weitere Anmelde-Variablen) aus der Umgebung von
@@ -84,7 +85,9 @@ Was Claude Code selbst speichert und Nexa beim Übernehmen liest (`claude-transc
 - `system`: `compact_boundary` (`compactMetadata.trigger`, `preTokens`), `turn_duration` (`durationMs`
   am Ende eines Turns), `local_command` (Slash-Befehle neuerer Versionen).
 - Titel: `custom-title` (`/rename`), `ai-title`, älter `summary`; `relocated.relocatedCwd`, wenn die
-  Session in einen anderen Ordner zog (`--resume` geht nur von dort).
+  Session in einen anderen Ordner zog (`--resume` geht nur von dort). Nexa schreibt diesen Eintrag
+  selbst, wenn es einen Chat verschiebt (`{"type":"relocated","sessionId","relocatedCwd"}`), nachdem das
+  Transkript und der Ordner `<id>/` daneben in den Projektordner des neuen Ordners gewandert sind.
 - Hintergrund-Agents: das `tool_result` ist „Async agent launched …“, das Ende ein Eintrag des Nutzers
   mit `<task-notification>` (`<tool-use-id>`, `<status>` `completed`/`failed`/`killed`, `<summary>`,
   `<result>`). Die Arbeit eines Subagents liegt in `<id>/subagents/agent-<agentId>.jsonl`, sein Aufruf in

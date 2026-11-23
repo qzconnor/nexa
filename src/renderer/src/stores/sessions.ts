@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
-import type { SendInput, SessionCreateInput, SessionMeta, SessionUpdateInput } from '@shared/types'
+import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionUpdateInput } from '@shared/types'
 import { useProjectsStore } from './projects'
 
 /** The chat of an opened session. */
@@ -129,6 +129,13 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (at >= 0) metas.value[at] = meta
   }
 
+  async function move(id: string, target: SessionMoveInput): Promise<SessionMeta> {
+    const meta = await window.api.sessions.move(id, { ...target })
+    const at = metas.value.findIndex((m) => m.id === id)
+    if (at >= 0) metas.value[at] = meta
+    return meta
+  }
+
   async function respond(id: string, itemId: string, response: InteractionResponse): Promise<void> {
     await window.api.sessions.respond(id, itemId, JSON.parse(JSON.stringify(response)) as InteractionResponse)
   }
@@ -160,6 +167,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     create,
     send,
     update,
+    move,
     respond,
     remove,
     interrupt: (id: string) => window.api.sessions.interrupt(id),

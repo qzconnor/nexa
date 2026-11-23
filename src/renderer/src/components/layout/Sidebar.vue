@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon, SettingsIcon, SquarePenIcon, Trash2Icon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
+import { folderKey } from '@shared/folders'
 import { DEFAULT_SECTION_ID, isSectionRoot, layoutOf, moveProject, moveSection, sectionIdOf } from '@shared/sections'
 import type { ProjectSection } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
+import { provideSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import { foldersOf, projectTree, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
@@ -135,6 +137,9 @@ const openFolder = (path: string) => void window.api.app.openPath(path)
 
 // Drag and drop ------------------------------------------------------------------------------
 // Projects move within and between separators, separators among themselves. The line shows where.
+// A chat moves into another project or a folder in it, which lights up.
+
+const sessionDrag = provideSessionDrag()
 
 type Drag = { kind: 'project' | 'section'; id: string }
 type Drop = { kind: 'project'; section: string; before: string | null } | { kind: 'section'; before: string | null }
@@ -195,11 +200,40 @@ function overSection(event: DragEvent, index: number): void {
 }
 
 function leaveNav(event: DragEvent): void {
-  if (!nav.value?.contains(event.relatedTarget as Node | null)) drop.value = null
+  if (nav.value?.contains(event.relatedTarget as Node | null)) return
+  drop.value = null
+  sessionDrag.target.value = null
+}
+
+/**
+ * A chat over a project (its row, its chats) goes to the project's own folder, over a folder in it
+ * to that folder. Where it is already, it can't be dropped.
+ */
+function overChatTarget(event: DragEvent): void {
+  const id = sessionDrag.dragging.value
+  if (!id) return
+  const at = event.target as HTMLElement
+  const projectId = at.closest?.<HTMLElement>('[data-drop-project]')?.dataset.dropProject
+  const cwd = at.closest?.<HTMLElement>('[data-drop-folder]')?.dataset.dropFolder
+  const meta = sessions.get(id)
+  const here = !!meta && meta.projectId === projectId && folderKey(meta.cwd ?? '') === folderKey(cwd ?? '')
+  sessionDrag.target.value = projectId && !here ? { projectId, ...(cwd ? { cwd } : {}) } : null
+  if (!sessionDrag.target.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
 }
 
 function dropHere(event: DragEvent): void {
   event.preventDefault()
+  const chatId = sessionDrag.dragging.value
+  if (chatId) {
+    const to = sessionDrag.target.value
+    sessionDrag.dragging.value = null
+    sessionDrag.target.value = null
+    const meta = sessions.get(chatId)
+    if (meta && to) void chat.move(meta, { ...to })
+    return
+  }
   const moving = drag.value
   const where = drop.value
   endDrag()
@@ -234,7 +268,7 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
       </Button>
     </div>
 
-    <nav ref="nav" class="min-h-0 flex-1 overflow-y-auto px-2 pb-2" @dragleave="leaveNav" @drop="dropHere">
+    <nav ref="nav" class="min-h-0 flex-1 overflow-y-auto px-2 pb-2" @dragover="overChatTarget" @dragleave="leaveNav" @drop="dropHere">
       <section
         v-for="(group, index) in groups"
         :key="group.section.id"
@@ -244,9 +278,16 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
         <div v-if="lineBeforeSection(group.section.id)" class="pointer-events-none absolute inset-x-1 top-0.5 h-0.5 rounded-full bg-primary" />
         <ContextMenu>
           <ContextMenuTrigger as-child>
+            <!-- Stands for the project of the separator's own folder: a chat dropped here goes there. -->
             <div
               data-section-head
-              class="group/section flex items-center gap-1 pt-2.5 pr-1 pb-1 pl-2"
+              :data-drop-project="group.root?.project.id"
+              :class="
+                cn(
+                  'group/section flex items-center gap-1 rounded-lg pt-2.5 pr-1 pb-1 pl-2',
+                  group.root && sessionDrag.isTarget(group.root.project.id) && 'bg-primary/10 ring-1 ring-primary/50',
+                )
+              "
               draggable="true"
               @dragstart="startDrag($event, 'section', group.section.id)"
               @dragend="endDrag"

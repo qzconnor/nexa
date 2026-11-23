@@ -30,6 +30,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
+| `accounts/session-move.ts` | Verschiebt eine Session von Claude Code in den Projektordner eines anderen Arbeitsordners (wie `/cd`, aus dem Claude Manager) |
 | `services/project-service.ts` | Projekte (Ordner) und Trenner, ihre Reihenfolge; `project-sections.ts` macht ein Projekt zum Trenner |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |
 | `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen |
@@ -81,6 +82,16 @@ nehmen diesen Ordner. Die Sidebar zeigt unter dem Projekt jede Ebene bis zum Ord
 eigenen, einklappbaren Ordner (`lib/session-tree.ts`), wie der Claude Manager die Projekte eines
 Workspaces; ein Ordner, der nur einen Ordner enthält, wird mit ihm zu einer Zeile (`cm/packages/core`).
 Neue Chats in einem Unterordner: „+“ am Ordner oder „Neuer Chat in Unterordner …“ am Projekt.
+
+Ein Chat zieht in ein anderes Projekt oder einen Ordner darin über „Verschieben nach“
+(`SessionMoveMenu`: die Projekte unter ihren Trennern oder „Anderer Ordner …“) oder per Drag & Drop
+auf ein Projekt, einen Ordner oder die Überschrift eines Trenners mit eigenem Ordner (`useSessionDrag`).
+`SessionService.move` stellt die Session dann wie `/cd` in Claude Code um: Ihre CLI startet beim
+nächsten Prompt im neuen Ordner und setzt die Unterhaltung fort. Claude Code findet eine Session nur
+im Projektordner ihres Arbeitsordners, deshalb verschiebt `accounts/session-move.ts` das Transkript mit
+dem Ordner daneben und hängt einen `relocated`-Eintrag an. Codex bekommt den Ordner bei jedem
+`thread/resume`. Während die CLI arbeitet (Turn, Rückfrage, Shell oder Agent im Hintergrund), bleibt der
+Chat, wo er ist. Ein Ordner außerhalb aller Projekte bekommt ein eigenes Projekt.
 
 ## Trenner
 

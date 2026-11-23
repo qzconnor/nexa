@@ -13,6 +13,7 @@ import type {
   SessionCreateInput,
   SessionDetail,
   SessionMeta,
+  SessionMoveInput,
   SessionSearchHit,
   SessionUpdateInput,
   ShellOutput,
@@ -23,7 +24,8 @@ import type {
 import { firstLine, searchTerms } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { claudePaths, codexPaths } from '../accounts/cli-files'
-import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread } from '../accounts/session-transfer'
+import { relocateClaudeSession } from '../accounts/session-move'
+import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript } from '../accounts/session-transfer'
 import { readClaudeChat } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { pool } from '../lib/pool'
@@ -244,6 +246,71 @@ export class SessionService extends TypedEmitter<Events> {
       moved++
     }
     if (moved) this.saveSoon()
+  }
+
+  /**
+   * Moves a chat to another project or folder: from its next prompt on, its agent works there with
+   * its conversation, as after `/cd` in Claude Code. Claude Code resumes a session only from the
+   * project folder of its working directory, so its transcript moves along; Codex gets the folder
+   * with every `thread/resume`. A chat whose CLI is at work stays where it is.
+   */
+  async move(id: string, target: SessionMoveInput): Promise<SessionMeta> {
+    const s = await this.loaded(id)
+    const meta = s.meta
+    // Before anything else: "another folder" may make a project.
+    this.requireAtRest(s)
+    const { project, cwd } = await this.moveTarget(target)
+    const from = this.projects.get(meta.projectId)
+    const before = from ? this.cwdOf(meta, from) : null
+    const after = cwd ?? project.path
+    const sameFolder = before !== null && folderKey(before) === folderKey(after)
+    if (meta.projectId === project.id && sameFolder) return meta
+    if (!sameFolder) {
+      if (s.run) await this.stop(id)
+      await this.moveClaudeSession(meta, before ?? after, after)
+    }
+    meta.projectId = project.id
+    if (cwd) meta.cwd = cwd
+    else delete meta.cwd
+    if (!sameFolder) {
+      this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider: meta.provider, level: 'info', text: `Verschoben nach „${project.name}“`, detail: after })
+    }
+    this.saveSoon()
+    return meta
+  }
+
+  /** The project and the folder in it (undefined: its own) a chat moves to; a folder outside every project gets one. */
+  private async moveTarget(target: SessionMoveInput): Promise<{ project: Project; cwd: string | undefined }> {
+    if ('folder' in target) {
+      const folder = resolve(target.folder)
+      const project = this.projects.containing(folder) ?? (await this.projects.create({ path: folder }))
+      return { project, cwd: await this.subfolder(project, folder) }
+    }
+    const project = this.projects.get(target.projectId)
+    if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
+    return { project, cwd: target.cwd ? await this.subfolder(project, target.cwd) : undefined }
+  }
+
+  /** Whether the chat's CLI is at rest: no turn, question, shell or agent of it that still runs. */
+  private requireAtRest(s: SessionState): void {
+    const status = s.runtime.status
+    if (status === 'running' || status === 'starting' || status === 'waiting') {
+      throw new Error('Der Chat arbeitet gerade. Sobald er fertig ist, lässt er sich verschieben.')
+    }
+    // Only a CLI that still runs has them; after a restart a state left on "running" means nothing.
+    const background = s.run?.alive && s.items?.some((i) => (i.kind === 'tool' && i.shell?.background && i.shell.status === 'running') || (i.kind === 'agent' && i.status === 'running'))
+    if (background) throw new Error('Im Hintergrund läuft noch eine Shell oder ein Agent des Chats. Sobald sie fertig sind, lässt er sich verschieben.')
+  }
+
+  /** Claude Code's transcript of the chat into the project folder of `to`; without one there is nothing to move. */
+  private async moveClaudeSession(meta: SessionMeta, from: string, to: string): Promise<void> {
+    const link = meta.cli.claude
+    if (!link) return
+    const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(meta, 'claude'))
+    const transcript = await findClaudeTranscript(paths.projectsDir, link.sessionId, from)
+    if (transcript && !(await relocateClaudeSession(paths.projectsDir, transcript, link.sessionId, to))) {
+      console.warn('[sessions] a copy of the conversation lies in the new folder already, Claude Code resumes that one', meta.id)
+    }
   }
 
   /** The CLI conversations Nexa's sessions continue, to tell which are taken over already. */
@@ -566,7 +633,6 @@ export class SessionService extends TypedEmitter<Events> {
     }
     if (patch.pinned !== undefined) meta.pinned = patch.pinned
     if (patch.archived !== undefined) meta.archived = patch.archived
-    if (patch.projectId !== undefined && this.projects.get(patch.projectId)) meta.projectId = patch.projectId
     if (patch.account !== undefined && this.accounts.has(patch.account)) {
       const account = this.accounts.get(patch.account)
       if (meta.accounts?.[account.provider] !== account.id) {
