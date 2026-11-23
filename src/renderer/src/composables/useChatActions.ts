@@ -1,5 +1,8 @@
-import type { SessionMeta } from '@shared/types'
+import { sectionIdOf } from '@shared/sections'
+import type { SessionMeta, SessionMoveInput } from '@shared/types'
 import { attempt } from '@/lib/errors'
+import { foldersOf, projectTree } from '@/lib/session-tree'
+import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 
@@ -9,6 +12,7 @@ export type ChatState = 'running' | 'waiting' | 'unread' | 'error' | null
 /** What the sidebar's chats and the quick open do with a chat, in one place. */
 export function useChatActions() {
   const sessions = useSessionsStore()
+  const projects = useProjectsStore()
   const ui = useUiStore()
 
   function state(id: string): ChatState {
@@ -17,6 +21,12 @@ export function useChatActions() {
     if (status === 'waiting') return 'waiting'
     if (status === 'error') return 'error'
     return sessions.unread.has(id) ? 'unread' : null
+  }
+
+  /** Its CLI works on it or waits for an answer: it can't move now (see SessionService.move). */
+  function working(id: string): boolean {
+    const now = state(id)
+    return now === 'running' || now === 'waiting'
   }
 
   async function open(id: string): Promise<void> {
@@ -36,11 +46,32 @@ export function useChatActions() {
     if (title && title !== meta.title) await attempt(() => sessions.update(meta.id, { title }))
   }
 
+  /** Into another project or a folder in it; the sidebar then shows it there, whatever was folded. */
+  async function move(meta: SessionMeta, target: SessionMoveInput): Promise<void> {
+    const moved = await attempt(() => sessions.move(meta.id, target), 'Chat nicht verschoben')
+    if (moved) reveal(moved)
+  }
+
+  /** Into a folder the user picks, starting at the one it works in. */
+  async function moveElsewhere(meta: SessionMeta): Promise<void> {
+    const folder = await window.api.app.pickDirectory(sessions.cwdOf(meta) ?? undefined)
+    if (folder) await move(meta, { folder })
+  }
+
+  function reveal(meta: SessionMeta): void {
+    const project = projects.get(meta.projectId)
+    if (!project) return
+    const section = projects.sections.find((s) => s.id === sectionIdOf(project, projects.sections))
+    if (section?.collapsed) void attempt(() => projects.updateSection(section.id, { collapsed: false }))
+    if (project.collapsed) void attempt(() => projects.update(project.id, { collapsed: false }))
+    for (const id of foldersOf(projectTree(project.id, project.path, sessions.byProject(project.id)), meta.id)) ui.toggleFolder(id, true)
+  }
+
   async function remove(meta: SessionMeta): Promise<void> {
     if (!(await ui.confirm({ title: `„${meta.title}“ löschen?`, description: 'Der Verlauf in Nexa geht verloren.', confirmText: 'Löschen', destructive: true }))) return
     await attempt(() => sessions.remove(meta.id), 'Löschen fehlgeschlagen')
     if (!sessions.activeId && ui.view === 'chat') ui.view = 'home'
   }
 
-  return { state, open, newChat, rename, remove }
+  return { state, working, open, newChat, rename, move, moveElsewhere, remove }
 }

@@ -180,6 +180,7 @@ const api: NexaApi = {
     remove: (id) => invoke(IpcInvoke.sessionsRemove, id),
     stop: (id) => invoke(IpcInvoke.sessionsStop, id),
     search: (query) => invoke(IpcInvoke.sessionsSearch, query),
+    move: (id, target) => invoke(IpcInvoke.sessionsMove, id, target),
     onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),
     onEvent: (cb) => subscribe(IpcEvent.sessionEvent, cb),
     onShow: (cb) => subscribe(IpcEvent.showSession, cb),

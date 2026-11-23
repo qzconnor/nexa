@@ -9,7 +9,7 @@ import { IpcEvent, IpcInvoke, type SectionCreateInput, type SectionUpdateInput }
 import type { SectionLayout } from '@shared/sections'
 import { parseThemeFile } from '@shared/themes/file'
 import type { ThemeContent } from '@shared/themes/types'
-import type { AppInfo } from '@shared/types'
+import type { AppInfo, SessionMoveInput } from '@shared/types'
 import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
@@ -62,6 +62,13 @@ function absolutePath(value: unknown, what: string): string {
   const path = str(value, what)
   if (!path || path.length > 4096 || !isAbsolute(path) || path.includes('\0')) throw new Error(`Ungültiger Pfad: ${what}`)
   return path
+}
+
+/** Where a chat moves to, from the window: paths must be absolute, as from the folder dialog. */
+function moveArg(value: unknown): SessionMoveInput {
+  const target = objectArg<Record<string, unknown>>(value, 'Das Ziel')
+  if (target.folder !== undefined) return { folder: absolutePath(target.folder, 'Der Ordner') }
+  return { projectId: str(target.projectId, 'Das Projekt'), ...(target.cwd !== undefined ? { cwd: absolutePath(target.cwd, 'Der Ordner') } : {}) }
 }
 
 /** A theme from the window, checked like a file. */
@@ -268,6 +275,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsRemove, (_e, id: unknown) => sessions.remove(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsSearch, (_e, query: unknown) => sessions.search(typeof query === 'string' ? query.slice(0, 200) : ''))
+  handle(IpcInvoke.sessionsMove, (_e, id: unknown, target: unknown) => sessions.move(str(id, 'Die Session'), moveArg(target)))
 
   handle(IpcInvoke.apiStatus, () => ctx.api.status())
 

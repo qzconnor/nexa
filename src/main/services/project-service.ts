@@ -72,6 +72,11 @@ export class ProjectService extends TypedEmitter<{ changed: [Project[]]; section
     return this.projects.find((p) => folderKey(p.path) === key)
   }
 
+  /** The project a folder lies in (or is), the innermost one when projects nest. */
+  containing(path: string): Project | undefined {
+    return this.projects.filter((p) => inFolder(path, p.path)).sort((a, b) => b.path.length - a.path.length)[0]
+  }
+
   async create(input: ProjectCreateInput, options: ProjectCreateOptions = {}): Promise<Project> {
     const path = resolve(input.path)
     const existing = this.byPath(path)

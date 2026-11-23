@@ -57,9 +57,17 @@ export function claudePaths(configDir: string, viaEnv: boolean): ClaudePaths {
   return { configDir, credentialsFile: join(configDir, '.credentials.json'), globalConfigFile, projectsDir: join(configDir, 'projects') }
 }
 
+/** Claude Code shortens the name of a project folder longer than this, with a hash of the path. */
+const MAX_PROJECT_KEY = 200
+
 /** Claude Code's project folder name for a working directory. */
 export function claudeProjectKey(cwd: string): string {
-  return cwd.replace(/[^a-zA-Z0-9]/g, '-')
+  const key = cwd.replace(/[^a-zA-Z0-9]/g, '-')
+  if (key.length <= MAX_PROJECT_KEY) return key
+  // As Claude Code hashes it.
+  let hash = 0
+  for (let i = 0; i < cwd.length; i++) hash = ((hash << 5) - hash + cwd.charCodeAt(i)) | 0
+  return `${key.slice(0, MAX_PROJECT_KEY)}-${Math.abs(hash).toString(36)}`
 }
 
 /**

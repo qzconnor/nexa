@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import type { Project } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import type { FolderNode } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
@@ -15,6 +16,7 @@ import SidebarSession from './SidebarSession.vue'
 const props = defineProps<{ node: FolderNode; project: Project; now: number; limit: number }>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const drag = useSessionDrag()
 
 const open = computed(() => ui.openFolders.has(props.node.id))
 const showAll = ref(false)
@@ -32,7 +34,8 @@ async function newChat(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex flex-col gap-px">
+  <!-- A chat dropped on the folder or what is in it works in this folder (see Sidebar). -->
+  <div :data-drop-folder="node.path" :class="cn('flex flex-col gap-px rounded-lg', drag?.isTarget(project.id, node.path) && 'bg-primary/10 ring-1 ring-primary/50')">
     <ContextMenu>
       <ContextMenuTrigger as-child>
         <div class="group/folder flex items-center rounded-lg hover:bg-sidebar-accent/60">

@@ -281,8 +281,13 @@ export interface SessionUpdateInput {
   permissionMode?: PermissionMode
   pinned?: boolean
   archived?: boolean
-  projectId?: string
 }
+
+/**
+ * Where a chat moves to: a project (and a folder in it), or any folder, which gets a project if no
+ * project holds it.
+ */
+export type SessionMoveInput = { projectId: string; cwd?: string } | { folder: string }
 
 export interface SessionDetail {
   meta: SessionMeta
