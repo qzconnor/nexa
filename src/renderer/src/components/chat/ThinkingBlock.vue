@@ -14,7 +14,7 @@ const open = ref(true)
 </script>
 
 <template>
-  <div class="my-1">
+  <div class="my-1.5">
     <button
       type="button"
       class="-ml-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.85rem] text-muted-foreground hover:bg-muted/60 hover:text-foreground"

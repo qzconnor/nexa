@@ -64,7 +64,7 @@ const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : out
     <button
       type="button"
       :disabled="!expandable"
-      class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[0.85rem] transition-colors enabled:hover:bg-muted/60"
+      class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.85rem] transition-colors enabled:hover:bg-muted/60"
       :aria-expanded="expandable ? open : undefined"
       @click="open = !open"
     >

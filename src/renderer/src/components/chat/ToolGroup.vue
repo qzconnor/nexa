@@ -31,7 +31,7 @@ const summary = computed(() => toolSummary(props.tools))
 </script>
 
 <template>
-  <div class="relative my-1 flex flex-col border-l-2 border-border/70 pl-1.5">
+  <div class="relative my-2 flex flex-col border-l-2 border-border/70 pl-1.5">
     <button
       v-if="foldable"
       type="button"

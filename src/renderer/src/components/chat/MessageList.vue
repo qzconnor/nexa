@@ -170,7 +170,7 @@ const providerChanges = computed(() => {
         />
         <div
           v-else-if="block.item.kind === 'assistant'"
-          :class="block.item.phase === 'commentary' ? 'py-1 text-[0.92rem] text-foreground/85' : 'py-2'"
+          :class="block.item.phase === 'commentary' ? 'py-1.5 text-[0.92rem] text-foreground/85' : 'py-2.5'"
         >
           <Markdown :text="block.item.text" :streaming="block.item.streaming" />
         </div>

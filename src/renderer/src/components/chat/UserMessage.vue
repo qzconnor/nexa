@@ -15,7 +15,7 @@ const openImage = (path: string) => void window.api.app.openPath(path)
 </script>
 
 <template>
-  <div class="flex flex-col items-end gap-1.5 py-2">
+  <div class="flex flex-col items-end gap-1.5 py-3">
     <span
       v-if="pending"
       class="flex items-center gap-1 text-[0.72rem] font-medium text-primary"

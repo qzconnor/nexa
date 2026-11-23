@@ -21,7 +21,7 @@ const parts = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-1 pt-1 pb-3">
+  <div class="flex flex-col gap-1 pt-2 pb-5">
     <div v-if="item.error" class="selectable rounded-lg bg-destructive/10 px-3 py-2 text-[0.82rem] text-destructive">{{ item.error }}</div>
     <div v-if="parts.length" class="text-[0.72rem] text-muted-foreground/80 tabular-nums">{{ parts.join(' · ') }}</div>
   </div>
