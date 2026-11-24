@@ -71,7 +71,7 @@ export const useUiStore = defineStore('ui', () => {
   const sidebarOpen = ref(stored('nexa.sidebar', 'open') === 'open')
   /** The agent whose work the chat shows in place of the main thread; null: the main thread. */
   const agentId = ref<string | null>(null)
-  /** The shell (its tool item) shown in the side panel. */
+  /** The shell shown in the side panel: its tool item, or a start command of the project (`startShellId`). */
   const shellId = ref<string | null>(null)
   /** The shells above the composer as one line: a server runs for hours, folded once is enough. */
   const shellDockFolded = ref(stored<'open' | 'folded'>('nexa.shellDock', 'open') === 'folded')
@@ -140,6 +140,11 @@ export const useUiStore = defineStore('ui', () => {
   /** The dialog for clearing up chats, with the project it starts with (null: all); undefined: closed. */
   const cleanupProject = ref<string | null | undefined>(undefined)
 
+  /** The project whose start commands the dialog edits; null: closed. */
+  const startCommandsProject = ref<string | null>(null)
+  /** The dialog for a new chat in a worktree: the project it is asked from, the repository's folder; null: closed. */
+  const worktreeRequest = ref<{ projectId: string; folder: string } | null>(null)
+
   const confirmState = ref<(ConfirmOptions & { open: boolean }) | null>(null)
   /** The question shown, and those that wait for it: one never answers another one with No. */
   let shownConfirm: ((answer: ConfirmAnswer) => void) | null = null
@@ -204,6 +209,8 @@ export const useUiStore = defineStore('ui', () => {
     themeEditorRequest,
     promptTarget,
     cleanupProject,
+    startCommandsProject,
+    worktreeRequest,
     confirmState,
     confirmInput,
     toggleSidebar,

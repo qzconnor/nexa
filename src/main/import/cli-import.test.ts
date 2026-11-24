@@ -60,6 +60,7 @@ function setup(options: { known?: string[]; threads?: Record<string, CliSessionI
     {
       knownCliSessions: () => new Set(options.known ?? []),
       adopt: (metas: Omit<SessionMeta, 'id'>[]) => adopted.push(...metas) && metas.length,
+      list: () => adopted.map((meta, i) => ({ ...meta, id: `chat-${i + 1}` })),
     } as never,
     {
       list: () => accounts,
@@ -149,5 +150,24 @@ describe('CliSessionImport', () => {
 
     expect(preview.failed).toEqual(['Codex (Standard): codex app-server beendet'])
     expect(preview.groups).toMatchObject([{ path: app, counts: { claude: 0, codex: 1 } }])
+  })
+})
+
+describe('CliSessionImport.takeOver', () => {
+  it('takes over one session of Claude Code by its id, into the project its folder lies in', async () => {
+    await transcript('c1', join(app, 'sub'), 'Baue den Export')
+    const { importer, adopted } = setup({ projects: [{ id: 'p0', name: 'app', path: app, createdAt: 0, updatedAt: 0 }] })
+
+    expect(await importer.takeOver('c1')).toBe('chat-1')
+    expect(adopted).toMatchObject([{ projectId: 'p0', cwd: join(app, 'sub'), cli: { claude: { sessionId: 'c1' } } }])
+  })
+
+  it('takes over a thread of Codex, and nothing it can’t find', async () => {
+    const { importer, adopted, projects } = setup({ threads: { 'codex-b': [thread('t1', other, 9000)] } })
+
+    expect(await importer.takeOver('t1')).toBe('chat-1')
+    expect(projects.map((p) => p.path)).toEqual([other])
+    expect(adopted[0]).toMatchObject({ provider: 'codex', accounts: { codex: 'codex-b' } })
+    expect(await importer.takeOver('t-unknown')).toBeNull()
   })
 })

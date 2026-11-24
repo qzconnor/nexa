@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionMeta } from '@shared/types'
-import { cleanupMatches, removalDescription, removalProblems, removedTitle, type CleanupFilter } from './chat-cleanup'
+import { cleanupMatches, removalDescription, removalProblems, removedTitle, worktreeNote, type CleanupFilter } from './chat-cleanup'
 
 const NOW = Date.UTC(2026, 10, 24)
 const DAY = 86_400_000
@@ -46,6 +46,12 @@ describe('texts', () => {
     expect(removedTitle([{ title: 'a' }, { title: 'b' }])).toBe('2 Chats gelöscht')
     expect(removalDescription(3, true)).toBe('Ihr Verlauf in Nexa geht verloren, ihre Unterhaltungen in Claude Code und Codex kommen in den Papierkorb.')
     expect(removalDescription(1, false)).toBe('Sein Verlauf in Nexa geht verloren.')
+    expect(removalDescription(1, false, 1)).toBe(
+      'Sein Verlauf in Nexa geht verloren. Sein Worktree wird ebenfalls entfernt, sofern darin keine Änderungen und keine eigenen Commits sind.',
+    )
+    expect(worktreeNote(1)).toMatch(/^Ein Worktree wird/)
+    expect(worktreeNote(2)).toMatch(/^2 Worktrees werden/)
+    expect(worktreeNote(0, true)).toBe('')
   })
 
   it('reports only what went wrong', () => {
@@ -54,5 +60,12 @@ describe('texts', () => {
     const problems = removalProblems({ ...ok, openElsewhere: ['a'], failed: 2, error: 'Zugriff verweigert' })
     expect(problems.map((p) => p.title)).toEqual(['Ein Transkript bleibt', 'Nicht alles kam in den Papierkorb'])
     expect(problems[1]!.description).toBe('2 Dateien der CLIs blieben liegen: Zugriff verweigert')
+  })
+
+  it('names a worktree that stays, with its folder', () => {
+    const result = { removed: ['a'], trashed: 0, bytes: 0, openElsewhere: [], failed: 0, worktreesKept: [{ path: 'F:\\app\\.claude\\worktrees\\login', reason: 'Darin sind Änderungen.' }] }
+    expect(removalProblems(result)).toEqual([
+      { title: 'Worktree „login“ bleibt', description: 'Darin sind Änderungen.', error: false, folder: 'F:\\app\\.claude\\worktrees\\login' },
+    ])
   })
 })

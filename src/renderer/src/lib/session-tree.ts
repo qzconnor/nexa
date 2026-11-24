@@ -8,6 +8,8 @@ export interface FolderNode {
   path: string
   /** Its name; `a/b` when `a` has no chats of its own and only `b` in it, so the tree stays flat. */
   name: string
+  /** A worktree (`.claude/worktrees/<name>`, or a folder of one in `name`): named by itself, without those two levels. */
+  worktree: boolean
   folders: FolderNode[]
   /** Its own chats: pinned first, then the latest. */
   sessions: SessionMeta[]
@@ -41,6 +43,7 @@ function childPath(parent: string, name: string): string {
 interface Bucket {
   path: string
   name: string
+  worktree: boolean
   folders: Map<string, Bucket>
   sessions: SessionMeta[]
 }
@@ -48,18 +51,23 @@ interface Bucket {
 /**
  * The chats of a project by the folders they work in, as the Claude Manager shows a project: every
  * level between the project and a chat's folder is a folder of its own, folders first, the latest on
- * top. A chat whose folder lies outside the project is one of the project's own.
+ * top. A worktree (`.claude/worktrees/<name>`, Claude Code's and Nexa's) is one level, by its name. A
+ * chat whose folder lies outside the project is one of the project's own.
  */
 export function projectTree(projectId: string, projectPath: string, sessions: readonly SessionMeta[]): ProjectTree {
-  const root: Bucket = { path: projectPath, name: '', folders: new Map(), sessions: [] }
+  const root: Bucket = { path: projectPath, name: '', worktree: false, folders: new Map(), sessions: [] }
   for (const meta of sessions) {
     let bucket = root
-    for (const segment of meta.cwd ? subfolderSegments(meta.cwd, projectPath) : []) {
-      const path = childPath(bucket.path, segment)
+    const segments = meta.cwd ? subfolderSegments(meta.cwd, projectPath) : []
+    for (let i = 0; i < segments.length; i++) {
+      const worktree = segments[i] === '.claude' && segments[i + 1] === 'worktrees' && i + 2 < segments.length
+      const segment = worktree ? segments[i + 2]! : segments[i]!
+      const path = worktree ? childPath(childPath(childPath(bucket.path, '.claude'), 'worktrees'), segment) : childPath(bucket.path, segment)
+      if (worktree) i += 2
       const key = folderKey(path)
       let next = bucket.folders.get(key)
       if (!next) {
-        next = { path, name: segment, folders: new Map(), sessions: [] }
+        next = { path, name: segment, worktree, folders: new Map(), sessions: [] }
         bucket.folders.set(key, next)
       }
       bucket = next
@@ -70,10 +78,12 @@ export function projectTree(projectId: string, projectPath: string, sessions: re
   const toNode = (bucket: Bucket): FolderNode => {
     let current = bucket
     let name = bucket.name
+    let worktree = bucket.worktree
     // A folder with nothing but one folder in it shows as one level: `packages/core`.
     while (current.sessions.length === 0 && current.folders.size === 1) {
       current = current.folders.values().next().value!
       name = `${name}/${current.name}`
+      worktree ||= current.worktree
     }
     const folders = [...current.folders.values()].map(toNode).sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name, 'de'))
     const own = [...current.sessions].sort(bySession)
@@ -81,6 +91,7 @@ export function projectTree(projectId: string, projectPath: string, sessions: re
       id: `${projectId}\n${folderKey(current.path)}`,
       path: current.path,
       name,
+      worktree,
       folders,
       sessions: own,
       count: own.length + folders.reduce((sum, f) => sum + f.count, 0),

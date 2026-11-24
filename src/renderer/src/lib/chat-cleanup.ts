@@ -1,4 +1,5 @@
 import type { SessionMeta, SessionRemoveResult } from '@shared/types'
+import { baseName } from '@shared/utils'
 
 /** Which chats the clean-up dialog lists. */
 export interface CleanupFilter {
@@ -43,16 +44,38 @@ export function removedTitle(metas: readonly Pick<SessionMeta, 'title'>[]): stri
   return metas.length === 1 ? `„${metas[0]!.title}“ gelöscht` : `${metas.length} Chats gelöscht`
 }
 
-/** What the confirmation for deleting several chats says they lose. */
-export function removalDescription(count: number, withCli: boolean): string {
+/** What the confirmation for deleting several chats says they lose; `worktrees`: how many of them have one. */
+export function removalDescription(count: number, withCli: boolean, worktrees = 0): string {
   const whose = count === 1 ? 'Sein' : 'Ihr'
   const lost = `${whose} Verlauf in Nexa geht verloren`
-  return withCli ? `${lost}, ${count === 1 ? 'seine Unterhaltung' : 'ihre Unterhaltungen'} in Claude Code und Codex ${count === 1 ? 'kommt' : 'kommen'} in den Papierkorb.` : `${lost}.`
+  const text = withCli
+    ? `${lost}, ${count === 1 ? 'seine Unterhaltung' : 'ihre Unterhaltungen'} in Claude Code und Codex ${count === 1 ? 'kommt' : 'kommen'} in den Papierkorb.`
+    : `${lost}.`
+  const note = worktreeNote(worktrees, count === 1)
+  return note ? `${text} ${note}` : text
+}
+
+/**
+ * What deleting chats does to their worktrees (`SessionMeta.worktree`, see `SessionService.remove`);
+ * empty when none has one. `own`: the one chat's, as „Sein Worktree“.
+ */
+export function worktreeNote(worktrees: number, own = false): string {
+  if (worktrees === 0) return ''
+  const which = own ? 'Sein Worktree wird' : worktrees === 1 ? 'Ein Worktree wird' : `${worktrees} Worktrees werden`
+  return `${which} ebenfalls entfernt, sofern darin keine Änderungen und keine eigenen Commits sind.`
+}
+
+/** Something deleting chats left otherwise than asked; `folder`: one to open, where it lies. */
+export interface RemovalProblem {
+  title: string
+  description: string
+  error: boolean
+  folder?: string
 }
 
 /** What went otherwise than asked when chats were deleted; nothing when all went as asked. */
-export function removalProblems(result: SessionRemoveResult): { title: string; description: string; error: boolean }[] {
-  const problems: { title: string; description: string; error: boolean }[] = []
+export function removalProblems(result: SessionRemoveResult): RemovalProblem[] {
+  const problems: RemovalProblem[] = []
   const open = result.openElsewhere.length
   if (open > 0) {
     problems.push({
@@ -68,6 +91,9 @@ export function removalProblems(result: SessionRemoveResult): { title: string; d
       description: `${files} liegen${result.error ? `: ${result.error}` : '.'}`,
       error: true,
     })
+  }
+  for (const kept of result.worktreesKept ?? []) {
+    problems.push({ title: `Worktree „${baseName(kept.path)}“ bleibt`, description: kept.reason, error: false, folder: kept.path })
   }
   return problems
 }

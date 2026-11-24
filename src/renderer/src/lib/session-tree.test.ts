@@ -42,6 +42,21 @@ describe('projectTree', () => {
     expect(chatsIn(tree).map((s) => s.id).sort()).toEqual(['deep', 'nexa', 'nexa-src', 'outside', 'own', 'pinned'])
     expect(chatsIn(nexa!).map((s) => s.id)).toEqual(['nexa', 'nexa-src'])
   })
+
+  it('shows a worktree as one level by its name', () => {
+    const tree = projectTree('p', 'F:\\Code\\app', [
+      meta('login', 30, 'F:\\Code\\app\\.claude\\worktrees\\login'),
+      meta('login-src', 20, 'F:\\Code\\app\\.claude\\worktrees\\login\\src'),
+      meta('fix', 10, 'F:\\Code\\app\\.claude\\worktrees\\fix\\src'),
+      meta('config', 5, 'F:\\Code\\app\\.claude'),
+    ])
+    expect(tree.folders.map((f) => [f.name, f.worktree, f.path])).toEqual([
+      ['login', true, 'F:\\Code\\app\\.claude\\worktrees\\login'],
+      ['fix/src', true, 'F:\\Code\\app\\.claude\\worktrees\\fix\\src'],
+      ['.claude', false, 'F:\\Code\\app\\.claude'],
+    ])
+    expect(tree.folders[0]!.folders.map((f) => [f.name, f.worktree])).toEqual([['src', false]])
+  })
 })
 
 describe('pinnedChats', () => {

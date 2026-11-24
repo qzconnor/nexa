@@ -50,6 +50,7 @@ import { claudePaths, codexPaths } from '../accounts/cli-files'
 import { claudeSessionFiles, codexRollouts, codexThreadFiles, diskSize } from '../accounts/conversation-files'
 import { relocateClaudeSession } from '../accounts/session-move'
 import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript, findCodexRollout } from '../accounts/session-transfer'
+import type { GitService } from '../files/git-service'
 import { readClaudeChat, readClaudeChatSince } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { pool } from '../lib/pool'
@@ -164,6 +165,9 @@ function conversationLookup(search: boolean): ConversationLookup {
   }
 }
 
+/** What the chats' worktrees take of git. */
+export type WorktreeGit = Pick<GitService, 'addWorktree' | 'removeWorktree'>
+
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
 /**
  * How long a Codex run stays idle before it lets go of its thread. Codex's server keeps it loaded
@@ -214,6 +218,8 @@ export class SessionService extends TypedEmitter<Events> {
     private readonly toolGrant: (tools: ToolSettings) => NexaToolGrant,
     /** Moves a file or folder into the recycle bin (Electron's shell, a fake in tests). */
     private readonly trash: (path: string) => Promise<void>,
+    /** Makes and removes the chats' worktrees; without it there are none. */
+    private readonly git: WorktreeGit | null = null,
   ) {
     super()
     this.file = join(dataDir, 'sessions.json')
@@ -245,6 +251,12 @@ export class SessionService extends TypedEmitter<Events> {
 
   list(): SessionMeta[] {
     return [...this.sessions.values()].map((s) => s.meta).sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  /** The chats whose CLI is up or at work; `nx` goes to one of them rather than starting another. */
+  running(): Set<string> {
+    const busy = (s: SessionState) => s.runtime.connected || ['starting', 'running', 'waiting'].includes(s.runtime.status)
+    return new Set([...this.sessions.values()].filter(busy).map((s) => s.meta.id))
   }
 
   private get(id: string): SessionState {
@@ -302,17 +314,22 @@ export class SessionService extends TypedEmitter<Events> {
   async create(input: SessionCreateInput): Promise<SessionMeta> {
     const project = this.projects.get(input.projectId)
     if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
-    const cwd = input.cwd ? await this.subfolder(project, input.cwd) : undefined
     const settings = this.settings()
     const chosen = input.account && this.accounts.has(input.account) ? this.accounts.get(input.account).provider : undefined
     const asked = input.provider ?? chosen
     if (asked) this.requireEnabled(asked)
     // The default may be off (settings edited by hand): then the first CLI that is on.
     const provider = asked ?? (settings[settings.defaults.provider].enabled ? settings.defaults.provider : (enabledProviders(settings)[0] ?? settings.defaults.provider))
+    const args = Array.isArray(input.cliArgs) ? input.cliArgs.filter((arg): arg is string => typeof arg === 'string').slice(0, 100) : []
+    // The folder last: a worktree is made only for a chat that comes about.
+    const { project: target, cwd, worktree } =
+      typeof input.worktree === 'string'
+        ? await this.worktreePlace(project, input.cwd || project.path, input.worktree)
+        : { project, cwd: input.cwd ? await this.subfolder(project, input.cwd) : undefined, worktree: undefined }
     const now = Date.now()
     const meta: SessionMeta = {
       id: randomUUID(),
-      projectId: project.id,
+      projectId: target.id,
       title: 'Neue Session',
       titleSource: 'auto',
       provider,
@@ -325,12 +342,31 @@ export class SessionService extends TypedEmitter<Events> {
       cli: {},
       accounts: { [provider]: this.accounts.resolve(provider, input.account, this.providers.defaultAccount(provider)) },
       ...(cwd ? { cwd } : {}),
+      ...(args.length ? { cliArgs: { [provider]: args } } : {}),
+      ...(worktree ? { worktree } : {}),
     }
     const s = this.state(meta)
     s.items = []
     this.sessions.set(meta.id, s)
     this.saveSoon()
     return meta
+  }
+
+  /**
+   * Where a new chat in a worktree works (`SessionCreateInput.worktree`): in the worktree, made or entered
+   * again, of the repository `folder` lies in. Git makes it, not `claude --worktree`, so Codex can work in
+   * it as well (see docs/PROTOCOLS.md). The chat goes to `project` when the worktree lies in it, else to
+   * the innermost project it lies in, else to a new one for the repository's main checkout.
+   */
+  private async worktreePlace(
+    project: Project,
+    folder: string,
+    name: string,
+  ): Promise<{ project: Project; cwd: string | undefined; worktree: NonNullable<SessionMeta['worktree']> }> {
+    if (!this.git) throw new Error('Worktrees gibt es hier nicht.')
+    const { path, branch, root } = await this.git.addWorktree(resolve(folder), name)
+    const target = inFolder(path, project.path) ? project : (this.projects.containing(path) ?? (await this.projects.create({ path: root })))
+    return { project: target, cwd: folderKey(path) === folderKey(target.path) ? undefined : path, worktree: { path, branch } }
   }
 
   /**
@@ -534,6 +570,8 @@ export class SessionService extends TypedEmitter<Events> {
     meta.projectId = project.id
     if (cwd) meta.cwd = cwd
     else delete meta.cwd
+    // Out of its worktree, deleting the chat doesn't take the worktree along any more.
+    if (meta.worktree && !inFolder(after, meta.worktree.path)) delete meta.worktree
     if (!sameFolder) {
       this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider: meta.provider, level: 'info', text: `Verschoben nach „${project.name}“`, detail: after })
     }
@@ -1014,6 +1052,17 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /**
+   * The CLI a chat runs with and its account (Nexa's `limits` tool): the running CLI's, else those its
+   * next prompt goes with. Null for a chat that is gone.
+   */
+  chatAccount(id: string): { provider: ProviderId; accountId: string } | null {
+    const s = this.sessions.get(id)
+    if (!s) return null
+    if (s.run?.alive && s.runProvider && s.runAccount) return { provider: s.runProvider, accountId: s.runAccount }
+    return { provider: s.meta.provider, accountId: this.accountFor(s.meta, s.meta.provider) }
+  }
+
+  /**
    * A message of one chat's agent to another chat: it goes in like a prompt (into the running turn, or
    * starting the CLI), marked with where it came from. Refused after `MAX_CHAT_CHAIN` messages between
    * chats in a row without the user.
@@ -1306,7 +1355,7 @@ export class SessionService extends TypedEmitter<Events> {
           noChrome: !!mcp && tools.browserTools && tools.noClaudeInChrome,
           mcpOff: project.mcpOff?.[provider],
           dirs: meta.dirs,
-          extraArgs: this.accounts.extraArgs(accountId),
+          extraArgs: [...this.accounts.extraArgs(accountId), ...(meta.cliArgs?.[provider] ?? [])],
         },
         sink,
       )
@@ -1672,6 +1721,7 @@ export class SessionService extends TypedEmitter<Events> {
    * Deletes chats: their history in Nexa, and (setting `chat.deleteCliConversations`) their CLIs'
    * conversations into the recycle bin, in every account with a copy. A conversation stays that
    * another chat still goes on with (a fork that hasn't run yet), or that a CLI outside Nexa has open.
+   * Their worktrees go too, as far as nothing is lost (`removeWorktrees`).
    */
   async remove(ids: readonly string[]): Promise<SessionRemoveResult> {
     const result: SessionRemoveResult = { removed: [], trashed: 0, bytes: 0, openElsewhere: [], failed: 0 }
@@ -1718,8 +1768,34 @@ export class SessionService extends TypedEmitter<Events> {
         }
       }
     }
+    await this.removeWorktrees(targets.map((s) => s.meta), result)
     if (result.removed.length > 0) this.saveSoon()
     return result
+  }
+
+  /**
+   * The worktrees of deleted chats (`SessionMeta.worktree`) go with their branches, as when a session of
+   * `claude --worktree` ends: not while another chat works in one (also as a folder added to it), nor
+   * when work in it would be lost; those are named in `worktreesKept`.
+   */
+  private async removeWorktrees(gone: readonly SessionMeta[], result: SessionRemoveResult): Promise<void> {
+    const seen = new Set<string>()
+    for (const { worktree } of gone) {
+      if (!worktree || !this.git || seen.has(folderKey(worktree.path))) continue
+      seen.add(folderKey(worktree.path))
+      if (this.inUse(worktree.path)) continue
+      const reason = await this.git.removeWorktree(worktree.path, worktree.branch).catch((error: unknown) => (error instanceof Error ? error.message : String(error)))
+      if (reason) (result.worktreesKept ??= []).push({ path: worktree.path, reason })
+    }
+  }
+
+  /** Whether a chat works in the folder or in one in it, also as a folder added to it. */
+  private inUse(folder: string): boolean {
+    for (const s of this.sessions.values()) {
+      const own = s.meta.cwd ?? this.projects.get(s.meta.projectId)?.path
+      if ([own, ...(s.meta.dirs ?? [])].some((dir) => dir && inFolder(dir, folder))) return true
+    }
+    return false
   }
 
   /** What each chat takes on disk: its history in Nexa and what deleting it takes along of its CLIs. */

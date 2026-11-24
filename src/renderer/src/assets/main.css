@@ -14,9 +14,11 @@
  */
 
 @theme inline {
-  --font-sans: 'Geist Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  /* The fonts of the settings: themes/apply.ts sets `--ui-font` and `--code-*` with the theme's tokens. */
+  --font-sans: var(--ui-font);
   --font-heading: var(--font-sans);
-  --font-mono: 'Geist Mono Variable', 'Cascadia Mono', Consolas, monospace;
+  --font-mono: var(--code-font);
+  --font-mono--font-feature-settings: var(--code-font-features);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -104,6 +106,10 @@
   --success: oklch(0.62 0.17 150);
   --warning: oklch(0.75 0.15 75);
   --window-bg: var(--background);
+  /* Nexa's own fonts, the same as in lib/fonts.ts. */
+  --ui-font: 'Geist Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --code-font: 'Geist Mono Variable', 'Cascadia Mono', 'Consolas', monospace;
+  --code-font-features: normal;
   /* The surface as it looks over the window, without the material showing through (.frost-backing). */
   --surface-solid: var(--background);
   --titlebar-height: 40px;
@@ -490,13 +496,14 @@
     cursor: pointer;
   }
   .markdown code {
-    font-family: var(--font-mono);
+    font-family: var(--code-font);
+    font-feature-settings: var(--code-font-features);
     font-size: 0.88em;
     padding: 0.1em 0.35em;
     border-radius: calc(var(--radius) * 0.5);
     background: var(--muted);
   }
-  /* In the history in the terminal's colours and font (`--code-*`), elsewhere on the page's. */
+  /* In the code's colours and font (`--code-*`, themes/apply.ts). */
   .markdown pre {
     padding: 0.75em 1em;
     border-radius: var(--radius);
@@ -508,7 +515,6 @@
   .markdown pre code {
     padding: 0;
     background: transparent;
-    font-family: var(--code-font, var(--font-mono));
     font-size: 0.85em;
   }
   .markdown blockquote {
@@ -676,7 +682,8 @@
     text-decoration-color: var(--foreground);
   }
   .release-notes code {
-    font-family: var(--font-mono);
+    font-family: var(--code-font);
+    font-feature-settings: var(--code-font-features);
     font-size: 0.88em;
     padding: 0.1em 0.35em;
     border-radius: calc(var(--radius) * 0.5);

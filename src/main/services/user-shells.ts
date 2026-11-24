@@ -120,7 +120,7 @@ const MAX_BYTES = 1024 * 1024
 const FLUSH_MS = 250
 
 interface Running {
-  sessionId: string
+  owner: string
   child: ChildProcess
   stopped: boolean
 }
@@ -128,13 +128,14 @@ interface Running {
 /**
  * The commands the user runs with `!` in the composer, each in its own process in the chat's folder,
  * without input (a command that asks for something fails instead of waiting for good). Nexa runs
- * them, not a CLI: the agent learns of them only through the next prompt, with secrets masked.
+ * them, not a CLI: the agent learns of them only through the next prompt, with secrets masked. The
+ * start commands of the projects run the same way (start-commands.ts).
  */
 export class UserShells {
   private readonly running = new Map<string, Running>()
 
-  /** Starts `launch` for the command of item `itemId` in chat `sessionId`. */
-  run(sessionId: string, itemId: string, launch: ShellLaunch, cwd: string, sink: ShellSink): void {
+  /** Starts `launch` for the command `itemId` (a chat's item, a start command) of `owner` (the chat, the project). */
+  run(owner: string, itemId: string, launch: ShellLaunch, cwd: string, sink: ShellSink): void {
     askConsoleCodePage()
     let child: ChildProcess
     try {
@@ -156,7 +157,7 @@ export class UserShells {
       child.stdin?.on('error', () => {})
       child.stdin?.end(launch.stdin)
     }
-    const entry: Running = { sessionId, child, stopped: false }
+    const entry: Running = { owner, child, stopped: false }
     this.running.set(itemId, entry)
 
     let chunks: Buffer[] = []
@@ -205,9 +206,9 @@ export class UserShells {
   }
 
   /** Ends the commands of a chat (it goes), or all (Nexa quits). */
-  stopAll(sessionId?: string): void {
+  stopAll(owner?: string): void {
     for (const [itemId, entry] of this.running) {
-      if (!sessionId || entry.sessionId === sessionId) this.stop(itemId)
+      if (!owner || entry.owner === owner) this.stop(itemId)
     }
   }
 }

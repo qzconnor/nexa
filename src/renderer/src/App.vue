@@ -8,8 +8,10 @@ import AppTooltip from '@/components/common/AppTooltip.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import ChatCleanupDialog from '@/components/layout/ChatCleanupDialog.vue'
 import FolderPromptDialog from '@/components/layout/FolderPromptDialog.vue'
+import StartCommandsDialog from '@/components/layout/StartCommandsDialog.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
+import WorktreeDialog from '@/components/layout/WorktreeDialog.vue'
 import CommandPalette from '@/components/palette/CommandPalette.vue'
 import SettingsDialog from '@/components/settings/SettingsDialog.vue'
 import ThemeEditorDialog from '@/components/themes/ThemeEditorDialog.vue'
@@ -66,6 +68,11 @@ onMounted(async () => {
       ui.view = 'chat'
       void attempt(() => sessions.open(id), 'Session ließ sich nicht öffnen')
     })
+    // `nx -r` without an id: the folder's chats to pick from, as Claude Code's `--resume` offers them.
+    window.api.sessions.onFind((query) => {
+      ui.paletteQuery = query
+      ui.paletteOpen = true
+    })
     // A notification about an account's limits or login.
     window.api.settings.onOpen((section) => ui.openSettings(section))
     ready.value = true
@@ -120,7 +127,9 @@ onMounted(async () => {
       <AccountFormDialog />
       <AccountLoginDialog />
       <FolderPromptDialog />
+      <StartCommandsDialog />
       <ChatCleanupDialog />
+      <WorktreeDialog />
     </template>
     <ConfirmDialog />
     <AppTooltip />

@@ -131,7 +131,7 @@ function cleanUp(): void {
         v-if="isWindows"
         anchor="chat.shell"
         label="Shell für „!“"
-        description="„!“ am Anfang des Eingabefelds führt die Zeile als Befehl im Ordner des Chats aus. PowerShell 7, wenn installiert, sonst Windows PowerShell. Der Agent bekommt Befehl und Ausgabe mit dem nächsten Prompt, Schlüssel und Passwörter durch •••• ersetzt."
+        description="„!“ am Anfang des Eingabefelds führt die Zeile als Befehl im Ordner des Chats aus. PowerShell 7, wenn installiert, sonst Windows PowerShell. Der Agent bekommt Befehl und Ausgabe mit dem nächsten Prompt, Schlüssel und Passwörter durch •••• ersetzt. Auch die Startbefehle der Projekte laufen in dieser Shell."
       >
         <SegmentedControl v-model="shell" :options="SHELLS" aria-label="Shell für „!“" />
       </SettingField>
@@ -204,7 +204,7 @@ function cleanUp(): void {
     <SettingsSection
       anchor="chat.tools"
       title="Nexa-Werkzeuge"
-      description="Nexas eigener MCP-Server: die Agents zeichnen damit direkt im Chat, bedienen den Browser neben ihm und erreichen deine anderen Chats."
+      description="Nexas eigener MCP-Server: die Agents zeichnen damit direkt im Chat, bedienen den Browser neben ihm und erreichen deine anderen Chats. Solange einer der Schalter an ist, sehen sie darüber auch die Limits deiner Accounts."
     >
       <SettingField anchor="chat.renderTools" label="Diagramme, Charts und Tabellen" description="Gilt für neu gestartete CLIs.">
         <Switch :model-value="s.tools.renderTools" @update:model-value="(v: boolean) => update({ tools: { renderTools: v } })" />
@@ -230,7 +230,7 @@ function cleanUp(): void {
       <SettingField
         anchor="chat.chatTools"
         label="Nachrichten zwischen Chats"
-        description="Die Agents schreiben deinen anderen Chats, auch von Claude zu Codex und zurück, lesen deren Antworten und legen neue Chats an. Jeder Chat behält seine eigenen Freigaben. Gilt für neu gestartete CLIs."
+        description="Die Agents schreiben deinen anderen Chats, auch von Claude zu Codex und zurück, lesen deren Antworten, durchsuchen frühere Chats und legen neue an. Jeder Chat behält seine eigenen Freigaben. Gilt für neu gestartete CLIs."
       >
         <Switch :model-value="s.tools.chatTools" @update:model-value="(v: boolean) => update({ tools: { chatTools: v } })" />
       </SettingField>

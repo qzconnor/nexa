@@ -6,12 +6,13 @@ import type { SessionMeta, SessionUpdateInput } from '@shared/types'
 import { dirFromArg, matchEffort, matchModel, type AppCommand } from '@/lib/chat-commands'
 import { effortLabel } from '@/lib/effort'
 import { attempt } from '@/lib/errors'
-import { runningShells } from '@/lib/shells'
+import { runningShells, startShellId } from '@/lib/shells'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore } from '@/stores/file-tree'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
+import { useStartCommandsStore } from '@/stores/start-commands'
 import { useUiStore } from '@/stores/ui'
 import { useChatActions } from './useChatActions'
 
@@ -50,6 +51,7 @@ export function useChatCommands(options: {
   const fileTree = useFileTreeStore()
   const app = useAppStore()
   const ui = useUiStore()
+  const startCommands = useStartCommandsStore()
   const chat = useChatActions()
 
   function update(meta: SessionMeta, patch: SessionUpdateInput, failed = 'Ändern fehlgeschlagen'): Promise<void | undefined> {
@@ -142,17 +144,18 @@ export function useChatCommands(options: {
     await update(meta, { dirs: [...(meta.dirs ?? []), dir] }, 'Ordner nicht hinzugefügt')
   }
 
-  /** The shells' panel: one that runs, else the last command. */
+  /** The shells' panel: one that runs (a start command of the project too), else the last command. */
   function showTasks(): void {
     const items = options.items.value
+    const start = startCommands.runningIn(options.meta.value?.projectId)[0]
     const shown =
       runningShells(items)[0] ??
-      items.findLast((i): i is ToolItem => i.kind === 'tool' && (i.tool === 'bash' || i.name === 'commandExecution'))
-    if (!shown) {
+      (start ? undefined : items.findLast((i): i is ToolItem => i.kind === 'tool' && (i.tool === 'bash' || i.name === 'commandExecution')))
+    if (!shown && !start) {
       toast('Keine Shells in diesem Chat')
       return
     }
-    ui.shellId = shown.id
+    ui.shellId = shown ? shown.id : startShellId(start!.id)
   }
 
   async function stopCli(meta: SessionMeta): Promise<void> {

@@ -3,17 +3,23 @@ import {
   ArrowRightIcon,
   BrushCleaningIcon,
   ChevronRightIcon,
+  CircleStopIcon,
+  FolderGit2Icon,
   FolderIcon,
   FolderInputIcon,
   FolderOpenIcon,
   FolderTreeIcon,
   PencilIcon,
+  PlayIcon,
   PlusIcon,
   ScrollTextIcon,
+  SquareTerminalIcon,
   Trash2Icon,
 } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { isSectionRoot, layoutOf, moveProject, sectionIdOf } from '@shared/sections'
+import { startCommandLabel } from '@shared/start-commands'
+import type { StartCommand } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
@@ -28,12 +34,14 @@ import {
 import { report } from '@/composables/useChatRemoval'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useSessionDrag } from '@/composables/useSessionDrag'
+import { worktreeNote } from '@/lib/chat-cleanup'
 import { attempt } from '@/lib/errors'
 import { chatsIn, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
+import { useStartCommandsStore } from '@/stores/start-commands'
 import { useUiStore } from '@/stores/ui'
 import SidebarFolder from './SidebarFolder.vue'
 import SidebarGroupState from './SidebarGroupState.vue'
@@ -48,6 +56,7 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
+const startCommands = useStartCommandsStore()
 const claudeManager = useClaudeManager()
 const drag = useSessionDrag()
 
@@ -59,6 +68,14 @@ const shown = computed(() => (showAll.value ? props.entry.tree.sessions : props.
 const otherSections = computed(() => projects.sections.filter((s) => s.id !== sectionIdOf(project.value, projects.sections)))
 /** A separator for its folder makes sense once, and not for the project a separator stands for already. */
 const canBecomeSection = computed(() => !projects.sections.some((s) => isSectionRoot(project.value, s)))
+const commands = computed(() => startCommands.commandsOf(project.value.id))
+/** „dev läuft“: start commands keep running while other projects' chats are on screen. */
+const runningText = computed(() => startCommands.runningText(project.value.id))
+
+function toggleCommand(command: StartCommand): void {
+  if (startCommands.isRunning(project.value.id, command.id)) void startCommands.stop(project.value.id, command.id)
+  else void startCommands.start(project.value.id, command.id)
+}
 
 async function newChat(cwd?: string): Promise<void> {
   const meta = await attempt(() => sessions.create({ projectId: project.value.id, cwd }), 'Neuer Chat ging nicht')
@@ -78,13 +95,15 @@ async function rename(): Promise<void> {
 
 async function remove(): Promise<void> {
   // Archived ones too: they go with the project.
-  const count = sessions.metas.filter((m) => m.projectId === project.value.id).length
+  const own = sessions.metas.filter((m) => m.projectId === project.value.id)
+  const count = own.length
   const chats = count === 1 ? 'Sein Chat wird' : `Seine ${count} Chats werden`
   const cli = settings.settings.chat.deleteCliConversations ? `, ${count === 1 ? 'seine Unterhaltung' : 'ihre Unterhaltungen'} der CLIs ${count === 1 ? 'kommt' : 'kommen'} in den Papierkorb` : ''
+  const worktrees = worktreeNote(own.filter((m) => m.worktree).length)
   if (
     !(await ui.confirm({
       title: `Projekt „${project.value.name}“ entfernen?`,
-      description: `${count ? `${chats} gelöscht${cli}. ` : ''}Der Ordner auf der Festplatte bleibt.`,
+      description: `${count ? `${chats} gelöscht${cli}. ` : ''}Der Ordner auf der Festplatte bleibt.${worktrees ? ` ${worktrees}` : ''}`,
       confirmText: 'Entfernen',
       destructive: true,
     }))
@@ -137,6 +156,7 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
             <ChevronRightIcon :class="cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')" />
             <component :is="open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0 text-muted-foreground" />
             <span class="truncate font-medium">{{ project.name }}</span>
+            <SquareTerminalIcon v-if="runningText" v-tooltip="`Startbefehle: ${runningText}`" class="size-3 shrink-0 text-(--tool-run)" />
             <SidebarGroupState v-if="!open" :chats="chatsIn(entry.tree)" class="ml-auto" />
           </button>
           <!-- The number of chats, and on hover in its place the button for a new one. -->
@@ -159,9 +179,28 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
       <ContextMenuContent class="w-60">
         <ContextMenuItem @select="newChat()"><PlusIcon /> Neuer Chat</ContextMenuItem>
         <ContextMenuItem @select="newChatInFolder"><FolderInputIcon /> Neuer Chat in Unterordner …</ContextMenuItem>
+        <ContextMenuItem @select="ui.worktreeRequest = { projectId: project.id, folder: project.path }">
+          <FolderGit2Icon /> Neuer Chat in Worktree …
+        </ContextMenuItem>
         <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
         <ContextMenuItem @select="rename"><PencilIcon /> Umbenennen</ContextMenuItem>
         <ContextMenuItem @select="ui.promptTarget = { kind: 'project', id: project.id }"><ScrollTextIcon /> Prompt …</ContextMenuItem>
+        <ContextMenuSub v-if="commands.length">
+          <ContextMenuSubTrigger><SquareTerminalIcon /> Startbefehle</ContextMenuSubTrigger>
+          <ContextMenuSubContent class="w-56">
+            <ContextMenuItem v-for="c in commands" :key="c.id" @select="toggleCommand(c)">
+              <template v-if="startCommands.isRunning(project.id, c.id)">
+                <CircleStopIcon /> <span class="truncate">„{{ startCommandLabel(c) }}“ beenden</span>
+              </template>
+              <template v-else>
+                <PlayIcon /> <span class="truncate">„{{ startCommandLabel(c) }}“ starten</span>
+              </template>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem @select="ui.startCommandsProject = project.id"><PencilIcon /> Bearbeiten …</ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuItem v-else @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</ContextMenuItem>
         <ContextMenuSub v-if="otherSections.length">
           <ContextMenuSubTrigger><ArrowRightIcon /> Verschieben nach</ContextMenuSubTrigger>
           <ContextMenuSubContent class="w-48">

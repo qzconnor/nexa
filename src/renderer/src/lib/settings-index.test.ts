@@ -16,6 +16,11 @@ describe('settingsIndex', () => {
     expect(linux.some((e) => e.id === 'appearance.material')).toBe(false)
   })
 
+  it('leaves out the nx command with its rows elsewhere', () => {
+    expect(windows.filter((e) => e.id === 'general.command' || e.section === 'general.command')).toHaveLength(3)
+    expect(linux.some((e) => e.id === 'general.command' || e.section === 'general.command')).toBe(false)
+  })
+
   it('knows every anchor the settings components use, and they use every one', () => {
     const sources = import.meta.glob<string>('../components/settings/*.vue', { query: '?raw', import: 'default', eager: true })
     const used = new Set<string>()

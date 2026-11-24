@@ -9,6 +9,7 @@ import type {
   GitTreeStatus,
   ReviewBase,
   TimedTouch,
+  WorktreeCheck,
 } from './files'
 
 type Unsubscribe = () => void
@@ -34,6 +35,7 @@ export const FilesInvoke = {
   gitWatch: 'git:watch',
   gitWebUrl: 'git:web-url',
   gitMainWorktree: 'git:main-worktree',
+  gitWorktreeCheck: 'git:worktree-check',
 } as const
 
 export const FilesEvent = {
@@ -55,6 +57,8 @@ export interface GitApi {
   webUrl(cwd: string): Promise<string | null>
   /** Folder of the main checkout when `cwd` lies in a linked worktree; null otherwise. */
   mainWorktree(cwd: string): Promise<string | null>
+  /** Whether a chat in `cwd` (absolute) can get a worktree of its own, and which there are. */
+  worktreeCheck(cwd: string): Promise<WorktreeCheck>
 }
 
 /** The file panel of a chat. Paths in a tree are relative to its folder and `/`-separated. */

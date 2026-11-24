@@ -6,6 +6,7 @@ import { attempt } from '@/lib/errors'
 import { isWindows } from '@/lib/platform'
 import { useSettingsStore } from '@/stores/settings'
 import SettingField from './SettingField.vue'
+import SettingsCommand from './SettingsCommand.vue'
 import SettingsSection from './SettingsSection.vue'
 
 const store = useSettingsStore()
@@ -47,5 +48,7 @@ const startDescription = computed(() => {
         <Switch id="launch-at-login" v-model="launchAtLogin" />
       </SettingField>
     </SettingsSection>
+    <!-- nx.exe is Windows' only. -->
+    <SettingsCommand v-if="isWindows" />
   </div>
 </template>

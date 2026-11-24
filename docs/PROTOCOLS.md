@@ -169,6 +169,22 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   als OSC-8-Terminal-Link (`ESC ] 8 ;; url BEL`) sowie `Paste code here if prompted >`. Ein Code aus dem
   Browser geht als Zeile über stdin. Exit-Code 0 heißt angemeldet, der Login steht dann in
   `.credentials.json`.
+- **Login erneuern** (wie Claude Code beim Start, übernommen aus dem Claude Manager):
+  `POST https://platform.claude.com/v1/oauth/token` mit JSON `{ grant_type: "refresh_token", refresh_token,
+  client_id, scope }`; `client_id` ist `claudeAiOauth.clientId`, sonst der von Claude Code
+  (`9d1c250a-e61b-44d9-88ed-5944d1962f5e`), `scope` die gespeicherten `scopes` mit Leerzeichen. Claude Code
+  erneuert nur mit `user:inference` in `scopes` und solange `refreshTokenExpiresAt` (Ende des Logins, ms)
+  nicht vorbei ist. Antwort: `access_token`, `expires_in` (s), meist ein neuer `refresh_token` (der alte
+  gilt dann nicht mehr), `refresh_token_expires_in` (s), `scope`. In `.credentials.json` werden daraus
+  `accessToken`, `refreshToken`, `expiresAt`, `refreshTokenExpiresAt`, `scopes`; alles andere der Datei
+  (z. B. `mcpOAuth`) bleibt. 400 oder 401 mit `error: "invalid_grant"`: Der Refresh-Token ist verbraucht,
+  widerrufen oder abgelaufen, nur neu anmelden hilft.
+- **Sperre beim Erneuern**: Ein Refresh-Token geht nur einmal, darum erneuert Claude Code unter
+  `<config>/.oauth_refresh.lock` und (ältere Versionen) `<config>.lock` neben dem Ordner (über `realpath`).
+  Beides sind Ordner von proper-lockfile: angelegt mit `mkdir`, alle 5 s berührt (mtime), nach 60 s ohne
+  Berührung verwaist und übernehmbar. Nexa nimmt beide (ohne Schreibrecht neben dem Ordner nur die erste,
+  wie Claude Code), liest die Datei darunter noch einmal und schreibt atomar (Temp-Datei und Umbenennen,
+  Modus 0600, kompaktes JSON), nur wenn sie noch den benutzten Refresh-Token hält.
 - **Limits**: `GET https://api.anthropic.com/api/oauth/usage` mit `Authorization: Bearer <accessToken>`
   und `anthropic-beta: oauth-2025-04-20`. Ältere Antworten: `five_hour` / `seven_day` mit `utilization`
   und `resets_at`; neuere zusätzlich `limits[]` mit `kind` (`session`, `weekly_all`, `weekly_<modell>`),
@@ -314,6 +330,27 @@ Nexa legt diese Dateien und Ordner in den Papierkorb, nicht aber Einträge in ge
 (`history.jsonl` mit den Prompts aller Sitzungen). Hat ein Prozess außerhalb von Nexa die Sitzung offen
 (`sessions/<pid>.json`), bleiben ihre Dateien in diesem Ordner liegen, weil er sie weiterschreiben würde.
 
+### Worktrees (`--worktree`)
+
+Laut Doku (code.claude.com/docs/en/worktrees): `claude --worktree <name>` (`-w`) legt
+`.claude/worktrees/<name>` im Repository an, auf einem neuen Branch `worktree-<name>`, standardmäßig vom
+Standard-Branch des Remotes (`origin/HEAD`, nach einem `fetch`; `worktree.baseRef: "head"` nimmt den eigenen
+HEAD), und kopiert ignorierte Dateien, die `.worktreeinclude` nennt, hinein. Ohne Namen erfindet es einen
+(`bright-running-fox`), einen vorhandenen betritt es wieder. Filter aus der Konfiguration des Repositorys
+laufen dabei nicht. Die Sitzung ist dann „isoliert“: Claude Code verweigert Bearbeitungen, Befehle und
+git-Umleitungen in den Hauptordner. Beim Betreten und Verlassen zieht das Transkript wie bei `/cd` um. Am Ende
+einer interaktiven Sitzung entfernt es einen Worktree ohne Änderungen und neue Commits samt Branch und fragt
+sonst; mit `-p` räumt es nicht auf, und seine Sperre (`git worktree lock`) bleibt liegen, bis ein späterer
+Lauf sie löst.
+
+Nexa nutzt den Schalter nicht, sondern legt den Worktree an derselben Stelle mit git selbst an und startet
+die CLI darin (ARCHITECTURE, „Chats in Worktrees“): Codex kennt keine Worktrees, Nexa muss den Ordner des
+Chats vorher kennen (Dateibaum, Browser, Transkript), und mit `-p` bliebe jeder Worktree gesperrt. Für
+Claude Code ist das eine gewöhnliche Sitzung in diesem Ordner, ihr Transkript liegt unter dem
+Projektschlüssel des Worktrees; `claude --worktree <name>` im Terminal betritt denselben Worktree. Anders als
+Claude Code zweigt Nexa vom HEAD des gewählten Ordners ab (der Dialog nennt ihn) und holt vorher nichts vom
+Remote.
+
 ## Codex (`codex app-server`)
 
 Sites (Codex' Gegenstück zu den Artefakten) gibt der App-Server 0.169 nicht heraus: keine Methode
@@ -324,8 +361,9 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 
 - **Start**: `initialize`, danach `account/read` (Anmeldung, Plan) und `account/rateLimits/read`.
 - **Session**: `thread/start` bzw. `thread/resume` mit `cwd`, `approvalPolicy`, `sandbox`,
-  `developerInstructions` und `config` mit dem MCP-Server von Nexa (gepunktete Schlüssel, gelten nur für
-  diesen Thread):
+  `developerInstructions` und `config` (gepunktete Schlüssel, gelten nur für diesen Thread). Darin zuerst
+  die `-c schlüssel=wert` aus den Argumenten des Accounts und des Chats (`nx -- …`, `codexOverrides`: Werte
+  als JSON statt TOML, `'text'` als TOML-Literal, sonst der Text), darüber der MCP-Server von Nexa:
   - `mcp_servers.nexa.url`
   - `mcp_servers.nexa.http_headers = { Authorization: "Bearer <token>" }`: ein Token je Thread, so
     erkennt der Server den Chat, auch wenn sich mehrere Threads einen App-Server teilen. Geprüft mit
@@ -446,6 +484,11 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   oder `OPENAI_API_KEY`), `config.toml` und `sessions/<jjjj>/<mm>/<tt>/rollout-<zeit>-<thread-id>.jsonl`.
 - **Schlüsselbund**: Ohne `cli_auth_credentials_store = "file"` kann Codex den Login im Schlüsselbund
   des Systems ablegen, gemeinsam für alle Ordner. Nexa schreibt die Zeile in jeden neuen Account-Ordner.
+- **Erneuern**: `auth.json` hält dazu `tokens.refresh_token` und `last_refresh` (ISO, wann Codex die
+  Tokens zuletzt gespeichert hat; die Tabelle „Logins“ zeigt es). CLI und App-Server erneuern den
+  Access-Token selbst, sobald sie ihn brauchen, also auch der Server, den Nexa für die Limits startet. Nexa erneuert
+  Codex-Logins nicht: OpenAIs Refresh-Tokens gehen nur einmal, ein laufender Codex hält seinen im Speicher,
+  und Nexa kennt keine Sperre, unter der Codex erneuert. Eine Erneuerung daneben könnte ihn abmelden.
 - **`codex login`** ohne Terminal: startet einen lokalen Server auf `http://localhost:1455` (nennt ihn
   zuerst, dann den Link zu `auth.openai.com`) und öffnet den Browser. Exit-Code 0 heißt angemeldet. Weil
   der Port fest ist, läuft immer nur ein Codex-Login.
@@ -512,13 +555,20 @@ JSON-RPC-Antwort. Browser-Aktionen können lange dauern (Warten auf die Seite, �
 ### Nachrichten zwischen Chats (`chat_*`)
 
 Mit der Einstellung „Nachrichten zwischen Chats“ (`tools.chatTools`, aus bis der Nutzer sie einschaltet)
-erreichen die Agents die anderen Chats, unabhängig von der CLI (`mcp/chat-tools.ts`). Den Absender kennt
-der Server am Token.
+erreichen die Agents die anderen Chats, unabhängig von der CLI (`mcp/chat-tools.ts`), und durchsuchen sie
+(`sessions_search` reicht wie `chat_read` in andere Chats und hängt deshalb am selben Schalter). Den
+Absender kennt der Server am Token.
 
 - `chat_list { query?, archived?, limit? }`: die anderen Chats, die neuesten zuerst, mit Titel, CLI,
   Projekt, Zustand und ID.
 - `chat_read { chat, last? }`: die letzten Prompts und Antworten des Hauptstrangs (ohne Zwischentexte von
   Codex, ohne Subagents).
+- `sessions_search { query, project?, limit? }`: frühere Chats, archivierte eingeschlossen, deren Titel oder
+  deren Prompts und Antworten alle Wörter enthalten (Groß-/Kleinschreibung und Akzente egal,
+  Anführungszeichen um die Wörter zählen nicht), die neuesten zuerst: Titel, CLI, Projekt, zuletzt aktiv
+  (relativ und Datum), ID und ein Ausschnitt um den Treffer (`SessionService.search`, dieselbe Suche wie die
+  Schnellsuche, mit ihrem Zwischenspeicher). `project` grenzt auf Projektname oder Ordner ein; 10 Treffer,
+  höchstens 50. Gelesen wird ein Treffer mit `chat_read`.
 - `chat_send { to, text }`: geht über `SessionService.sendFromChat` wie ein Prompt hinein (in den
   laufenden Turn oder mit Start der CLI) und steht im Chat mit `UserItem.from`.
 - `chat_new { cli, text, title? }`: ein neuer Chat im Projekt und Ordner des Absenders, mit Account,
@@ -533,3 +583,18 @@ Nutzer ist, keine Freigaben ersetzt und mit `chat_send` an `chat-id` beantwortet
 (`instructions.ts`, `chatMessage`). Grenzen: 20 Nachrichten und neue Chats je Chat in 10 Minuten
 (`RATE_LIMIT`), 10 Nachrichten zwischen Chats in Folge, ohne dass der Nutzer in einem davon schrieb
 (`MAX_CHAT_CHAIN`, `SessionState.chatChain`).
+
+### Limits (`limits`)
+
+`limits {}` (`mcp/limits-tool.ts`, aus dem Claude Manager) antwortet mit Text: CLI und Account, mit denen
+der Chat läuft (`SessionService.chatAccount`: der der laufenden CLI, sonst der des nächsten Prompts), mit
+Plan, je Limit-Fenster Verbrauch, Reset und Prognose (`ProviderService.usage()`, Fenster auf Englisch:
+„5 hours“, „week“, „week, Opus“; ein Fenster, dessen Reset vorbei ist, zählt als leer), eine gescheiterte
+Messung, ob die CLI das Limit meldete und bis wann Nexa den Account sperrt (`availability`, mit den
+Sperren von `AutoSwitch`). Darunter die anderen sichtbaren Accounts der eingeschalteten CLIs in Kurzform
+(API-Keys: ohne Plan-Limits; abgemeldet) und ob der automatische Wechsel am Limit an ist. Zeiten lokal mit
+Zeitzone und Abstand („in 2 h“).
+
+Das Werkzeug hat keinen eigenen Schalter: Es kommt mit dem Server, sobald einer der Schalter unter
+„Nexa-Werkzeuge“ an ist (`nexaToolsOn`), und läuft ohne Rückfrage (`NexaToolGrant`, `app`). Es liest nur, und nur Zahlen des Nutzers, die die
+Titelleiste ohnehin zeigt; es erreicht weder Chats noch Dateien noch das Netz.

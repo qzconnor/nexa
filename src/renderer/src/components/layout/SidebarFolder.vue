@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRightIcon, FolderIcon, FolderOpenIcon, PlusIcon } from '@lucide/vue'
+import { ChevronRightIcon, FolderGit2Icon, FolderIcon, FolderOpenIcon, PlusIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import type { Project } from '@shared/types'
 import { Button } from '@/components/ui/button'
@@ -44,12 +44,12 @@ async function newChat(): Promise<void> {
             type="button"
             data-list-row
             class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-[0.85rem] text-muted-foreground hover:text-foreground"
-            :title="node.path"
+            :title="node.worktree ? `Worktree · ${node.path}` : node.path"
             :aria-expanded="open"
             @click="ui.toggleFolder(node.id)"
           >
             <ChevronRightIcon :class="cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')" />
-            <component :is="open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0" />
+            <component :is="node.worktree ? FolderGit2Icon : open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0" />
             <span class="truncate">{{ node.name }}</span>
             <span class="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
               <SidebarGroupState v-if="!open" :chats="chatsIn(node)" />
@@ -67,8 +67,11 @@ async function newChat(): Promise<void> {
           </Button>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent class="w-52">
+      <ContextMenuContent class="w-56">
         <ContextMenuItem @select="newChat"><PlusIcon /> Neuer Chat hier</ContextMenuItem>
+        <ContextMenuItem @select="ui.worktreeRequest = { projectId: project.id, folder: node.path }">
+          <FolderGit2Icon /> Neuer Chat in Worktree …
+        </ContextMenuItem>
         <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

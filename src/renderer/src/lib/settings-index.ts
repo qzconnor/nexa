@@ -22,6 +22,8 @@ interface SectionDef {
   readonly fields?: readonly FieldDef[]
   /** Only while the Claude Manager's data is on this computer (its import). */
   readonly claudeManagerData?: boolean
+  /** Only shown on Windows, with all its rows (the `nx` command). */
+  readonly windowsOnly?: boolean
 }
 
 interface TabDef {
@@ -62,6 +64,16 @@ const TREE = [
           },
         ],
       },
+      {
+        id: 'general.command',
+        title: 'Befehl „nx“',
+        keywords: 'nx Kommandozeile Terminal Explorer Adressleiste CLI starten',
+        windowsOnly: true,
+        fields: [
+          { id: 'general.commandRegistered', label: 'Befehl einrichten', keywords: 'PATH installieren registrieren abmelden entfernen' },
+          { id: 'general.nxReuseChat', label: 'Offenen Chat wiederverwenden', keywords: 'Ordner wechseln neuer Chat' },
+        ],
+      },
     ],
   },
   {
@@ -89,8 +101,22 @@ const TREE = [
           { id: 'appearance.keepMaterial', label: 'Auch im Hintergrund', keywords: 'Material inaktiv Fokus Hintergrund', windowsOnly: true },
           { id: 'appearance.surfaceOpacity', label: 'Deckkraft der Flächen', keywords: 'Transparenz durchsichtig undurchsichtig Material', windowsOnly: true },
           { id: 'appearance.zoom', label: 'Skalierung', keywords: 'Zoom Größe vergrößern verkleinern Prozent Strg Plus Minus Oberfläche' },
-          { id: 'appearance.uiFontSize', label: 'Schriftgröße', keywords: 'Text Größe Schrift' },
           { id: 'appearance.radius', label: 'Ecken', keywords: 'Eckenradius abgerundet Rundung' },
+        ],
+      },
+      {
+        id: 'appearance.font',
+        title: 'Schrift',
+        keywords: 'Schriftarten Fonts Text',
+        fields: [
+          { id: 'appearance.uiFont', label: 'Schriftart', keywords: 'Font Schriftfamilie Oberfläche Nachrichten Text Geist Segoe Inter' },
+          { id: 'appearance.uiFontSize', label: 'Schriftgröße', keywords: 'Text Größe Schrift' },
+          {
+            id: 'appearance.codeFont',
+            label: 'Code-Schrift',
+            keywords: 'Font Monospace Festbreitenschrift Programmierschrift Diffs Dateien Shell Werkzeuge Geist Mono Cascadia JetBrains Mono Fira Code Consolas',
+          },
+          { id: 'appearance.ligatures', label: 'Ligaturen', keywords: 'Code Schrift Zeichen verbinden Pfeil Ungleich JetBrains Mono Fira Code Cascadia Code' },
         ],
       },
       {
@@ -116,6 +142,19 @@ const TREE = [
         title: 'Codex',
         keywords:
           'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan ChatGPT Plus Pro OpenAI CODEX_HOME Konfigurationsordner hinzufügen entfernen Limits Usage Reihenfolge sortieren verschieben',
+      },
+      {
+        id: 'accounts.logins',
+        title: 'Logins',
+        keywords:
+          'Login Anmeldung Token Access-Token Refresh-Token abgelaufen Ablauf läuft ab erneuern Jetzt erneuern neu anmelden gültig OAuth Tabelle Übersicht',
+        fields: [
+          {
+            id: 'accounts.keepLoginsFresh',
+            label: 'Logins frisch halten',
+            keywords: 'automatisch erneuern Token abgelaufen ruhende Accounts Limits Usage Wechsel Refresh-Token Sperre',
+          },
+        ],
       },
       {
         id: 'accounts.limit',
@@ -197,7 +236,7 @@ const TREE = [
         keywords: 'Composer Nachricht schreiben',
         fields: [
           { id: 'chat.enterSends', label: 'Enter sendet', keywords: 'Strg+Enter Zeilenumbruch Tastatur senden Shortcut' },
-          { id: 'chat.shell', label: 'Shell für „!“', keywords: 'Ausrufezeichen Befehl Terminal Konsole PowerShell pwsh Git Bash cmd Kommandozeile Shell-Modus', windowsOnly: true },
+          { id: 'chat.shell', label: 'Shell für „!“', keywords: 'Ausrufezeichen Befehl Terminal Konsole PowerShell pwsh Git Bash cmd Kommandozeile Shell-Modus Startbefehle Dev-Server', windowsOnly: true },
         ],
       },
       {
@@ -228,12 +267,12 @@ const TREE = [
       {
         id: 'chat.tools',
         title: 'Nexa-Werkzeuge',
-        keywords: 'MCP Server Tools Werkzeuge',
+        keywords: 'MCP Server Tools Werkzeuge Limits Usage',
         fields: [
           { id: 'chat.renderTools', label: 'Diagramme, Charts und Tabellen', keywords: 'Mermaid Grafik Visualisierung rendern MCP' },
           { id: 'chat.browserTools', label: 'Browser neben dem Chat', keywords: 'Webseite Web testen Playwright Automatisierung MCP' },
           { id: 'chat.noClaudeInChrome', label: 'Ohne „Claude in Chrome“', keywords: 'Chrome Erweiterung Extension Browser' },
-          { id: 'chat.chatTools', label: 'Nachrichten zwischen Chats', keywords: 'Session senden weiterleiten Claude Codex Agenten MCP' },
+          { id: 'chat.chatTools', label: 'Nachrichten zwischen Chats', keywords: 'Session senden weiterleiten durchsuchen Suche frühere Claude Codex Agenten MCP' },
           { id: 'chat.browserData', label: 'Browserdaten', keywords: 'Cookies Cache abmelden löschen Browser' },
         ],
       },
@@ -292,7 +331,7 @@ const TREE = [
           { id: 'api.port', label: 'Port', keywords: 'Netzwerk Adresse localhost 127.0.0.1' },
         ],
       },
-      { id: 'api.endpoints', title: 'Endpunkte', keywords: 'Routen Dokumentation SSE Events curl' },
+      { id: 'api.endpoints', title: 'Endpunkte', keywords: 'Routen Dokumentation Docs OpenAPI Swagger Postman Schema SSE Events curl' },
     ],
   },
   {
@@ -308,7 +347,6 @@ const TREE = [
     label: 'Info',
     sections: [
       { id: 'about.app', title: 'Nexa', keywords: 'Version Über Datenordner App-Daten Speicherort' },
-      { id: 'about.command', title: 'Befehl nx', keywords: 'Kommandozeile Terminal Explorer Adressleiste CLI starten' },
     ],
   },
 ] as const satisfies readonly TabDef[]
@@ -340,7 +378,7 @@ export function settingsIndex(platform: string, claudeManagerData = true): Setti
   const entries: SettingsEntry[] = []
   for (const tab of TREE as readonly TabDef[]) {
     for (const section of tab.sections) {
-      if (section.claudeManagerData && !claudeManagerData) continue
+      if ((section.claudeManagerData && !claudeManagerData) || (section.windowsOnly && !windows)) continue
       entries.push({
         id: section.id as SettingsAnchor,
         kind: 'section',

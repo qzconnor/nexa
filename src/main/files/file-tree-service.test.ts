@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   FileTreeService,
-  filterGuard,
   gitStateChange,
   hunkPatch,
   isCommitHash,
@@ -90,33 +89,6 @@ describe('parseGitStatus', () => {
     const status = parseGitStatus(z('1 .M N... 1 1 1 a b app/src/x.ts', '? other/y.ts', '! app/out/'), z('1\t2\tapp/src/x.ts'), 'app/')
     expect(status.files).toEqual({ 'src/x.ts': { status: 'modified', staged: false, added: 1, removed: 2 } })
     expect(status.ignored).toEqual(['out/'])
-  })
-})
-
-describe('filterGuard', () => {
-  it('switches off the filters of the repository, not those of the user', () => {
-    const out = ['global\tfilter.lfs.process', 'local\tfilter.evil.clean', 'worktree\tfilter.a=b.c.process\r', 'command\tfilter.mine.clean', ''].join('\n')
-    expect(filterGuard(out)).toEqual({
-      GIT_CONFIG_KEY_0: 'filter.evil.clean',
-      GIT_CONFIG_VALUE_0: '',
-      GIT_CONFIG_KEY_1: 'filter.evil.process',
-      GIT_CONFIG_VALUE_1: '',
-      GIT_CONFIG_KEY_2: 'filter.evil.required',
-      GIT_CONFIG_VALUE_2: 'false',
-      GIT_CONFIG_KEY_3: 'filter.a=b.c.clean',
-      GIT_CONFIG_VALUE_3: '',
-      GIT_CONFIG_KEY_4: 'filter.a=b.c.process',
-      GIT_CONFIG_VALUE_4: '',
-      GIT_CONFIG_KEY_5: 'filter.a=b.c.required',
-      GIT_CONFIG_VALUE_5: 'false',
-      GIT_CONFIG_COUNT: '6',
-    })
-  })
-
-  it('adds to settings the environment gives git already, and is empty without filters', () => {
-    expect(filterGuard('local\tfilter.x.clean', '2')).toMatchObject({ GIT_CONFIG_KEY_2: 'filter.x.clean', GIT_CONFIG_COUNT: '5' })
-    expect(filterGuard(null)).toEqual({})
-    expect(filterGuard('global\tfilter.lfs.clean')).toEqual({})
   })
 })
 

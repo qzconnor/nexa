@@ -21,18 +21,20 @@ export function nexaToolsOn(tools: ToolSettings): boolean {
  * The render tools, the browser's and the chat tools are used without asking (the user switched the
  * chat tools on for this, and each chat keeps its own permissions); the browser tools that reach
  * beyond the page (`sensitive`: uploads, cookies and storage, request contents, scripts, deleting
- * site data) ask first.
+ * site data) ask first. `app`: the tools that come with the server whenever it is there (`limits`,
+ * read-only), also without asking.
  */
 export function nexaToolGrant(
   tools: ToolSettings,
-  names: { render: readonly string[]; browser: readonly string[]; chat?: readonly string[] },
+  names: { render: readonly string[]; browser: readonly string[]; chat?: readonly string[]; app?: readonly string[] },
   sensitive: ReadonlySet<string>,
 ): NexaToolGrant {
   const render = tools.renderTools ? names.render : []
   const browser = tools.browserTools ? names.browser : []
   const chat = tools.chatTools ? (names.chat ?? []) : []
+  const app = nexaToolsOn(tools) ? (names.app ?? []) : []
   return {
-    allowed: [...render, ...browser.filter((name) => !sensitive.has(name)), ...chat],
+    allowed: [...render, ...browser.filter((name) => !sensitive.has(name)), ...chat, ...app],
     ask: browser.filter((name) => sensitive.has(name)),
   }
 }

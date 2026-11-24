@@ -1,13 +1,15 @@
 import type { AppearanceSettings } from '@shared/types'
 import type { AppTheme } from '@shared/themes/types'
 import { codeColor } from '@/lib/code-colors'
+import { CODE_FONT_FALLBACKS, fontStack, ligatureFeatures, UI_FONT_FALLBACKS } from '@/lib/fonts'
 
 const mix = (color: string, percent: number, other = 'transparent') => `color-mix(in oklab, ${color} ${percent}%, ${other})`
 
 /**
  * All design tokens of a theme, as CSS variables. Translucent layers are expressed with color-mix
  * so the window material (acrylic/mica) shines through cards, sidebar and body. Code takes the
- * colours of the theme's palette, calmed for code (lib/code-colors.ts).
+ * colours of the theme's palette, calmed for code (lib/code-colors.ts). The fonts chosen in the
+ * appearance settings come along, with Nexa's own behind them (lib/fonts.ts).
  */
 export function themeTokens(theme: Pick<AppTheme, 'mode' | 'colors' | 'terminal'>, appearance: AppearanceSettings, translucent: boolean): Record<string, string> {
   const c = theme.colors
@@ -56,6 +58,9 @@ export function themeTokens(theme: Pick<AppTheme, 'mode' | 'colors' | 'terminal'
     '--warning': c.warning,
     '--window-bg': mix(c.background, opacity),
     '--ui-font-size': `${appearance.uiFontSize}px`,
+    '--ui-font': fontStack(appearance.uiFont, UI_FONT_FALLBACKS),
+    '--code-font': fontStack(appearance.codeFont, CODE_FONT_FALLBACKS),
+    '--code-font-features': ligatureFeatures(appearance.ligatures),
     '--code-bg': mix(t.background, translucent ? Math.min(100, opacity + 10) : 100),
     '--code-fg': t.foreground,
     '--syn-red': code(t.red),

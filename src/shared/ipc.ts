@@ -1,4 +1,4 @@
-import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput } from './accounts'
+import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput, LoginRenewResult } from './accounts'
 import type { ArtifactsApi } from './artifacts'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
@@ -7,6 +7,7 @@ import type {
   AppInfo,
   AppSettings,
   CommandOption,
+  CommandStatus,
   ConnectorSettings,
   DeepPartial,
   FolderPromptInfo,
@@ -39,6 +40,7 @@ import type { BrowserApi } from './browser-ipc'
 import type { UpdatesApi } from './updates'
 import type { CliImportApi, ImportApi } from './import-ipc'
 import type { SectionLayout } from './sections'
+import type { StartCommandsApi } from './start-commands'
 import type { VoiceApi } from './voice'
 
 /** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
@@ -51,6 +53,7 @@ export const IpcInvoke = {
   appPickImages: 'app:pick-images',
   appPickFiles: 'app:pick-files',
   appSaveImage: 'app:save-image',
+  appListFonts: 'app:list-fonts',
 
   windowMinimize: 'window:minimize',
   windowToggleMaximize: 'window:toggle-maximize',
@@ -87,6 +90,7 @@ export const IpcInvoke = {
   accountsLogin: 'accounts:login',
   accountsLoginCode: 'accounts:login-code',
   accountsLoginCancel: 'accounts:login-cancel',
+  accountsRenewLogin: 'accounts:renew-login',
 
   usageGet: 'usage:get',
   usageRefresh: 'usage:refresh',
@@ -141,6 +145,9 @@ export const IpcInvoke = {
   notificationsTest: 'notifications:test',
 
   apiStatus: 'api:status',
+
+  commandStatus: 'command:status',
+  commandSetRegistered: 'command:set-registered',
 } as const
 
 /** Events from main to the window. */
@@ -162,6 +169,8 @@ export const IpcEvent = {
   sessionEvent: 'event:session',
   /** The `nx` command or the local API asks the window to show a session. */
   showSession: 'event:show-session',
+  /** `nx -r` without an id: the quick open with the folder's chats (the query). */
+  findSessions: 'event:find-sessions',
   /** A notification about an account's limits or login asks the window to show them in the settings. */
   openSettings: 'event:open-settings',
 } as const
@@ -207,6 +216,8 @@ export interface NexaApi {
   artifacts: ArtifactsApi
   /** The microphone in the composer, recognised by Claude (shared/voice.ts). */
   voice: VoiceApi
+  /** The projects' start commands, run as shells beside the chats (shared/start-commands.ts). */
+  startCommands: StartCommandsApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>
@@ -218,6 +229,8 @@ export interface NexaApi {
     pickFiles(defaultPath?: string): Promise<string[]>
     /** Saves an image pasted into the composer, returns its path. */
     saveImage(data: Uint8Array, mime: string): Promise<string>
+    /** The installed font families, for the font pickers of the settings. */
+    listFonts(): Promise<string[]>
     pathForFile(file: File): string
   }
   window: {
@@ -295,6 +308,8 @@ export interface NexaApi {
     /** A code the browser showed, for the CLI that waits for it. */
     loginCode(id: string, code: string): Promise<void>
     cancelLogin(id: string): Promise<void>
+    /** „Jetzt erneuern“: a new access token for a Claude browser login, also while the old one works. */
+    renewLogin(id: string): Promise<LoginRenewResult>
     onChanged(cb: (list: Account[]) => void): Unsubscribe
     onLogin(cb: (state: AccountLoginState) => void): Unsubscribe
   }
@@ -396,9 +411,17 @@ export interface NexaApi {
     onChanged(cb: (list: SessionMeta[]) => void): Unsubscribe
     onEvent(cb: (event: SessionEvent) => void): Unsubscribe
     onShow(cb: (id: string) => void): Unsubscribe
+    /** `nx -r` without an id: the quick open, searching for `query` (the folder's project). */
+    onFind(cb: (query: string) => void): Unsubscribe
   }
   api: {
     status(): Promise<ApiStatus>
+  }
+  /** The `nx` command: on the user PATH and in the Explorer's address bar (Windows, installed app). */
+  command: {
+    status(): Promise<CommandStatus>
+    /** Registers or unregisters it through nx.exe; the state afterwards. */
+    setRegistered(registered: boolean): Promise<CommandStatus>
   }
 }
 

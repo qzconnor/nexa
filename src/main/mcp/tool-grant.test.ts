@@ -26,6 +26,12 @@ describe('nexaToolGrant', () => {
     expect(nexaToolsOn(tools({ renderTools: false, browserTools: false, chatTools: true }))).toBe(true)
   })
 
+  it('allows the tools that come with the server whenever it is there', () => {
+    const withApp = { ...names, app: ['limits'] }
+    expect(nexaToolGrant(tools({ browserTools: false }), withApp, sensitive).allowed).toEqual(['render_chart', 'render_table', 'limits'])
+    expect(nexaToolGrant(tools({ renderTools: false, browserTools: false, chatTools: false }), withApp, sensitive).allowed).toEqual([])
+  })
+
   it('allows the chat tools only once the user switched them on', () => {
     const withChat = { ...names, chat: ['chat_list', 'chat_send'] }
     expect(nexaToolGrant(tools({ browserTools: false }), withChat, sensitive).allowed).toEqual(['render_chart', 'render_table'])

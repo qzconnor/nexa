@@ -14,7 +14,9 @@ import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
 import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
+import type { CommandIntegration } from './command-integration'
 import type { GitService } from './files/git-service'
+import { listFontFamilies } from './lib/fonts'
 import type { AutoSwitch } from './services/auto-switch'
 import type { NotificationService } from './services/notification-service'
 import type { ProjectService } from './services/project-service'
@@ -37,6 +39,7 @@ export interface AppContext {
   git: GitService
   notifications: NotificationService
   autoSwitch: AutoSwitch
+  command: CommandIntegration
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -187,6 +190,7 @@ export function registerIpc(ctx: AppContext): void {
     await writeFile(file, data)
     return file
   })
+  handle(IpcInvoke.appListFonts, () => listFontFamilies())
 
   // Window -------------------------------------------------------------------------------------
   handle(IpcInvoke.windowMinimize, (event) => windowOf(event).minimize())
@@ -282,6 +286,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.accountsLogin, (_e, id: unknown) => providers.login(str(id, 'Der Account')))
   handle(IpcInvoke.accountsLoginCode, (_e, id: unknown, code: unknown) => providers.loginCode(str(id, 'Der Account'), str(code, 'Der Code')))
   handle(IpcInvoke.accountsLoginCancel, (_e, id: unknown) => providers.cancelLogin(str(id, 'Der Account')))
+  handle(IpcInvoke.accountsRenewLogin, (_e, id: unknown) => providers.renewLogin(str(id, 'Der Account')))
   handle(IpcInvoke.usageStats, (_e, days: unknown) => sessions.stats(Math.min(365, Math.max(1, Number(days) || 30))))
 
   // Projects -----------------------------------------------------------------------------------
@@ -357,6 +362,13 @@ export function registerIpc(ctx: AppContext): void {
   })
 
   handle(IpcInvoke.apiStatus, () => ctx.api.status())
+
+  // The `nx` command ------------------------------------------------------------------------------
+  handle(IpcInvoke.commandStatus, () => ctx.command.status())
+  handle(IpcInvoke.commandSetRegistered, (_e, registered: unknown) => {
+    if (typeof registered !== 'boolean') throw new Error('Ungültiger Parameter: registered')
+    return ctx.command.setRegistered(registered)
+  })
 
   handle(IpcInvoke.notificationsViewing, (_e, sessionId: unknown) =>
     ctx.notifications.setViewing(typeof sessionId === 'string' && sessionId ? sessionId : null),

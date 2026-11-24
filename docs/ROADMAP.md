@@ -196,6 +196,23 @@
       Claude zu Codex und zurück: `chat_list`, `chat_read`, `chat_send`, `chat_new`. Die Nachricht steht
       umrandet mit „Nachricht von …“ im Chat und nennt dem Agent den Absender zum Antworten; nach zehn
       Nachrichten zwischen Chats ohne den Nutzer ist Schluss
+- [x] Logins frisch halten (aus dem Claude Manager): abgelaufene Zugangs-Token ruhender Claude-Accounts
+      erneuert Nexa unter der Sperre von Claude Code, abschaltbar; Tabelle „Logins“ in den
+      Account-Einstellungen mit Ablauf und „Jetzt erneuern“. Codex erneuert seine selbst
+- [x] Neuer Chat in einem Worktree (aus dem Claude Manager): Dialog mit Repository, Name und vorhandenen
+      Worktrees; Nexa legt ihn mit Git an wie `claude --worktree` (`.claude/worktrees/<name>`, Branch
+      `worktree-<name>`), für Claude Code und Codex, und räumt ihn beim Löschen des Chats weg, wenn nichts
+      Neues darin ist
+- [x] Werkzeuge der App für die Agents im Nexa-MCP-Server: `limits` (eigene Limits und die der anderen
+      Accounts), `sessions_search` (frühere Chats durchsuchen, unter „Nachrichten zwischen Chats“)
+- [x] `nx` wie `cm`: `-a <account>`, `-r [id]`, `-n`, `-- <args>` für die CLI, offenen Chat
+      wiederverwenden, Befehl unter Einstellungen › Allgemein an- und abmelden
+- [x] Startbefehle je Projekt (wie die Tab-Sets im Claude Manager, z. B. `npm run dev`) als Shells neben
+      dem Chat, auf Wunsch automatisch mit dem ersten Chat des Projekts; beim Beenden von Nexa gestoppt
+- [x] API-Beschreibung: OpenAPI unter `/openapi.json` und eine Doku-Seite unter `/docs`, aus einer
+      Routentabelle, die der Server selbst nutzt
+- [x] Schriftarten wählen (Oberfläche und Code, aus den installierten Schriften) und Ligaturen für Code
+      ein- und ausschalten wie im Claude Manager
 
 ## Als Nächstes
 
@@ -219,21 +236,8 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] **Übersicht aller Chats nach Zustand** (wartet auf dich, arbeitet, fertig) mit der offenen Frage,
       dem laufenden Werkzeug, Kontext und Limit je Karte; Strg+Umschalt+J springt zum nächsten wartenden
       Chat (`OverviewView.vue`, `lib/overview.ts`, `lib/attention.ts`).
-- [ ] **Logins frisch halten**: abgelaufene Zugangs-Token ruhender Accounts erneuern (unter der Sperre von
-      Claude Code), damit ihre Usage stimmt und ein Wechsel sofort geht; Tabelle mit Ablauf und
-      „Jetzt erneuern“ (`oauth-renewal.ts`, `LoginOverviewCard.vue`).
-- [ ] **Neuer Chat in einem Worktree** (`claude --worktree <name>`): Dialog mit Repository, Name (geprüft
-      wie ein Branch) und vorhandenen Worktrees (`WorktreeDialog.vue`, `lib/worktree.ts`); `worktreeCheck`
-      in `files/git-service.ts` ist schon da, aber nicht in Preload und UI.
-- [ ] **Werkzeuge der App für die Agents** im Nexa-MCP-Server: `limits` (eigene Limits und die der anderen
-      Accounts), `sessions_search` (frühere Chats durchsuchen; lesen geht mit `chat_read`)
-      (`browser/app-tools/*`).
-- [ ] **`nx` wie `cm`**: `-a <account>`, `-r [id]`, `-n`, `-- <args>` für die CLI, offenen Chat
-      wiederverwenden, Befehl in den Einstellungen an- und abmelden (`cli/launch.ts`, `SettingsCommand.vue`).
-- [ ] **Startbefehle je Projekt** (wie die Tab-Sets, z. B. `npm run dev`) als Shells neben dem Chat
-      (`tab-set-service.ts`).
-- [ ] **API-Beschreibung**: OpenAPI unter `/openapi.json` und eine Doku-Seite unter `/docs`
-      (`api/openapi.ts`, `api/docs-page.ts`).
+- [ ] `.worktreeinclude` beim Worktree-Chat (Dateien wie `.env` mitkopieren) und Abzweigen von
+      `origin/HEAD` statt vom HEAD des Ordners, wie Claude Code.
 
 ## Später
 

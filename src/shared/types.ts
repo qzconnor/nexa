@@ -23,6 +23,15 @@ export interface AppearanceSettings {
   /** Scale of the whole window in percent, one of `ZOOM_STEPS` (src/shared/zoom.ts). */
   zoom: number
   uiFontSize: number
+  /**
+   * Font of the interface and the messages, or several, comma separated, tried in turn; Nexa's own
+   * (Geist) stands behind it for what it lacks. `''`: Nexa's own.
+   */
+  uiFont: string
+  /** Font of code wherever it shows: answers, diffs, files, the shell, tool rows. `''`: Nexa's own (Geist Mono). */
+  codeFont: string
+  /** Sequences like `=>` in code drawn as one sign, where the code font has such ligatures. */
+  ligatures: boolean
   /** Width of the chat column. */
   chatWidth: 'normal' | 'wide' | 'full'
 }
@@ -91,6 +100,12 @@ export interface ChatSettings {
   autoSwitch: boolean
   /** What a chat says when it goes on after a limit, with another account or at the reset; `''`: „Mach weiter“. */
   continuePrompt: string
+  /**
+   * Nexa renews expired access tokens of Claude browser logins as Claude Code would at its next start,
+   * under its lock (main/accounts/login-renewal.ts): the limits of resting accounts stay current, and a
+   * chat switches to them at once.
+   */
+  keepLoginsFresh: boolean
 }
 
 export type UserShell = 'powershell' | 'gitbash' | 'cmd'
@@ -106,8 +121,8 @@ export interface ToolSettings {
    */
   noClaudeInChrome: boolean
   /**
-   * The agents reach the other chats of Nexa (`chat_*` of Nexa's MCP server): list and read them,
-   * send them messages, start new ones; also from Claude Code to Codex and back.
+   * The agents reach the other chats of Nexa (`chat_*` and `sessions_search` of Nexa's MCP server):
+   * list, search and read them, send them messages, start new ones; also from Claude Code to Codex and back.
    */
   chatTools: boolean
 }
@@ -120,6 +135,11 @@ export interface GeneralSettings {
   runInTray: boolean
   /** Starts with the user's login (`--autostart`); with `runInTray` without showing the window. */
   launchAtLogin: boolean
+  /**
+   * `nx` goes to a chat of the folder that is open (its CLI runs, or it is still empty) instead of
+   * starting another one (main/launch.ts).
+   */
+  nxReuseChat: boolean
 }
 
 /**
@@ -334,6 +354,21 @@ export interface Project {
   sectionId?: string
   /** MCP servers switched off for the project's chats, by CLI (their names as the CLI reports them). */
   mcpOff?: Partial<Record<ProviderId, string[]>>
+  /** Shells Nexa runs beside its chats, e.g. the dev server (shared/start-commands.ts). */
+  startCommands?: StartCommand[]
+}
+
+/** A command a project starts beside its chats, like a shell of the Claude Manager's tab sets. */
+export interface StartCommand {
+  id: string
+  /** What the UI calls it; empty: the command itself. */
+  name: string
+  /** One line, run with the shell of the settings (`chat.shell`). */
+  command: string
+  /** A folder in the project, relative with `/` (`packages/web`); none: the project's own. */
+  dir?: string
+  /** Starts by itself when a chat of the project opens and it doesn't run yet, once per run of Nexa. */
+  autoStart?: boolean
 }
 
 /** Whose prompt (`prompts.md` in its folder): a project's or a separator's that stands for a folder. */
@@ -470,10 +505,21 @@ export interface SessionMeta {
   /** The account each CLI runs this chat with; missing: the default account of the CLI. */
   accounts?: Partial<Record<ProviderId, string>>
   /**
+   * Arguments for a CLI from `nx -- …`, added to each of its starts for this chat after those of the
+   * account (Codex takes only `-c key=value`, as the thread's config).
+   */
+  cliArgs?: Partial<Record<ProviderId, string[]>>
+  /**
    * The folder the agent works in when it isn't the project's own: a folder in it, which the sidebar
    * shows as a level of its own under the project (as the Claude Manager does).
    */
   cwd?: string
+  /**
+   * The worktree the chat was started in („Neuer Chat in Worktree“, `cwd` is its folder): deleting the
+   * chat removes it with its branch, unless another chat works in it or work in it would be lost. Gone
+   * when the chat moves out of it.
+   */
+  worktree?: { path: string; branch: string }
   /**
    * More folders the agent may work in besides its own (the composer's „Ordner hinzufügen“): Claude
    * Code's `--add-dir`, Codex's writable roots.
@@ -494,8 +540,14 @@ export interface SessionMeta {
 
 export interface SessionCreateInput {
   projectId: string
-  /** A folder in the project to work in; missing: the project's own. */
+  /** A folder in the project to work in; missing: the project's own. With `worktree`: a folder of the repository. */
   cwd?: string
+  /**
+   * The chat works in a worktree of the repository `cwd` (else the project's folder) lies in, of this
+   * name (empty: one made up), as `claude --worktree` makes them; one of that name is entered again.
+   * The chat goes to the project the worktree lies in (see `SessionService.create`).
+   */
+  worktree?: string
   provider?: ProviderId
   /** An account of the CLI; missing: its default account. */
   account?: string
@@ -503,6 +555,8 @@ export interface SessionCreateInput {
   effort?: string
   ultracode?: boolean
   permissionMode?: PermissionMode
+  /** Arguments for the chat's CLI (`nx -- …`, see `SessionMeta.cliArgs`). */
+  cliArgs?: string[]
 }
 
 export interface SessionUpdateInput {
@@ -544,6 +598,8 @@ export interface SessionRemoveResult {
   /** Files that could not go to the recycle bin, with the first reason. */
   failed: number
   error?: string
+  /** Worktrees of the chats (`SessionMeta.worktree`) that stay although no chat works in them any more, and why. */
+  worktreesKept?: { path: string; reason: string }[]
 }
 
 /** What a chat takes on disk: its history in Nexa, and the conversations of its CLIs that deleting it takes along. */
@@ -600,4 +656,15 @@ export interface ApiStatus {
   port: number | null
   token: string | null
   error?: string
+}
+
+/** The `nx` command on this computer (main/command-integration.ts). */
+export interface CommandStatus {
+  /** nx.exe is part of the installed app (Windows only). */
+  available: boolean
+  /** On the user PATH and registered for the Explorer address bar. */
+  registered: boolean
+  launcherPath: string | null
+  /** Why `nx` may not work, e.g. another program's `nx`. */
+  hint: string | null
 }

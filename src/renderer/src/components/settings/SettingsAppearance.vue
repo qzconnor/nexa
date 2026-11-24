@@ -8,8 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { attempt } from '@/lib/errors'
+import { CODE_FONT_FALLBACKS, RECOMMENDED_CODE_FONTS, RECOMMENDED_UI_FONTS, UI_FONT_FALLBACKS } from '@/lib/fonts'
 import { supportsMaterial } from '@/lib/platform'
 import { useSettingsStore } from '@/stores/settings'
+import FontPicker from './FontPicker.vue'
 import SettingField from './SettingField.vue'
 import SettingsSection from './SettingsSection.vue'
 import SliderControl from './SliderControl.vue'
@@ -33,6 +35,9 @@ const material = bind('material')
 const keepMaterialActive = bind('keepMaterialActive')
 const surfaceOpacity = bind('surfaceOpacity')
 const uiFontSize = bind('uiFontSize')
+const uiFont = bind('uiFont')
+const codeFont = bind('codeFont')
+const ligatures = bind('ligatures')
 const radius = bind('radius')
 const chatWidth = bind('chatWidth')
 // The select works with strings; the setting is a number.
@@ -68,7 +73,7 @@ const CHAT_WIDTHS = [
     <SettingsSection
       anchor="appearance.window"
       title="Fenster"
-      :description="supportsMaterial ? 'Windows-11-Material hinter der App, Größe, Schrift und Ecken.' : 'Größe, Schrift und Ecken der Oberfläche.'"
+      :description="supportsMaterial ? 'Windows-11-Material hinter der App, Größe und Ecken.' : 'Größe und Ecken der Oberfläche.'"
     >
       <template v-if="supportsMaterial">
         <SettingField anchor="appearance.material" label="Material" description="Acryl ist am stärksten transparent, Mica übernimmt dezent die Farbe des Desktops.">
@@ -93,12 +98,40 @@ const CHAT_WIDTHS = [
           </SelectContent>
         </Select>
       </SettingField>
-      <SettingField anchor="appearance.uiFontSize" for="ui-font-size" label="Schriftgröße">
-        <SliderControl id="ui-font-size" v-model="uiFontSize" :min="12" :max="18" :format="(v) => `${v} px`" />
-      </SettingField>
       <SettingField anchor="appearance.radius" for="radius" label="Ecken" description="Rundung von Karten, Knöpfen und Dialogen.">
         <SliderControl id="radius" v-model="radius" :min="0" :max="1.2" :step="0.05" :format="(v) => `${v.toFixed(2)} rem`" />
       </SettingField>
+    </SettingsSection>
+
+    <SettingsSection anchor="appearance.font" title="Schrift" description="Schriftarten und Größe für Oberfläche und Code.">
+      <SettingField anchor="appearance.uiFont" for="ui-font" label="Schriftart" description="Für Oberfläche und Nachrichten.">
+        <FontPicker id="ui-font" v-model="uiFont" standard="Geist" :recommended="RECOMMENDED_UI_FONTS" :fallbacks="UI_FONT_FALLBACKS" />
+      </SettingField>
+      <SettingField anchor="appearance.uiFontSize" for="ui-font-size" label="Schriftgröße">
+        <SliderControl id="ui-font-size" v-model="uiFontSize" :min="12" :max="18" :format="(v) => `${v} px`" />
+      </SettingField>
+      <SettingField
+        anchor="appearance.codeFont"
+        for="code-font"
+        label="Code-Schrift"
+        description="Für Code in Antworten, Diffs, Dateien, Shell-Ausgaben und Werkzeugen."
+      >
+        <FontPicker id="code-font" v-model="codeFont" standard="Geist Mono" :recommended="RECOMMENDED_CODE_FONTS" :fallbacks="CODE_FONT_FALLBACKS" />
+      </SettingField>
+      <SettingField
+        anchor="appearance.ligatures"
+        for="ligatures"
+        label="Ligaturen"
+        description="Zeichenfolgen wie => oder != erscheinen als ein Zeichen (⇒, ≠), wenn die Schrift Ligaturen hat, z. B. JetBrains Mono, Fira Code oder Cascadia Code."
+      >
+        <Switch id="ligatures" v-model="ligatures" />
+      </SettingField>
+      <!-- The code font with its ligatures, without leaving the settings. -->
+      <pre
+        aria-hidden="true"
+        class="overflow-x-auto rounded-lg border bg-(--code-bg) px-3 py-2 font-mono text-[0.85rem] leading-relaxed text-(--code-fg)"
+      ><span class="text-(--syn-magenta)">const</span> <span class="text-(--syn-blue)">passt</span> = (a, b) => a !== b &amp;&amp; a >= <span class="text-(--syn-yellow)">0</span>
+items.<span class="text-(--syn-blue)">filter</span>((x) => x.size &lt;= <span class="text-(--syn-yellow)">10</span>) <span class="text-(--syn-comment)">// -> ok</span></pre>
     </SettingsSection>
 
     <SettingsSection anchor="appearance.chat" title="Chat" description="Wie der Verlauf dargestellt wird.">

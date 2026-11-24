@@ -4,6 +4,7 @@ import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
+import { StartCommandsEvent, StartCommandsInvoke } from '@shared/start-commands'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
 import { VoiceEvent, VoiceInvoke } from '@shared/voice'
 
@@ -72,11 +73,22 @@ const api: NexaApi = {
     cancel: (id) => invoke(VoiceInvoke.cancel, id),
     onUpdate: (cb) => subscribe(VoiceEvent.event, cb),
   },
+  startCommands: {
+    runs: () => invoke(StartCommandsInvoke.runs),
+    save: (projectId, commands) => invoke(StartCommandsInvoke.save, projectId, commands),
+    start: (projectId, id) => invoke(StartCommandsInvoke.start, projectId, id),
+    stop: (projectId, id) => invoke(StartCommandsInvoke.stop, projectId, id),
+    restart: (projectId, id) => invoke(StartCommandsInvoke.restart, projectId, id),
+    output: (projectId, id) => invoke(StartCommandsInvoke.output, projectId, id),
+    chatOpened: (projectId) => invoke(StartCommandsInvoke.chatOpened, projectId),
+    onChanged: (cb) => subscribe(StartCommandsEvent.changed, cb),
+  },
   git: {
     branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),
     watch: (cwds) => invoke(FilesInvoke.gitWatch, cwds),
     webUrl: (cwd) => invoke(FilesInvoke.gitWebUrl, cwd),
     mainWorktree: (cwd) => invoke(FilesInvoke.gitMainWorktree, cwd),
+    worktreeCheck: (cwd) => invoke(FilesInvoke.gitWorktreeCheck, cwd),
     onBranchChanged: (cb) => subscribe(FilesEvent.gitBranchChanged, cb),
   },
   browser: {
@@ -122,6 +134,7 @@ const api: NexaApi = {
     pickImages: () => invoke(IpcInvoke.appPickImages),
     pickFiles: (defaultPath) => invoke(IpcInvoke.appPickFiles, defaultPath ?? null),
     saveImage: (data, mime) => invoke(IpcInvoke.appSaveImage, data, mime),
+    listFonts: () => invoke(IpcInvoke.appListFonts),
     pathForFile: (file) => webUtils.getPathForFile(file),
   },
   window: {
@@ -174,6 +187,7 @@ const api: NexaApi = {
     login: (id) => invoke(IpcInvoke.accountsLogin, id),
     loginCode: (id, code) => invoke(IpcInvoke.accountsLoginCode, id, code),
     cancelLogin: (id) => invoke(IpcInvoke.accountsLoginCancel, id),
+    renewLogin: (id) => invoke(IpcInvoke.accountsRenewLogin, id),
     onChanged: (cb) => subscribe(IpcEvent.accountsChanged, cb),
     onLogin: (cb) => subscribe(IpcEvent.accountsLogin, cb),
   },
@@ -234,9 +248,14 @@ const api: NexaApi = {
     onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),
     onEvent: (cb) => subscribe(IpcEvent.sessionEvent, cb),
     onShow: (cb) => subscribe(IpcEvent.showSession, cb),
+    onFind: (cb) => subscribe(IpcEvent.findSessions, cb),
   },
   api: {
     status: () => invoke(IpcInvoke.apiStatus),
+  },
+  command: {
+    status: () => invoke(IpcInvoke.commandStatus),
+    setRegistered: (registered) => invoke(IpcInvoke.commandSetRegistered, registered),
   },
 }
 

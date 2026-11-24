@@ -14,6 +14,7 @@ export function defaultSettings(): AppSettings {
     general: {
       runInTray: false,
       launchAtLogin: false,
+      nxReuseChat: true,
     },
     appearance: {
       theme: DEFAULT_THEME_ID,
@@ -23,6 +24,10 @@ export function defaultSettings(): AppSettings {
       radius: 0.625,
       zoom: DEFAULT_ZOOM,
       uiFontSize: 14,
+      uiFont: '',
+      codeFont: '',
+      // As in the Claude Manager's terminal; Chromium draws them anyway, unless switched off.
+      ligatures: true,
       chatWidth: 'normal',
     },
     defaults: {
@@ -47,6 +52,7 @@ export function defaultSettings(): AppSettings {
       voiceAutoSend: false,
       autoSwitch: false,
       continuePrompt: DEFAULT_CONTINUE_PROMPT,
+      keepLoginsFresh: true,
     },
     tools: {
       renderTools: true,

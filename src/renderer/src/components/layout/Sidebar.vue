@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon, ScrollTextIcon, SettingsIcon, ShapesIcon, SquarePenIcon, Trash2Icon } from '@lucide/vue'
+import {
+  ChevronRightIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  PencilIcon,
+  PlusIcon,
+  ScrollTextIcon,
+  SettingsIcon,
+  ShapesIcon,
+  SquarePenIcon,
+  SquareTerminalIcon,
+  Trash2Icon,
+} from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { folderKey } from '@shared/folders'
 import { DEFAULT_SECTION_ID, isSectionRoot, layoutOf, moveProject, moveSection, sectionIdOf } from '@shared/sections'
@@ -362,6 +374,10 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
               <ContextMenuItem @select="newChatInSection(group.section)"><PlusIcon /> Neuer Chat im Ordner</ContextMenuItem>
               <ContextMenuItem @select="openFolder(group.section.path)"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
               <ContextMenuItem @select="ui.promptTarget = { kind: 'section', id: group.section.id }"><ScrollTextIcon /> Prompt …</ContextMenuItem>
+              <!-- Its own folder's project has no row of its own: its start commands are here. -->
+              <ContextMenuItem v-if="group.root" @select="ui.startCommandsProject = group.root?.project.id ?? null">
+                <SquareTerminalIcon /> Startbefehle …
+              </ContextMenuItem>
             </template>
             <ContextMenuItem @select="renameSection(group.section)"><PencilIcon /> Umbenennen</ContextMenuItem>
             <ContextMenuItem @select="newSection(group.section)"><PlusIcon /> Neuer Trenner</ContextMenuItem>

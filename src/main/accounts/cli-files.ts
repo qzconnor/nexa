@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -21,12 +22,32 @@ export interface LoginInfo {
   authState: AuthState
   identity: AccountIdentity
   tokenExpiresAt: string | null
+  /** When the refresh token runs out (Claude); then only signing in again helps. */
+  loginEndsAt: string | null
+  /** When the CLI (or Nexa) last saved the tokens. */
+  tokenSavedAt: string | null
+  /** A refresh token that may still work. */
+  renewable: boolean
   /** OAuth access token, only for reading the plan limits (Claude). */
   accessToken: string | null
 }
 
+/** Nobody signed in (the identity is filled in fresh, it gets handed out). */
+const NO_LOGIN: Omit<LoginInfo, 'identity'> = {
+  authState: 'missing',
+  tokenExpiresAt: null,
+  loginEndsAt: null,
+  tokenSavedAt: null,
+  renewable: false,
+  accessToken: null,
+}
+
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function isoTime(ms: unknown): string | null {
+  return typeof ms === 'number' && Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -70,17 +91,43 @@ export function claudeProjectKey(cwd: string): string {
   return `${key.slice(0, MAX_PROJECT_KEY)}-${Math.abs(hash).toString(36)}`
 }
 
+/** Refresh tokens Anthropic refused (by hash): they never work again, their login is dead. */
+const refusedRefreshTokens = new Set<string>()
+
+function tokenHash(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 32)
+}
+
+/** Anthropic answered `invalid_grant` for this refresh token (see claude-renewal.ts). */
+export function refuseRefreshToken(token: string): void {
+  refusedRefreshTokens.add(tokenHash(token))
+}
+
+/**
+ * Whether a Claude login (`claudeAiOauth`) can still get new access tokens, on Claude Code's terms: a
+ * refresh token that hasn't run out or been refused, and the scope to ask for inference with.
+ */
+export function claudeRenewable(oauth: Record<string, unknown>, now = Date.now()): boolean {
+  const refreshToken = text(oauth.refreshToken)
+  if (!refreshToken) return false
+  const scopes = oauth.scopes
+  if (!Array.isArray(scopes) || !scopes.every((s) => typeof s === 'string') || !scopes.includes('user:inference')) return false
+  if (typeof oauth.refreshTokenExpiresAt === 'number' && oauth.refreshTokenExpiresAt <= now) return false
+  return !refusedRefreshTokens.has(tokenHash(refreshToken))
+}
+
 /**
  * The login of a Claude Code folder from its `.credentials.json` and `.claude.json`. The config may
- * still name a previous login; it only counts when its plan fits the stored credentials.
+ * still name a previous login; it only counts when its plan fits the stored credentials. `savedAt`:
+ * when the credentials file was written last.
  */
-export function readClaudeLogin(credentials: unknown, config: unknown, now = Date.now()): LoginInfo {
+export function readClaudeLogin(credentials: unknown, config: unknown, now = Date.now(), savedAt: number | null = null): LoginInfo {
   const oauth = isPlainObject(credentials) && isPlainObject(credentials.claudeAiOauth) ? credentials.claudeAiOauth : null
   const accessToken = text(oauth?.accessToken)
   const subscriptionType = text(oauth?.subscriptionType)
-  if (!oauth || !accessToken) return { authState: 'missing', identity: { ...NO_IDENTITY }, tokenExpiresAt: null, accessToken: null }
+  if (!oauth || !accessToken) return { ...NO_LOGIN, identity: { ...NO_IDENTITY } }
   const expires = typeof oauth.expiresAt === 'number' ? oauth.expiresAt : null
-  const renewable = !!text(oauth.refreshToken)
+  const renewable = claudeRenewable(oauth, now)
   const account = isPlainObject(config) && isPlainObject(config.oauthAccount) ? config.oauthAccount : null
   const organizationType = text(account?.organizationType)
   const fits = !organizationType?.startsWith('claude_') || !subscriptionType || organizationType.slice(7) === subscriptionType.toLowerCase()
@@ -95,6 +142,9 @@ export function readClaudeLogin(credentials: unknown, config: unknown, now = Dat
       subscriptionType,
     },
     tokenExpiresAt: expires !== null ? new Date(expires).toISOString() : null,
+    loginEndsAt: isoTime(oauth.refreshTokenExpiresAt),
+    tokenSavedAt: isoTime(savedAt),
+    renewable,
     accessToken: expires !== null && expires <= now ? null : accessToken,
   }
 }
@@ -139,10 +189,11 @@ export function jwtClaims(token: unknown): Record<string, unknown> | null {
 
 /**
  * The login of a CODEX_HOME from its `auth.json`. A ChatGPT login names the person and plan in its
- * id token; with an expired access token it still counts, Codex renews it at the next start.
+ * id token; with an expired access token it still counts, Codex renews it at the next start
+ * (`last_refresh` says when it did last).
  */
 export function readCodexLogin(file: unknown, now = Date.now()): LoginInfo & { apiKey: boolean } {
-  const empty = { authState: 'missing' as AuthState, identity: { ...NO_IDENTITY }, tokenExpiresAt: null, accessToken: null, apiKey: false }
+  const empty: LoginInfo & { apiKey: boolean } = { ...NO_LOGIN, identity: { ...NO_IDENTITY }, apiKey: false }
   if (!isPlainObject(file)) return empty
   const tokens = isPlainObject(file.tokens) ? file.tokens : null
   if (!tokens || (!text(tokens.access_token) && !text(tokens.id_token))) {
@@ -157,6 +208,7 @@ export function readCodexLogin(file: unknown, now = Date.now()): LoginInfo & { a
   const organizations = Array.isArray(auth.organizations) ? auth.organizations.filter(isPlainObject) : []
   const workspace = organizations.find((o) => o.is_default === true) ?? organizations[0]
   const exp = typeof access.exp === 'number' ? access.exp * 1000 : null
+  const saved = Date.parse(text(file.last_refresh) ?? '')
   return {
     authState: exp !== null && exp <= now ? 'expired' : 'ok',
     identity: {
@@ -167,6 +219,9 @@ export function readCodexLogin(file: unknown, now = Date.now()): LoginInfo & { a
       subscriptionType: plan,
     },
     tokenExpiresAt: exp !== null ? new Date(exp).toISOString() : null,
+    loginEndsAt: null,
+    tokenSavedAt: isoTime(saved),
+    renewable: !!text(tokens.refresh_token),
     accessToken: null,
     apiKey: false,
   }

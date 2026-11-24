@@ -43,6 +43,25 @@ describe('CodexRun.send', () => {
   })
 })
 
+describe('CodexRun.connect', () => {
+  it("starts the thread with the user's -c overrides, under Nexa's own server", async () => {
+    const options: RunOptions = {
+      sessionId: 's',
+      cwd: 'F:\\app',
+      permissionMode: 'ask',
+      account: { accountId: 'codex', set: {}, unset: [] },
+      instructions: '',
+      mcp: { url: 'http://127.0.0.1:1/mcp', token: 't', allowed: [], ask: [] },
+      extraArgs: ['-c', 'model_reasoning_effort=high', '-c', 'mcp_servers.nexa.url="elsewhere"', '--search'],
+    }
+    const request = vi.fn(async (_method: string, _params: Record<string, unknown>) => ({ thread: { id: 't1' } }))
+    await new CodexRun({ alive: true, request } as unknown as CodexClient, options, sink, { add: () => {}, remove: () => {} }).connect()
+    const config = request.mock.calls[0][1].config as Record<string, unknown>
+    expect(config.model_reasoning_effort).toBe('high')
+    expect(config['mcp_servers.nexa.url']).toBe('http://127.0.0.1:1/mcp')
+  })
+})
+
 describe('CodexRun.title', () => {
   const options: RunOptions = { sessionId: 's', cwd: 'F:\\app', permissionMode: 'ask', account: { accountId: 'codex', set: {}, unset: [] }, instructions: '', extraArgs: [] }
   const titled = async (title: string | null) => {

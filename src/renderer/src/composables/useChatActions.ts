@@ -66,6 +66,7 @@ export function useChatActions() {
     if (folder) await move(meta, { folder })
   }
 
+  /** Opens what the sidebar folded around the chat: its separator, project and folders. */
   function reveal(meta: SessionMeta): void {
     const project = projects.get(meta.projectId)
     if (!project) return
@@ -111,5 +112,5 @@ export function useChatActions() {
     await removal.remove([meta])
   }
 
-  return { state, group, working, open, newChat, rename, move, moveElsewhere, fork, copyLastAnswer, exportMarkdown, remove }
+  return { state, group, working, open, newChat, rename, move, moveElsewhere, reveal, fork, copyLastAnswer, exportMarkdown, remove }
 }

@@ -2,23 +2,28 @@
 import { CircleStopIcon, RefreshCwIcon, SquareTerminalIcon, XIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { AgentItem, ChatItem, ShellStatus, ToolItem } from '@shared/chat'
+import { startCommandLabel } from '@shared/start-commands'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useClock } from '@/composables/useClock'
 import { useProjectPath } from '@/composables/useProjectPath'
 import { attempt, errorMessage } from '@/lib/errors'
 import { formatDuration } from '@/lib/format'
-import { plainOutput, runningShells, shellCommand, shellEnd, shellPurpose, shellStatus } from '@/lib/shells'
+import { plainOutput, runningShells, shellCommand, shellEnd, shellPurpose, shellStatus, startCommandOf, startShellId } from '@/lib/shells'
 import { cn } from '@/lib/utils'
+import { useStartCommandsStore } from '@/stores/start-commands'
 import { useUiStore } from '@/stores/ui'
+import StartCommandDetail from './StartCommandDetail.vue'
 
 /**
  * The chat's shells at work beside it: what each one wrote, and a way to end one. Claude Code keeps
  * the output of its shells and hands out the end of it; Codex streams it into the item. A finished
- * one shows only when opened from the chat; the panel is for what runs.
+ * one shows only when opened from the chat; the panel is for what runs. The start commands of the
+ * chat's project that run are listed first; one that ends stays shown, so its last words can be read.
  */
-const props = defineProps<{ items: ChatItem[]; sessionId: string }>()
+const props = defineProps<{ items: ChatItem[]; sessionId: string; projectId?: string | null }>()
 const ui = useUiStore()
+const startCommands = useStartCommandsStore()
 const now = useClock(1000)
 const { shorten } = useProjectPath()
 
@@ -32,15 +37,30 @@ const shells = computed(() => {
   return shown && !list.includes(shown) ? [...list, shown].sort((a, b) => a.startedAt - b.startedAt) : list
 })
 const shell = computed(() => shells.value.find((s) => s.id === ui.shellId))
-const runningCount = computed(() => shells.value.filter((s) => shellStatus(s) === 'running').length)
 const status = computed<ShellStatus>(() => (shell.value ? shellStatus(shell.value) : 'done'))
+
+/** The project's start commands in the list: those that run, and the one shown. */
+const starts = computed(() => {
+  const shown = startCommandOf(ui.shellId)
+  return startCommands.commandsOf(props.projectId).filter((c) => c.id === shown || startCommands.isRunning(props.projectId, c.id))
+})
+const start = computed(() => starts.value.find((c) => startShellId(c.id) === ui.shellId))
+const startStatus = (id: string): ShellStatus | null => startCommands.runOf(props.projectId, id)?.status ?? null
+const startElapsed = (id: string) => {
+  const run = startCommands.runOf(props.projectId, id)
+  return run ? formatDuration(Math.max(0, (run.endedAt ?? now.value) - run.startedAt)) : ''
+}
+const runningCount = computed(
+  () => shells.value.filter((s) => shellStatus(s) === 'running').length + starts.value.filter((c) => startStatus(c.id) === 'running').length,
+)
 
 // When the one shown ends, the panel goes on with another that runs, or closes.
 watch(
   () => [ui.shellId, shell.value ? shellStatus(shell.value) : null] as const,
   ([id, state], before) => {
     if (!before || id !== before[0] || before[1] !== 'running' || state === 'running') return
-    ui.shellId = shells.value.find((s) => s.id !== id && shellStatus(s) === 'running')?.id ?? null
+    const next = shells.value.find((s) => s.id !== id && shellStatus(s) === 'running')?.id
+    ui.shellId = next ?? (starts.value[0] ? startShellId(starts.value[0].id) : null)
   },
 )
 const purpose = computed(() => (shell.value ? shellPurpose(shell.value) : null))
@@ -150,8 +170,24 @@ watch(status, (state) => {
       </Button>
     </div>
 
-    <!-- All shells of the chat, the running ones marked; the list scrolls once it is long. -->
-    <div v-if="shells.length > 1" class="flex max-h-48 shrink-0 flex-col overflow-y-auto border-b p-1.5">
+    <!-- All shells of the chat, the running ones marked, after the project's start commands; the list scrolls once it is long. -->
+    <div v-if="shells.length + starts.length > 1" class="flex max-h-48 shrink-0 flex-col overflow-y-auto border-b p-1.5">
+      <button
+        v-for="c in starts"
+        :key="c.id"
+        type="button"
+        :class="
+          cn('flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted', startShellId(c.id) === ui.shellId && 'bg-muted')
+        "
+        @click="ui.shellId = startShellId(c.id)"
+      >
+        <Spinner v-if="startStatus(c.id) === 'running'" class="size-3 shrink-0 text-(--tool-run)" />
+        <span v-else :class="cn('mx-[3px] size-1.5 shrink-0 rounded-full', dotClass(startStatus(c.id) ?? 'stopped'))" />
+        <span :class="cn('min-w-0 flex-1 truncate text-[0.76rem] font-medium', startStatus(c.id) !== 'running' && 'text-muted-foreground')">
+          {{ startCommandLabel(c) }}
+        </span>
+        <span class="shrink-0 text-muted-foreground tabular-nums">{{ startElapsed(c.id) }}</span>
+      </button>
       <button
         v-for="s in shells"
         :key="s.id"
@@ -166,7 +202,8 @@ watch(status, (state) => {
       </button>
     </div>
 
-    <div v-if="shell" class="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
+    <StartCommandDetail v-if="start && projectId" :key="start.id" :project-id="projectId" :command="start" />
+    <div v-else-if="shell" class="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
       <div v-if="purpose" class="text-[0.95rem] font-medium">{{ purpose }}</div>
       <pre
         class="selectable max-h-32 shrink-0 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)"

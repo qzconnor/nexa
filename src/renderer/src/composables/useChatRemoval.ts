@@ -1,7 +1,7 @@
 import type { SessionMeta, SessionRemoveResult } from '@shared/types'
 import { toast } from 'vue-sonner'
 import { attempt, toastError } from '@/lib/errors'
-import { removalDescription, removalProblems, removedTitle } from '@/lib/chat-cleanup'
+import { removalDescription, removalProblems, removedTitle, worktreeNote } from '@/lib/chat-cleanup'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -23,11 +23,12 @@ export function useChatRemoval() {
     const going = metas.filter((m) => !sessions.hidden.has(m.id))
     if (going.length === 0) return false
     const withCli = settings.settings.chat.deleteCliConversations
+    const worktrees = going.filter((m) => m.worktree).length
     if (
       going.length > 1 &&
       !(await ui.confirm({
         title: `${going.length} Chats löschen?`,
-        description: `${removalDescription(going.length, withCli)} 8 Sekunden lang lässt sich das rückgängig machen.`,
+        description: `${removalDescription(going.length, withCli, worktrees)} 8 Sekunden lang lässt sich das rückgängig machen.`,
         confirmText: 'Löschen',
         destructive: true,
       }))
@@ -54,8 +55,9 @@ export function useChatRemoval() {
         void attempt(() => sessions.open(shown), 'Session ließ sich nicht öffnen')
       }
     }
+    const description = [withCli ? 'Die Unterhaltungen der CLIs kommen in den Papierkorb.' : '', worktreeNote(worktrees, going.length === 1)].filter(Boolean).join(' ')
     toast(removedTitle(going), {
-      description: withCli ? 'Die Unterhaltungen der CLIs kommen in den Papierkorb.' : undefined,
+      description: description || undefined,
       duration: UNDO_MS,
       action: { label: 'Rückgängig', onClick: undo },
       // Closed by hand, it is as if the time ran out: the chats go now.
@@ -68,10 +70,15 @@ export function useChatRemoval() {
   return { remove }
 }
 
-/** Tells what went otherwise than asked: a transcript that stays, files the recycle bin refused. */
+/** Tells what went otherwise than asked: a transcript that stays, files the recycle bin refused, a worktree with work in it. */
 export function report(result: SessionRemoveResult): void {
   for (const problem of removalProblems(result)) {
-    if (problem.error) toast.error(problem.title, { description: problem.description })
-    else toast.warning(problem.title, { description: problem.description })
+    const folder = problem.folder
+    const options = {
+      description: problem.description,
+      ...(folder ? { duration: 15_000, action: { label: 'Ordner öffnen', onClick: () => void window.api.app.openPath(folder) } } : {}),
+    }
+    if (problem.error) toast.error(problem.title, options)
+    else toast.warning(problem.title, options)
   }
 }

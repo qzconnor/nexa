@@ -103,26 +103,38 @@ const RENDER_NAMES: Record<RenderToolName, string> = {
 const CHAT_NAMES: Record<string, string> = {
   chat_list: 'Chats auflisten',
   chat_read: 'Chat lesen',
+  sessions_search: 'Chats durchsuchen',
   chat_send: 'Nachricht an Chat',
   chat_new: 'Neuer Chat',
+}
+
+/** Nexa's other tools, about the app itself, in words. */
+const APP_NAMES: Record<string, string> = {
+  limits: 'Limits abfragen',
 }
 
 /** One of Nexa's tools in words (`render_chart` → „Chart“, `browser_click` → „Klicken“). */
 function nexaToolName(short: string): string {
   if (isRenderTool(short)) return RENDER_NAMES[short]
   if (CHAT_NAMES[short]) return CHAT_NAMES[short]
+  if (APP_NAMES[short]) return APP_NAMES[short]
   const action = /^browser_(.+)$/.exec(short)?.[1]
   return (action && BROWSER_STEPS[action]) || short.replace(/_/g, ' ')
 }
 
 /**
  * The chat a call of the chat tools goes to, in words: the title for an id (`titleOf`), else the name
- * the agent gave; for a new chat its CLI and name.
+ * the agent gave; for a new chat its CLI and name, for a search its words.
  */
 function chatToolDetail(short: string, tool: ToolItem, titleOf?: (id: string) => string | undefined): string | undefined {
   const input = (tool.input ?? {}) as Record<string, unknown>
   const text = (key: string) => (typeof input[key] === 'string' && input[key] ? (input[key] as string).trim() : undefined)
   if (short === 'chat_list') return text('query')
+  if (short === 'sessions_search') {
+    const query = text('query')
+    const project = text('project')
+    return [query && `„${query}“`, project && `in „${project}“`].filter(Boolean).join(' ') || undefined
+  }
   if (short === 'chat_new') {
     const cli = text('cli')
     const provider = cli === 'claude' || cli === 'codex' ? PROVIDERS[cli].name : cli

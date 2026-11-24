@@ -5,7 +5,7 @@
 ```
 Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  claude -p … / codex app-server
       ^                      │    │
-      └── Events ────────────┘    ├── Nexa-MCP-Server (HTTP, 127.0.0.1) <── Agenten rufen render_* und browser_* auf
+      └── Events ────────────┘    ├── Nexa-MCP-Server (HTTP, 127.0.0.1) <── Agenten rufen render_*, browser_*, chat_*, limits auf
                                   └── Lokale API (HTTP + SSE, 127.0.0.1) <── nx, Stream Deck, Skripte
 ```
 
@@ -20,7 +20,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | --- | --- |
 | `index.ts` | Start, Single-Instance, `nx`-Weiterleitung, Verdrahtung der Services |
 | `ipc.ts` | Alle IPC-Kanäle, Event-Weiterleitung an die Fenster |
-| `launch.ts` | Liest `--nx=<base64>` und die `nx`-Argumente |
+| `launch.ts` | Liest `--nx=<base64>` und die `nx`-Argumente, entscheidet, welcher Chat sich öffnet (`resolveLaunch`) |
+| `command-integration.ts` | Befehl `nx` an- und abmelden und sein Zustand, über `nx.exe --nx-register`/`--nx-unregister`/`--nx-status` |
 | `services/settings-service.ts` | `settings.json`, Defaults aus `shared/defaults.ts` |
 | `services/theme-service.ts` | Themes (aus dem Claude Manager übernommen) |
 | `services/provider-service.ts` | Registriert Provider, Erkennung, Usage je Account (Abfrage, Polling), Browser-Logins |
@@ -30,6 +31,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/account-login.ts` | `claude auth login` / `codex login` ohne Terminal: Link, Code, Ergebnis |
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
+| `accounts/claude-renewal.ts` | Erneuert den Access-Token eines Claude-Browser-Logins mit dem Refresh-Token, unter der Sperre von Claude Code (aus dem Claude Manager) |
+| `accounts/login-renewal.ts` | Wann Nexa erneuert: abgelaufene Claude-Logins vor dem Abfragen der Limits (`chat.keepLoginsFresh`) und „Jetzt erneuern“, siehe „Logins frisch halten“ |
 | `artifacts/artifact-service.ts` | Claudes Artefakte auf claude.ai je Account (Liste, Vorschaubilder als `data:`-URL); Kanäle `artifacts:*` in `artifact-ipc.ts`, Typen und Link-Erkennung in `shared/artifacts.ts` |
 | `voice/voice-service.ts` | Spracheingabe: wählt einen Claude-Account mit gültigem Login, streamt die Aufnahme an Claudes Spracherkennung (WebSocket, wie `/voice` in Claude Code) und meldet die Wörter dem Fenster; Kanäle `voice:*` in `voice-ipc.ts`, Typen und Sprachen in `shared/voice.ts` |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
@@ -62,13 +65,15 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts` |
 | `services/auto-switch.ts` | Am Limit eines Accounts (`attention` `limit`): den verlassenen Account bis zu seinem Reset sperren, mit `chat.autoSwitch` beim nächsten freien Account derselben CLI weitermachen, sonst bis zum ersten Reset warten (`SessionRuntime.resume`); gemerkt in `auto-switch.json`, siehe „Accounts“ |
 | `services/update-service.ts` | Updates aus den GitHub-Releases (electron-updater, Suche nach 10 s und alle 4 h), Versionshinweise über die GitHub-API bzw. den Atom-Feed; Kanäle `updates:*` in `updates-ipc.ts` |
-| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*` und `chat_*` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen |
+| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen |
 | `browser/browser-tabs.ts` | Tabs der Browser je Chat (`browser-tabs.json`): welche Seiten, welche gezeigt, wer sie geöffnet hat |
 | `browser/browser-control.ts` | Aus dem Claude Manager: steuert die Seiten für die Agents über das DevTools-Protokoll (`page-driver.ts`, Frames, Netzwerk, Routen, Dialoge, Emulation), Protokoll, Übernehmen |
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |
 | `browser/browser-ipc.ts` | Kanäle `browser:*` (Tabs, Seiten, Downloads, Logins, Übernehmen) |
 | `browser/browser-frames.ts` | Live-Bilder der Seiten für die Browser-Karten im Chat (`beginFrameSubscription`, JPEG, gedrosselt), solange ein Fenster zusieht |
-| `api/api-server.ts` | Lokale REST-API mit Token |
+| `api/api-server.ts` | Lokale REST-API mit Token (nur `127.0.0.1`, kein `Origin`, nur Host `127.0.0.1`/`localhost`); die Handler hängen am Schlüssel der Route (`Record<ApiRouteKey, Handler>`), eine Route ohne Handler oder ein Handler ohne Route fällt schon bei `tsc` auf |
+| `api/routes.ts` | Die Routen als Tabelle: Methode, Pfad, Parameter, Body mit Beispiel, Antwort, Fehler; `matchRoute` findet Route und Parameter (405 mit `Allow`) |
+| `api/openapi.ts`, `api/docs-page.ts` | Beschreibung der API aus der Tabelle: `GET /openapi.json` (OpenAPI 3.1, Schemas in `API_SCHEMAS`) und `GET /docs` (eigenständiges HTML ohne Skripte und ohne Netz, CSP `default-src 'none'`), beide ohne Token; `openapi.test.ts` prüft, dass jede Route des Servers beschrieben ist und umgekehrt |
 | `files/file-tree-service.ts` | Dateibaum aus dem Claude Manager: Ordner lesen und überwachen, Git-Status, Diffs, Suche, Vormerken/Verwerfen, angefasste Dateien (`touched`) |
 | `files/git-service.ts` | Branch, Checkouts, Web-Adresse und Hauptordner eines Repositorys |
 | `files/activity-tracker.ts` | Leitet aus den Werkzeug-Items der Sessions ab, was der Agent mit Dateien tut (live und aus dem Verlauf) |
@@ -76,6 +81,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `files/files-ipc.ts` | Kanäle `files:*` und `git:*` mit Prüfung der Pfade |
 | `window/*` | Hauptfenster, Fensterzustand, Material (Mica/Acryl), Datei-Protokoll |
 | `window/tray.ts` | Symbol im Infobereich (Einstellung `general.runInTray`): Schließen blendet das Fenster dann nur aus, das Menü öffnet und beendet |
+| `lib/fonts.ts` | Installierte Schriften für die Schriftwahl der Einstellungen (Windows über .NET in PowerShell, Linux `fc-list`), einmal pro Sitzung; Kanal `app:list-fonts` |
 | `lib/login-item.ts` | Start mit der Anmeldung (`general.launchAtLogin`, Schalter `--autostart`): Windows über den Run-Schlüssel (der Uninstaller in `build/installer.nsh` entfernt ihn), Linux über `~/.config/autostart/nexa.desktop`; mit Infobereich startet das Fenster versteckt |
 | `window/browser-*.ts` | Härtung der `<webview>`s (eigene Partition, keine Node-Integration, Berechtigungen, Popups, Navigation, Tastenkürzel), Downloads, HTTP-Logins |
 
@@ -119,6 +125,40 @@ im Projektordner ihres Arbeitsordners, deshalb verschiebt `accounts/session-move
 dem Ordner daneben und hängt einen `relocated`-Eintrag an. Codex bekommt den Ordner bei jedem
 `thread/resume`. Während die CLI arbeitet (Turn, Rückfrage, Shell oder Agent im Hintergrund), bleibt der
 Chat, wo er ist. Ein Ordner außerhalb aller Projekte bekommt ein eigenes Projekt.
+
+## Chats in Worktrees
+
+„Neuer Chat in Worktree …“ (Kontextmenü eines Projekts oder Ordners in der Sidebar, Befehlsliste) öffnet
+`WorktreeDialog`: Repository (ein Ordner darin, vorbelegt mit dem des Projekts, Ordners oder Chats), Name
+(geprüft für Branch und Ordner, auch Windows' Gerätenamen, `shared/worktree.ts`; vorbelegt mit einem
+erfundenen wie `bright-running-fox`, leer erfindet Nexa einen) und die vorhandenen Worktrees zum Anklicken.
+`GitService.worktreeCheck` (Kanal `git:worktree-check`) sagt, ob es geht (Repository mit einem Commit), wovon
+ein neuer abzweigt, welche Worktrees und übrig gebliebenen `worktree-*`-Branches es gibt und ob git
+`.claude/worktrees/` ignoriert (sonst ein Hinweis auf die `.gitignore`).
+
+Den Worktree legt Nexa selbst mit git an, wo und wie Claude Code es mit `claude --worktree <name>` täte
+(`GitService.addWorktree`): `.claude/worktrees/<name>` im Hauptordner des Repositorys, auch aus einem anderen
+Worktree heraus, auf einem neuen Branch `worktree-<name>` vom HEAD des gewählten Ordners. Den Schalter von
+Claude Code nimmt Nexa nicht (siehe `docs/PROTOCOLS.md`): So arbeitet Codex ebenso darin, und der Chat ist ein
+gewöhnlicher Chat in einem Ordner. `SessionService.create` mit `worktree` setzt `cwd` auf den Worktree und
+merkt ihn in `SessionMeta.worktree`; liegt er nicht im Projekt (das Projekt ist ein Unterordner des
+Repositorys), kommt der Chat ins innerste Projekt darüber, sonst in ein neues für den Hauptordner. Einen
+Worktree des Namens, den es schon gibt, betritt der Chat wieder; einen übrig gebliebenen Branch
+`worktree-<name>` setzt der neue Worktree fort. Filter aus der Konfiguration des Repositorys
+(`filter.<name>.smudge`/`clean`/`process`) laufen beim Auschecken nicht (`files/git-filters.ts`, wie im
+Dateibaum), denn auch ein Agent kann sie dort eintragen; mit `git lfs install --local` liegen dann Zeiger
+statt der Dateien im Worktree (`git lfs pull` darin holt sie). `.worktreeinclude` wertet Nexa nicht aus.
+
+Die Sidebar zeigt einen Worktree als eine Ebene mit seinem Namen und dem Worktree-Symbol
+(`lib/session-tree.ts`), auch für Chats, die Claude Code selbst in einem Worktree hatte.
+
+Gelöscht wird der Worktree mit dem letzten Chat, der ihn in `worktree` hat (`SessionService.remove`,
+`GitService.removeWorktree`), samt Branch, wie Claude Code es am Ende einer Sitzung im Worktree tut: nur,
+wenn kein anderer Chat darin arbeitet (auch als hinzugefügter Ordner), `git status` nichts zeigt und seine
+Commits auch auf einem anderen Branch oder Tag liegen (ein gemergter Branch geht also mit, ein
+Squash-Merge nicht). Was git ignoriert, geht mit. Sonst bleibt er, und das Fenster sagt warum, mit „Ordner
+öffnen“ (`SessionRemoveResult.worktreesKept`). Die Rückfrage vor dem Löschen erwähnt es. Ein Abzweig des
+Chats teilt sich den Worktree; zieht ein Chat aus seinem Worktree weg, nimmt er ihn nicht mehr mit.
 
 ## Trenner
 
@@ -271,6 +311,36 @@ läuft, geht die Ausgabe nur an das Fenster; gespeichert wird sie (ihr Ende, 100
 endet. Der nächste Prompt bekommt alle `!`-Befehle seit dem letzten Prompt als `<nexa-shell>`
 (`userShellContext`) vorangestellt; beim Wechsel der CLI stehen ältere als eine Zeile im `<nexa-context>`.
 
+### Startbefehle
+
+Ein Projekt hat Startbefehle (`Project.startCommands`, `shared/start-commands.ts`), wie die Shells mit
+Startbefehl in den Tab-Sets des Claude Managers: Befehl (eine Zeile), Name, ein Ordner im Projekt (relativ,
+mit `/`) und „Automatisch starten“. Bearbeitet werden sie in `StartCommandsDialog` (`ui.startCommandsProject`;
+„Startbefehle …“ im Kontextmenü des Projekts, am Trenner für das Projekt seines Ordners, im Menü des Chats und
+in der Befehlsliste). `StartCommands.save` prüft sie mit `parseStartCommands` (kein Ordner außerhalb des
+Projekts) und speichert sie über `ProjectService.setStartCommands` in `projects.json`.
+
+`services/start-commands.ts` (`StartCommands`, Kanäle `start-commands:*` in `start-commands-ipc.ts`) führt sie
+aus wie die `!`-Befehle: `shellLaunch` mit `settings.chat.shell`, ein Prozess je Befehl über eine eigene
+`UserShells` (Dekodierung, Ende der Ausgabe, Beenden samt Kindprozessen), im Ordner des Projekts oder dem
+Ordner darin. Die Ausgabe bleibt im Speicher von Main und geht weder auf die Platte noch an einen Agent
+(daher ohne `redactSecrets`); das Fenster holt ihr Ende (`output`, 100 000 Zeichen) jede Sekunde, solange
+der Befehl läuft und gezeigt wird. Die Läufe (`StartCommandRun`: Zustand, Shell, Zeiten, Exit-Code, Fehler
+wie ein fehlender Ordner) gehen als Ereignis an die Fenster; der letzte Lauf jedes Befehls bleibt, bis der
+Befehl oder sein Projekt geht (`projectsChanged` beendet ihn dann). „Neu starten“ beendet den Prozess und
+startet den Befehl so, wie er jetzt gespeichert ist. Beim Beenden von Nexa enden alle (`dispose` wartet bis
+zu 3 s, damit kein Dev-Server seinen Port behält). Für „Automatisch starten“ meldet `ChatView` das Projekt
+jedes Chats, den es zeigt (`chatOpened`): Beim ersten Chat eines Projekts mit solchen Befehlen starten sie,
+einmal je Lauf von Nexa; einer, den der Nutzer beendet hat, bleibt aus.
+
+Im Renderer hält `stores/start-commands.ts` die Läufe. `StartCommandsMenu` im Kopf des Chats (nur mit
+Startbefehlen; ein Punkt in `--tool-run`, solange einer läuft) startet einen Befehl und zeigt ihn im
+`ShellPanel`: Es listet die laufenden Startbefehle des Projekts vor den Shells des Chats (`ui.shellId` ist
+dann `startShellId(id)`, `start:<id>`), `StartCommandDetail` zeigt Ausgabe, Starten, Neu starten und
+Beenden. Ein Startbefehl, der endet, bleibt im Panel stehen, damit seine letzten Zeilen lesbar sind. Die
+Sidebar zeigt am Projekt, was läuft, und startet oder beendet im Kontextmenü; `/tasks` öffnet einen
+laufenden Startbefehl, wenn im Chat keine Shell läuft.
+
 ### Spracheingabe
 
 Das Mikrofon neben dem Senden-Knopf (oder Strg+M im Eingabefeld) diktiert in die Eingabe, für jede CLI:
@@ -333,6 +403,31 @@ Der jüngere zeigt in den Einstellungen „Gleicher Login wie …“ (`duplicate
 (`SessionService.reassignAccount`, die Unterhaltung kopiert der nächste Prompt), die Vorgabe geht mit,
 der Ordner bleibt auf der Platte.
 
+### Logins frisch halten
+
+Claude Code erneuert einen abgelaufenen Access-Token erst, wenn es wieder mit dem Account startet. Bis
+dahin kann Nexa die Limits eines ruhenden Accounts nicht abfragen, und ein Chat, der zu ihm wechselt,
+wartet erst auf die Erneuerung. Mit `chat.keepLoginsFresh` (Vorgabe an) erneuert `LoginRenewal` den Token
+deshalb selbst, bevor `ProviderService.refreshUsage` (beim Start, alle 5 Minuten, „Aktualisieren“) die
+Limits fragt: nur Browser-Logins von Claude (`nexaRenewsLogin`) mit `authState` `expired`, je Account eine
+Erneuerung zur Zeit. `renewClaudeLogin` macht es wie Claude Code (Endpunkt und Sperre in PROTOCOLS.md):
+unter dessen Sperre, mit der Datei unter der Sperre noch einmal gelesen (hat Claude Code inzwischen
+erneuert, bleibt es dabei), und geschrieben wird nur, solange die Datei noch den benutzten Refresh-Token
+hält. Ein Refresh-Token, den Anthropic mit `invalid_grant` ablehnt, merkt sich `cli-files.ts`
+(`refuseRefreshToken`, nur im Speicher): Der Login ist dann `dead`, „Login abgelaufen“ meldet es, und
+`AutoSwitch` nimmt den Account nicht mehr (`switchable`). Was sonst scheitert (Netz, Claude Code erneuert
+gerade), versucht die nächste Runde. Für den Wechsel am Limit heißt das: Die Limits ruhender Accounts
+sind aktuell, eine geschätzte Sperre bekommt ihren echten Reset, und der Chat startet beim nächsten
+Account mit gültigem Token.
+
+Die Karte „Logins“ (Einstellungen › Accounts, `LoginTable.vue`, Texte in `lib/logins.ts`) zeigt je Account
+Status, Ablauf des Access-Tokens, Ende des Logins (`loginEndsAt` aus `refreshTokenExpiresAt`) und wann die
+Tokens zuletzt gespeichert wurden (`tokenSavedAt`: Zeit der Datei bei Claude, `last_refresh` bei Codex).
+„Jetzt erneuern“ (`accounts:renew-login`) erneuert auch einen Token, der noch gilt (`force`), und liest
+danach die Limits; das geht auch mit ausgeschaltetem `keepLoginsFresh`. Codex-Logins erneuert Nexa nicht:
+Codex tut es selbst, sobald es den Token braucht, und Nexa kennt keine Sperre, unter der Codex erneuert
+(siehe PROTOCOLS.md, Codex › Accounts und Login).
+
 ### Am Limit
 
 Stoppt ein Turn am Limit seines Accounts (`TurnItem.limit`, Ereignis `attention` `limit`), sperrt
@@ -385,6 +480,13 @@ den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet ern
 - Themes: eingebaute in `shared/themes/builtin.ts`, eigene als JSON-Dateien im Ordner `themes` der
   App-Daten (Format des Claude Managers, `ThemeService` überwacht den Ordner). `themes/apply.ts` setzt
   die Tokens, `themes/color-info.ts` beschreibt jede Farbe für den Editor.
+- **Schriften** (Einstellungen › Darstellung › Schrift, `appearance.uiFont`, `codeFont`, `ligatures`, wie
+  im Terminal des Claude Managers): `themes/apply.ts` setzt sie mit den Tokens als `--ui-font` und
+  `--code-font` (die gewählte Schrift, dahinter die von Nexa; leer nur die von Nexa, `lib/fonts.ts`) und
+  `--code-font-features` (Ligaturen über `calt`/`liga`). Tailwinds `font-sans`/`font-mono` lesen sie über
+  `@theme inline` in `main.css`, Markdown-Code und Diffs (`useDiffStyle`) direkt, Mermaid bekommt die
+  Schrift beim Zeichnen. Schriften für Code halten eine Ligatur so breit wie ihre Zeichen, die Spalten der
+  Diffs bleiben also stehen. Die Auswahl (`FontPicker`) listet die installierten Schriften aus Main.
 - `stores/sessions.ts`: Metadaten aller Sessions, geöffnete Chats (`chats`), Laufzustand. Events, die
   ankommen, während eine Session lädt, stecken schon im Snapshot und werden ignoriert.
 - `lib/tools.ts`: `chatBlocks()` gruppiert Items zu Blöcken (Werkzeuggruppen, Agents, Rückfragen).
@@ -459,6 +561,37 @@ den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet ern
   des Updaters, Herunterladen und Neustart (mit Rückfrage, wenn noch Antworten laufen), Versionshinweise der
   Releases mit den PR-Beschreibungen als „Details“. Ein Punkt am Einstellungen-Knopf der Sidebar zeigt ein
   wartendes Update oder ungelesene Neuerungen nach einem Update.
+
+## Befehl `nx`
+
+`nx.exe` (`src/launcher/nx.cs`, ein GUI-Programm, damit der Explorer kein Konsolenfenster zeigt) gibt nur
+den Ordner des Aufrufs und seine Argumente als einen Base64-Schalter `--nx=` an `Nexa.exe` weiter; läuft
+Nexa schon, kommt die Anfrage über `requestSingleInstanceLock` als `additionalData` bei der laufenden Instanz
+an (`second-instance`, geprüft mit `isLaunchRequest`). Was sie bedeutet, entscheidet `launch.ts` ohne
+Seiteneffekte: `parseLaunchArgs` liest die Argumente (wie `cm` im Claude Manager: `-a`, `-c`, `-r [id]`,
+`-n`, `-m`, `--claude`/`--codex`, `--` für die CLI) und lehnt Widersprüche ab, `resolveLaunch` macht daraus
+mit Einstellungen, Accounts, Projekten, Chats und `SessionService.running()` einen Plan: einen Chat öffnen,
+einen neuen anlegen, eine Unterhaltung der CLIs übernehmen (`CliSessionImport.takeOver`: Transkript per
+`findTranscript` in den Claude-Ordnern bzw. Thread aus `thread/list` der Codex-Accounts, eingeordnet wie beim
+Import) oder die Schnellsuche mit den Chats des Ordners zeigen (`event:find-sessions`). `index.ts` führt den
+Plan aus; Fehler erscheinen als Dialog „„nx“ konnte keinen Chat öffnen“.
+
+- **Offener Chat** (`general.nxReuseChat`): ein Chat im Ordner (`cwd`, sonst der des Projekts), dessen CLI
+  verbunden ist oder arbeitet, oder der noch leer ist (kein Prompt, keine Unterhaltung einer CLI). `-a`,
+  `--claude`, `--codex` grenzen ihn und den Chat von `-c` ein; ein Chat ohne eigenen Account zählt mit dem
+  Standard-Account seiner CLI.
+- **Account** (`findAccount`): ID, Name, E-Mail, sonst ein eindeutiger Teil des Namens, unter den sichtbaren
+  Accounts der eingeschalteten CLIs (oder der genannten); passen Accounts beider CLIs, gewinnt die
+  Standard-CLI. Ohne `--claude`/`--codex` bestimmt der Account die CLI des neuen Chats.
+- **Argumente für die CLI** stehen in `SessionMeta.cliArgs` je CLI und kommen bei jedem Start hinter die des
+  Accounts (`RunOptions.extraArgs`). Claude Code nimmt sie unverändert. Der App-Server von Codex gehört allen
+  Chats eines Accounts; `codexOverrides` macht aus `-c schlüssel=wert` die `config` des Threads (Nexas
+  MCP-Server geht vor), andere Argumente lehnt `resolveLaunch` für Codex ab.
+- **An- und abmelden**: `CommandIntegration` (`command-integration.ts`, Kanäle `command:*`) ruft
+  `nx.exe --nx-status`, `--nx-register` und `--nx-unregister`; nx.exe schreibt selbst Benutzer-PATH und App
+  Path. Gehört der App Path einem anderen Programm, nennt der Status es als Hinweis (`reg query`). Nur in der
+  installierten App unter Windows; ein Entwicklungs-Build meldet sich nie an. Die Einstellungen zeigen es unter
+  Allgemein › Befehl „nx“ (`SettingsCommand.vue`).
 
 ## Releases
 

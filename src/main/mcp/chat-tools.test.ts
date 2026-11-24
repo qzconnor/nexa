@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem, ProviderId } from '@shared/chat'
+import type { SessionSearchHit } from '@shared/types'
 import type { PeerChat } from '../services/session-service'
 import { ChatTools, chatTranscript, resolveChat, type ChatPeers } from './chat-tools'
 
@@ -80,13 +81,18 @@ describe('chatTranscript', () => {
 })
 
 describe('ChatTools', () => {
-  function tools(chats = CHATS, items: Record<string, ChatItem[]> = {}) {
+  function tools(chats = CHATS, items: Record<string, ChatItem[]> = {}, hits: SessionSearchHit[] = []) {
     const sent: { from: string; to: string; text: string }[] = []
     const created: unknown[] = []
+    const searched: string[] = []
     let now = NOW
     const peers: ChatPeers = {
       list: () => chats,
       items: async (id) => items[id] ?? null,
+      search: async (query) => {
+        searched.push(query)
+        return hits
+      },
       send: async (from, to, text) => void sent.push({ from, to, text }),
       create: async (from, input) => {
         created.push({ from, ...input })
@@ -98,8 +104,38 @@ describe('ChatTools', () => {
       const result = await chatTools.call('self', name, args)
       return { text: result.content.map((c) => (c.type === 'text' ? c.text : '')).join(''), error: !!result.isError }
     }
-    return { call, sent, created, later: (ms: number) => (now += ms) }
+    return { call, sent, created, searched, later: (ms: number) => (now += ms) }
   }
+
+  it('searches the titles and the conversations of the other chats, archived ones too', async () => {
+    const hits: SessionSearchHit[] = [
+      { sessionId: 'c5', role: 'assistant', provider: 'codex', snippet: '…der alte Plan war gut' },
+      { sessionId: 'self', role: 'user', provider: 'claude', snippet: 'Plan hier' },
+    ]
+    const { call, searched } = tools(CHATS, {}, hits)
+    const { text } = await call('sessions_search', { query: '„Plan“' })
+    expect(searched).toEqual(['plan'])
+    expect(text).toMatch(/^One chat fits "„Plan“", newest first:\n- "Alter Plan" \(Claude Code, project nexa, active 1 min ago \(\d{4}-\d\d-\d\d\), archived\) id: c5\n  Codex: …der alte Plan war gut\n/)
+    expect(text).toContain('Read one with chat_read.')
+  })
+
+  it('finds a chat by its title alone, without minding accents, and narrows it to a project', async () => {
+    const { call } = tools()
+    expect((await call('sessions_search', { query: 'uhersetzung HINWEISE' })).text).toContain('- "Ühersetzung der Hinweise"')
+    expect((await call('sessions_search', { query: 'Ühersetzung' })).text).toContain('(the words are in its title)')
+    const inCm = (await call('sessions_search', { query: 'release', project: 'cm' })).text
+    expect(inCm).toContain('id: c3')
+    expect(inCm).not.toContain('id: c4')
+    expect(await call('sessions_search', { query: 'nirgends' })).toMatchObject({ error: false, text: 'No other chat fits "nirgends".' })
+    expect(await call('sessions_search', { query: ' „“ ' })).toMatchObject({ error: true })
+  })
+
+  it('gives at most as many as asked for and says how many more there are', async () => {
+    const many = [chat('self', 'Hier'), ...Array.from({ length: 5 }, (_, i) => chat(`r${i}`, `Release ${i}`))]
+    const { text } = await tools(many).call('sessions_search', { query: 'release', limit: 2 })
+    expect(text.split('\n').filter((line) => line.startsWith('- '))).toHaveLength(2)
+    expect(text).toContain('… and 3 more')
+  })
 
   it('lists the other chats, without archived ones unless asked', async () => {
     const { call } = tools()
