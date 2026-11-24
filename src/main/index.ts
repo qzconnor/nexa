@@ -4,6 +4,8 @@ import { IpcEvent } from '@shared/ipc'
 import { PROVIDERS } from '@shared/providers'
 import { findTheme } from '@shared/themes/builtin'
 import { ApiServer } from './api/api-server'
+import { registerArtifactsIpc } from './artifacts/artifact-ipc'
+import { ArtifactService, artifactAccounts } from './artifacts/artifact-service'
 import { BrowserControl } from './browser/browser-control'
 import { registerBrowserIpc } from './browser/browser-ipc'
 import { BrowserTabs } from './browser/browser-tabs'
@@ -129,6 +131,9 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
   const git = new GitService()
   registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications })
+  // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
+  const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
+  registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
 
   // The file panel beside the chat: the project's tree with git's view, and what the agents do to files.
   const files = new FileTreeService((path) => shell.trashItem(path))

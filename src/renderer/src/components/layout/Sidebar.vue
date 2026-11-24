@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon, ScrollTextIcon, SettingsIcon, SquarePenIcon, Trash2Icon } from '@lucide/vue'
+import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon, ScrollTextIcon, SettingsIcon, ShapesIcon, SquarePenIcon, Trash2Icon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { folderKey } from '@shared/folders'
 import { DEFAULT_SECTION_ID, isSectionRoot, layoutOf, moveProject, moveSection, sectionIdOf } from '@shared/sections'
@@ -80,7 +80,8 @@ watch(
 
 const newChat = () => chat.newChat()
 /** The start page is where a new chat begins: its button shows it as the page on screen, as a chat's row does. */
-const onStartPage = computed(() => !(ui.view === 'chat' && sessions.active) && settings.settings.setup.done)
+const onStartPage = computed(() => !(ui.view === 'chat' && sessions.active) && ui.view !== 'artifacts' && settings.settings.setup.done)
+const onArtifacts = computed(() => ui.view === 'artifacts')
 
 /** The folder a separator stands for, as the Claude Manager shows a workspace: where it lies. */
 function parentOf(section: ProjectSection): string | null {
@@ -268,6 +269,15 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
       >
         <SquarePenIcon />
         Neuer Chat
+      </Button>
+      <Button
+        variant="ghost"
+        :class="cn('justify-start gap-2 px-2.5', onArtifacts && 'bg-sidebar-accent')"
+        :aria-current="onArtifacts ? 'page' : undefined"
+        @click="ui.view = 'artifacts'"
+      >
+        <ShapesIcon />
+        Artefakte
       </Button>
     </div>
 

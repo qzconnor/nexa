@@ -140,6 +140,30 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   und ein `result` mit `is_error`. Nexa markiert den Turn dann mit `limit` (Benachrichtigung „Limit
   erreicht“, der Reset kommt aus den Usage-Fenstern des Accounts).
 
+### Artefakte (claude.ai)
+
+Was Claude Code mit seinem Werkzeug `Artifact` auf claude.ai veröffentlicht (Seiten und Dokumente), listet
+Nexa je Account auf der Seite „Artefakte“ (`main/artifacts/artifact-service.ts`, wie der Claude Manager).
+
+- **Liste**: `GET https://api.anthropic.com/api/frame/artifacts?rel=all|shared&kind=page,document&sort=last_viewed&limit=200`
+  (weitere Seiten mit `page_token` aus `next_page_token`), Kopfzeilen wie Claude Code: `Authorization:
+  Bearer <accessToken>`, `anthropic-beta: oauth-2025-04-20`, `X-Frame-CP: go`, `X-Frame-Surface: code`,
+  `X-Frame-Platform: cli`, `X-Frame-Client-Version: <Version von Claude Code>`. Wer `/artifacts` nicht
+  bekommt, bekommt die ältere Liste `GET …/frames?limit=200`.
+- **Felder** von `/artifacts`: `id` (UUID), `kind`, `rel` (`mine`, `shared`), `title`, `open_url`
+  (`https://claude.ai/artifact/<kurze id>`), `audience` (`owner`, `users`, `org`, `public`),
+  `created_at`, `updated_at`, `last_viewed_at`, `view_count` bzw. `public_view_count`, `thumbnail_url`
+  und `thumbnail_dark_url` (JPEG von `<id>.frame.claudeusercontent.com` mit kurzlebigem Token im Link,
+  ohne Anmeldung abrufbar), `owner_account` (UUID, keine E-Mail). `/frames` nennt die id `slug`, die
+  Bilder `thumbImgURL`/`thumbDarkImgURL` und die Version `live` (`<Sekunden>-<Hash>`).
+- **Werkzeug `Artifact`**: sein Ergebnis nennt den Link wie `open_url` („… at
+  https://claude.ai/artifact/<kurze id> (Version 1, …)“), `toolUseResult` zusätzlich `artifact_id` (die
+  UUID). Daran findet Nexa den Chat, aus dem ein Artefakt kam (`artifactLinks`, `artifactChatMap` in
+  `shared/artifacts.ts`): den neuesten, in dem das Werkzeug es veröffentlicht hat, sonst den neuesten,
+  der den Link nennt.
+- Nur mit Browser-Login oder Setup-Token, nicht mit API-Key. Ein abgelaufenes Access-Token erneuert
+  Nexa nicht selbst; das tut Claude Code beim nächsten Start mit dem Account.
+
 ### Transkripte (`projects/<key>/<id>.jsonl`)
 
 Was Claude Code selbst speichert und Nexa beim Übernehmen liest (`claude-transcript.ts`):
@@ -203,6 +227,9 @@ Nexa legt diese Dateien und Ordner in den Papierkorb, nicht aber Einträge in ge
 (`sessions/<pid>.json`), bleiben ihre Dateien in diesem Ordner liegen, weil er sie weiterschreiben würde.
 
 ## Codex (`codex app-server`)
+
+Sites (Codex' Gegenstück zu den Artefakten) gibt der App-Server 0.169 nicht heraus: keine Methode
+listet sie, Nexa zeigt sie deshalb (noch) nicht.
 
 Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 (`codex app-server --listen stdio://`, mit `CODEX_HOME` des Accounts).

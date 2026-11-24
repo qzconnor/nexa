@@ -1,4 +1,5 @@
 import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput } from './accounts'
+import type { ArtifactsApi } from './artifacts'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
 import type {
@@ -188,6 +189,8 @@ export interface NexaApi {
   claudeManager: ImportApi
   /** Taking over the sessions in the CLIs' own folders (shared/import-ipc.ts). */
   cliImport: CliImportApi
+  /** Claude's artifacts on claude.ai (shared/artifacts.ts). */
+  artifacts: ArtifactsApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

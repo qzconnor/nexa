@@ -30,6 +30,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useThemesStore } from '@/stores/themes'
 import { useUiStore } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
+import ArtifactsView from '@/views/ArtifactsView.vue'
 import HomeView from '@/views/HomeView.vue'
 import SetupView from '@/views/SetupView.vue'
 
@@ -94,6 +95,7 @@ onMounted(async () => {
           "
         >
           <ChatView v-if="ui.view === 'chat' && sessions.active" />
+          <ArtifactsView v-else-if="ui.view === 'artifacts'" />
           <!-- Chats stay reachable; only the start page waits for the setup. -->
           <SetupView v-else-if="!settings.settings.setup.done" />
           <HomeView v-else />

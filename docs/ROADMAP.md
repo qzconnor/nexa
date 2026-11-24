@@ -125,6 +125,8 @@
       aus allen Accounts, nach Ordnern auf Projekte verteilt und auswählbar (Einrichtung, Einstellungen →
       Accounts, Befehlsliste). Der Verlauf kommt beim ersten Öffnen aus der CLI, der Chat geht in
       derselben Session weiter
+- [x] Artefakte als eigener Eintrag unter „Neuer Chat“: Claudes Artefakte von claude.ai je Account mit
+      Vorschaubild, Suche und Filtern; ein Klick zeigt sie im Browser-Panel des Chats, aus dem sie kamen
 
 ## Als Nächstes
 
@@ -135,10 +137,8 @@
 - [ ] **Chats mit Codex abgleichen** wie mit Claude Code: Was in der Codex-TUI dazukam, aus dem Rollout
       der verknüpften Sitzung nachtragen (`thread/read`, `thread/turns/list`), und warnen, wenn sie
       gerade woanders offen ist.
-- [ ] **Artefakte und Sites** als eigener Eintrag unter „Neuer Chat“ in der Sidebar: Claudes Artefakte
-      (claude.ai, je Account; die Seite „Artefakte“ des Claude Managers, `artifact-service.ts`) und die
-      Sites von Codex in einer Liste mit Suche, Vorschau im Browser-Panel und Sprung in den Chat, aus dem
-      sie kamen. Offen: wie Codex seine Sites herausgibt (der App-Server 0.169 hat keine Methode dafür).
+- [ ] **Sites von Codex** auf der Seite „Artefakte“, sobald der App-Server sie herausgibt (0.169 hat keine
+      Methode dafür). Dazu für Claudes Artefakte: umbenennen, löschen und anpinnen wie im Claude Manager.
 - [ ] **Automatischer Account-Wechsel bei erreichtem Limit** (wie „Account wechseln“ im Claude Manager):
       Chat mit dem nächsten freien Account derselben CLI fortsetzen, Reihenfolge einstellbar. Ein
       verlassener Account bleibt bis zu seinem Reset gesperrt; ohne freien Account wartet der Chat mit
