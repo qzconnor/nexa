@@ -65,7 +65,7 @@ export const APP_COMMANDS: readonly AppCommand[] = [
   { id: 'settings', description: 'Einstellungen von Nexa' },
   { id: 'theme', description: 'Darstellung und Themes' },
   { id: 'help', description: 'Alle Befehle zeigen' },
-  { id: 'exit', aliases: ['quit'], description: 'CLI des Chats beenden; der nächste Prompt startet sie wieder' },
+  { id: 'exit', aliases: ['quit'], description: 'Chat beenden und zur Startseite; der nächste Prompt setzt ihn fort' },
 ]
 
 /** The commands Nexa runs for a chat with this CLI. */

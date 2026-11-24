@@ -256,13 +256,16 @@ const switchChoices = computed(() => {
             Antwort abbrechen
           </CommandItem>
           <CommandItem
-            v-if="runtime?.connected"
-            value="chat-stop"
-            filter-text="CLI beenden Prozess stoppen Claude Codex neu starten"
-            @select="run(() => sessions.stop(meta!.id))"
+            value="chat-restart"
+            filter-text="Chat neu starten Neustart CLI Prozess Claude Codex Einstellungen übernehmen restart"
+            @select="run(() => chat.restart(meta!))"
           >
+            <RotateCwIcon />
+            Chat neu starten
+          </CommandItem>
+          <CommandItem value="chat-end" filter-text="Chat beenden schließen CLI Prozess stoppen Claude Codex Startseite exit" @select="run(() => chat.end(meta!))">
             <PowerIcon />
-            CLI des Chats beenden
+            Chat beenden
           </CommandItem>
           <CommandItem value="chat-folder" filter-text="Ordner des Chats öffnen Explorer Projektordner" @select="run(openFolder)">
             <FolderOpenIcon />

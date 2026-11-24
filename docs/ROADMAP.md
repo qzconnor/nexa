@@ -213,6 +213,10 @@
       Routentabelle, die der Server selbst nutzt
 - [x] Schriftarten wählen (Oberfläche und Code, aus den installierten Schriften) und Ligaturen für Code
       ein- und ausschalten wie im Claude Manager
+- [x] „Chat neu starten“ (Knopf oben rechts, Menü, Befehlspalette): Die CLI startet auf derselben
+      Unterhaltung neu und übernimmt geänderte Nexa-Werkzeuge und Prompts; nach dem Umschalten der Werkzeuge
+      bietet ein Toast das für den offenen Chat an. „Chat beenden“ (vorher „CLI beenden“, auch `/exit`)
+      beendet die CLI und führt zur Startseite
 
 ## Als Nächstes
 

@@ -247,5 +247,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     forget,
     interrupt: (id: string) => window.api.sessions.interrupt(id),
     stop: (id: string) => window.api.sessions.stop(id),
+    restart: (id: string) => window.api.sessions.restart(id),
   }
 })

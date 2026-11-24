@@ -51,7 +51,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/claude/claude-presence.ts` | Ob eine Claude-Code-Sitzung gerade in einem anderen Prozess offen ist (`<config>/sessions/<pid>.json`) und wo |
 | `providers/codex/codex-presence.ts` | Ob ein Prozess einen Codex-Thread geladen hat (`<CODEX_HOME>/thread-writer-locks/<thread>.lock`, unter Windows) |
 | `providers/claude/claude-transcript.ts` | Claude-Code-Transkript (`projects/<key>/<id>.jsonl`) → `ChatItem`s wie aus dem Stream, plus Kurzfassung (Ordner, Titel, Zeiten) |
-| `services/session-service.ts` | Sessions: Metadaten, Items, Runs starten/stoppen, Wechsel der CLI, Statistik |
+| `services/session-service.ts` | Sessions: Metadaten, Items, Runs starten/stoppen und ohne Prompt neu starten (`restart`: übernimmt Werkzeuge und Prompts, die eine CLI nur beim Start liest), Wechsel der CLI, Statistik |
 | `services/session-search.ts` | Suche in den Prompts und Antworten der Chats (für die Schnellsuche), Ausschnitt um den Treffer |
 | `services/transcript-store.ts` | Verlauf je Session als JSONL |
 | `services/instructions.ts` | Systemprompt-Zusatz, Übergabe-Kontext beim CLI-Wechsel, `<nexa-shell>` mit den `!`-Befehlen des Nutzers |

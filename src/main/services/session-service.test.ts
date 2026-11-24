@@ -90,6 +90,7 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
     },
     touch: async () => {},
     promptsFor: async () => [],
+    setMcpEnabled: async () => {},
   }
   const providers = {
     isReady: () => true,
@@ -953,5 +954,66 @@ describe('SessionService with worktrees', () => {
     const moved = await sessions.move('chat', { projectId: 'p1' })
     expect(moved.worktree).toBeUndefined()
     expect(moved.cwd).toBeUndefined()
+  })
+})
+
+describe('SessionService.restart', () => {
+  /** A chat that talked with Claude Code once; the CLI's starts, stops and prompts are recorded. */
+  async function talked() {
+    let sink: RunSink | null = null
+    const starts: RunOptions[] = []
+    const sent: string[] = []
+    let stopped = 0
+    const run = {
+      alive: true,
+      send: async (input: RunInput) => void sent.push(input.text),
+      stop: async () => {
+        stopped++
+        run.alive = false
+      },
+    }
+    const sessions = await start([meta('chat', {})], {
+      start: async (options, s) => {
+        starts.push(options)
+        sink = s
+        run.alive = true
+        return run as unknown as AgentRun
+      },
+    })
+    await sessions.send('chat', { text: 'erste' })
+    sink!.cliSession(GONE)
+    sink!.item({ kind: 'assistant', id: 'msg_1:0', ts: 11, provider: 'claude', text: 'Antwort' })
+    sink!.item({ kind: 'turn', id: 'r1', ts: 12, provider: 'claude', status: 'done' })
+    sink!.runtime({ status: 'idle' })
+    return { sessions, starts, sent, stopped: () => stopped, sink: () => sink! }
+  }
+
+  it('starts the CLI anew on the same conversation, without a prompt', async () => {
+    const { sessions, starts, sent, stopped } = await talked()
+
+    await sessions.restart('chat')
+
+    expect(stopped()).toBe(1)
+    expect(starts).toHaveLength(2)
+    expect(starts[1]).toMatchObject({ resumeId: GONE })
+    expect(sent).toEqual(['erste'])
+  })
+
+  it('cuts off a turn that runs, and the restart after it no longer comes', async () => {
+    const { sessions, starts, stopped, sink } = await talked()
+    await sessions.send('chat', { text: 'zweite' })
+    sink().runtime({ status: 'running' })
+    // A connector switched while it works: its CLI would end after the turn (restartForChange).
+    await sessions.setMcpEnabled('chat', 'server', false)
+    expect(stopped()).toBe(0)
+
+    await sessions.restart('chat')
+    expect(stopped()).toBe(1)
+    expect(starts).toHaveLength(2)
+
+    // A turn of the new CLI ends: nothing stops it.
+    sink().item({ kind: 'turn', id: 'r2', ts: 22, provider: 'claude', status: 'done' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(stopped()).toBe(1)
   })
 })

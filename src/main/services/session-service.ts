@@ -1691,6 +1691,25 @@ export class SessionService extends TypedEmitter<Events> {
     this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider: s.meta.provider, level, text, ...(detail ? { detail } : {}) })
   }
 
+  /**
+   * Starts the chat's CLI anew on the same conversation (a turn that runs is cut off), so it takes up
+   * what a CLI reads only at its start: Nexa's tools and their switches, the prompts of the project.
+   */
+  async restart(id: string): Promise<void> {
+    const s = await this.loaded(id)
+    const meta = s.meta
+    const project = this.projects.get(meta.projectId)
+    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
+    const provider = meta.provider
+    this.requireEnabled(provider)
+    if (!this.providers.isReady(provider)) throw new Error(`${PROVIDERS[provider].name} ist nicht installiert.`)
+    // Started anew now: one more after the turn would end the new one.
+    s.restartAfterTurn = false
+    await this.stop(id)
+    const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
+    await this.ensureRun(s, accountId)
+  }
+
   async stop(id: string): Promise<void> {
     const s = this.get(id)
     const run = s.run

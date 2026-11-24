@@ -158,11 +158,6 @@ export function useChatCommands(options: {
     ui.shellId = shown ? shown.id : startShellId(start!.id)
   }
 
-  async function stopCli(meta: SessionMeta): Promise<void> {
-    await attempt(() => sessions.stop(meta.id), 'CLI ließ sich nicht beenden')
-    toast(`${PROVIDERS[meta.provider].name} beendet`, { description: 'Der nächste Prompt startet die CLI wieder mit der Unterhaltung.' })
-  }
-
   async function run(command: AppCommand, args: string): Promise<void> {
     const meta = options.meta.value
     if (!meta) return
@@ -218,7 +213,7 @@ export function useChatCommands(options: {
       case 'help':
         return composer?.showCommands()
       case 'exit':
-        return stopCli(meta)
+        return chat.end(meta)
     }
   }
 
