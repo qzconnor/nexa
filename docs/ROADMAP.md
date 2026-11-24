@@ -135,6 +135,10 @@
       bzw. `config.toml`)
 - [x] Artefakte als eigener Eintrag unter „Neuer Chat“: Claudes Artefakte von claude.ai je Account mit
       Vorschaubild, Suche und Filtern; ein Klick zeigt sie im Browser-Panel des Chats, aus dem sie kamen
+- [x] Automatische Titel: Nach dem ersten Prompt benennt das Modell den Chat. Claude Code nutzt dafür
+      `generate_session_title`, Codex einen flüchtigen Thread. Der Titel gilt auch in der CLI, bei Codex
+      über `thread/name/set`. Bis er da ist, steht die erste Zeile da. Ein eigener Name bleibt.
+      Abschaltbar unter Einstellungen › Chat.
 
 ## Als Nächstes
 
@@ -149,7 +153,6 @@
       Countdown; „Am Reset fortsetzen“ auch ohne Wechsel; nach dem Wechsel eine einstellbare Nachricht
       („Mach weiter“). Dateien dort: `auto-switch.ts`, `session-handoff.ts`, `account-choice.ts`.
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
-- [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).
 

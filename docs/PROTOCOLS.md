@@ -135,6 +135,15 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   von Plugins sind wieder an, Nexa schaltet die im Projekt ausgeschalteten danach erneut ab.
 - **Weitere Ordner**: `--add-dir=<ordner>` (je Ordner einmal) gibt Claude Zugriff außerhalb des
   Arbeitsordners; gilt für den Prozess, Nexa startet ihn bei einer Änderung neu.
+- **Titel** (geprüft mit 2.1.330): Claude Code benennt eine Session selbst, auch mit `-p`. Etwa 2 s nach dem
+  ersten Prompt schreibt es `{"type":"ai-title","aiTitle":"…"}` ins Transkript, in der Sprache des
+  Chats. Auf stdout kommt dazu nichts: `system/session_title_changed` gibt es nur bei `/rename` und im
+  Remote-Modus. `generate_session_title { description, persist }` antwortet mit `{ title }`. Mit
+  `persist: false` ist der Titel jedes Mal neu erzeugt und wird nicht gespeichert. Mit `persist: true`
+  kommt der gesetzte Name (`custom-title`), sonst der `ai-title`, sonst ein neuer, der als `ai-title`
+  gespeichert wird. Gleich nach dem ersten Prompt gefragt, antwortet es in unter 1 s, und Claude Code
+  schreibt danach keinen anderen `ai-title`. Nexa fragt so nach dem ersten Prompt (`description` ist der
+  Prompt, auf 2000 Zeichen gekürzt). `rename_session { title, source }` setzt einen Namen wie `/rename`.
 
 ### Accounts, Login und Limits
 
@@ -323,6 +332,14 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   den Aufzeichnungen des eigenen Accounts (`state_<n>.sqlite`): Für einen Rollout, der bloß in den
   Ordner kopiert wurde, kommen keine. `thread/resume` mit `excludeTurns: false` gäbe sie auch, ohne den
   Rollout anzufassen, hängt den Thread aber an den Server. Geprüft mit 0.169.
+- **Titel** (geprüft mit 0.169): Codex benennt Threads nicht selbst. `name` bleibt `null`, bis jemand ihn
+  setzt. Das geht mit `thread/name/set { threadId, name }`, danach kommt `thread/name/updated`
+  (`threadId`, `threadName`). Nexa fragt nach dem ersten Prompt in einem eigenen flüchtigen Thread:
+  `thread/start` mit `ephemeral: true`, `baseInstructions` (nur den Titel antworten), `sandbox:
+  "read-only"`, `approvalPolicy: "never"`, dem Standardmodell des Accounts und dem Temp-Ordner als `cwd`,
+  damit keine `AGENTS.md` mitkommt. Dann `turn/start` mit der niedrigsten Stufe des Modells. Das dauert gut
+  2 s. Flüchtige Threads stehen nicht in `thread/list` und werden nicht gespeichert, danach
+  `thread/unsubscribe`. Den Titel setzt Nexa mit `thread/name/set` auch am Thread des Chats.
 - **Slash-Befehle** kennt der App-Server nicht: `/…` ginge als Text an das Modell. Nexa führt seine eigenen
   aus (renderer `lib/chat-commands.ts`), die Skills kommen mit `skills/list` und gehen als `$name`.
 - **Anfragen vom Server** (Antwort nötig): `item/commandExecution/requestApproval`,

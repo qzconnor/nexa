@@ -52,6 +52,11 @@ export interface ChatSettings {
   /** Enter sends; with Shift+Enter a new line. Off: Ctrl+Enter sends. */
   enterSends: boolean
   /**
+   * A new chat gets its title from the model after the first prompt; until then, and when off, the
+   * prompt's first line. Codex asks its model in a short request of its own for it.
+   */
+  autoTitles: boolean
+  /**
    * A deleted chat takes its conversations in Claude Code and Codex along into the recycle bin, with
    * subagents and the snapshots of `/rewind`, in every account with a copy. Off: the CLIs keep them.
    */

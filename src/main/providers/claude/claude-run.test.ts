@@ -54,6 +54,14 @@ describe('ClaudeRun prompts', () => {
     expect(taken).toEqual(['p2'])
   })
 
+  it('asks Claude Code for the session’s title and keeps it as its own', async () => {
+    const title = run.title('Plane eine Reise nach Kyoto')
+    const request = fake.written.at(-1) as { request_id: string; request: unknown }
+    expect(request).toMatchObject({ type: 'control_request', request: { subtype: 'generate_session_title', description: 'Plane eine Reise nach Kyoto', persist: true } })
+    stream({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { title: '„Reise nach Kyoto“' } } })
+    expect(await title).toBe('Reise nach Kyoto')
+  })
+
   it('works on after an interrupt when a prompt waited', async () => {
     await run.send({ id: 'p1', text: 'lange Aufgabe' })
     // The order Claude Code reports it in: the interrupted turn ends, the waiting prompt starts one.

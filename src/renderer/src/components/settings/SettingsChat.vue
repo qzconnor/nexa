@@ -43,6 +43,13 @@ function cleanUp(): void {
       <SettingField anchor="chat.collapseDiffs" label="Änderungen eingeklappt" description="Diffs geänderter Dateien erst nach einem Klick zeigen.">
         <Switch :model-value="s.chat.collapseDiffs" @update:model-value="(v: boolean) => update({ chat: { collapseDiffs: v } })" />
       </SettingField>
+      <SettingField
+        anchor="chat.autoTitles"
+        label="Titel vom Modell"
+        description="Neue Chats bekommen nach dem ersten Prompt einen kurzen Titel vom Modell, auch in der CLI. Codex fragt sein Modell dafür eigens. Aus: die erste Zeile des Prompts."
+      >
+        <Switch :model-value="s.chat.autoTitles" @update:model-value="(v: boolean) => update({ chat: { autoTitles: v } })" />
+      </SettingField>
     </SettingsSection>
 
     <SettingsSection anchor="chat.input" title="Eingabe">

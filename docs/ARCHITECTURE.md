@@ -36,6 +36,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/project-service.ts` | Projekte (Ordner) und Trenner, ihre Reihenfolge, ausgeschaltete MCP-Server je Projekt; `project-sections.ts` macht ein Projekt zum Trenner |
 | `services/folder-prompts.ts` | Prompt eines Projekts oder Trenners (`prompts.md` im Ordner) lesen, schreiben und für den Systemprompt zusammensetzen |
 | `providers/mcp-servers.ts` | Antworten der CLIs auf die Frage nach ihren MCP-Servern → `McpServerState` (ohne Nexas eigenen) |
+| `providers/titles.ts` | Titel eines Chats vom Modell (`AgentRun.title`): Anweisung für Codex, Prompt gekürzt, Antwort bereinigt (`cleanTitle`) |
 | `providers/plugins.ts` | Plugins der CLIs (`claude plugin list --json`, Codex `plugin/installed`) → `PluginInfo`, Antworten auf das Schalten und auf die Anmeldung an MCP-Servern (`McpAuthStart`) |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |

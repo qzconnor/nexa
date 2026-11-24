@@ -1,13 +1,15 @@
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { ChatItem } from '@shared/chat'
 import type { CommandOption, ConnectorSettings, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
-import { isPlainObject } from '@shared/utils'
+import { isPlainObject, withTimeout } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import { defaultCodexHome } from '../../accounts/cli-files'
 import { CliBinary, type ResolvedCommand } from '../cli-binary'
 import { codexMcpServers } from '../mcp-servers'
 import { byPluginName, codexAuthStart, codexPlugins } from '../plugins'
 import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
+import { TITLE_INSTRUCTIONS, TITLE_TIMEOUT_MS, cleanTitle, titleRequest } from '../titles'
 import { CodexClient, type CodexServerRequest } from './codex-client'
 import { codexThreadItems } from './codex-items'
 import { CodexRun } from './codex-run'
@@ -68,6 +70,8 @@ export class CodexProvider implements AgentProvider {
   readonly binary: CliBinary
   private readonly servers = new Map<string, AccountServer>()
   private readonly routes = new Map<string, CodexRun>()
+  /** The ephemeral threads that name chats (see `title`), with what takes their notifications. */
+  private readonly titleThreads = new Map<string, (method: string, params: Json) => void>()
   private modelCache: { models: ModelOption[]; at: number } | null = null
   /** By account and folder. */
   private readonly skillCache = new Map<string, { skills: CommandOption[]; at: number }>()
@@ -255,6 +259,7 @@ export class CodexProvider implements AgentProvider {
         },
       },
       () => this.commands({ ...options.account, accessToken: null }, options.cwd),
+      (prompt) => this.title(options.account, prompt),
     )
     server.runs.add(run)
     try {
@@ -264,6 +269,50 @@ export class CodexProvider implements AgentProvider {
       throw error
     }
     return run
+  }
+
+  /**
+   * A title for a chat's first prompt, from an ephemeral thread: Codex saves it nowhere and lists it
+   * nowhere. The account's default model at its lowest effort answers in a few seconds; the chat's
+   * folder stays out, so its AGENTS.md doesn't go along.
+   */
+  async title(account: AccountEnv, prompt: string): Promise<string | null> {
+    const client = this.server(account).client
+    const models = await this.models({ ...account, accessToken: null })
+    const model = models.find((m) => m.isDefault) ?? models[0]
+    const started = await client.request('thread/start', {
+      cwd: tmpdir(),
+      approvalPolicy: 'never',
+      sandbox: 'read-only',
+      ephemeral: true,
+      baseInstructions: TITLE_INSTRUCTIONS,
+      ...(model ? { model: model.id } : {}),
+    })
+    const threadId = isPlainObject(started.thread) && typeof started.thread.id === 'string' ? started.thread.id : null
+    if (!threadId) return null
+    let answer = ''
+    try {
+      const done = new Promise<void>((resolve, reject) => {
+        this.titleThreads.set(threadId, (method, params) => {
+          const item = isPlainObject(params.item) ? params.item : null
+          if (method === 'item/completed' && item?.type === 'agentMessage' && typeof item.text === 'string') answer = item.text
+          else if (method === 'turn/completed') resolve()
+          else if (method === 'error' && params.willRetry !== true) reject(new Error('Codex hat keinen Titel gegeben.'))
+        })
+      })
+      // Awaited below; an error while the turn still starts mustn't count as unhandled meanwhile.
+      done.catch(() => undefined)
+      await client.request('turn/start', {
+        threadId,
+        input: [{ type: 'text', text: titleRequest(prompt), text_elements: [] }],
+        ...(model?.efforts?.length ? { effort: model.efforts[0] } : {}),
+      })
+      await withTimeout(done, TITLE_TIMEOUT_MS, 'Codex hat keinen Titel gegeben.')
+    } finally {
+      this.titleThreads.delete(threadId)
+      void client.request('thread/unsubscribe', { threadId }).catch(() => undefined)
+    }
+    return cleanTitle(answer)
   }
 
   /**
@@ -351,6 +400,8 @@ export class CodexProvider implements AgentProvider {
     }
     const threadId = typeof params.threadId === 'string' ? params.threadId : null
     if (!threadId) return
+    const titling = this.titleThreads.get(threadId)
+    if (titling) return titling(method, params)
     this.routes.get(threadId)?.notification(method, params)
   }
 
