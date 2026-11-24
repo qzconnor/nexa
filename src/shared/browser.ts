@@ -234,6 +234,18 @@ export interface ShortcutKey {
 }
 
 /**
+ * The zoom keys with Ctrl, as in browsers: plus larger (1), minus smaller (-1), 0 back to normal (0).
+ * Plus counts with Shift too, which some layouts need to type it (US: Shift+=), and as `=`.
+ */
+export function zoomKey(e: ShortcutKey): 1 | -1 | 0 | null {
+  const key = e.key.toLowerCase()
+  if (key === '+' || key === '=' || e.code === 'NumpadAdd') return 1
+  if (key === '-' || e.code === 'NumpadSubtract') return -1
+  if (key === '0' && !e.shiftKey) return 0
+  return null
+}
+
+/**
  * Keys of a browser page that belong to the browser around it, like in Chrome: Ctrl+L goes to the
  * address bar, F5 and Ctrl+R load the page again, Ctrl+Shift+R, Shift+F5 and Ctrl+F5 without the
  * cache, Ctrl+F searches the page and F3 (Shift+F3) jumps to the next (previous) match, F12 and
@@ -248,10 +260,9 @@ export function matchBrowserShortcut(e: ShortcutKey): BrowserShortcut | null {
   if (e.key === 'F12' && !ctrl && !e.shiftKey) return 'browser-devtools'
   if (e.key === 'F3' && !ctrl) return e.shiftKey ? 'browser-find-previous' : 'browser-find-next'
   if (!ctrl) return null
+  const zoom = zoomKey(e)
+  if (zoom !== null) return zoom === 1 ? 'zoom-in' : zoom === -1 ? 'zoom-out' : 'zoom-reset'
   const key = e.key.toLowerCase()
-  if (key === '+' || key === '=' || e.code === 'NumpadAdd') return 'zoom-in'
-  if (key === '-' || e.code === 'NumpadSubtract') return 'zoom-out'
-  if (key === '0' && !e.shiftKey) return 'zoom-reset'
   if (e.shiftKey) {
     if (key === 'r') return 'browser-reload-hard'
     if (key === 'i') return 'browser-devtools'

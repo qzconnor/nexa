@@ -1,6 +1,7 @@
 import { systemAccountId } from './accounts'
 import { DEFAULT_THEME_ID } from './themes/builtin'
 import type { AppSettings, ProviderSettings } from './types'
+import { DEFAULT_ZOOM } from './zoom'
 
 const provider = (): ProviderSettings => ({ enabled: true, path: '', model: '', effort: '', extraArgs: [] })
 
@@ -17,6 +18,7 @@ export function defaultSettings(): AppSettings {
       keepMaterialActive: true,
       surfaceOpacity: 72,
       radius: 0.625,
+      zoom: DEFAULT_ZOOM,
       uiFontSize: 14,
       chatWidth: 'normal',
     },

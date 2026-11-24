@@ -1,6 +1,7 @@
 import { sectionIdOf } from '@shared/sections'
 import type { SessionMeta, SessionMoveInput } from '@shared/types'
 import { toast } from 'vue-sonner'
+import { groupState, type ChatState, type GroupState } from '@/lib/chat-state'
 import { attempt, toastError } from '@/lib/errors'
 import { foldersOf, projectTree } from '@/lib/session-tree'
 import { useProjectsStore } from '@/stores/projects'
@@ -8,8 +9,7 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import { useChatRemoval } from './useChatRemoval'
 
-/** What a chat shows at a glance: its CLI works, waits for the user, finished while elsewhere, or failed. */
-export type ChatState = 'running' | 'waiting' | 'unread' | 'error' | null
+export type { ChatState } from '@/lib/chat-state'
 
 /** What the sidebar's chats and the quick open do with a chat, in one place. */
 export function useChatActions() {
@@ -24,6 +24,11 @@ export function useChatActions() {
     if (status === 'waiting') return 'waiting'
     if (status === 'error') return 'error'
     return sessions.unread.has(id) ? 'unread' : null
+  }
+
+  /** What the chats of a folded project, folder or separator show as one. */
+  function group(chats: readonly SessionMeta[]): GroupState {
+    return groupState(chats.map((meta) => state(meta.id)))
   }
 
   /** Its CLI works on it or waits for an answer: it can't move now (see SessionService.move). */
@@ -106,5 +111,5 @@ export function useChatActions() {
     await removal.remove([meta])
   }
 
-  return { state, working, open, newChat, rename, move, moveElsewhere, fork, copyLastAnswer, exportMarkdown, remove }
+  return { state, group, working, open, newChat, rename, move, moveElsewhere, fork, copyLastAnswer, exportMarkdown, remove }
 }

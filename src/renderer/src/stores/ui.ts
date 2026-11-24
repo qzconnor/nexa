@@ -93,7 +93,7 @@ export const useUiStore = defineStore('ui', () => {
 
   /** The settings are a dialog over whatever the window shows. */
   const settingsOpen = ref(false)
-  const settingsSection = ref<SettingsSection>(stored<SettingsSection>('nexa.settingsSection', 'appearance'))
+  const settingsSection = ref<SettingsSection>('general')
   /** A card or row the settings scroll to once they show it (from the quick open); cleared there. */
   const settingsAnchor = ref<SettingsAnchor | null>(null)
   const themeEditorRequest = ref<ThemeEditorRequest | null>(null)
@@ -103,8 +103,9 @@ export const useUiStore = defineStore('ui', () => {
     remember('nexa.sidebar', sidebarOpen.value ? 'open' : 'closed')
   }
 
-  function openSettings(section?: SettingsSection, anchor?: SettingsAnchor): void {
-    if (section) selectSettings(section)
+  /** Without `section` they open at the start, „Allgemein“, not where they were left. */
+  function openSettings(section: SettingsSection = 'general', anchor?: SettingsAnchor): void {
+    selectSettings(section)
     settingsAnchor.value = anchor ?? null
     settingsOpen.value = true
   }
@@ -125,7 +126,6 @@ export const useUiStore = defineStore('ui', () => {
 
   function selectSettings(section: SettingsSection): void {
     settingsSection.value = section
-    remember('nexa.settingsSection', section)
   }
 
   /** Counts the requests for the search in the open chat (from the quick open); the chat opens it. */

@@ -1,4 +1,4 @@
-import type { ShortcutKey } from './browser'
+import { zoomKey, type ShortcutKey } from './browser'
 
 /**
  * The window's keyboard shortcuts. Those of the browser beside a chat are `matchBrowserShortcut`'s;
@@ -13,17 +13,22 @@ export type AppShortcut =
   | { action: 'cycle-chat'; step: 1 | -1 }
   /** The chat at that place in the sidebar, from 0; -1 the last one. */
   | { action: 'select-chat'; index: number }
+  /** The window's scale one step larger (1) or smaller (-1), or back to 100 % (0). */
+  | { action: 'zoom'; step: 1 | -1 | 0 }
 
 /**
  * Like a browser's tabs: Ctrl+Tab and Ctrl+Shift+Tab go to the next and the previous chat, Ctrl+1–8
  * to that one, Ctrl+9 to the last; Ctrl+Shift+T opens a new chat (as in Windows Terminal and the
  * Claude Manager). Ctrl+, opens the settings, Ctrl+Shift+A and Ctrl+Shift+P the quick open (as in
- * VS Code). Plain Ctrl+letter combinations stay with the fields (Ctrl+A, Ctrl+Z …).
+ * VS Code). Ctrl+plus/minus/0 scale the window like a browser's zoom. Plain Ctrl+letter combinations
+ * stay with the fields (Ctrl+A, Ctrl+Z …).
  */
 export function matchAppShortcut(e: ShortcutKey): AppShortcut | null {
   if (e.type !== 'keydown' || e.altKey) return null
   if (!(e.ctrlKey || e.metaKey)) return null
   if (e.key === 'Tab') return { action: 'cycle-chat', step: e.shiftKey ? -1 : 1 }
+  const zoom = zoomKey(e)
+  if (zoom !== null) return { action: 'zoom', step: zoom }
   const key = e.key.toLowerCase()
   if (e.shiftKey) {
     if (key === 't') return { action: 'new-chat' }

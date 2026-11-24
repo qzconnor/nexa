@@ -3,7 +3,7 @@ import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon,
 import { computed, ref, watch } from 'vue'
 import { folderKey } from '@shared/folders'
 import { DEFAULT_SECTION_ID, isSectionRoot, layoutOf, moveProject, moveSection, sectionIdOf } from '@shared/sections'
-import type { ProjectSection } from '@shared/types'
+import type { ProjectSection, SessionMeta } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatActions } from '@/composables/useChatActions'
@@ -11,13 +11,14 @@ import { useClock } from '@/composables/useClock'
 import { useListKeys } from '@/composables/useListKeys'
 import { provideSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
-import { foldersOf, pinnedChats, projectTree, type ProjectEntry } from '@/lib/session-tree'
+import { chatsIn, foldersOf, pinnedChats, projectTree, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
+import SidebarGroupState from './SidebarGroupState.vue'
 import SidebarPinned from './SidebarPinned.vue'
 import SidebarProject from './SidebarProject.vue'
 
@@ -54,6 +55,8 @@ interface SectionGroup {
   projects: ProjectEntry[]
   /** The chats under the separator. */
   count: number
+  /** Them, for what they do while it is folded. */
+  chats: SessionMeta[]
 }
 
 /** Every separator with its projects and their chats, in the folders they work in (lib/session-tree.ts). */
@@ -65,7 +68,13 @@ const groups = computed<SectionGroup[]>(() => {
   return projects.sections.map((section) => {
     const own = entries.filter((e) => sectionIdOf(e.project, projects.sections) === section.id)
     const root = own.find((e) => isSectionRoot(e.project, section)) ?? null
-    return { section, root, projects: own.filter((e) => e !== root), count: own.reduce((sum, e) => sum + e.count, 0) }
+    return {
+      section,
+      root,
+      projects: own.filter((e) => e !== root),
+      count: own.reduce((sum, e) => sum + e.count, 0),
+      chats: own.flatMap((e) => chatsIn(e.tree)),
+    }
   })
 })
 
@@ -333,6 +342,7 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
                   "
                 />
               </button>
+              <SidebarGroupState v-if="group.section.collapsed" :chats="group.chats" class="mr-1" />
               <span v-if="group.count" class="text-[0.7rem] text-muted-foreground/70 tabular-nums">{{ group.count }}</span>
               <Button
                 variant="ghost"

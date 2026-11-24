@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionMeta } from '@shared/types'
-import { foldersOf, pinnedChats, projectTree } from './session-tree'
+import { chatsIn, foldersOf, pinnedChats, projectTree } from './session-tree'
 
 const meta = (id: string, updatedAt: number, cwd?: string, pinned?: boolean): SessionMeta => ({
   id,
@@ -38,6 +38,9 @@ describe('projectTree', () => {
     expect(nexa!.folders.map((f) => [f.name, f.sessions.map((s) => s.id)])).toEqual([['src', ['nexa-src']]])
     expect(foldersOf(tree, 'nexa-src')).toEqual([nexa!.id, nexa!.folders[0]!.id])
     expect(foldersOf(tree, 'own')).toEqual([])
+    // What a folded project or folder sums up: its chats and those below.
+    expect(chatsIn(tree).map((s) => s.id).sort()).toEqual(['deep', 'nexa', 'nexa-src', 'outside', 'own', 'pinned'])
+    expect(chatsIn(nexa!).map((s) => s.id)).toEqual(['nexa', 'nexa-src'])
   })
 })
 

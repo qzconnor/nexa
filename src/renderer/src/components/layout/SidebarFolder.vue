@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
-import type { FolderNode } from '@/lib/session-tree'
+import { chatsIn, type FolderNode } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
+import SidebarGroupState from './SidebarGroupState.vue'
 import SidebarSession from './SidebarSession.vue'
 
 /** A folder in a project that chats work in, with the folders below it and its own chats. */
@@ -50,7 +51,10 @@ async function newChat(): Promise<void> {
             <ChevronRightIcon :class="cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')" />
             <component :is="open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0" />
             <span class="truncate">{{ node.name }}</span>
-            <span class="ml-auto shrink-0 pl-1 text-[0.7rem] tabular-nums group-hover/folder:hidden">{{ node.count }}</span>
+            <span class="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
+              <SidebarGroupState v-if="!open" :chats="chatsIn(node)" />
+              <span class="text-[0.7rem] tabular-nums group-hover/folder:hidden">{{ node.count }}</span>
+            </span>
           </button>
           <Button
             variant="ghost"

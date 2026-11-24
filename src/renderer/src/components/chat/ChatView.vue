@@ -643,6 +643,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               :ultracode="meta.ultracode"
               :busy="busy"
               :context="runtime.context"
+              :compacting="!!runtime.compactingSince"
               :session-id="meta.id"
               :dirs="meta.dirs"
               autofocus

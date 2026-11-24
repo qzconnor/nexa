@@ -20,6 +20,8 @@ export interface AppearanceSettings {
   surfaceOpacity: number
   /** Corner radius in rem. */
   radius: number
+  /** Scale of the whole window in percent, one of `ZOOM_STEPS` (src/shared/zoom.ts). */
+  zoom: number
   uiFontSize: number
   /** Width of the chat column. */
   chatWidth: 'normal' | 'wide' | 'full'

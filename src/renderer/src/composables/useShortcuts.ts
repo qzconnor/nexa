@@ -1,7 +1,11 @@
 import { useEventListener } from '@vueuse/core'
 import type { Ref } from 'vue'
+import { toast } from 'vue-sonner'
 import { chatAt, cycleChat, matchAppShortcut, type AppShortcut } from '@shared/shortcuts'
+import { DEFAULT_ZOOM, normalizeZoom, stepZoom } from '@shared/zoom'
+import { attempt } from '@/lib/errors'
 import { useSessionsStore } from '@/stores/sessions'
+import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { useChatActions } from './useChatActions'
 
@@ -14,6 +18,7 @@ const CHAT_ROW = '[data-chat-row]'
  */
 export function useShortcuts(ready: Ref<boolean>): void {
   const sessions = useSessionsStore()
+  const settings = useSettingsStore()
   const ui = useUiStore()
   const chat = useChatActions()
 
@@ -30,6 +35,27 @@ export function useShortcuts(ready: Ref<boolean>): void {
 
   /** The open chat; none on the start page. */
   const openId = () => (ui.view === 'chat' ? sessions.activeId : null)
+
+  /**
+   * The scale asked for last, until the settings have it: keys pressed in quick succession step on
+   * from there instead of from the scale before.
+   */
+  let zoomTarget: number | null = null
+  function zoom(step: 1 | -1 | 0): void {
+    const current = zoomTarget ?? normalizeZoom(settings.settings.appearance.zoom)
+    const next = step === 0 ? DEFAULT_ZOOM : stepZoom(current, step)
+    // Like Chrome's bubble: the scale it is now, with the way back.
+    toast(`Skalierung ${next} %`, {
+      id: 'zoom',
+      duration: 2000,
+      action: next === DEFAULT_ZOOM ? undefined : { label: 'Zurücksetzen', onClick: () => zoom(0) },
+    })
+    if (next === current) return
+    zoomTarget = next
+    void attempt(() => settings.update({ appearance: { zoom: next } }), 'Skalierung nicht gespeichert').finally(() => {
+      if (zoomTarget === next) zoomTarget = null
+    })
+  }
 
   function run(shortcut: AppShortcut): void {
     switch (shortcut.action) {
@@ -52,6 +78,9 @@ export function useShortcuts(ready: Ref<boolean>): void {
         if (id && id !== openId()) void chat.open(id)
         return
       }
+      case 'zoom':
+        zoom(shortcut.step)
+        return
     }
   }
 
@@ -60,9 +89,10 @@ export function useShortcuts(ready: Ref<boolean>): void {
     const shortcut = matchAppShortcut(event)
     if (!shortcut) return
     // A dialog that asks something keeps the keyboard; over the settings, the quick open is fine.
-    if (ui.confirmState?.open) return
+    // Scaling works everywhere: it changes nothing a dialog is about.
+    if (ui.confirmState?.open && shortcut.action !== 'zoom') return
     const inDialog = event.target instanceof Element && !!event.target.closest('[role=dialog]')
-    if (inDialog && shortcut.action !== 'palette' && shortcut.action !== 'open-settings') return
+    if (inDialog && shortcut.action !== 'palette' && shortcut.action !== 'open-settings' && shortcut.action !== 'zoom') return
     event.preventDefault()
     run(shortcut)
   })
