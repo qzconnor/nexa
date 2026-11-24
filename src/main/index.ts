@@ -20,6 +20,7 @@ import { CliSessionImport } from './import/cli-import'
 import { registerImportIpc } from './import/import-ipc'
 import { forwardWindowState, registerIpc } from './ipc'
 import { isLaunchRequest, readLaunchRequest, resolveLaunch, type LaunchRequest } from './launch'
+import type { AccountEnv } from './accounts/account-env'
 import { AccountService } from './accounts/account-service'
 import { APP_NAME, userDataFolder } from './lib/app-folder'
 import { AUTOSTART_ARG, setLaunchAtLogin } from './lib/login-item'
@@ -37,6 +38,8 @@ import { SessionService } from './services/session-service'
 import { SettingsService } from './services/settings-service'
 import { StartCommands } from './services/start-commands'
 import { registerStartCommandsIpc } from './services/start-commands-ipc'
+import { Terminals, terminalLaunch } from './services/terminals'
+import { registerTerminalsIpc } from './services/terminals-ipc'
 import { ThemeService } from './services/theme-service'
 import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
@@ -175,6 +178,21 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const startCommands = new StartCommands(projects, (command) => shellLaunch(settings.get().chat.shell, command))
   projects.on('changed', (list) => startCommands.projectsChanged(list))
   registerStartCommandsIpc(startCommands)
+  // The user's terminals beside the chats: the shell of the settings in the chat's folder, as its account.
+  const terminals = new Terminals((sessionId) => {
+    const { cwd, accountId } = sessions.terminalTarget(sessionId)
+    const account = accounts.get(accountId)
+    let env: AccountEnv | null = null
+    try {
+      env = accounts.env(accountId)
+    } catch (error) {
+      // A token account without its token: the terminal still opens, only without the login.
+      console.warn('[terminals] account environment unavailable', error)
+    }
+    return { cwd, env, account: account.kind === 'system' ? null : account.name }
+  }, () => terminalLaunch(settings.get().chat.shell))
+  sessions.on('changed', (list) => terminals.keepSessions(new Set(list.map((meta) => meta.id))))
+  registerTerminalsIpc(terminals)
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
@@ -354,6 +372,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     // Before the runs end: nothing goes on after a limit while Nexa quits.
     const switchSaved = autoSwitch.dispose()
     // Ends the CLI processes and start commands (they would outlive the app) and writes what is pending.
+    terminals.dispose()
     void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), switchSaved])
       .then(() => {
         api.dispose()

@@ -71,7 +71,7 @@ export const useUiStore = defineStore('ui', () => {
   const sidebarOpen = ref(stored('nexa.sidebar', 'open') === 'open')
   /** The agent whose work the chat shows in place of the main thread; null: the main thread. */
   const agentId = ref<string | null>(null)
-  /** The shell shown in the side panel: its tool item, or a start command of the project (`startShellId`). */
+  /** The shell unfolded in the dock (one at a time): its tool item, or a start command of the project (`startShellId`). */
   const shellId = ref<string | null>(null)
   /** The shells above the composer as one line: a server runs for hours, folded once is enough. */
   const shellDockFolded = ref(stored<'open' | 'folded'>('nexa.shellDock', 'open') === 'folded')

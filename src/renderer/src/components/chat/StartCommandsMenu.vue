@@ -21,7 +21,7 @@ import { useUiStore } from '@/stores/ui'
 
 /**
  * The project's start commands in the chat's header (once it has some), with a dot while one runs. A
- * command starts with a click and shows in the shell panel beside the chat; there it can be restarted
+ * command starts with a click and unfolds in the dock above the composer; there it can be restarted
  * or ended.
  */
 const props = defineProps<{ projectId: string }>()

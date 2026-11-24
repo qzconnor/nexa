@@ -34,6 +34,13 @@ describe('matchAppShortcut', () => {
     expect(matchAppShortcut(key('P', { shiftKey: true }))).toEqual({ action: 'palette', prefix: '>' })
   })
 
+  it('shows or hides the terminal with Ctrl+Ö and Ctrl+`, as VS Code does', () => {
+    expect(matchAppShortcut(key('ö', {}, 'Semicolon'))).toEqual({ action: 'toggle-terminal' })
+    expect(matchAppShortcut(key('Ö', {}, 'Semicolon'))).toEqual({ action: 'toggle-terminal' })
+    expect(matchAppShortcut(key('`', {}, 'Backquote'))).toEqual({ action: 'toggle-terminal' })
+    expect(matchAppShortcut(key('ö', { ctrlKey: false }, 'Semicolon'))).toBeNull()
+  })
+
   it('scales the window with plus, minus and 0', () => {
     expect(matchAppShortcut(key('+', {}, 'BracketRight'))).toEqual({ action: 'zoom', step: 1 })
     // US layouts: the plus is Shift+=, and Ctrl+= zooms in browsers as well.

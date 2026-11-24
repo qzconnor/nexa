@@ -217,6 +217,15 @@
       Unterhaltung neu und übernimmt geänderte Nexa-Werkzeuge und Prompts; nach dem Umschalten der Werkzeuge
       bietet ein Toast das für den offenen Chat an. „Chat beenden“ (vorher „CLI beenden“, auch `/exit`)
       beendet die CLI und führt zur Startseite
+- [x] Shell-Ansicht im Dock statt als Panel neben dem Chat: Die Shells stehen untereinander in der Karte
+      „Shells“ über dem Eingabefeld, ein Klick klappt eine nach unten auf (immer nur eine) mit ganzem Befehl,
+      Zustand, Ausgabe, Beenden und bei Startbefehlen Neu starten. Vom Befehl im Chat oder aus dem Kopf
+      geöffnet, kommt sie aufgeklappt dazu. Eine Shell, die endet, bleibt offen; Klick oder Esc klappt zu
+- [x] Terminal für den Nutzer rechts neben dem Chat (xterm, node-pty): Knopf im Kopf des Chats links von
+      „Chat neu starten“ oder Strg+Ö. Die Shell der Einstellungen im Ordner des Chats und mit der Umgebung
+      seines Accounts (`claude`/`codex` dort mit dessen Login), mehrere Tabs, verstellbare Breite, Farben
+      und Schrift aus dem Theme. Läuft weiter, wenn man den Chat verlässt, und endet mit dem Chat oder Nexa
+- [x] Beantwortete Rückfragen: die Antworten stehen unter ihren Fragen, nicht unter der Marke davor
 
 ## Als Nächstes
 
@@ -230,8 +239,6 @@
       Methode dafür). Dazu für Claudes Artefakte: umbenennen, löschen und anpinnen wie im Claude Manager.
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).
-- [ ] **Shell-Detailansicht überarbeiten**: die Ansicht einer Shell neben dem Chat mit Ausgabe, Status und
-      Beenden (`ShellPanel.vue`).
 
 ## Aus dem Claude Manager
 
@@ -253,7 +260,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] Änderungen je Prompt aus den Checkpoints von Claude Code, Zurückspulen mit Vorschau (Claude
       `rewind_files`, Codex `thread/revert`; `SessionChangesView.vue` im Claude Manager).
 - [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).
-- [ ] Terminal für den Nutzer neben dem Chat (xterm, node-pty) mit der Umgebung des Accounts.
 - [ ] Einstellungen exportieren und importieren mit Vergleich (`SettingsTransfer.vue` im Claude Manager).
 - [ ] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager).
 - [ ] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude

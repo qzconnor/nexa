@@ -20,6 +20,7 @@ import { renderSpecOf } from '@shared/render'
 import { isPlainObject, withTimeout } from '@shared/utils'
 import type { CliBinary } from '../cli-binary'
 import { cliEnv } from '../cli-binary'
+import { consoleDecoder } from '../../lib/console-code-page'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
 import { claudeMcpServers } from '../mcp-servers'
@@ -28,6 +29,7 @@ import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '..
 import { TITLE_TIMEOUT_MS, cleanTitle, titleDescription } from '../titles'
 import { contextDetailOf } from './claude-context'
 import { AGENT_TOOLS, changesFromResult, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
+import { outputFilesOf, readTaskOutput, repairReadFile } from './output-encoding'
 
 type Json = Record<string, unknown>
 
@@ -126,6 +128,8 @@ export class ClaudeRun implements AgentRun {
   private readonly pending = new Map<string, { resolve: (value: Json) => void; reject: (error: Error) => void }>()
   /** Agents by the id of their task, for the task events of background agents. */
   private readonly tasks = new Map<string, string>()
+  /** The files Claude Code writes its shells' output to, by task id (see shellOutput). */
+  private readonly outputFiles = new Map<string, string>()
   private turnStartedAt: number | null = null
   private compactingSince: number | null = null
   /** The model's context window from the last result, for the context after a compaction. */
@@ -211,6 +215,12 @@ export class ClaudeRun implements AgentRun {
   }
 
   async shellOutput(taskId: string): Promise<ShellOutput> {
+    // From its file where Nexa knows it: Claude Code's answer has the umlauts of console programs as `�`.
+    const file = this.outputFiles.get(taskId)
+    if (file) {
+      const output = await readTaskOutput(file, await consoleDecoder()).catch(() => null)
+      if (output) return output
+    }
     if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr, die Ausgabe ist nicht mehr abrufbar.')
     const answer = await this.request({ subtype: 'get_task_output', task_id: taskId })
     return { text: str(answer.output) ?? '', truncated: answer.truncated === true }
@@ -551,6 +561,22 @@ export class ClaudeRun implements AgentRun {
     if (parentId) this.bumpAgent(parentId, view.title + (view.detail ? ` · ${view.detail}` : ''))
   }
 
+  /**
+   * A Read of a file that isn't UTF-8 has `�` for its umlauts (see output-encoding.ts): read from the
+   * file itself, while it still is what Claude Code read.
+   */
+  private async repairRead(toolId: string, text: string): Promise<void> {
+    const tool = this.tools.get(toolId)
+    const path = tool?.kind === 'tool' && isPlainObject(tool.input) ? str(tool.input.file_path) : undefined
+    if (!path) return
+    const repaired = await repairReadFile(path, text).catch(() => null)
+    const current = this.tools.get(toolId)
+    if (!repaired || current?.kind !== 'tool' || current.output !== text) return
+    const next: ToolItem = { ...current, output: repaired }
+    this.tools.set(toolId, next)
+    this.sink.item(next)
+  }
+
   private putShell(tool: ToolItem, shell: ShellState): void {
     const next: ToolItem = { ...tool, shell }
     this.tools.set(tool.id, next)
@@ -592,6 +618,9 @@ export class ClaudeRun implements AgentRun {
       } else {
         const denied = isError && /permission|denied|abgelehnt|rejected/i.test(text) && text.length < 400
         const next: ToolItem = { ...known, status: denied ? 'denied' : isError ? 'error' : 'done', output: text, endedAt: now }
+        // A shell in the background says where its output goes.
+        if (known.tool === 'bash') for (const { taskId, file } of outputFilesOf(text)) this.outputFiles.set(taskId, file)
+        if (known.tool === 'read' && !isError && text.includes('�')) void this.repairRead(known.id, text)
         const changes = isError ? null : changesFromResult(known.changes, m.tool_use_result)
         if (changes) next.changes = changes
         // A shell in the foreground ends with its call; one in the background runs on.
@@ -735,6 +764,7 @@ export class ClaudeRun implements AgentRun {
         return
       }
       case 'task_notification': {
+        if (typeof m.task_id === 'string' && str(m.output_file)) this.outputFiles.set(m.task_id, m.output_file as string)
         const toolId = str(m.tool_use_id) ?? (typeof m.task_id === 'string' ? this.tasks.get(m.task_id) : undefined)
         const agent = toolId ? this.tools.get(toolId) : undefined
         if (agent?.kind === 'tool' && agent.shell) {

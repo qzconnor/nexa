@@ -63,6 +63,8 @@ const answered = computed(() => {
   if (request.value.type !== 'question' || r?.type !== 'question') return []
   return request.value.questions.map((q) => ({ q, answer: q.secret ? '••••' : (r.answers[q.id] ?? []).join(', ') }))
 })
+/** A column for the questions' labels, when one has a label. */
+const withHeaders = computed(() => answered.value.some(({ q }) => !!q.header))
 
 const icon = computed(() => ({ permission: ShieldQuestionIcon, question: CircleHelpIcon, plan: MapIcon, elicitation: PlugIcon })[request.value.type])
 const heading = computed(() => {
@@ -99,13 +101,20 @@ const heading = computed(() => {
         <span class="truncate">{{ summary }}</span>
       </span>
     </div>
-    <ol v-if="answered.length" class="flex flex-col gap-2.5 px-4 pt-0.5 pb-3">
-      <li v-for="{ q, answer } in answered" :key="q.id" class="flex min-w-0 flex-col gap-0.5">
-        <p class="flex min-w-0 items-baseline gap-2 text-[0.78rem] text-muted-foreground">
-          <span v-if="q.header" class="shrink-0 rounded bg-muted px-1.5 py-px text-[0.68rem] font-medium">{{ q.header }}</span>
-          <span class="line-clamp-2" :title="q.question">{{ q.question }}</span>
-        </p>
-        <p class="selectable text-[0.85rem] break-words whitespace-pre-wrap">{{ answer || '–' }}</p>
+    <!--
+      One grid for all: the labels in the first column, as wide as the widest, each question and its
+      answer below it in the second, so the answers line up under the questions.
+    -->
+    <ol
+      v-if="answered.length"
+      :class="cn('grid gap-y-2.5 px-4 pt-0.5 pb-3', withHeaders ? 'grid-cols-[max-content_minmax(0,1fr)] gap-x-2' : 'grid-cols-[minmax(0,1fr)]')"
+    >
+      <li v-for="{ q, answer } in answered" :key="q.id" class="col-span-full grid grid-cols-subgrid items-baseline gap-y-0.5">
+        <span v-if="withHeaders" class="justify-self-start">
+          <span v-if="q.header" class="rounded bg-muted px-1.5 py-px text-[0.68rem] font-medium text-muted-foreground">{{ q.header }}</span>
+        </span>
+        <p class="line-clamp-2 text-[0.78rem] text-muted-foreground" :title="q.question">{{ q.question }}</p>
+        <p :class="cn('selectable text-[0.85rem] break-words whitespace-pre-wrap', withHeaders && 'col-start-2')">{{ answer || '–' }}</p>
       </li>
     </ol>
 

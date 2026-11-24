@@ -333,11 +333,37 @@ zu 3 s, damit kein Dev-Server seinen Port behält). Für „Automatisch starten�
 jedes Chats, den es zeigt (`chatOpened`): Beim ersten Chat eines Projekts mit solchen Befehlen starten sie,
 einmal je Lauf von Nexa; einer, den der Nutzer beendet hat, bleibt aus.
 
+### Terminal
+
+Das Terminal rechts neben dem Chat (Knopf im Kopf des Chats links von „Chat neu starten“, Strg+Ö oder
+Strg+`) ist eine echte Shell in einer Pseudokonsole: `services/terminals.ts` (`Terminals`, Kanäle
+`terminals:*` in `terminals-ipc.ts`) startet sie mit node-pty im Ordner des Chats
+(`SessionService.terminalTarget`) und mit der Umgebung seines Accounts (`AccountService.env`:
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, ohne die Variablen einer übergeordneten Sitzung, `cliEnv`), so dass
+`claude` oder `codex` dort mit dem Login des Chats laufen. Welche Shell, bestimmt `terminalLaunch`: unter
+Windows die aus `settings.chat.shell` interaktiv (PowerShell `-NoLogo`, Git Bash `--login -i` mit
+`CHERE_INVOKING`, cmd), sonst die Login-Shell (`$SHELL -l`). node-pty wird erst mit dem ersten Terminal
+geladen; scheitert das (Linux mit älterer glibc), scheitert nur das Terminal. Main sammelt die Ausgabe
+und schickt sie alle 8 ms an die Fenster, mit der Zahl aller bisher geschriebenen Zeichen (`end`); das
+Ende der Ausgabe (512 KB) bleibt für eine neue Ansicht (`buffer`), und was das Fenster schon mit dem Puffer
+bekam, verwirft es an `end`. Terminals laufen weiter, wenn man den Chat verlässt oder das Panel schließt,
+und enden mit ihrem Chat (`keepSessions` auf `sessions.changed`) oder mit Nexa. Eine Shell, die mit 0
+endet (`exit`), nimmt ihr Terminal mit; eine mit Fehler bleibt mit „[Shell beendet mit Code …]“ stehen.
+
+Im Renderer hält `stores/terminals.ts` die Liste aus Main, das Panel offen je Chat, den gezeigten Tab
+und die Breite (localStorage). Das xterm jedes Terminals (`lib/terminal-session.ts`, mit Fit-, Unicode-11-
+und Link-Addon) lebt im Store, nicht im Panel: `TerminalView` hängt sein Element nur ein und aus, so
+bleibt der Bildschirm beim Wechsel des Chats. Farben aus der Terminal-Palette des Themes auf `--code-bg`
+(`lib/terminal-theme.ts`), Schrift aus der Code-Schrift der Einstellungen. Strg+C kopiert mit Auswahl
+(sonst bricht es ab), Strg+V fügt ein, die Kürzel des Fensters gehen am Terminal vorbei an die App
+(`lib/terminal-keys.ts`). Strg+Klick auf einen Link öffnet ihn, eine Adresse auf `localhost` im Browser
+des Chats.
+
 Im Renderer hält `stores/start-commands.ts` die Läufe. `StartCommandsMenu` im Kopf des Chats (nur mit
-Startbefehlen; ein Punkt in `--tool-run`, solange einer läuft) startet einen Befehl und zeigt ihn im
-`ShellPanel`: Es listet die laufenden Startbefehle des Projekts vor den Shells des Chats (`ui.shellId` ist
-dann `startShellId(id)`, `start:<id>`), `StartCommandDetail` zeigt Ausgabe, Starten, Neu starten und
-Beenden. Ein Startbefehl, der endet, bleibt im Panel stehen, damit seine letzten Zeilen lesbar sind. Die
+Startbefehlen; ein Punkt in `--tool-run`, solange einer läuft) startet einen Befehl und klappt ihn im Dock
+auf (`ShellDock`, siehe Renderer) als eigene Zeile über den Shells des Chats (`ui.shellId` ist dann
+`startShellId(id)`, `start:<id>`); `StartCommandDetail` zeigt darunter Ausgabe, Starten, Neu starten und
+Beenden. Ein Startbefehl, der endet, bleibt stehen, damit seine letzten Zeilen lesbar sind. Die
 Sidebar zeigt am Projekt, was läuft, und startet oder beendet im Kontextmenü; `/tasks` öffnet einen
 laufenden Startbefehl, wenn im Chat keine Shell läuft.
 
@@ -515,12 +541,16 @@ den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet ern
   der Seite aus `browser-frames.ts`; nur die neueste Karte ist live, ältere behalten ihr letztes Bild
   (`browsers.stills`). Zum Bedienen öffnet sie den Tab im Panel oder im Vollbild (`browsers.fullscreen`,
   das Panel liegt dann über dem ganzen Chat); solange pausiert ihr Bild. Ohne Tab bleibt das Panel zu.
-- **Shells** (`ShellPanel`, `lib/shells.ts`): laufende Befehle aus den `tool`-Items (`ToolItem.shell`
-  hält Task-ID und Zustand des Prozesses). Die Ausgabe holt `sessions.shellOutput` von der CLI (Claude:
-  `get_task_output`), `sessions.stopShell` beendet sie (`stop_task`). Solange eine im Hintergrund läuft,
-  steht `ShellDock` (`dockShells()`) über dem Eingabefeld, neben dem `AgentDock`. `ShellPanel` zeigt nur,
-  was läuft: Endet die gezeigte Shell, wechselt es zu einer anderen laufenden oder schließt sich. Fertige
-  öffnen sich nur aus dem Chat (die „Hintergrund“-Marke am Befehl).
+- **Shells** (`ShellDock`, `ShellDetail`, `lib/shells.ts`): laufende Befehle aus den `tool`-Items
+  (`ToolItem.shell` hält Task-ID und Zustand des Prozesses). Die Ausgabe holt `sessions.shellOutput` von
+  der CLI (Claude: aus der Ausgabedatei der Shell, sonst `get_task_output`; siehe PROTOCOLS.md,
+  „Ausgabedateien und Kodierung“), `sessions.stopShell` beendet sie (`stop_task`). Solange eine im
+  Hintergrund läuft, steht `ShellDock` (`dockShells()`) über dem Eingabefeld, neben dem `AgentDock`, eine
+  Zeile je Shell untereinander. Ein Klick klappt eine Zeile nach unten auf (`ShellDetail`: ganzer Befehl,
+  Zustand, Ausgabe in `ShellOutput`, Beenden), immer nur eine (`ui.shellId`); der Dock wird dann so breit
+  wie das Eingabefeld. Eine Shell, die vom Befehl im Chat, als Startbefehl aus dem Kopf oder mit `/tasks`
+  geöffnet wird, kommt aufgeklappt als Zeile dazu (`dockRows()`). Eine offene Shell, die endet, bleibt
+  offen; ein zweiter Klick oder Esc klappt sie zu.
 - **Subagents** (`AgentDock`, `AgentThread`): Ein Klick im Dock oder auf die Agent-Karte zeigt den Verlauf
   des Agents an Stelle des Hauptchats (`ui.agentId`), wie die Agent-Liste der Claude-CLI; zurück geht es über
   „Hauptchat“ im Dock, die Pfadleiste im Kopf oder Esc. Ist der gezeigte Agent fertig, kehrt der Chat zu

@@ -448,6 +448,12 @@
   background: transparent;
 }
 
+/* The terminal beside the chat: the panel gives the background (the theme's code background), xterm's
+   own black would cover it. */
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+
 /* Rendered markdown (session transcripts) */
 @layer components {
   .markdown {

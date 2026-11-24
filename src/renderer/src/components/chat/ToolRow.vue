@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { changeLines, changeStats } from '@/lib/diff'
 import { formatDuration } from '@/lib/format'
 import AppLogo from '@/components/common/AppLogo.vue'
+import { numberedLines } from '@/lib/read-output'
 import { nexaToolView, TOOL_META } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 import { useProjectPath } from '@/composables/useProjectPath'
@@ -80,6 +81,16 @@ const singleFile = computed(() => {
 
 /** "File created successfully at …" under a diff only repeats it; what went wrong stays. */
 const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : output.value))
+
+/** A file that was read: its line numbers in a column of their own, not in the text. */
+const MAX_READ_LINES = 2000
+const numbered = computed(() => {
+  if (props.tool.tool !== 'read' || failed.value || !shownOutput.value) return null
+  const read = numberedLines(shownOutput.value)
+  if (!read) return null
+  const lines = read.lines.slice(0, MAX_READ_LINES)
+  return { lines, more: read.lines.length - lines.length, note: read.note, digits: String(lines.at(-1)!.n).length }
+})
 </script>
 
 <template>
@@ -154,8 +165,17 @@ const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : out
         v-else-if="inputText && tool.tool !== 'read'"
         class="selectable max-h-48 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)"
       ><span v-if="tool.tool === 'bash'" class="text-(--syn-comment) select-none">$ </span>{{ inputText }}</pre>
+      <div v-if="numbered" class="selectable max-h-72 overflow-auto rounded-md border bg-(--code-bg) py-2 font-mono text-[0.78rem] text-(--code-fg)">
+        <!-- A row per line, so a copy has its line breaks; the numbers stay out of it. -->
+        <div v-for="line in numbered.lines" :key="line.n" class="flex gap-3 px-3">
+          <span class="shrink-0 text-right text-(--syn-comment) tabular-nums select-none" :style="{ width: `${numbered.digits}ch` }">{{ line.n }}</span>
+          <span class="min-w-0 flex-1 break-words whitespace-pre-wrap">{{ line.text }}</span>
+        </div>
+        <p v-if="numbered.more" class="px-3 pt-1 text-(--syn-comment) select-none">… {{ numbered.more }} weitere Zeilen</p>
+        <p v-if="numbered.note" class="mx-3 mt-2 border-t pt-2 font-sans text-[0.75rem] whitespace-pre-wrap text-muted-foreground">{{ numbered.note }}</p>
+      </div>
       <pre
-        v-if="shownOutput"
+        v-else-if="shownOutput"
         :class="
           cn(
             'selectable max-h-72 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)',
