@@ -300,7 +300,7 @@ export interface NexaApi {
     list(): Promise<Project[]>
     create(input: ProjectCreateInput): Promise<Project>
     update(id: string, patch: Partial<Pick<Project, 'name' | 'collapsed'>>): Promise<Project>
-    /** The prompt of a project or a separator for a folder (`cm_prompts.md`, as in the Claude Manager). */
+    /** The prompt of a project or a separator for a folder (`prompts.md`; the import takes the Claude Manager's `cm_prompts.md` over). */
     prompt(target: PromptTarget): Promise<FolderPromptInfo>
     /** Its chats get it from the next start of their CLI on. */
     setPrompt(target: PromptTarget, text: string): Promise<void>

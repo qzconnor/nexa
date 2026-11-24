@@ -5,11 +5,13 @@ import type { Unsubscribe } from './ipc'
 /**
  * Taking over from the Claude Manager (see main/import/claude-manager.ts): its workspaces become
  * projects, its accounts Nexa's (with the same config folders), and the Claude Code sessions in
- * those folders chats that go on where they left off.
+ * those folders chats that go on where they left off; besides, its workspace prompts, themes and the
+ * names and pins of sessions. Run again, it offers only what Nexa doesn't have yet.
  */
 
 export const ImportInvoke = {
   detect: 'import:cm-detect',
+  installed: 'import:cm-installed',
   scan: 'import:cm-scan',
   run: 'import:cm-run',
 } as const
@@ -62,10 +64,28 @@ export interface ImportGroup {
   updatedAt: number | null
 }
 
+/**
+ * Something besides the sessions that the Claude Manager has and Nexa not yet, also after an earlier
+ * import: `prompt` a workspace's prompt (its `cm_prompts.md` becomes the folder's `prompts.md`),
+ * `theme` one of its own themes, `names` and `pins` names and pins given there to sessions Nexa
+ * has as chats already.
+ */
+export interface ImportExtra {
+  /** What the input chooses it by. */
+  id: string
+  kind: 'prompt' | 'theme' | 'names' | 'pins'
+  label: string
+  /** A line more: the prompt's beginning, the sessions' names. */
+  detail?: string
+  /** Why it can't be taken over; it is shown, not offered. */
+  blocked?: string
+}
+
 export interface ImportPreview {
   dir: string
   accounts: ImportAccount[]
   groups: ImportGroup[]
+  extras: ImportExtra[]
   /** Sessions Nexa has taken over before. */
   known: number
   /** Sessions without a folder or that never got going. */
@@ -75,6 +95,8 @@ export interface ImportPreview {
 export interface ImportInput {
   /** The `path`s of the groups to take over. */
   groups: string[]
+  /** The `id`s of the extras to take over (the Claude Manager's import only). */
+  extras?: string[]
 }
 
 export interface ImportResult {
@@ -82,6 +104,11 @@ export interface ImportResult {
   projects: number
   sessions: number
   accounts: number
+  /** Of the extras: prompts written, themes added, chats renamed and pinned. */
+  prompts: number
+  themes: number
+  names: number
+  pins: number
 }
 
 export interface ImportProgress {
@@ -90,7 +117,10 @@ export interface ImportProgress {
 }
 
 export interface ImportApi {
+  /** Its data folder; it stays when the Claude Manager is uninstalled. */
   detect(): Promise<ClaudeManagerFound | null>
+  /** Whether the Claude Manager itself is installed (its hints in Nexa show only then). */
+  installed(): Promise<boolean>
   /** Reads the Claude Manager's folders and the sessions in its accounts' folders. */
   scan(): Promise<ImportPreview>
   /** Takes over the groups of the last scan. */

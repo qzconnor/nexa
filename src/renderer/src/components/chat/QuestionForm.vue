@@ -46,7 +46,8 @@ function submit(): void {
         <span v-if="q.header" class="rounded bg-primary/12 px-1.5 py-0.5 text-[0.7rem] font-medium text-primary">{{ q.header }}</span>
         <span class="text-[0.9rem]">{{ q.question }}</span>
       </legend>
-      <div class="grid gap-1.5 sm:grid-cols-2">
+      <!-- One below the other: labels and descriptions read as sentences, side by side they wrapped early. -->
+      <div class="flex flex-col gap-1.5">
         <button
           v-for="option in q.options"
           :key="option.label"

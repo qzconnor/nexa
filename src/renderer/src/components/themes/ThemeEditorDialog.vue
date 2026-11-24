@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
 import { Kbd } from '@/components/ui/kbd'
 import { Spinner } from '@/components/ui/spinner'
+import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useThemeActions } from '@/composables/useThemeActions'
 import { toastError } from '@/lib/errors'
 import { fileManagerLabel } from '@/lib/platform'
@@ -132,10 +133,13 @@ function takeOver(theme: ThemeContent) {
 }
 
 const terms = computed(() => searchTerms(query.value))
+// The terminal's colors are only the Claude Manager's: without it installed, they stay in the file unseen.
+const claudeManager = useClaudeManager()
 const sections = computed(() =>
   COLOR_SECTIONS.map((section) => ({
     ...section,
     groups: section.groups
+      .filter((group) => group.id !== 'code.terminal' || claudeManager.installed.value)
       .map((group) => ({
         ...group,
         colors: group.colors.filter(

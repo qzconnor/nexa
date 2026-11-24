@@ -45,15 +45,23 @@ const summary = computed(() => {
     case 'permission':
       return r.decision === 'deny' ? `Abgelehnt${r.message ? `: ${r.message}` : ''}` : r.decision === 'allow-session' ? 'Für diese Session erlaubt' : 'Erlaubt'
     case 'question':
-      return Object.values(r.answers)
-        .map((a) => a.join(', '))
-        .join(' · ')
+      return 'Beantwortet'
     case 'plan':
       return r.approve ? `Plan angenommen${r.mode ? ` · ${PERMISSION_MODES[r.mode].label}` : ''}` : 'Plan abgelehnt'
     case 'elicitation':
       return r.action === 'accept' ? 'Gesendet' : 'Abgelehnt'
   }
   return ''
+})
+
+/**
+ * The answered questions one below the other, each with its answer in full: free answers run long,
+ * and in one line after the heading they got cut off.
+ */
+const answered = computed(() => {
+  const r = props.item.response
+  if (request.value.type !== 'question' || r?.type !== 'question') return []
+  return request.value.questions.map((q) => ({ q, answer: q.secret ? '••••' : (r.answers[q.id] ?? []).join(', ') }))
 })
 
 const icon = computed(() => ({ permission: ShieldQuestionIcon, question: CircleHelpIcon, plan: MapIcon, elicitation: PlugIcon })[request.value.type])
@@ -91,6 +99,15 @@ const heading = computed(() => {
         <span class="truncate">{{ summary }}</span>
       </span>
     </div>
+    <ol v-if="answered.length" class="flex flex-col gap-2.5 px-4 pt-0.5 pb-3">
+      <li v-for="{ q, answer } in answered" :key="q.id" class="flex min-w-0 flex-col gap-0.5">
+        <p class="flex min-w-0 items-baseline gap-2 text-[0.78rem] text-muted-foreground">
+          <span v-if="q.header" class="shrink-0 rounded bg-muted px-1.5 py-px text-[0.68rem] font-medium">{{ q.header }}</span>
+          <span class="line-clamp-2" :title="q.question">{{ q.question }}</span>
+        </p>
+        <p class="selectable text-[0.85rem] break-words whitespace-pre-wrap">{{ answer || '–' }}</p>
+      </li>
+    </ol>
 
     <div v-if="pending" class="flex flex-col gap-3 px-4 pb-4">
       <!-- Permission for a tool -->

@@ -94,6 +94,14 @@ export function projectTree(projectId: string, projectPath: string, sessions: re
   }
 }
 
+/**
+ * The chats for „Angeheftet“ on top of the sidebar, as in the Claude Manager: the pinned ones of the
+ * projects shown, the latest first. They stay in their projects too, so pinning moves nothing away.
+ */
+export function pinnedChats(sessions: readonly SessionMeta[], projectIds: ReadonlySet<string>): SessionMeta[] {
+  return sessions.filter((m) => m.pinned && !m.archived && projectIds.has(m.projectId)).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 /** The ids of the folders down to the one a chat works in, to open them when it is shown. */
 export function foldersOf(tree: ProjectTree, sessionId: string): string[] {
   const search = (folders: readonly FolderNode[]): string[] | null => {

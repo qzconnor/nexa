@@ -49,6 +49,7 @@ const api: NexaApi = {
   },
   claudeManager: {
     detect: () => invoke(ImportInvoke.detect),
+    installed: () => invoke(ImportInvoke.installed),
     scan: () => invoke(ImportInvoke.scan),
     run: (input) => invoke(ImportInvoke.run, input),
     onProgress: (cb) => subscribe(ImportEvent.progress, cb),

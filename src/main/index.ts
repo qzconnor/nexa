@@ -41,7 +41,9 @@ import { WindowMaterialController } from './window/material'
 app.setName(APP_NAME)
 // Development builds get their own data, so they run next to the installed app.
 app.setPath('userData', userDataFolder(app.getPath('appData'), !app.isPackaged))
-if (process.platform === 'win32') app.setAppUserModelId('local.nexa')
+// Development builds have an ID of their own: sharing the installed app's, a Start Menu shortcut to
+// electron.exe gave the installed app Electron's icon and name in the taskbar.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'local.nexa' : 'local.nexa.dev')
 registerFileScheme()
 
 // Started through the `nx` command: a running instance takes the request over.
@@ -147,10 +149,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   await api.init()
   await notifications.init()
 
-  // Taking over the Claude Manager's workspaces, accounts and sessions, and the sessions in the CLIs'
-  // own folders (first start, or later in the settings).
+  // Taking over the Claude Manager's workspaces, accounts, sessions, prompts and themes, and the
+  // sessions in the CLIs' own folders (first start, or later in the settings).
   registerImportIpc(
-    new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, () => settings.get()),
+    new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, themes, () => settings.get()),
     new CliSessionImport(projects, sessions, accounts, providers, () => settings.get()),
   )
 

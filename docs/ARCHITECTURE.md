@@ -39,7 +39,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/titles.ts` | Titel eines Chats vom Modell (`AgentRun.title`): Anweisung für Codex, Prompt gekürzt, Antwort bereinigt (`cleanTitle`) |
 | `providers/plugins.ts` | Plugins der CLIs (`claude plugin list --json`, Codex `plugin/installed`) → `PluginInfo`, Antworten auf das Schalten und auf die Anmeldung an MCP-Servern (`McpAuthStart`) |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
-| `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |
+| `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten, dazu Prompts, Themes, Namen und Pins (`cm-extras.ts`); Kanäle `import:*` in `import-ipc.ts` |
 | `import/cli-import.ts` | Übernahme der Sessions der CLIs selbst: Transkripte von Claude Code und Threads von Codex (`thread/list`) aus allen Accounts, je Ordner ein Projekt; Kanäle `import:cli-*` |
 | `import/import-plan.ts` | Was beide Übernahmen teilen: Sessions nach Ordnern auf Projekte verteilen (`planGroups`), Titel, `SessionMeta` einer übernommenen Session |
 | `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen, oder nur was seit einem Zeitpunkt dazukam |
@@ -154,8 +154,24 @@ Manager`, sonst `Signalbox`) nur:
   Den Chat liest `SessionService` erst beim ersten Öffnen aus dem Transkript (`claude-transcript.ts`)
   und speichert ihn dann wie jeden anderen. Namen und Anheften kommen aus `session-names.json` und
   `session-marks.json`; schon übernommene Sessions (gleiche Sitzungs-ID) werden übersprungen.
+- „Weiteres“ (`cm-extras.ts`, einzeln abwählbar): Workspace-Prompts (`cm_prompts.md` im Ordner wird
+  `prompts.md`, nie über einen Prompt, den Nexa dort schon hat), eigene Themes (`themes/*.json`, über
+  `ThemeService.importFrom`, gleicher Name gilt als vorhanden) sowie Namen und Pins für Chats, die Nexa
+  schon hat (ein in Nexa vergebener Name bleibt).
 
-Die Übernahme steht in der Einrichtung beim ersten Start und unter Einstellungen › Accounts.
+Die Übernahme steht in der Einrichtung beim ersten Start und unter Einstellungen › Accounts. Erneut
+gelesen bietet sie nur an, was Nexa noch fehlt: neue Sessions und Workspaces ebenso wie Weiteres, das im
+Claude Manager dazukam oder beim ersten Mal abgewählt war.
+
+Was Nexa vom Claude Manager zeigt, hängt an `useClaudeManager`: der Import (Einrichtung, Einstellungen ›
+Accounts, Suche, Hinweis bei den Themes) nur, solange seine Daten da sind (`detect`); Hinweise auf ihn
+(Terminal-Farben im Theme-Editor, „wie die Workspaces“ beim Trenner) nur, solange er installiert ist
+(`installed`: Windows sein Eintrag unter `…\CurrentVersion\Uninstall`, den sein Deinstallationsprogramm
+entfernt; Linux `claude-manager.desktop`). Die Einstellungen fragen bei jedem Öffnen neu.
+
+Die Profilordner der übernommenen Accounts bleiben in `%APPDATA%\Claude Manager\profiles`: Logins und
+Transkripte liegen dort. Den Claude Manager zu deinstallieren lässt sie stehen (der Installer löscht keine
+App-Daten), den Ordner von Hand zu löschen nimmt Nexa diese Accounts und die Verläufe ihrer Chats.
 
 ## Übernahme der Sessions der CLIs
 

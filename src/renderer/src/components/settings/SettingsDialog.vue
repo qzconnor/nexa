@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
 import { Kbd } from '@/components/ui/kbd'
+import { useClaudeManager } from '@/composables/useClaudeManager'
 import { provideSettingsFilter, SETTINGS } from '@/composables/useSettingsSearch'
 import { matchSettings } from '@/lib/settings-index'
 import { cn } from '@/lib/utils'
@@ -54,7 +55,7 @@ const current = computed(() => SECTIONS.find((s) => s.id === ui.settingsSection)
 
 const query = ref('')
 const terms = computed(() => searchTerms(query.value))
-const match = computed(() => matchSettings(SETTINGS, terms.value))
+const match = computed(() => matchSettings(SETTINGS.value, terms.value))
 provideSettingsFilter(terms, match)
 
 /** The sections with something that matches, in their order. */
@@ -69,10 +70,16 @@ watch(
   () => content.value?.scrollTo({ top: 0 }),
 )
 watch(terms, () => content.value?.scrollTo({ top: 0 }))
-// A new opening starts without the last search.
+// A new opening starts without the last search, and asks again whether the Claude Manager is there
+// (uninstalled meanwhile, its import and hints go).
+const claudeManager = useClaudeManager()
 watch(
   () => ui.settingsOpen,
-  (open) => open && (query.value = ''),
+  (open) => {
+    if (!open) return
+    query.value = ''
+    void claudeManager.refresh()
+  },
 )
 
 function focusSearch(): void {

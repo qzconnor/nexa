@@ -19,11 +19,12 @@ export function useShortcuts(ready: Ref<boolean>): void {
 
   /**
    * The chats in the order the sidebar shows them, as one counts them there: a folded project's
-   * aren't among them. With the sidebar hidden, the latest first.
+   * aren't among them. A pinned chat shows twice (on top and in its project) and counts where it
+   * shows first. With the sidebar hidden, the latest first.
    */
   function chatOrder(): string[] {
     const rows = [...document.querySelectorAll<HTMLElement>(CHAT_ROW)].filter((row) => row.getClientRects().length > 0)
-    if (rows.length) return rows.map((row) => row.dataset.sessionId!).filter(Boolean)
+    if (rows.length) return [...new Set(rows.map((row) => row.dataset.sessionId!).filter(Boolean))]
     return sessions.metas.filter((m) => !m.archived).map((m) => m.id)
   }
 

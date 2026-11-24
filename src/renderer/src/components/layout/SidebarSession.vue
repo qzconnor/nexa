@@ -16,7 +16,12 @@ import SessionMoveMenu from './SessionMoveMenu.vue'
  * A chat in the sidebar: its state at a glance, its name and age; renaming and the like on right-click.
  * Dragged onto another project or a folder in it, it moves there (see Sidebar).
  */
-const props = defineProps<{ meta: SessionMeta; now: number }>()
+const props = defineProps<{
+  meta: SessionMeta
+  now: number
+  /** Among the pinned on top: the project it is in, as they come from everywhere. */
+  place?: string
+}>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 
@@ -73,7 +78,9 @@ function endDrag(): void {
           <ProviderIcon v-else :provider="meta.provider" class="size-3 opacity-60" />
         </span>
         <span class="min-w-0 flex-1 truncate">{{ meta.title }}</span>
-        <PinIcon v-if="meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
+        <span v-if="place" class="max-w-[30%] shrink truncate text-[0.7rem] text-muted-foreground/80" :title="meta.cwd">{{ place }}</span>
+        <!-- Up there under „Angeheftet“ the pin would say it twice. -->
+        <PinIcon v-else-if="meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
         <span class="shrink-0 text-[0.7rem] text-muted-foreground tabular-nums">{{ formatAge(meta.updatedAt, now) }}</span>
       </button>
     </ContextMenuTrigger>
