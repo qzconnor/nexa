@@ -662,7 +662,10 @@ export class CodexRun implements AgentRun {
     }
     const item: InteractionItem = {
       kind: 'interaction',
-      id: `interaction:${String(request.id)}:${threadId}`,
+      // Not the request's id: every app-server process counts them from 0 again, so after a restart the
+      // resumed thread's first question would take the id of one answered long ago and replace that
+      // card far up the chat, while the tool it asks about hides at the end.
+      id: `interaction:${randomUUID()}`,
       ts: Date.now(),
       provider: 'codex',
       parentId,
