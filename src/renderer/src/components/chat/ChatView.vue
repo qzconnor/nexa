@@ -20,7 +20,7 @@ import {
 import { useElementSize, useEventListener } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import { computed, nextTick, ref, watch } from 'vue'
-import type { AgentItem, ChatItem, TodoItem } from '@shared/chat'
+import { PROVIDER_IDS, type AgentItem, type ChatItem, type TodoItem } from '@shared/chat'
 import type { SessionUpdateInput } from '@shared/types'
 import { PROVIDERS } from '@shared/providers'
 import BrowserFind from '@/components/browser/BrowserFind.vue'
@@ -259,9 +259,15 @@ watch(
   },
 )
 
-// ── Claude Code's conversation, gone on outside Nexa (a terminal, Claude Desktop) ──
+// ── The CLIs' conversations, gone on outside Nexa (a terminal, Claude Desktop, VS Code) ──
 
-const syncable = computed(() => !!meta.value?.cli.claude)
+/** The CLIs the chat has a conversation with, by name: „Claude Code und Codex“. */
+const syncNames = computed(() =>
+  PROVIDER_IDS.filter((p) => meta.value?.cli[p])
+    .map((p) => PROVIDERS[p].name)
+    .join(' und '),
+)
+const syncable = computed(() => !!syncNames.value)
 let lastSync = 0
 /** Takes in what came outside Nexa; quietly, as the chat comes back on screen. */
 function syncQuietly(): void {
@@ -292,7 +298,7 @@ async function syncNow(): Promise<void> {
   if (!id) return
   lastSync = Date.now()
   const taken = await attempt(() => sessions.sync(id), 'Abgleich fehlgeschlagen')
-  if (taken === 0) toast('Nichts Neues aus Claude Code', { description: 'Der Chat ist auf dem Stand der CLI.' })
+  if (taken === 0) toast(`Nichts Neues aus ${syncNames.value}`, { description: 'Der Chat ist auf dem Stand der CLI.' })
   else if (taken) scrollToBottom(true)
 }
 
@@ -486,7 +492,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <DropdownMenuItem :disabled="!!diff" @select="openFind"><SearchIcon /> Im Chat suchen <DropdownMenuShortcut>Strg+F</DropdownMenuShortcut></DropdownMenuItem>
               <DropdownMenuItem :disabled="busy" @select="chatActions.fork(meta.id)"><GitForkIcon /> Chat abzweigen</DropdownMenuItem>
               <DropdownMenuItem v-if="project" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
-              <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit Claude Code abgleichen</DropdownMenuItem>
+              <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit {{ syncNames }} abgleichen</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
               <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
@@ -623,8 +629,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             <div class="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[0.8rem] leading-snug">
               <TriangleAlertIcon class="mt-px size-3.5 shrink-0 text-warning" />
               <p>
-                <span class="font-medium">Auch in {{ runtime.openElsewhere }} offen.</span>
-                <span class="text-muted-foreground">
+                <span class="font-medium">Auch in {{ runtime.openElsewhere.where }} offen.</span>
+                <span v-if="runtime.openElsewhere.provider === 'codex'" class="text-muted-foreground">
+                  Solange der Chat dort offen ist, nimmt Codex hier keine Prompts an. Fertige Antworten von dort erscheinen hier.
+                </span>
+                <span v-else class="text-muted-foreground">
                   Schreib nur an einer Stelle weiter, sonst laufen die Unterhaltungen auseinander. Fertige Antworten von dort erscheinen hier.
                 </span>
               </p>

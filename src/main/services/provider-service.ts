@@ -169,9 +169,15 @@ export class ProviderService extends TypedEmitter<Events> {
   }
 
   /** The chat of a conversation saved with an account, where the CLI's server gives it; null where it doesn't. */
-  async history(id: ProviderId, accountId: string, sessionId: string): Promise<ChatItem[] | null> {
+  async history(id: ProviderId, accountId: string, sessionId: string, since?: number): Promise<ChatItem[] | null> {
     const provider = this.providers[id]
-    return provider.history ? provider.history(this.context(accountId), sessionId) : null
+    return provider.history ? provider.history(this.context(accountId), sessionId, since) : null
+  }
+
+  /** Where else a conversation is open now, where the CLI can tell (see `AgentProvider.openElsewhere`). */
+  async openElsewhere(id: ProviderId, accountId: string, sessionId: string, configDir: string): Promise<string | null> {
+    const provider = this.providers[id]
+    return provider.openElsewhere ? provider.openElsewhere(this.context(accountId), sessionId, configDir) : null
   }
 
   usage(): ProviderUsage[] {

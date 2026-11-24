@@ -46,6 +46,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `import/import-plan.ts` | Was beide Übernahmen teilen: Sessions nach Ordnern auf Projekte verteilen (`planGroups`), Titel, `SessionMeta` einer übernommenen Session |
 | `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen, oder nur was seit einem Zeitpunkt dazukam |
 | `providers/claude/claude-presence.ts` | Ob eine Claude-Code-Sitzung gerade in einem anderen Prozess offen ist (`<config>/sessions/<pid>.json`) und wo |
+| `providers/codex/codex-presence.ts` | Ob ein Prozess einen Codex-Thread geladen hat (`<CODEX_HOME>/thread-writer-locks/<thread>.lock`, unter Windows) |
 | `providers/claude/claude-transcript.ts` | Claude-Code-Transkript (`projects/<key>/<id>.jsonl`) → `ChatItem`s wie aus dem Stream, plus Kurzfassung (Ordner, Titel, Zeiten) |
 | `services/session-service.ts` | Sessions: Metadaten, Items, Runs starten/stoppen, Wechsel der CLI, Statistik |
 | `services/session-search.ts` | Suche in den Prompts und Antworten der Chats (für die Schnellsuche), Ausschnitt um den Treffer |
@@ -197,7 +198,7 @@ Transkript in `importedFrom`, Codex mit `thread/read` über den App-Server des A
 (`AgentProvider.history`, `codexThreadItems`). Die Suche liest so auch noch nie geöffnete Chats. Gibt
 die CLI keinen Verlauf heraus, steht eine Warnung im Chat; er geht trotzdem in derselben Session weiter.
 
-## Abgleich mit Claude Code
+## Abgleich mit Claude Code und Codex
 
 Ein Chat mit `cli.claude` kann außerhalb von Nexa weitergehen (`claude --resume` im Terminal, Claude
 Desktop); das Transkript wächst dann ohne Nexa. `SessionService.syncCli` liest, was nach `CliLink.synced`
@@ -207,11 +208,21 @@ dazwischen, zählt dieselbe Notiz weiter. Läuft Nexas eigene CLI des Chats unt�
 die neuen Turns nicht, der nächste Prompt setzt mit `--resume` auf dem ganzen Transkript fort. Während ein
 Turn in Nexa läuft, wird nichts übernommen.
 
+Mit `cli.codex` genauso, wenn der Thread in der Codex-TUI, in VS Code oder der Codex-App weiterging: Ist
+sein Rollout seit `CliLink.synced` gewachsen, holt `AgentProvider.history` mit `since` nur die neuesten
+Turns (`thread/turns/list`), und `codexTurnsFromOutside` nimmt die fertigen, von denen der Chat kein Item
+kennt. Einen Thread hat immer nur ein Prozess geladen (`codex-presence.ts`): Was dazukam, während Nexas
+App-Server ihn hielt, ist Nexas eigenes, deshalb setzt auch das Ende eines Codex-Laufs `synced`. Damit die
+TUI den Thread öffnen kann, endet ein Codex-Lauf nach 60 s ohne Turn (`releaseWhenIdle`), der App-Server
+entlädt ihn eine Minute später; der nächste Prompt setzt ihn mit `thread/resume` fort.
+
 Anlässe: `open()` (der Chat wird geladen), im Renderer der Wechsel in einen schon geladenen Chat, der Fokus
-des Fensters (`ChatView`, höchstens alle 2 s) und „Mit Claude Code abgleichen“ im Menü des Chats
-(`sessions:sync`, mit „Nichts Neues“ als Toast). Bei jedem Abgleich prüft `claude-presence.ts`, ob ein
-anderer Prozess die Sitzung offen hat (`SessionRuntime.openElsewhere`); solange, steht ein Hinweis über der
-Eingabe und der Chat gleicht alle 5 s ab. Codex fehlt noch (Roadmap).
+des Fensters (`ChatView`, höchstens alle 2 s) und „Mit … abgleichen“ im Menü des Chats (`sessions:sync`,
+mit „Nichts Neues“ als Toast). Bei jedem Abgleich prüft `claude-presence.ts` bzw. für Codex die Sperre des
+Threads (`AgentProvider.openElsewhere`), ob ein anderer Prozess die Unterhaltung offen hat
+(`SessionRuntime.openElsewhere`); solange, steht ein Hinweis über der Eingabe und der Chat gleicht alle 5 s
+ab. Hat die TUI den Thread, nimmt Codex in Nexa keine Prompts an („already has an active writer“, als
+deutscher Fehler aus `heldElsewhere`).
 
 ## Wechsel der CLI
 

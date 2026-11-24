@@ -96,9 +96,31 @@ export async function ensureCodexThread(
   return copiedTo ? { found: true, copiedTo } : { found: false }
 }
 
+/**
+ * The folders below `sessions` a thread's file is likely in: Codex's thread ids are UUIDv7, whose
+ * first 48 bits are the time it was started, and the file goes into the folder of that day (local
+ * time). The days around it as well, for a clock or time zone that changed since.
+ */
+export function codexRolloutDays(threadId: string): string[] {
+  const hex = threadId.replace(/-/g, '')
+  if (!/^[0-9a-f]{32}$/i.test(hex) || hex[12] !== '7') return []
+  const started = parseInt(hex.slice(0, 12), 16)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return [0, -1, 1].map((days) => {
+    const d = new Date(started + days * 86_400_000)
+    return join(String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate()))
+  })
+}
+
 /** Codex's conversation file of a thread (`sessions/<yyyy>/<mm>/<dd>/rollout-<time>-<thread>.jsonl`). */
 export async function findCodexRollout(sessionsDir: string, threadId: string): Promise<string | null> {
   const suffix = `-${threadId}.jsonl`
+  // A folder of years of threads takes long to walk: the day the id names first.
+  for (const day of codexRolloutDays(threadId)) {
+    const names = await readdir(join(sessionsDir, day)).catch(() => [] as string[])
+    const name = names.find((f) => f.endsWith(suffix))
+    if (name) return join(sessionsDir, day, name)
+  }
   const files = await readdir(sessionsDir, { recursive: true }).catch(() => [] as string[])
   const match = files.find((f) => f.endsWith(suffix))
   return match ? join(sessionsDir, match) : null

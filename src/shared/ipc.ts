@@ -356,8 +356,8 @@ export interface NexaApi {
     /** Switches a plugin in the CLI's own settings; its running chats load the plugins anew. */
     setPlugin(id: string, pluginId: string, enabled: boolean): Promise<void>
     /**
-     * Takes what was added to the chat's Claude Code conversation outside Nexa into the chat, and looks
-     * where else it is open (`SessionRuntime.openElsewhere`); the number of items added.
+     * Takes what was added to the chat's CLI conversations outside Nexa into the chat, and looks where
+     * else one is open (`SessionRuntime.openElsewhere`); the number of items added.
      */
     sync(id: string): Promise<number>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>

@@ -183,8 +183,16 @@ export interface AgentProvider {
    * are its transcript files (import/claude-sessions.ts).
    */
   sessions?(account: AccountContext): Promise<CliSessionInfo[]>
-  /** The chat of a conversation saved with the account, for CLIs whose server gives it (Codex). */
-  history?(account: AccountContext, sessionId: string): Promise<ChatItem[]>
+  /**
+   * The chat of a conversation saved with the account, for CLIs whose server gives it (Codex).
+   * `since`: only the newest turns, back to the first one that started before it.
+   */
+  history?(account: AccountContext, sessionId: string, since?: number): Promise<ChatItem[]>
+  /**
+   * Where else the conversation is open now, in words („Codex außerhalb von Nexa“), for CLIs that
+   * can tell; null when nowhere. Claude Code's are read from its folder (claude/claude-presence.ts).
+   */
+  openElsewhere?(account: AccountContext, sessionId: string, configDir: string): Promise<string | null>
   /** The browser login, started without a terminal (accounts/account-login.ts). */
   loginCommand(): ResolvedCommand
   /** An account was removed: what runs for it ends. */

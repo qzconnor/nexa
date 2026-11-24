@@ -57,7 +57,7 @@ export function removalProblems(result: SessionRemoveResult): { title: string; d
   if (open > 0) {
     problems.push({
       title: open === 1 ? 'Ein Transkript bleibt' : `${open} Transkripte bleiben`,
-      description: `Claude Code hat ${open === 1 ? 'die Unterhaltung' : 'diese Unterhaltungen'} außerhalb von Nexa offen, ihre Dateien bleiben liegen.`,
+      description: `${open === 1 ? 'Die Unterhaltung ist' : 'Diese Unterhaltungen sind'} außerhalb von Nexa in Claude Code oder Codex offen, ihre Dateien bleiben liegen.`,
       error: false,
     })
   }

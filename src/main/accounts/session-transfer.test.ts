@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { claudePaths, claudeProjectKey, codexPaths } from './cli-files'
-import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread } from './session-transfer'
+import { codexRolloutDays, copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findCodexRollout } from './session-transfer'
 
 let root: string
 
@@ -98,5 +98,30 @@ describe('ensureCodexThread', () => {
     const copied = await ensureCodexThread(now, saved.configDir, thread)
     expect(copied).toEqual({ found: true, copiedTo: join(now.sessionsDir, '2026', '11', '23', `rollout-2026-11-23T10-00-00-${thread}.jsonl`) })
     expect(await ensureCodexThread(now, undefined, thread)).toEqual({ found: true })
+  })
+})
+
+describe('findCodexRollout', () => {
+  it('looks in the folder of the day the thread id names first, else in all of them', async () => {
+    // 01a20a44-5e41-…: started 2026-11-23 21:16:22 UTC.
+    const thread = '01a20a44-5e41-7c42-b2e3-f3603fac2443'
+    const days = codexRolloutDays(thread)
+    const started = new Date(0x01a20a445e41)
+    expect(days[0]).toBe(join(String(started.getFullYear()), String(started.getMonth() + 1).padStart(2, '0'), String(started.getDate()).padStart(2, '0')))
+    expect(days).toHaveLength(3)
+    expect(codexRolloutDays('not-a-uuid')).toEqual([])
+    // UUIDv4: no time in it.
+    expect(codexRolloutDays('a1b2c3d4-0000-4000-8000-000000000000')).toEqual([])
+
+    const sessions = join(root, 'sessions')
+    await mkdir(join(sessions, days[0]!), { recursive: true })
+    await writeFile(join(sessions, days[0]!, `rollout-x-${thread}.jsonl`), '')
+    expect(await findCodexRollout(sessions, thread)).toBe(join(sessions, days[0]!, `rollout-x-${thread}.jsonl`))
+
+    const elsewhere = '01a20a44-5e41-7c42-b2e3-f3603fac2444'
+    await mkdir(join(sessions, '2020', '01', '01'), { recursive: true })
+    await writeFile(join(sessions, '2020', '01', '01', `rollout-y-${elsewhere}.jsonl`), '')
+    expect(await findCodexRollout(sessions, elsewhere)).toBe(join(sessions, '2020', '01', '01', `rollout-y-${elsewhere}.jsonl`))
+    expect(await findCodexRollout(sessions, '01a20a44-5e41-7c42-b2e3-000000000000')).toBeNull()
   })
 })

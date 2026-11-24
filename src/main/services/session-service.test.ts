@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,7 +25,9 @@ let service: SessionService | null
 /** The folder of project p1, where the chats' commands run. */
 let projectPath: string
 /** What the CLI's server gives as a conversation's chat (`ProviderService.history`). */
-let readHistory: (accountId: string, sessionId: string) => Promise<ChatItem[] | null>
+let readHistory: (accountId: string, sessionId: string, since?: number) => Promise<ChatItem[] | null>
+/** Where else the CLI says a conversation is open (`ProviderService.openElsewhere`). */
+let elsewhere: string | null
 
 async function put(path: string, text = 'x'): Promise<void> {
   await mkdir(join(path, '..'), { recursive: true })
@@ -76,7 +78,14 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
     extraArgs: () => [],
   }
   const projects = { get: (id: string) => (id === 'p1' ? { id, path: projectPath } : undefined), touch: async () => {}, promptsFor: async () => [] }
-  const providers = { isReady: () => true, defaultAccount: () => 'claude-a', get: () => provider, setUsage: () => {}, history: (_id: string, accountId: string, sessionId: string) => readHistory(accountId, sessionId) }
+  const providers = {
+    isReady: () => true,
+    defaultAccount: () => 'claude-a',
+    get: () => provider,
+    setUsage: () => {},
+    history: (_id: string, accountId: string, sessionId: string, since?: number) => readHistory(accountId, sessionId, since),
+    openElsewhere: async () => elsewhere,
+  }
   const mcp = { revoke: vi.fn(), running: false }
   service = new SessionService(
     dataDir,
@@ -105,6 +114,7 @@ beforeEach(async () => {
   service = null
   projectPath = CWD
   readHistory = async () => null
+  elsewhere = null
 })
 
 afterEach(async () => {
@@ -156,6 +166,16 @@ describe('SessionService.remove', () => {
 
     expect(await sessions.remove(['chat'])).toMatchObject({ removed: ['chat'], trashed: 0, openElsewhere: ['chat'] })
     expect(await exists(join(claudeA, 'projects', claudeProjectKey(CWD), `${GONE}.jsonl`))).toBe(true)
+  })
+
+  it('keeps a Codex thread another Codex has open', async () => {
+    const rollout = join(codexA, 'sessions', '2026', '11', '23', `rollout-2026-11-23T10-00-00-${THREAD}.jsonl`)
+    await put(rollout, '1')
+    elsewhere = 'Codex außerhalb von Nexa'
+    const sessions = await start([meta('chat', { cli: { codex: { sessionId: THREAD, seenItems: 0 } } })])
+
+    expect(await sessions.remove(['chat'])).toMatchObject({ removed: ['chat'], trashed: 0, openElsewhere: ['chat'] })
+    expect(await exists(rollout)).toBe(true)
   })
 
   it('deletes only Nexa’s history when the setting is off', async () => {
@@ -325,6 +345,91 @@ describe('SessionService with a session taken over from Codex', () => {
     readHistory = async () => []
     const sessions = await start([imported()])
     expect((await sessions.history('chat'))!.items).toMatchObject([{ kind: 'notice', level: 'warning' }])
+  })
+})
+
+describe('SessionService with what came to its Codex thread outside Nexa', () => {
+  const SYNCED = 1_700_000_000_000
+  const rollout = () => join(codexA, 'sessions', '2026', '11', '23', `rollout-2026-11-23T10-00-00-${THREAD}.jsonl`)
+  const chat = () => meta('chat', { provider: 'codex', cli: { codex: { sessionId: THREAD, seenItems: 0, accountId: 'codex-a', synced: SYNCED } } })
+  const turn = (n: number, at: number): ChatItem[] => [
+    { kind: 'user', id: `u${n}`, ts: at, provider: 'codex', text: `Im Terminal ${n}` },
+    { kind: 'assistant', id: `a${n}`, ts: at + 1000, provider: 'codex', text: `Dort ${n}` },
+    { kind: 'turn', id: `turn:t${n}`, ts: at + 2000, provider: 'codex', status: 'done' },
+  ]
+
+  it('takes in the turns finished elsewhere under one note, and reads again only when the thread changed', async () => {
+    await put(rollout())
+    await utimes(rollout(), new Date(), new Date(SYNCED + 10_000))
+    const asked: (number | undefined)[] = []
+    let history = turn(1, SYNCED + 3000)
+    readHistory = async (_account, _thread, since) => {
+      asked.push(since)
+      return history
+    }
+    elsewhere = 'Codex außerhalb von Nexa'
+    const sessions = await start([chat()])
+
+    const detail = await sessions.open('chat')
+    expect(detail.runtime.openElsewhere).toEqual({ provider: 'codex', where: 'Codex außerhalb von Nexa' })
+    expect(detail.items).toMatchObject([
+      { kind: 'notice', provider: 'codex', text: 'Außerhalb von Nexa weitergeführt', detail: 'Ein Prompt mit Antwort aus Codex übernommen' },
+      { id: 'u1' },
+      { id: 'a1' },
+      { id: 'turn:t1' },
+    ])
+    expect(asked).toEqual([SYNCED])
+    expect(sessions.list()[0]!.cli.codex!.synced).toBe(SYNCED + 5000)
+    expect(sessions.list()[0]!.preview).toBe('Dort 1')
+
+    expect(await sessions.syncCli('chat')).toBe(0)
+    expect(asked).toHaveLength(1)
+
+    // The next turn there: into the same note, as nothing came in Nexa between.
+    history = [...history, ...turn(2, SYNCED + 20_000)]
+    await utimes(rollout(), new Date(), new Date(SYNCED + 30_000))
+    expect(await sessions.syncCli('chat')).toBe(3)
+    const items = (await sessions.history('chat'))!.items as ChatItem[]
+    expect(items.filter((i) => i.kind === 'notice')).toMatchObject([{ detail: '2 Prompts mit Antworten aus Codex übernommen' }])
+    expect(items.map((i) => i.id).slice(1)).toEqual(['u1', 'a1', 'turn:t1', 'u2', 'a2', 'turn:t2'])
+  })
+
+  it('lets go of the thread after a minute without a turn, so that Codex elsewhere can open it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let sink: RunSink | null = null
+      const run = {
+        alive: true,
+        send: async () => {},
+        stop: vi.fn(async () => {
+          run.alive = false
+        }),
+      }
+      const sessions = await start([meta('chat', { provider: 'codex' })], {
+        start: async (_options, s) => {
+          sink = s
+          return run as unknown as AgentRun
+        },
+      })
+      await sessions.send('chat', { text: 'Hallo' })
+      sink!.cliSession(THREAD)
+      sink!.runtime({ status: 'running', connected: true })
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(run.stop).not.toHaveBeenCalled()
+
+      sink!.item({ kind: 'turn', id: 'turn:t1', ts: Date.now(), provider: 'codex', status: 'done' })
+      sink!.runtime({ status: 'idle' })
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(run.stop).not.toHaveBeenCalled()
+      const before = Date.now()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(run.stop).toHaveBeenCalledOnce()
+      // All the thread got up to here was Nexa's own: its server alone had it.
+      expect(sessions.list()[0]!.cli.codex!.synced).toBeGreaterThanOrEqual(before)
+      expect((await sessions.open('chat')).runtime).toMatchObject({ status: 'idle', connected: false })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

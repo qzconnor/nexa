@@ -356,6 +356,26 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   den Aufzeichnungen des eigenen Accounts (`state_<n>.sqlite`): Für einen Rollout, der bloß in den
   Ordner kopiert wurde, kommen keine. `thread/resume` mit `excludeTurns: false` gäbe sie auch, ohne den
   Rollout anzufassen, hängt den Thread aber an den Server. Geprüft mit 0.169.
+- **Neueste Turns**: `thread/turns/list { threadId, cursor, limit, sortDirection, itemsView }` gibt die
+  Turns seitenweise, ohne den Thread zu laden: `sortDirection: "desc"` (die Vorgabe) die neuesten zuerst,
+  `itemsView: "full"` mit allen Items (Vorgabe `summary`). Antwort `{ data, nextCursor, backwardsCursor }`,
+  die Cursor sind undurchsichtige Strings. Die Turns sehen aus wie in `thread/read`. `thread/read` mit
+  `includeTurns: false` gibt nur den Thread, darunter `path` (Rollout) und `updatedAt`. Geprüft mit 0.169.
+- **Wer einen Thread offen hat** (geprüft mit 0.169 unter Windows): Ein Prozess, der einen Thread geladen
+  hat (TUI, `codex exec`, VS Code, Desktop-App, ein App-Server wie der von Nexa), hält
+  `<CODEX_HOME>/thread-writer-locks/<thread>.lock` offen, eine leere Datei, die beim Freigeben
+  verschwindet. Jeder andere bekommt den Thread solange nicht: `thread/resume` scheitert mit „thread … already
+  has an active writer“ (-32600), `codex exec resume` ebenso. Nexa prüft die Sperre, indem es die Datei
+  exklusiv öffnet (`UV_FS_O_EXLOCK`, `0x10000000`, Node exportiert die Konstante unter Windows nicht):
+  EBUSY heißt gehalten. Unter Linux und macOS sperrt Codex mit `flock`, das sieht Node nicht.
+  `thread/loaded/list` (`{ data: [ids], nextCursor }`) nennt die Threads, die ein App-Server geladen hat.
+  Nach `thread/unsubscribe` des letzten Abonnenten behält der Server den Thread noch 60 s und meldet dann
+  `thread/closed`; erst dann ist die Sperre frei. Eine Methode zum sofortigen Entladen gibt es nicht.
+  `thread/read` und `thread/turns/list` laden den Thread nicht und gehen auch, während ein anderer ihn hält.
+  Nexa gibt den Thread eines Chats deshalb nach 60 s ohne Turn frei (`thread/unsubscribe`), damit die TUI
+  ihn öffnen kann, und nimmt beim nächsten Abgleich die Turns auf, die dort fertig wurden
+  (`codexTurnsFromOutside`): `userMessage` hat im Verlauf `clientId: null`, Nexas eigene Turns erkennt es
+  an den IDs der übrigen Items und am `turn:<id>`.
 - **Titel** (geprüft mit 0.169): Codex benennt Threads nicht selbst. `name` bleibt `null`, bis jemand ihn
   setzt. Das geht mit `thread/name/set { threadId, name }`, danach kommt `thread/name/updated`
   (`threadId`, `threadName`). Nexa fragt nach dem ersten Prompt in einem eigenen flüchtigen Thread:

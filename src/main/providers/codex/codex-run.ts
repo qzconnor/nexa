@@ -61,6 +61,16 @@ function sandboxPolicy(mode: PermissionMode, cwd: string, dirs: readonly string[
  * The skills a prompt names with `$name`, as input items next to its text: that is how Codex's own
  * composer hands them over, the text alone only names them.
  */
+/**
+ * Another Codex has the thread loaded (codex-presence.ts) and Codex refuses it to every other one;
+ * its own words name only the thread's id.
+ */
+export function heldElsewhere(error: unknown): unknown {
+  const message = error instanceof Error ? error.message : String(error)
+  if (!/already has an active writer/i.test(message)) return error
+  return new Error('Der Chat ist gerade in Codex außerhalb von Nexa offen (Terminal, VS Code oder Codex-App). Schließe ihn dort, dann geht er hier weiter.')
+}
+
 export function skillInputs(text: string, skills: readonly CommandOption[]): Json[] {
   const named = new Set([...text.matchAll(/(?:^|\s)\$([\w.:-]+)/g)].map((m) => m[1]!))
   return skills.filter((s) => s.kind === 'skill' && s.path && named.has(s.name)).map((s) => ({ type: 'skill', name: s.name, path: s.path }))
@@ -132,7 +142,11 @@ export class CodexRun implements AgentRun {
       ...(this.model ? { model: this.model } : {}),
       ...(Object.keys(config).length ? { config } : {}),
     }
-    const response = this.options.resumeId ? await this.resume(common, this.options.resumeId) : await this.client.request('thread/start', common)
+    const response = this.options.resumeId
+      ? await this.resume(common, this.options.resumeId).catch((error: unknown) => {
+          throw heldElsewhere(error)
+        })
+      : await this.client.request('thread/start', common)
     const thread = isPlainObject(response.thread) ? response.thread : {}
     this.threadId = str(thread.id) ?? ''
     if (!this.threadId) throw new Error('Codex hat keinen Thread angelegt.')

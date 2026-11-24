@@ -70,6 +70,11 @@ export class TranscriptStore {
     return this.enqueue(sessionId, () => rm(this.file(sessionId), { force: true }))
   }
 
+  /** Resolves once every write queued so far is done: the app quits, nothing may get lost. */
+  async flush(): Promise<void> {
+    await Promise.all([...this.queues.values()].map((queue) => queue.catch(() => undefined)))
+  }
+
   private enqueue(sessionId: string, task: () => Promise<void>): Promise<void> {
     const next = (this.queues.get(sessionId) ?? Promise.resolve()).catch(() => undefined).then(task)
     this.queues.set(sessionId, next)

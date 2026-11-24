@@ -179,12 +179,13 @@
       5-Stunden-Fenster, ein Tag bei den Wochen) sagt jedes Fenster, wann das Limit beim jetzigen Tempo
       erreicht ist („Limit ≈ 17:45“, auch in der Titelleiste) oder wie voll es zum Reset ist; die Messpunkte
       überstehen einen Neustart (`usage-samples.json`)
+- [x] Chats mit Codex abgleichen wie mit Claude Code: Was in der Codex-TUI, VS Code oder der Codex-App
+      dazukam, kommt mit einer Notiz in den Chat (`thread/turns/list`), und ein Hinweis warnt, solange der
+      Thread dort offen ist. Ein ruhender Codex-Chat gibt seinen Thread nach einer Minute frei, damit die
+      TUI ihn öffnen kann
 
 ## Als Nächstes
 
-- [ ] **Chats mit Codex abgleichen** wie mit Claude Code: Was in der Codex-TUI dazukam, aus dem Rollout
-      der verknüpften Sitzung nachtragen (`thread/read`, `thread/turns/list`), und warnen, wenn sie
-      gerade woanders offen ist.
 - [ ] **Sites von Codex** auf der Seite „Artefakte“, sobald der App-Server sie herausgibt (0.169 hat keine
       Methode dafür). Dazu für Claudes Artefakte: umbenennen, löschen und anpinnen wie im Claude Manager.
 - [ ] **Automatischer Account-Wechsel bei erreichtem Limit** (wie „Account wechseln“ im Claude Manager):
