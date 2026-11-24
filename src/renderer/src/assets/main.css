@@ -218,9 +218,16 @@
     background: var(--surface);
     backdrop-filter: blur(24px) saturate(140%);
   }
-  /* Text a light runs across, while work is under way. */
+  /* Text a light runs across, while work is under way: in the theme's own colour, so activity stands
+     out from the grey of what is done. */
   .text-shimmer {
-    background: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%) 0 0 / 250% 100%;
+    background: linear-gradient(
+        90deg,
+        var(--primary) 35%,
+        color-mix(in oklab, var(--primary) 35%, var(--foreground)) 50%,
+        var(--primary) 65%
+      )
+      0 0 / 250% 100%;
     background-clip: text;
     color: transparent;
     animation: text-shimmer 1.8s linear infinite;
@@ -229,7 +236,7 @@
     .text-shimmer {
       animation: none;
       background: none;
-      color: var(--foreground);
+      color: var(--primary);
     }
   }
   /* The highest effort, as the CLI shows it: a rainbow that runs (text with .effort-rainbow-text). */
