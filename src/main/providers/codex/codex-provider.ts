@@ -1,12 +1,17 @@
 import { join } from 'node:path'
+import type { ChatItem } from '@shared/chat'
 import type { CommandOption, ModelDefaults, ModelOption, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
 import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import { CliBinary, type ResolvedCommand } from '../cli-binary'
 import { codexMcpServers } from '../mcp-servers'
-import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
+import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { CodexClient, type CodexServerRequest } from './codex-client'
+import { codexThreadItems } from './codex-items'
 import { CodexRun } from './codex-run'
+
+/** Pages of `thread/list` read at most: 5,000 threads, more than anyone keeps. */
+const MAX_THREAD_PAGES = 50
 
 type Json = Record<string, unknown>
 
@@ -224,6 +229,43 @@ export class CodexProvider implements AgentProvider {
       throw error
     }
     return run
+  }
+
+  /**
+   * The threads saved in the account's folder that a person started (in the terminal, the IDE, the
+   * desktop app, an app-server like Nexa), not those of subagents or `codex exec`.
+   */
+  async sessions(account: AccountContext): Promise<CliSessionInfo[]> {
+    const client = this.server(account).client
+    const found: CliSessionInfo[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < MAX_THREAD_PAGES; page++) {
+      const response: Record<string, unknown> = await client.request('thread/list', { limit: 100, cursor, sourceKinds: ['cli', 'vscode', 'appServer'] })
+      for (const thread of Array.isArray(response.data) ? response.data.filter(isPlainObject) : []) {
+        if (typeof thread.id !== 'string' || typeof thread.cwd !== 'string' || thread.ephemeral === true || thread.parentThreadId) continue
+        const seconds = (v: unknown) => (typeof v === 'number' ? v * 1000 : null)
+        found.push({
+          id: thread.id,
+          cwd: thread.cwd,
+          title: typeof thread.name === 'string' && thread.name.trim() ? thread.name.trim() : null,
+          firstPrompt: typeof thread.preview === 'string' && thread.preview.trim() ? thread.preview : null,
+          createdAt: seconds(thread.createdAt),
+          updatedAt: seconds(thread.updatedAt),
+        })
+      }
+      cursor = typeof response.nextCursor === 'string' ? response.nextCursor : null
+      if (!cursor) break
+    }
+    return found
+  }
+
+  /**
+   * A thread's chat as Codex keeps it, with every turn. Codex reads it from the account's own records:
+   * a rollout only copied into the folder (another account's thread) has none there.
+   */
+  async history(account: AccountContext, sessionId: string): Promise<ChatItem[]> {
+    const response = await this.server(account).client.request('thread/read', { threadId: sessionId, includeTurns: true })
+    return isPlainObject(response.thread) ? codexThreadItems(response.thread) : []
   }
 
   async usage(account: AccountContext, wake: boolean): Promise<RunUsage | null> {

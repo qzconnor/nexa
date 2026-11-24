@@ -115,6 +115,12 @@ const TREE = [
           'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan ChatGPT Plus Pro OpenAI CODEX_HOME Konfigurationsordner hinzufügen entfernen Limits Usage',
       },
       {
+        id: 'accounts.cliImport',
+        title: 'Sessions der CLIs übernehmen',
+        keywords:
+          'Import importieren übernehmen Sessions Unterhaltungen Verlauf Terminal IDE VS Code Claude Code Codex Desktop App vorhandene bestehende alte fortsetzen resume projects sessions Rollouts',
+      },
+      {
         id: 'accounts.import',
         title: 'Vom Claude Manager übernehmen',
         keywords: 'Claude Manager Signalbox Import importieren übernehmen migrieren Umzug Sessions Workspaces Projekte Unterordner Verlauf',

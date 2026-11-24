@@ -1,5 +1,5 @@
 import { canLogin, type AccountLoginState } from '@shared/accounts'
-import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
+import { PROVIDER_IDS, type ChatItem, type ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import type { AppSettings, CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
 import { AccountLogins } from '../accounts/account-login'
@@ -7,7 +7,7 @@ import type { AccountService } from '../accounts/account-service'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ClaudeProvider } from '../providers/claude/claude-provider'
 import { CodexProvider } from '../providers/codex/codex-provider'
-import type { AccountContext, AgentProvider, McpServerState, RunUsage } from '../providers/provider'
+import type { AccountContext, AgentProvider, CliSessionInfo, McpServerState, RunUsage } from '../providers/provider'
 
 const USAGE_POLL_MS = 5 * 60_000
 
@@ -125,6 +125,18 @@ export class ProviderService extends TypedEmitter<Events> {
   /** The MCP servers the CLI starts in a folder with this account (`accountId` resolved already). */
   mcpServers(id: ProviderId, accountId: string, cwd: string): Promise<McpServerState[]> {
     return this.providers[id].mcpServers(this.context(accountId), cwd)
+  }
+
+  /** The CLI's conversations saved with an account, where its server lists them; null where it doesn't. */
+  async sessions(id: ProviderId, accountId: string): Promise<CliSessionInfo[] | null> {
+    const provider = this.providers[id]
+    return provider.sessions ? provider.sessions(this.context(accountId)) : null
+  }
+
+  /** The chat of a conversation saved with an account, where the CLI's server gives it; null where it doesn't. */
+  async history(id: ProviderId, accountId: string, sessionId: string): Promise<ChatItem[] | null> {
+    const provider = this.providers[id]
+    return provider.history ? provider.history(this.context(accountId), sessionId) : null
   }
 
   usage(): ProviderUsage[] {

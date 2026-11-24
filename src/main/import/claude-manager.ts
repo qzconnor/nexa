@@ -1,13 +1,13 @@
-import { existsSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { sameLogin, systemAccountId, type Account, type AccountIdentity, type AccountKind } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
-import { childFolder, folderKey, innermostFolder, subfolderSegments } from '@shared/folders'
-import type { ClaudeManagerFound, ImportAccount, ImportGroup, ImportInput, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
+import { folderKey } from '@shared/folders'
+import type { ClaudeManagerFound, ImportAccount, ImportInput, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
 import type { AppSettings, Project, SessionMeta } from '@shared/types'
 import { DEFAULT_SECTION_ID } from '@shared/sections'
-import { baseName, firstLine, isPlainObject } from '@shared/utils'
+import { isPlainObject } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { defaultClaudeConfigDir, defaultCodexHome } from '../accounts/cli-files'
 import { pool } from '../lib/pool'
@@ -17,6 +17,7 @@ import type { ProjectService } from '../services/project-service'
 import { projectToSection } from '../services/project-sections'
 import type { SessionService } from '../services/session-service'
 import { listTranscripts, type TranscriptFile } from './claude-sessions'
+import { importedSessionMeta, isDirectory, planGroups, projectFolder, sessionTitle, type PlacedGroup } from './import-plan'
 
 /**
  * Takes over from the Claude Manager, which keeps no sessions of its own: it lists Claude Code's
@@ -115,79 +116,9 @@ export interface FoundSession extends TranscriptFile {
   summary: TranscriptSummary
 }
 
-export interface PlacedGroup extends ImportGroup {
-  sessions: number
-  members: FoundSession[]
-}
-
-/**
- * Sorts the sessions into what they become, as the Claude Manager places them: the innermost workspace
- * (or project Nexa has) their folder lies in, else a project of their folder's own. The workspaces come
- * along also without sessions, as separators to start projects in.
- */
-export function planGroups(
-  sessions: readonly FoundSession[],
-  workspaces: readonly string[],
-  projects: readonly Pick<Project, 'path'>[],
-  exists: (path: string) => boolean,
-): PlacedGroup[] {
-  const roots = [...projects.map((p) => p.path), ...workspaces]
-  // A workspace stays one also when Nexa has a project of its folder: it becomes the separator's own.
-  const workspaceKeys = new Set(workspaces.map(folderKey))
-  const kindOf = (path: string) => (workspaceKeys.has(folderKey(path)) ? 'workspace' : 'project')
-  const groups = new Map<string, PlacedGroup>()
-  const group = (path: string, kind: ImportGroup['kind']) => {
-    const key = folderKey(path)
-    let found = groups.get(key)
-    if (!found) {
-      found = { path, name: baseName(path) || path, kind, exists: exists(path), sessions: 0, inSubfolders: 0, updatedAt: null, members: [] }
-      groups.set(key, found)
-    }
-    return found
-  }
-  for (const workspace of workspaces) group(workspace, 'workspace')
-  for (const session of sessions) {
-    const cwd = session.summary.cwd
-    if (!cwd) continue
-    const root = innermostFolder(cwd, roots, (path) => path)
-    const target = root ? group(root, kindOf(root)) : group(cwd, 'folder')
-    target.members.push(session)
-    target.sessions++
-    if (folderKey(cwd) !== folderKey(target.path)) target.inSubfolders++
-    const at = session.summary.updatedAt
-    if (at !== null && (target.updatedAt === null || at > target.updatedAt)) target.updatedAt = at
-  }
-  for (const g of groups.values()) {
-    if (g.kind === 'workspace') g.projects = new Set(g.members.map((m) => projectFolder(m.summary.cwd!, g.path).toLowerCase())).size
-  }
-  const order = (g: PlacedGroup) => (g.kind === 'folder' ? 1 : 0)
-  return [...groups.values()].sort((a, b) => order(a) - order(b) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.name.localeCompare(b.name, 'de'))
-}
-
-/** The project folder of a session in a workspace: the subfolder of the first level it lies in, else the workspace. */
-export function projectFolder(cwd: string, workspace: string): string {
-  const [first] = subfolderSegments(cwd, workspace)
-  return first ? childFolder(workspace, first) : workspace
-}
-
-/** The title a session gets: its name in the Claude Manager, its own, its first prompt. */
-export function sessionTitle(summary: TranscriptSummary, cmName: string | undefined): { title: string; titleSource: SessionMeta['titleSource'] } {
-  if (cmName) return { title: cmName, titleSource: 'user' }
-  const title = summary.title ?? (summary.firstPrompt ? firstLine(summary.firstPrompt, 80) : null)
-  return { title: title || 'Ohne Titel', titleSource: summary.title ? 'user' : 'auto' }
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory()
-  } catch {
-    return false
-  }
-}
-
 interface Scan {
   data: CmData
-  groups: PlacedGroup[]
+  groups: PlacedGroup<FoundSession>[]
   preview: ImportPreview
 }
 
@@ -343,27 +274,12 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
 
     const settings = this.settings()
     const meta = (session: FoundSession, project: Project): Omit<SessionMeta, 'id'> => {
-      const { summary } = session
-      const cwd = summary.cwd!
+      const key = session.id.toLowerCase()
       const accountId = byFolder.get(folderKey(session.configDir))
-      const { title, titleSource } = sessionTitle(summary, scan.data.names[session.id.toLowerCase()])
-      return {
-        projectId: project.id,
-        title,
-        titleSource,
-        provider: 'claude',
-        model: settings.claude.model,
-        effort: settings.claude.effort,
-        permissionMode: settings.defaults.permissionMode,
-        createdAt: summary.createdAt ?? session.mtimeMs,
-        updatedAt: summary.updatedAt ?? session.mtimeMs,
-        ...(scan.data.pinned.has(session.id.toLowerCase()) ? { pinned: true } : {}),
-        ...(summary.lastPrompt ? { preview: firstLine(summary.lastPrompt, 100) } : {}),
-        cli: { claude: { sessionId: session.id, seenItems: 0, configDir: session.configDir, ...(accountId ? { accountId } : {}) } },
-        ...(accountId ? { accounts: { claude: accountId } } : {}),
-        ...(folderKey(cwd) !== folderKey(project.path) ? { cwd } : {}),
-        importedFrom: session.file,
-      }
+      return importedSessionMeta({ ...session, provider: 'claude', accountId }, project, settings, {
+        ...sessionTitle(session.summary, scan.data.names[key]),
+        ...(scan.data.pinned.has(key) ? { pinned: true } : {}),
+      })
     }
 
     const metas: Omit<SessionMeta, 'id'>[] = []
@@ -372,7 +288,7 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
     const fresh: string[] = []
     // The workspaces in the Claude Manager's order, so their separators come in it.
     const rank = new Map(scan.data.workspaces.map((path, i) => [folderKey(path), i]))
-    const rankOf = (g: PlacedGroup) => rank.get(folderKey(g.path)) ?? rank.size
+    const rankOf = (g: PlacedGroup<FoundSession>) => rank.get(folderKey(g.path)) ?? rank.size
     for (const group of [...groups].sort((a, b) => rankOf(a) - rankOf(b))) {
       // A workspace becomes a separator; a project Nexa has made one already goes on like one.
       let section = this.projects.sectionByPath(group.path)

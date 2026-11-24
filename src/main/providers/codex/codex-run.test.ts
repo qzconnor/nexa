@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RunOptions, RunSink } from '../provider'
 import type { CodexClient } from './codex-client'
-import { CodexRun, codexMcpConfig, commandView, skillInputs, unwrapShell } from './codex-run'
+import { commandView, unwrapShell } from './codex-items'
+import { CodexRun, codexMcpConfig, skillInputs } from './codex-run'
 
 const sink: RunSink = { item: () => {}, delta: () => {}, runtime: () => {}, cliSession: () => {}, usage: () => {}, taken: () => {}, exited: () => {} }
 

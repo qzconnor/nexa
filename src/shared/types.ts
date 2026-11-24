@@ -390,8 +390,9 @@ export interface SessionMeta {
    */
   context?: ContextUsage
   /**
-   * A session taken over from Claude Code (the Claude Manager): its transcript, read into the chat the
-   * first time the session opens.
+   * A session taken over from a CLI (its own folder, or the Claude Manager): where its history is, read
+   * into the chat the first time the session opens. Claude Code: its transcript; Codex: the thread's id,
+   * read through the app-server of the account in `cli.codex`.
    */
   importedFrom?: string
 }

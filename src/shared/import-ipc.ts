@@ -97,3 +97,48 @@ export interface ImportApi {
   run(input: ImportInput): Promise<ImportResult>
   onProgress(cb: (progress: ImportProgress) => void): Unsubscribe
 }
+
+/*
+ * Taking over the CLIs' own sessions (main/import/cli-import.ts): the conversations Claude Code and
+ * Codex saved in the folders of Nexa's accounts, from the terminal, an IDE or their apps, become chats
+ * in the projects of their folders.
+ */
+
+export const CliImportInvoke = {
+  scan: 'import:cli-scan',
+  run: 'import:cli-run',
+} as const
+
+export const CliImportEvent = {
+  progress: 'event:cli-import-progress',
+} as const
+
+/** A folder whose sessions become one project: one Nexa has (`project`) or a new one (`folder`). */
+export interface CliImportGroup extends ImportGroup {
+  kind: 'project' | 'folder'
+  /** Its sessions by CLI. */
+  counts: Record<ProviderId, number>
+}
+
+export interface CliImportPreview {
+  groups: CliImportGroup[]
+  /** Sessions Nexa has as chats already. */
+  known: number
+  /** Sessions without a folder or that never got going. */
+  skipped: number
+  /** What couldn't be read, one line each („Codex (Standard): …“). */
+  failed: string[]
+}
+
+export interface CliImportResult {
+  projects: number
+  sessions: number
+}
+
+export interface CliImportApi {
+  /** Reads the sessions in the folders of every account of the CLIs in use. */
+  scan(): Promise<CliImportPreview>
+  /** Takes over the groups of the last scan. */
+  run(input: ImportInput): Promise<CliImportResult>
+  onProgress(cb: (progress: ImportProgress) => void): Unsubscribe
+}

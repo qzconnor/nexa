@@ -37,6 +37,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/mcp-servers.ts` | Antworten der CLIs auf die Frage nach ihren MCP-Servern → `McpServerState` (ohne Nexas eigenen) |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |
+| `import/cli-import.ts` | Übernahme der Sessions der CLIs selbst: Transkripte von Claude Code und Threads von Codex (`thread/list`) aus allen Accounts, je Ordner ein Projekt; Kanäle `import:cli-*` |
+| `import/import-plan.ts` | Was beide Übernahmen teilen: Sessions nach Ordnern auf Projekte verteilen (`planGroups`), Titel, `SessionMeta` einer übernommenen Session |
 | `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen, oder nur was seit einem Zeitpunkt dazukam |
 | `providers/claude/claude-presence.ts` | Ob eine Claude-Code-Sitzung gerade in einem anderen Prozess offen ist (`<config>/sessions/<pid>.json`) und wo |
 | `providers/claude/claude-transcript.ts` | Claude-Code-Transkript (`projects/<key>/<id>.jsonl`) → `ChatItem`s wie aus dem Stream, plus Kurzfassung (Ordner, Titel, Zeiten) |
@@ -152,6 +154,27 @@ Manager`, sonst `Signalbox`) nur:
 
 Die Übernahme steht in der Einrichtung beim ersten Start und unter Einstellungen › Accounts.
 
+## Übernahme der Sessions der CLIs
+
+Ohne Claude Manager holt `CliSessionImport` (`CliSessionsImport.vue`, in der Einrichtung, unter
+Einstellungen › Accounts und in der Befehlsliste) die Sessions, die die CLIs selbst gespeichert haben:
+
+- Claude Code: die Transkripte unter `projects/` im Ordner jedes Claude-Accounts (`listTranscripts`,
+  Kurzfassung aus `claude-transcript.ts`).
+- Codex: `thread/list` über den App-Server jedes Codex-Accounts (`AgentProvider.sessions`). Ein Account,
+  dessen Server nicht antwortet, steht in der Vorschau als „Nicht gelesen“.
+
+Nur eingeschaltete, installierte CLIs zählen, Accounts mit demselben Ordner nur einmal. Sessions, die
+Nexa schon kennt (`knownCliSessions`), bleiben draußen; liegt dieselbe Session in mehreren Ordnern
+(nach einem Account-Wechsel), gilt die zuletzt geänderte Kopie. `planGroups` (`import-plan.ts`, auch für
+den Claude Manager) ordnet jede Session dem innersten Projekt über ihrem Ordner zu; ohne eines wird ihr
+Ordner ein neues Projekt unter „Projekte“. In der Vorschau wählt man die Gruppen aus.
+
+Wie beim Claude Manager liest `SessionService` den Chat erst beim ersten Öffnen: Claude aus dem
+Transkript in `importedFrom`, Codex mit `thread/read` über den App-Server des Accounts in `cli.codex`
+(`AgentProvider.history`, `codexThreadItems`). Die Suche liest so auch noch nie geöffnete Chats. Gibt
+die CLI keinen Verlauf heraus, steht eine Warnung im Chat; er geht trotzdem in derselben Session weiter.
+
 ## Abgleich mit Claude Code
 
 Ein Chat mit `cli.claude` kann außerhalb von Nexa weitergehen (`claude --resume` im Terminal, Claude
@@ -224,7 +247,7 @@ der Ordner bleibt auf der Platte.
   `>` Befehle (`PaletteCommands`: Aktionen, der offene Chat, jede Einstellung, neuer Chat je Projekt), `?`
   die Präfixe. Chats findet sie über Titel, Vorschau, Projekt und Ordner sofort, über ihre Prompts und
   Antworten kurz nach dem Tippen: `sessions.search` (`SessionService.search`, `services/session-search.ts`)
-  liest den Verlauf jedes Chats einmal (importierte, noch nie geöffnete aus dem Transkript von Claude Code)
+  liest den Verlauf jedes Chats einmal (importierte, noch nie geöffnete aus dem Verlauf ihrer CLI)
   und hält ihn, bis sich der Chat ändert. Treffer färbt `useMatchHighlight` über die CSS Custom Highlight
   API. Eine Einstellung öffnet den Dialog an ihrer Karte oder Zeile (`ui.settingsAnchor`). Die Textsuche
   (Groß-/Kleinschreibung und Akzente egal) liegt in `shared/search.ts`, für Main und Renderer.

@@ -6,6 +6,7 @@ import { PROVIDERS } from '@shared/providers'
 import AppLogo from '@/components/common/AppLogo.vue'
 import ProviderCard from '@/components/providers/ProviderCard.vue'
 import ClaudeManagerImport from '@/components/setup/ClaudeManagerImport.vue'
+import CliSessionsImport from '@/components/setup/CliSessionsImport.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { attempt } from '@/lib/errors'
@@ -61,6 +62,7 @@ function finish(): void {
       </div>
 
       <ClaudeManagerImport />
+      <CliSessionsImport v-if="ready" />
 
       <div class="flex flex-col items-center gap-2">
         <Button size="lg" :disabled="checking" @click="finish">

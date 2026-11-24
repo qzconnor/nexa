@@ -9,6 +9,17 @@ import type { ResolvedCommand } from './cli-binary'
 /** Plan limits as a CLI reports them; the session service adds the account. */
 export type RunUsage = Omit<ProviderUsage, 'accountId'>
 
+/** A conversation of a CLI as its list of them tells; times in ms. */
+export interface CliSessionInfo {
+  id: string
+  cwd: string
+  /** The name it was given. */
+  title: string | null
+  firstPrompt: string | null
+  createdAt: number | null
+  updatedAt: number | null
+}
+
 /** The account a CLI runs with: its environment, and the access token of a browser login for read-only calls. */
 export interface AccountContext extends AccountEnv {
   accessToken: string | null
@@ -128,6 +139,13 @@ export interface AgentProvider {
    * that needs a process that isn't running yet (asked for by hand).
    */
   usage(account: AccountContext, wake: boolean): Promise<RunUsage | null>
+  /**
+   * The conversations saved with the account, for CLIs whose server lists them (Codex); Claude Code's
+   * are its transcript files (import/claude-sessions.ts).
+   */
+  sessions?(account: AccountContext): Promise<CliSessionInfo[]>
+  /** The chat of a conversation saved with the account, for CLIs whose server gives it (Codex). */
+  history?(account: AccountContext, sessionId: string): Promise<ChatItem[]>
   /** The browser login, started without a terminal (accounts/account-login.ts). */
   loginCommand(): ResolvedCommand
   /** An account was removed: what runs for it ends. */
