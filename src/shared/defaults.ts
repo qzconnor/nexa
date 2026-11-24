@@ -37,6 +37,8 @@ export function defaultSettings(): AppSettings {
       autoTitles: true,
       deleteCliConversations: true,
       shell: 'powershell',
+      voiceLanguage: '',
+      voiceAccount: '',
     },
     tools: {
       renderTools: true,

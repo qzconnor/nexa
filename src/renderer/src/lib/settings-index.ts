@@ -188,6 +188,15 @@ const TREE = [
         ],
       },
       {
+        id: 'chat.voice',
+        title: 'Spracheingabe',
+        keywords: 'Mikrofon diktieren sprechen Stimme Voice Speech to Text Transkription Strg+M',
+        fields: [
+          { id: 'chat.voiceLanguage', label: 'Sprache', keywords: 'Spracheingabe Deutsch Englisch Diktat Erkennung' },
+          { id: 'chat.voiceAccount', label: 'Account', keywords: 'Spracheingabe Claude Anmeldung Login claude.ai' },
+        ],
+      },
+      {
         id: 'chat.removal',
         title: 'Löschen',
         keywords: 'entfernen Speicherplatz',

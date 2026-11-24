@@ -37,11 +37,24 @@ const appWindows = new WeakSet<BrowserWindow>()
 const APP_PERMISSIONS = new Set(['clipboard-read', 'clipboard-sanitized-write'])
 let appSessionGuarded = false
 
+/**
+ * The microphone, for the voice input in the composer: the app's page itself (no frame in it), and
+ * sound only, never the camera or the screen.
+ */
+function audioOnly(permission: string, mediaTypes: readonly string[], mainFrame: boolean): boolean {
+  return mainFrame && permission === 'media' && mediaTypes.length > 0 && mediaTypes.every((type) => type === 'audio')
+}
+
 function guardAppSession(): void {
   if (appSessionGuarded) return
   appSessionGuarded = true
-  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(APP_PERMISSIONS.has(permission)))
-  session.defaultSession.setPermissionCheckHandler((_contents, permission) => APP_PERMISSIONS.has(permission))
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    const mediaTypes = 'mediaTypes' in details ? (details.mediaTypes ?? []) : []
+    callback(APP_PERMISSIONS.has(permission) || audioOnly(permission, mediaTypes, details.isMainFrame))
+  })
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, _origin, details) => {
+    return APP_PERMISSIONS.has(permission) || audioOnly(permission, details.mediaType === 'audio' ? ['audio'] : [], details.isMainFrame)
+  })
 }
 
 /** Whether an IPC message comes from the top frame of the app's own window. */

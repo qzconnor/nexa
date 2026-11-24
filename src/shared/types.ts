@@ -68,6 +68,13 @@ export interface ChatSettings {
    * installed, else 5.1), Git Bash or cmd. Elsewhere the user's login shell.
    */
   shell: UserShell
+  /**
+   * The language spoken into the microphone (`de`, `en` …, shared/voice.ts); `''`: the system's.
+   * Claude's speech recognition takes one language per take.
+   */
+  voiceLanguage: string
+  /** The Claude account whose login the speech recognition uses; `''`: the chat's, else the first signed in. */
+  voiceAccount: string
 }
 
 export type UserShell = 'powershell' | 'gitbash' | 'cmd'

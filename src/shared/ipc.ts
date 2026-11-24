@@ -39,6 +39,7 @@ import type { BrowserApi } from './browser-ipc'
 import type { UpdatesApi } from './updates'
 import type { CliImportApi, ImportApi } from './import-ipc'
 import type { SectionLayout } from './sections'
+import type { VoiceApi } from './voice'
 
 /** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
 export const IpcInvoke = {
@@ -201,6 +202,8 @@ export interface NexaApi {
   cliImport: CliImportApi
   /** Claude's artifacts on claude.ai (shared/artifacts.ts). */
   artifacts: ArtifactsApi
+  /** The microphone in the composer, recognised by Claude (shared/voice.ts). */
+  voice: VoiceApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

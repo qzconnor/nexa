@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ArrowUpIcon, ChevronDownIcon, FolderIcon, SettingsIcon, SquareIcon, TerminalIcon, XIcon } from '@lucide/vue'
+import { ArrowUpIcon, ChevronDownIcon, FolderIcon, MicIcon, SettingsIcon, SquareIcon, TerminalIcon, XIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { ContextUsage, PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { CommandOption, ModelDefaults } from '@shared/types'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { useProjectPath } from '@/composables/useProjectPath'
+import { useVoiceInput } from '@/composables/useVoiceInput'
 import { appCommandOf, appCommandOptions, mergeCommands, type AppCommand } from '@/lib/chat-commands'
 import { applySuggestion, filterCommands, findPaths, triggerAt, type Suggestion, type SuggestTrigger } from '@/lib/composer-suggest'
 import { effortLabel, effortTone } from '@/lib/effort'
@@ -15,6 +17,7 @@ import { isWindows } from '@/lib/platform'
 import { FILE_TREE_DRAG_TYPE, mentionOf } from '@/lib/file-tree'
 import { fileImageUrl } from '@/lib/tools'
 import { cn } from '@/lib/utils'
+import { spokenText, voiceAnchor, withSpoken, type VoiceAnchor } from '@/lib/voice-text'
 import { useComposerStore } from '@/stores/composer'
 import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
@@ -23,6 +26,7 @@ import ComposerControls from './ComposerControls.vue'
 import ContextCard from './ContextCard.vue'
 import ComposerSettings from './ComposerSettings.vue'
 import ComposerSuggest from './ComposerSuggest.vue'
+import VoiceMeter from './VoiceMeter.vue'
 
 /**
  * Where prompts are written: text, pasted or dropped images (a click shows one large), commands,
@@ -31,6 +35,7 @@ import ComposerSuggest from './ComposerSuggest.vue'
  * as any other and waits in the chat until the agent takes it up; with the field empty, the button
  * stops the turn. `!` at the start turns it into the shell mode, as in Claude Code: the line runs
  * as a command in the chat's folder (on the start page in a new chat, as a first prompt would).
+ * The microphone (Ctrl+M) writes what is said at the cursor while one speaks, for every CLI.
  */
 const props = defineProps<{
   provider: ProviderId
@@ -92,6 +97,7 @@ const shellName = computed(() => (isWindows ? SHELL_NAMES[settings.settings.chat
 
 const canSend = computed(() => !props.disabled && (text.value.trim().length > 0 || (!shellMode.value && images.value.length > 0)))
 const placeholder = computed(() => {
+  if (dictating.value) return 'Sprich jetzt …'
   if (shellMode.value) return `Befehl in ${shellName.value} ausführen …`
   return props.busy ? 'Nachricht senden, während der Agent arbeitet …' : `Nachricht an ${PROVIDERS[props.provider].name} …`
 })
@@ -101,10 +107,72 @@ function leaveShellMode(): void {
   void nextTick(() => input.value?.focus())
 }
 
+// ── Voice input: the words go in at the cursor while they are heard ──
+
+/** Where the take writes: the text around the cursor when it started. */
+let voiceAt: VoiceAnchor | null = null
+/** The take's closed utterances, and the one still being heard. */
+const heard: string[] = []
+let hearing = ''
+
+const voice = useVoiceInput({
+  transcript: (words, final) => {
+    if (!voiceAt) return
+    if (final) {
+      heard.push(words)
+      hearing = ''
+    } else {
+      hearing = words
+    }
+    const next = withSpoken(voiceAt, spokenText(heard, hearing))
+    text.value = next.text
+    void nextTick(() => {
+      resize()
+      input.value?.setSelectionRange(next.cursor, next.cursor)
+    })
+  },
+})
+const { state: voiceState, levels: voiceLevels } = voice
+/** A take runs: the field only shows what is heard until it ends. */
+const dictating = computed(() => voiceState.value !== 'idle')
+
+async function startVoice(): Promise<void> {
+  if (props.disabled || dictating.value) return
+  const el = input.value
+  const end = text.value.length
+  voiceAt = voiceAnchor(text.value, el?.selectionStart ?? end, el?.selectionEnd ?? end)
+  heard.length = 0
+  hearing = ''
+  closeSuggest()
+  el?.focus()
+  // The project's name is a word the recognition wouldn't guess.
+  const project = projectRoot.value ? folderName(projectRoot.value) : null
+  await voice.start({ account: props.account, keyterms: project ? [project] : [] })
+}
+
+async function stopVoice(): Promise<void> {
+  await voice.stop()
+  voiceAt = null
+  input.value?.focus()
+}
+
+function toggleVoice(): void {
+  if (dictating.value) void stopVoice()
+  else void startVoice()
+}
+
+/** Sends; a take still running ends first, and its last words go along. */
+function submit(): void {
+  if (!dictating.value) return send()
+  void stopVoice().then(send)
+}
+
 watch(
   () => props.draftKey,
   (next, previous) => {
     if (previous) {
+      // A take belongs to the chat it was started in; what it wrote stays in that chat's draft.
+      voice.cancel()
       composer.saveDraft(previous, { text: text.value, images: images.value })
       composer.detach(previous, insertText)
     }
@@ -137,6 +205,8 @@ onBeforeUnmount(() => {
 
 /** Puts text at the cursor (a file mentioned in the tree, review comments), with a space before it. */
 function insertText(snippet: string): void {
+  // The take would write over it with the words it heard.
+  voice.cancel()
   const el = input.value
   const start = el?.selectionStart ?? text.value.length
   const end = el?.selectionEnd ?? text.value.length
@@ -360,6 +430,19 @@ function onInput(): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
+  const ctrlOnly = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey
+  if (ctrlOnly && event.key.toLowerCase() === 'm' && !shellMode.value) {
+    event.preventDefault()
+    toggleVoice()
+    return
+  }
+  if (dictating.value && event.key === 'Escape') {
+    // Ends the take (its words stay), not the agent's turn.
+    event.preventDefault()
+    event.stopPropagation()
+    void stopVoice()
+    return
+  }
   if (suggestKey(event)) return
   if (shellMode.value) {
     const el = input.value
@@ -381,7 +464,7 @@ function onKeydown(event: KeyboardEvent): void {
   const enterSends = settings.settings.chat.enterSends
   if ((enterSends && !event.shiftKey) || (!enterSends && (event.ctrlKey || event.metaKey))) {
     event.preventDefault()
-    send()
+    submit()
   }
 }
 
@@ -543,7 +626,8 @@ defineExpose({
         rows="1"
         :placeholder="placeholder"
         :disabled="disabled"
-        :spellcheck="!shellMode"
+        :readonly="dictating"
+        :spellcheck="!shellMode && !dictating"
         :class="
           cn(
             'max-h-[40vh] min-h-12 w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[0.95rem] leading-relaxed outline-none placeholder:text-muted-foreground/70',
@@ -580,26 +664,44 @@ defineExpose({
         @update:account="emit('update:account', $event)"
       />
       <!-- The gear sits by the send button: what it sets (model, effort, permissions) goes with the prompt. -->
-      <div class="ml-auto flex items-center gap-2">
-        <ContextCard v-if="context?.window" :session-id="sessionId" :provider="provider" :context="context" :busy="busy" :compacting="compacting" />
+      <div class="ml-auto flex min-w-0 items-center gap-2">
+        <!-- While one speaks, the level takes the place of what only matters to typing. -->
+        <VoiceMeter v-if="dictating" :levels="voiceLevels" :resting="voiceState === 'finishing'" />
+        <template v-else>
+          <ContextCard v-if="context?.window" :session-id="sessionId" :provider="provider" :context="context" :busy="busy" :compacting="compacting" />
+          <Button
+            variant="ghost"
+            size="sm"
+            :class="cn('min-w-0 gap-1.5 px-2 text-muted-foreground', settingsOpen && 'bg-muted text-foreground')"
+            :aria-expanded="settingsOpen"
+            aria-label="Modell, Denkaufwand und Freigaben"
+            v-tooltip="'Modell, Denkaufwand und Freigaben'"
+            @click="settingsOpen = !settingsOpen"
+          >
+            <SettingsIcon class="size-3.5" />
+            <span v-for="chip in chips" :key="chip.label" :class="cn('truncate text-[0.8rem]', chip.class)">{{ chip.label }}</span>
+            <ChevronDownIcon :class="cn('size-3 opacity-60 transition-transform', settingsOpen && 'rotate-180')" />
+          </Button>
+        </template>
         <Button
           variant="ghost"
-          size="sm"
-          :class="cn('min-w-0 gap-1.5 px-2 text-muted-foreground', settingsOpen && 'bg-muted text-foreground')"
-          :aria-expanded="settingsOpen"
-          aria-label="Modell, Denkaufwand und Freigaben"
-          v-tooltip="'Modell, Denkaufwand und Freigaben'"
-          @click="settingsOpen = !settingsOpen"
+          size="icon-sm"
+          :disabled="disabled && !dictating"
+          :aria-pressed="dictating"
+          :aria-label="dictating ? 'Spracheingabe beenden' : 'Spracheingabe'"
+          v-tooltip="dictating ? 'Spracheingabe beenden (Strg+M)' : 'Spracheingabe (Strg+M)'"
+          :class="cn('text-muted-foreground', dictating && 'bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary')"
+          @click="toggleVoice"
         >
-          <SettingsIcon class="size-3.5" />
-          <span v-for="chip in chips" :key="chip.label" :class="cn('truncate text-[0.8rem]', chip.class)">{{ chip.label }}</span>
-          <ChevronDownIcon :class="cn('size-3 opacity-60 transition-transform', settingsOpen && 'rotate-180')" />
+          <Spinner v-if="voiceState === 'finishing'" class="size-3.5" />
+          <!-- Recording: the capsule filled, its stand as lines. -->
+          <MicIcon v-else :class="cn('size-4', dictating && '[&_rect]:fill-current')" />
         </Button>
-        <Button v-if="busy && !canSend" size="icon-sm" variant="secondary" aria-label="Anhalten" @click="emit('stop')">
+        <Button v-if="busy && !canSend && !dictating" size="icon-sm" variant="secondary" aria-label="Anhalten" @click="emit('stop')">
           <SquareIcon class="size-3 fill-current" />
         </Button>
         <!-- Also while the agent works: the chat shows the prompt waiting („Wartet“) until the agent takes it up. -->
-        <Button v-else size="icon-sm" :disabled="!canSend" aria-label="Senden" class="rounded-full" @click="send">
+        <Button v-else size="icon-sm" :disabled="!canSend" aria-label="Senden" class="rounded-full" @click="submit">
           <ArrowUpIcon />
         </Button>
       </div>
