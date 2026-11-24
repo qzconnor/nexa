@@ -172,6 +172,8 @@ export class SessionService extends TypedEmitter<Events> {
   /** The artifacts each saved chat names, by session, while `stamp` says it is unchanged. */
   private readonly artifactCache = new Map<string, { stamp: string; mentions: Promise<ArtifactMentions> }>()
   private saveTimer: NodeJS.Timeout | null = null
+  /** The save of `sessions.json` under way; one at a time, so that an older one never lands last. */
+  private saving: Promise<void> = Promise.resolve()
 
   constructor(
     dataDir: string,
@@ -1611,11 +1613,15 @@ export class SessionService extends TypedEmitter<Events> {
 
   async dispose(): Promise<void> {
     this.userShells.stopAll()
+    for (const s of this.sessions.values()) clearTimeout(s.releaseTimer)
     await Promise.all([...this.sessions.values()].map((s) => s.run?.stop().catch(() => undefined)))
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
-      await this.save()
+      this.saveTimer = null
+      void this.save()
     }
+    // What is still being written, the chats' items too: none of it may get lost as the app quits.
+    await Promise.all([this.saving, this.store.flush()])
   }
 
   // ------------------------------------------------------------------------------------------
@@ -1683,8 +1689,9 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   private save(): Promise<void> {
-    return writeJsonAtomic(this.file, { version: 1, sessions: [...this.sessions.values()].map((s) => s.meta) }, { guarded: true }).catch((error) =>
-      console.error('[sessions] save failed', error),
-    )
+    this.saving = this.saving
+      .then(() => writeJsonAtomic(this.file, { version: 1, sessions: [...this.sessions.values()].map((s) => s.meta) }, { guarded: true }))
+      .catch((error) => console.error('[sessions] save failed', error))
+    return this.saving
   }
 }
