@@ -311,6 +311,35 @@ export interface McpServerInfo {
   enabled: boolean
 }
 
+/** The page where a signed-out MCP server signs in. */
+export interface McpAuthStart {
+  url: string
+  /**
+   * The CLI takes the browser's answer itself (its own OAuth with a local callback); otherwise the
+   * sign-in happens on the CLI's website (a claude.ai connector) and the server connects afterwards.
+   */
+  waits: boolean
+}
+
+/** Where a CLI's connectors are set up: a page of its website, or its config file. */
+export type ConnectorSettings = { url: string } | { path: string }
+
+/** A plugin installed in a chat's CLI, for the switches in the composer's „+“ menu. */
+export interface PluginInfo {
+  /** As the CLI names it: `<plugin>@<marketplace>`. */
+  id: string
+  name: string
+  description?: string
+  version?: string
+  /** The marketplace it comes from, by its name. */
+  marketplace?: string
+  /** Claude Code: where it is installed (`user`, `project`, `local`). */
+  scope?: string
+  enabled: boolean
+  /** Why it can't be switched (the organization decides). */
+  locked?: string
+}
+
 /** A separator in the sidebar: a heading with projects under it, like the workspaces of the Claude Manager. */
 export interface ProjectSection {
   id: string

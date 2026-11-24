@@ -125,15 +125,17 @@
       aus allen Accounts, nach Ordnern auf Projekte verteilt und auswählbar (Einrichtung, Einstellungen →
       Accounts, Befehlsliste). Der Verlauf kommt beim ersten Öffnen aus der CLI, der Chat geht in
       derselben Session weiter
+- [x] „Plugins ›“ im „+“-Menü: die installierten Plugins der CLI für den Ordner mit Suche und Schalter, in
+      den Einstellungen der CLI (Claude Code `claude plugin enable|disable`, laufende Chats laden mit
+      `reload_plugins` neu; Codex `[plugins."<id>"] enabled`, ab dem nächsten Prompt). Unter „Konnektoren“
+      fehlgeschlagene Server neu verbinden (`mcp_reconnect`, Codex `config/mcpServer/reload`), abgemeldete
+      anmelden (`mcp_authenticate`, Codex `mcpServer/oauth/login`) und „Konnektoren verwalten“ (claude.ai
+      bzw. `config.toml`)
 - [x] Gedanken ohne Einklappen (ganz ausblenden weiter über „Gedanken anzeigen“); was gerade arbeitet,
       schimmert in der Akzentfarbe des Themes statt grau, die Spinner daneben ebenso
 
 ## Als Nächstes
 
-- [ ] **„Plugins ›“ im „+“-Menü**: installierte Plugins der CLI zeigen und schalten (Claude Code
-      `reload_plugins`, `enabledPlugins` in den Einstellungen; Codex `plugin/list`), „Konnektoren
-      verwalten“ zu den Einstellungen der CLIs, `mcp_reconnect` und `mcp_authenticate` für Server, die
-      fehlschlagen oder eine Anmeldung brauchen.
 - [ ] **Chats mit Codex abgleichen** wie mit Claude Code: Was in der Codex-TUI dazukam, aus dem Rollout
       der verknüpften Sitzung nachtragen (`thread/read`, `thread/turns/list`), und warnen, wenn sie
       gerade woanders offen ist.
@@ -149,7 +151,7 @@
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
 - [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
-      führt „Konnektoren verwalten“.
+      führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).
 
 ## Aus dem Claude Manager
 

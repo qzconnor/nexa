@@ -125,6 +125,24 @@ export class CliBinary {
     })
   }
 
+  /**
+   * Runs the CLI in a folder and returns what it wrote, also when it failed (commands with `--json`
+   * tell why on standard output and exit with an error).
+   */
+  output(args: string[], options: { cwd: string; env: Record<string, string>; timeout?: number }): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+    let cmd: ResolvedCommand
+    try {
+      cmd = this.command(args)
+    } catch (error) {
+      return Promise.resolve({ ok: false, stdout: '', stderr: error instanceof Error ? error.message : String(error) })
+    }
+    return new Promise((resolve) => {
+      execFile(cmd.file, cmd.args, { cwd: options.cwd, timeout: options.timeout ?? 30_000, windowsHide: true, env: options.env, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) =>
+        resolve({ ok: !error, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }),
+      )
+    })
+  }
+
   async version(): Promise<string | null> {
     const out = await this.run(['--version'])
     if (out === null) return null

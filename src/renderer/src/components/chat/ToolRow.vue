@@ -3,6 +3,7 @@ import { CheckIcon, ChevronRightIcon, CircleSlashIcon, XIcon } from '@lucide/vue
 import { computed, ref, watch } from 'vue'
 import type { ToolItem } from '@shared/chat'
 import { Spinner } from '@/components/ui/spinner'
+import { changeLines, changeStats } from '@/lib/diff'
 import { formatDuration } from '@/lib/format'
 import AppLogo from '@/components/common/AppLogo.vue'
 import { nexaToolView, TOOL_META } from '@/lib/tools'
@@ -19,7 +20,7 @@ import DiffView from './DiffView.vue'
 const props = defineProps<{ tool: ToolItem }>()
 const settings = useSettingsStore()
 const ui = useUiStore()
-const { shorten } = useProjectPath()
+const { shorten, relative } = useProjectPath()
 /** Nexa's own tools are the app, not a server like any other: its mark, and what they do in words. */
 const nexa = computed(() => nexaToolView(props.tool))
 const title = computed(() => nexa.value?.title ?? props.tool.title)
@@ -55,6 +56,26 @@ const duration = computed(() => (props.tool.endedAt ? props.tool.endedAt - props
 const open = ref((hasChanges.value && !settings.settings.chat.collapseDiffs) || failed.value)
 watch(failed, (now) => now && (open.value = true))
 watch(hasChanges, (now) => now && !settings.settings.chat.collapseDiffs && (open.value = true))
+/**
+ * One file changed: the row names it (its name, then its folder) and counts its lines, so its diff below
+ * goes without a head that would say all that again.
+ */
+const single = computed(() => (props.tool.changes?.length === 1 && !nexa.value ? props.tool.changes[0] : null))
+const singleFile = computed(() => {
+  const change = single.value
+  if (!change) return null
+  const shown = relative(change.path)
+  const cut = Math.max(shown.lastIndexOf('/'), shown.lastIndexOf('\\'))
+  const stats = changeStats(changeLines(change))
+  return {
+    name: shown.slice(cut + 1),
+    dir: cut > 0 ? shown.slice(0, cut).replace(/\\/g, '/') : '',
+    added: stats.added,
+    removed: stats.removed,
+    label: change.type === 'add' ? 'neu' : change.type === 'delete' ? 'gelöscht' : '',
+  }
+})
+
 /** "File created successfully at …" under a diff only repeats it; what went wrong stays. */
 const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : output.value))
 </script>
@@ -71,8 +92,13 @@ const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : out
       <AppLogo v-if="nexa" class="size-3.5 shrink-0" />
       <component :is="meta.icon" v-else :class="cn('size-3.5 shrink-0', meta.color)" />
       <span :class="cn('shrink-0 font-medium', running && 'text-shimmer')">{{ title }}</span>
+      <template v-if="singleFile">
+        <span class="max-w-[60%] shrink-0 truncate font-mono text-[0.78rem]" :title="single!.path">{{ singleFile.name }}</span>
+        <span v-if="singleFile.label" class="shrink-0 rounded bg-muted px-1.5 text-[0.7rem] text-muted-foreground">{{ singleFile.label }}</span>
+        <span v-if="singleFile.dir" class="min-w-0 truncate font-mono text-[0.72rem] text-muted-foreground" :title="single!.path">{{ singleFile.dir }}</span>
+      </template>
       <span
-        v-if="detail"
+        v-else-if="detail"
         :class="cn('min-w-0 truncate text-muted-foreground', nexa?.plumbing ? 'text-[0.8rem]' : 'font-mono text-[0.78rem]')"
         :title="nexa?.plumbing ? detail : tool.detail"
         >{{ detail }}</span
@@ -106,6 +132,11 @@ const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : out
         </span>
         <span v-if="duration !== null && duration > 1500" class="tabular-nums opacity-0 transition-opacity group-hover/tool:opacity-100">{{ formatDuration(duration) }}</span>
         <span v-if="tool.exitCode !== undefined && tool.exitCode !== null && tool.exitCode !== 0" class="font-mono text-destructive">exit {{ tool.exitCode }}</span>
+        <!-- Next to the state, so the counts line up whether a duration hides before them or not. -->
+        <span v-if="singleFile" class="font-mono tabular-nums">
+          <span class="text-(--syn-green)">+{{ singleFile.added }}</span>
+          <span class="ml-1 text-(--syn-red)">−{{ singleFile.removed }}</span>
+        </span>
         <Spinner v-if="running" class="size-3.5 text-primary" />
         <XIcon v-else-if="failed" class="size-3.5 text-destructive" />
         <CircleSlashIcon v-else-if="tool.status === 'denied'" class="size-3.5" />
@@ -115,7 +146,7 @@ const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : out
     </button>
     <div v-if="open && expandable" class="mt-1 mb-2 ml-7 flex flex-col gap-2">
       <template v-if="hasChanges">
-        <DiffView v-for="change in tool.changes" :key="change.path" :change="change" />
+        <DiffView v-for="change in tool.changes" :key="change.path" :change="change" :bare="!!single" />
       </template>
       <pre
         v-else-if="inputText && tool.tool !== 'read'"

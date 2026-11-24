@@ -1,6 +1,19 @@
 <script setup lang="ts">
-import { BlocksIcon, ChevronRightIcon, FolderPlusIcon, PaperclipIcon, PlusIcon, SearchIcon, SquareSlashIcon } from '@lucide/vue'
-import { computed, nextTick, ref, shallowRef, watch } from 'vue'
+import {
+  BlocksIcon,
+  ChevronRightIcon,
+  ExternalLinkIcon,
+  FolderPlusIcon,
+  LoaderCircleIcon,
+  LogInIcon,
+  PaperclipIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  SquareSlashIcon,
+} from '@lucide/vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { toast } from 'vue-sonner'
 import type { ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import type { McpServerInfo } from '@shared/types'
@@ -20,10 +33,12 @@ import { Switch } from '@/components/ui/switch'
 import { toastError } from '@/lib/errors'
 import { containsTerms, searchText } from '@/lib/search'
 import { cn } from '@/lib/utils'
+import ComposerPluginsMenu from './ComposerPluginsMenu.vue'
 
 /**
  * The composer's „+“, as in Claude Desktop: files and photos, another folder for the agent, the
- * commands, and in a chat its CLI's MCP servers („Konnektoren“) to switch on and off for the project.
+ * commands, and in a chat its CLI's MCP servers („Konnektoren“) to switch on and off for the project,
+ * connect anew or sign in to, and its plugins.
  */
 const props = defineProps<{ sessionId?: string; provider: ProviderId; disabled?: boolean }>()
 const emit = defineEmits<{ files: []; folder: []; commands: [] }>()
@@ -59,6 +74,8 @@ watch(
     servers.value = null
     loadedAt.value = 0
     query.value = ''
+    signedIn.value = new Set()
+    clearInterval(signInTimer)
   },
 )
 
@@ -153,6 +170,109 @@ async function toggle(server: McpServerInfo): Promise<void> {
   }
 }
 
+/** Servers being connected anew or signed in to. */
+const working = ref(new Set<string>())
+/** Signed in on the CLI's website (a claude.ai connector): they connect once asked to. */
+const signedIn = ref(new Set<string>())
+
+function setWorking(name: string, on: boolean): void {
+  const next = new Set(working.value)
+  if (on) next.add(name)
+  else next.delete(name)
+  working.value = next
+}
+
+type ServerAction = { kind: 'reconnect' | 'authenticate'; text: string }
+
+/** What a server's row offers besides its switch: connect a failed one anew, sign in to a signed-out one. */
+function actionOf(server: McpServerInfo): ServerAction | null {
+  if (!server.enabled) return null
+  if (server.status === 'failed' || (server.status === 'needs-auth' && signedIn.value.has(server.name))) return { kind: 'reconnect', text: 'Neu verbinden' }
+  if (server.status === 'needs-auth') return { kind: 'authenticate', text: 'Anmelden' }
+  return null
+}
+
+async function reconnect(server: McpServerInfo): Promise<void> {
+  const id = props.sessionId
+  if (!id) return
+  setWorking(server.name, true)
+  try {
+    await window.api.sessions.reconnectMcp(id, server.name)
+    const next = new Set(signedIn.value)
+    next.delete(server.name)
+    signedIn.value = next
+    await loadServers(true)
+  } catch (error) {
+    toastError(error, `„${label(server)}“ ließ sich nicht verbinden`)
+  } finally {
+    setWorking(server.name, false)
+  }
+}
+
+async function authenticate(server: McpServerInfo): Promise<void> {
+  const id = props.sessionId
+  if (!id) return
+  setWorking(server.name, true)
+  try {
+    const start = await window.api.sessions.authenticateMcp(id, server.name)
+    if (!start) {
+      await loadServers(true)
+      return
+    }
+    await window.api.app.openExternal(start.url)
+    if (start.waits) {
+      toast.info(`Im Browser bei „${label(server)}“ anmelden`, { description: 'Der Konnektor verbindet sich danach von selbst.' })
+      watchSignIn(server.name)
+    } else {
+      signedIn.value = new Set(signedIn.value).add(server.name)
+      toast.info(`Im Browser bei „${label(server)}“ anmelden`, { description: 'Danach hier „Neu verbinden“ wählen.' })
+    }
+  } catch (error) {
+    toastError(error, 'Anmeldung fehlgeschlagen')
+  } finally {
+    setWorking(server.name, false)
+  }
+}
+
+/** The CLI takes the browser's answer itself: the list looks again until the server is connected. */
+let signInTimer: ReturnType<typeof setInterval> | undefined
+function watchSignIn(name: string): void {
+  clearInterval(signInTimer)
+  const until = Date.now() + 5 * 60_000
+  signInTimer = setInterval(() => {
+    const server = servers.value?.find((s) => s.name === name)
+    if (Date.now() > until || server?.status === 'connected') {
+      clearInterval(signInTimer)
+      return
+    }
+    // Only while someone looks; opened again, the menu asks anyway.
+    if (open.value) void loadServers(true)
+  }, 5000)
+}
+onBeforeUnmount(() => clearInterval(signInTimer))
+
+function runAction(server: McpServerInfo): void {
+  const action = actionOf(server)
+  if (!action || working.value.has(server.name)) return
+  if (action.kind === 'reconnect') void reconnect(server)
+  else void authenticate(server)
+}
+
+/** Where the connectors are set up: claude.ai for Claude's, `config.toml` for Codex. */
+const settingsHint = computed(() => (props.provider === 'codex' ? 'config.toml' : 'claude.ai'))
+
+async function manageConnectors(): Promise<void> {
+  const id = props.sessionId
+  if (!id) return
+  try {
+    const target = await window.api.sessions.connectorSettings(id)
+    if ('url' in target) await window.api.app.openExternal(target.url)
+    else await window.api.app.openPath(target.path)
+  } catch (error) {
+    toastError(error, 'Konnektoren lassen sich nicht öffnen')
+  }
+}
+
 /** The connectors' submenu, opened by `/mcp` as well. */
 const connectorsOpen = ref(false)
 watch(open, (value) => {
@@ -179,7 +299,7 @@ function onSearchKey(event: KeyboardEvent): void {
 <template>
   <DropdownMenu v-model:open="open">
     <DropdownMenuTrigger as-child>
-      <Button variant="ghost" size="icon-sm" class="text-muted-foreground" aria-label="Hinzufügen" :disabled="disabled" v-tooltip="'Dateien, Ordner, Befehle und Konnektoren'">
+      <Button variant="ghost" size="icon-sm" class="text-muted-foreground" aria-label="Hinzufügen" :disabled="disabled" v-tooltip="'Dateien, Ordner, Befehle, Konnektoren und Plugins'">
         <PlusIcon />
       </Button>
     </DropdownMenuTrigger>
@@ -235,6 +355,21 @@ function onSearchKey(event: KeyboardEvent): void {
                     <span :class="cn('truncate', !row.server.enabled && 'text-muted-foreground')">{{ label(row.server) }}</span>
                     <span class="truncate text-[0.7rem] text-muted-foreground">{{ statusText(row.server) }}</span>
                   </span>
+                  <LoaderCircleIcon v-if="working.has(row.server.name)" class="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                  <button
+                    v-else-if="actionOf(row.server)"
+                    type="button"
+                    tabindex="-1"
+                    class="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                    :aria-label="`${label(row.server)}: ${actionOf(row.server)!.text}`"
+                    v-tooltip="actionOf(row.server)!.text"
+                    @pointerdown.stop
+                    @pointerup.stop
+                    @click.stop.prevent="runAction(row.server)"
+                  >
+                    <RefreshCwIcon v-if="actionOf(row.server)!.kind === 'reconnect'" class="size-3.5" />
+                    <LogInIcon v-else class="size-3.5" />
+                  </button>
                   <Switch
                     :model-value="row.server.enabled"
                     class="pointer-events-none"
@@ -245,12 +380,17 @@ function onSearchKey(event: KeyboardEvent): void {
               </template>
             </div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem @select="manageConnectors">
+              <ExternalLinkIcon /> Konnektoren verwalten
+              <DropdownMenuShortcut>{{ settingsHint }}</DropdownMenuShortcut>
+            </DropdownMenuItem>
             <p class="px-2 py-1.5 text-[0.7rem] leading-snug text-muted-foreground">
-              Gilt für alle Chats des Projekts.
-              <template v-if="provider === 'codex'">Codex übernimmt es mit dem nächsten Prompt.</template>
+              Schalter gelten für alle Chats des Projekts.
+              <template v-if="provider === 'codex'">Codex übernimmt sie mit dem nächsten Prompt.</template>
             </p>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        <ComposerPluginsMenu :session-id="sessionId" :provider="provider" :menu-open="open" />
       </template>
     </DropdownMenuContent>
   </DropdownMenu>
