@@ -102,6 +102,11 @@ export function pinnedChats(sessions: readonly SessionMeta[], projectIds: Readon
   return sessions.filter((m) => m.pinned && !m.archived && projectIds.has(m.projectId)).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/** The chats of a project or folder with those in the folders below. */
+export function chatsIn(node: ProjectTree): SessionMeta[] {
+  return [...node.sessions, ...node.folders.flatMap(chatsIn)]
+}
+
 /** The ids of the folders down to the one a chat works in, to open them when it is shown. */
 export function foldersOf(tree: ProjectTree, sessionId: string): string[] {
   const search = (folders: readonly FolderNode[]): string[] | null => {

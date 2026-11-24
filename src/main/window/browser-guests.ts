@@ -169,10 +169,12 @@ function attachGuest(win: BrowserWindow, guest: WebContents): void {
     const shortcut = matchBrowserShortcut(key)
     if (!shortcut) return
     event.preventDefault()
-    // In a page the zoom keys zoom the page, not the app.
+    // In a page the zoom keys zoom the page, not the app. The page starts at the app's scale
+    // (Electron passes the window's zoom on to its guests), so that is where Ctrl+0 goes back to.
     if (shortcut === 'zoom-in' || shortcut === 'zoom-out' || shortcut === 'zoom-reset') {
       const level = guest.getZoomLevel()
-      guest.setZoomLevel(shortcut === 'zoom-reset' ? 0 : level + (shortcut === 'zoom-in' ? ZOOM_STEP : -ZOOM_STEP))
+      const appLevel = win.isDestroyed() ? 0 : win.webContents.getZoomLevel()
+      guest.setZoomLevel(shortcut === 'zoom-reset' ? appLevel : level + (shortcut === 'zoom-in' ? ZOOM_STEP : -ZOOM_STEP))
       return
     }
     if (!win.isDestroyed()) win.webContents.send(BrowserEvent.shortcut, shortcut, guest.id)

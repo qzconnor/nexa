@@ -287,6 +287,13 @@ der Ordner bleibt auf der Platte.
   Dialoge: Einstellungen (`components/settings/SettingsDialog.vue`, `ui.settingsOpen`), Theme-Editor
   (`ui.themeEditorRequest`), Account-Formular (`accounts.formRequest`), Browser-Login
   (`accounts.loginId`) und Rückfragen (`ui.confirm()`).
+- **Skalierung** (`appearance.zoom`, Stufen in `shared/zoom.ts`): Main setzt sie als Zoom des Fensters
+  (`webPreferences.zoomFactor` beim Start, danach `setWindowZoom` in `window/main-window.ts`). Mit ihr
+  wachsen die Höhe des Window Controls Overlay (sonst säßen die Fensterknöpfe neben einer höheren
+  Titelleiste) und die Mindestgröße des Fensters. Die Breite der Knöpfe liest das CSS aus
+  `env(titlebar-area-*)`, das schon in Seitenpixeln rechnet. Seiten im Browser übernehmen den Zoom des
+  Fensters (Electron), ihr Strg+0 geht dorthin zurück. Strg+Plus/Minus/0 sind `matchAppShortcut`
+  (`useShortcuts`, mit Hinweis), in einer Seite `matchBrowserShortcut`; beide über `zoomKey`.
 - **Schnellsuche** (`components/palette/*`, aus dem Claude Manager): das Suchfeld in der Mitte der
   Titelleiste (`TitleBarSearch`) öffnet `CommandPalette` (`ui.openPalette()`, Strg+Umschalt+A; mit `>`
   Strg+Umschalt+P). Was getippt ist, bestimmt den Modus: ohne Präfix Chats und Projekte (`ChatSearchList`),

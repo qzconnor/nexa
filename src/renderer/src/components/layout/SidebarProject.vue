@@ -29,13 +29,14 @@ import { report } from '@/composables/useChatRemoval'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
-import type { ProjectEntry } from '@/lib/session-tree'
+import { chatsIn, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import SidebarFolder from './SidebarFolder.vue'
+import SidebarGroupState from './SidebarGroupState.vue'
 import SidebarSession from './SidebarSession.vue'
 
 /**
@@ -136,6 +137,7 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
             <ChevronRightIcon :class="cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')" />
             <component :is="open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0 text-muted-foreground" />
             <span class="truncate font-medium">{{ project.name }}</span>
+            <SidebarGroupState v-if="!open" :chats="chatsIn(entry.tree)" class="ml-auto" />
           </button>
           <!-- The number of chats, and on hover in its place the button for a new one. -->
           <span class="relative mr-1 flex size-6 shrink-0 items-center justify-center">

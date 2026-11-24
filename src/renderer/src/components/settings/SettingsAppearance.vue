@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { AppearanceSettings, WindowMaterial } from '@shared/types'
+import { DEFAULT_ZOOM, normalizeZoom, ZOOM_STEPS } from '@shared/zoom'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import ThemeToolbar from '@/components/themes/ThemeToolbar.vue'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { attempt } from '@/lib/errors'
@@ -33,6 +35,11 @@ const surfaceOpacity = bind('surfaceOpacity')
 const uiFontSize = bind('uiFontSize')
 const radius = bind('radius')
 const chatWidth = bind('chatWidth')
+// The select works with strings; the setting is a number.
+const zoom = computed({
+  get: () => String(normalizeZoom(a.value.zoom)),
+  set: (value: string) => set({ zoom: Number(value) }),
+})
 
 const MATERIALS: { value: WindowMaterial; label: string }[] = [
   { value: 'mica', label: 'Mica' },
@@ -58,7 +65,11 @@ const CHAT_WIDTHS = [
       <ThemePicker v-model="theme" />
     </SettingsSection>
 
-    <SettingsSection anchor="appearance.window" title="Fenster" :description="supportsMaterial ? 'Windows-11-Material hinter der App.' : 'Schrift und Ecken der Oberfläche.'">
+    <SettingsSection
+      anchor="appearance.window"
+      title="Fenster"
+      :description="supportsMaterial ? 'Windows-11-Material hinter der App, Größe, Schrift und Ecken.' : 'Größe, Schrift und Ecken der Oberfläche.'"
+    >
       <template v-if="supportsMaterial">
         <SettingField anchor="appearance.material" label="Material" description="Acryl ist am stärksten transparent, Mica übernimmt dezent die Farbe des Desktops.">
           <SegmentedControl v-model="material" :options="MATERIALS" aria-label="Material" />
@@ -70,6 +81,18 @@ const CHAT_WIDTHS = [
           <SliderControl id="surface-opacity" v-model="surfaceOpacity" :min="20" :max="100" :step="2" :format="(v) => `${v} %`" />
         </SettingField>
       </template>
+      <SettingField
+        anchor="appearance.zoom"
+        label="Skalierung"
+        description="Vergrößert oder verkleinert die ganze Oberfläche. Strg + Plus und Strg + Minus ändern sie überall, Strg + 0 setzt sie zurück."
+      >
+        <Select v-model="zoom">
+          <SelectTrigger class="min-w-32 bg-background/60" aria-label="Skalierung"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="step in ZOOM_STEPS" :key="step" :value="String(step)">{{ step === DEFAULT_ZOOM ? `${step} % (Standard)` : `${step} %` }}</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingField>
       <SettingField anchor="appearance.uiFontSize" for="ui-font-size" label="Schriftgröße">
         <SliderControl id="ui-font-size" v-model="uiFontSize" :min="12" :max="18" :format="(v) => `${v} px`" />
       </SettingField>

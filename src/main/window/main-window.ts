@@ -1,10 +1,16 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, screen, session, shell, type WebContents, type WebFrameMain } from 'electron'
 import type { AppSettings, WindowState } from '@shared/types'
+import { normalizeZoom } from '@shared/zoom'
 import { readJsonSync, writeJsonAtomic } from '../lib/json-file'
 import { guardBrowserGuests } from './browser-guests'
 
 export const TITLE_BAR_HEIGHT = 40
+/** The smallest window at 100 %; scaled up, the layout needs as many CSS pixels and so more of the screen. */
+const MIN_WIDTH = 760
+const MIN_HEIGHT = 520
+/** Windows and Linux draw the caption buttons over the page (Window Controls Overlay); macOS has its own. */
+const captionButtons = process.platform === 'win32' || process.platform === 'linux'
 
 interface SavedBounds {
   x: number
@@ -60,26 +66,47 @@ export function revealWindow(win: BrowserWindow): void {
   win.focus()
 }
 
+/**
+ * The window's scale (Einstellungen › Darstellung). The page's title bar grows with it, so the native
+ * caption buttons beside it have to as well; and the layout keeps the room it needs at 100 %.
+ */
+export function setWindowZoom(win: BrowserWindow, percent: number): void {
+  const zoom = normalizeZoom(percent) / 100
+  win.webContents.setZoomFactor(zoom)
+  if (captionButtons) win.setTitleBarOverlay({ height: titleBarHeight(zoom) })
+  const { minWidth, minHeight } = minimumSize(zoom)
+  // Not larger than the screen: the window could no longer be placed on it.
+  const area = screen.getDisplayMatching(win.getBounds()).workAreaSize
+  win.setMinimumSize(Math.min(minWidth, area.width), Math.min(minHeight, area.height))
+}
+
+const titleBarHeight = (zoom: number) => Math.round(TITLE_BAR_HEIGHT * zoom)
+
+/** Scaled down, the minimum of 100 % stays: it leaves the layout more room than it needs then. */
+function minimumSize(zoom: number): { minWidth: number; minHeight: number } {
+  const factor = Math.max(1, zoom)
+  return { minWidth: Math.round(MIN_WIDTH * factor), minHeight: Math.round(MIN_HEIGHT * factor) }
+}
+
 /** `hidden`: the window only appears with `revealWindow` (started at login into the notification area). */
 export function createMainWindow(settings: AppSettings, userDataDir: string, { hidden = false } = {}): BrowserWindow {
   const boundsFile = join(userDataDir, 'window-state.json')
   const saved = restoreBounds(boundsFile)
   const isWin = process.platform === 'win32'
-  const captionButtons = isWin || process.platform === 'linux'
+  const zoom = normalizeZoom(settings.appearance.zoom) / 100
 
   const win = new BrowserWindow({
     x: saved.x,
     y: saved.y,
     width: saved.width ?? 1280,
     height: saved.height ?? 860,
-    minWidth: 760,
-    minHeight: 520,
+    ...minimumSize(zoom),
     show: false,
     title: 'Nexa',
     backgroundColor: isWin && settings.appearance.material !== 'none' ? '#00000000' : '#141416',
     ...(isWin ? { backgroundMaterial: settings.appearance.material } : {}),
     titleBarStyle: 'hidden',
-    titleBarOverlay: captionButtons ? { color: '#00000000', symbolColor: '#e8e6e3', height: TITLE_BAR_HEIGHT } : false,
+    titleBarOverlay: captionButtons ? { color: '#00000000', symbolColor: '#e8e6e3', height: titleBarHeight(zoom) } : false,
     autoHideMenuBar: true,
     // Linux takes the window's icon from here, not from the executable (electron-builder.yml puts it there).
     ...(process.platform === 'linux' && app.isPackaged ? { icon: join(process.resourcesPath, 'icon.png') } : {}),
@@ -89,6 +116,8 @@ export function createMainWindow(settings: AppSettings, userDataDir: string, { h
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: true,
+      // The first paint already at the chosen scale; later changes come from setWindowZoom.
+      zoomFactor: zoom,
       // The browser beside the chat; every view is hardened before it starts (browser-guests.ts).
       webviewTag: true,
     },

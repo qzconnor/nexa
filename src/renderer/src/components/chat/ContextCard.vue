@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils'
  * The context ring of the composer; hovered, what fills the context by kind, as the CLI counts it
  * (Claude Code's `/context`): asked for each time the card opens, the last count shows meanwhile.
  */
-const props = defineProps<{ sessionId?: string; provider: ProviderId; context: ContextUsage; busy?: boolean }>()
+/** `compacting`: the CLI summarizes the conversation right now; what the ring showed is about to shrink. */
+const props = defineProps<{ sessionId?: string; provider: ProviderId; context: ContextUsage; busy?: boolean; compacting?: boolean }>()
 
 const detail = ref<ContextDetail | null>(null)
 const loading = ref(false)
@@ -92,8 +93,12 @@ const fileName = (path: string) => path.split(/[\\/]/).slice(-2).join('/')
 <template>
   <HoverCard :open-delay="250" :close-delay="120" @update:open="onOpen">
     <HoverCardTrigger as-child>
-      <button type="button" class="flex items-center rounded-full p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Kontext">
-        <UsageRing :percent="percent" :size="18" />
+      <button
+        type="button"
+        class="flex items-center rounded-full p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        :aria-label="compacting ? 'Kontext wird zusammengefasst' : 'Kontext'"
+      >
+        <UsageRing :percent="percent" :size="18" :spinning="compacting" />
       </button>
     </HoverCardTrigger>
     <HoverCardContent side="top" align="end" class="w-80 p-3">
@@ -102,6 +107,7 @@ const fileName = (path: string) => path.split(/[\\/]/).slice(-2).join('/')
         <span class="text-[0.75rem] text-muted-foreground tabular-nums">{{ formatCount(used) }} / {{ formatCount(max) }}</span>
       </div>
       <div class="mt-0.5 text-[0.8rem]">{{ Math.round(percent) }} % genutzt</div>
+      <p v-if="compacting" class="mt-1 text-[0.75rem] text-primary">Wird gerade zusammengefasst …</p>
 
       <!-- The parts side by side as they fill the window; the buffer for compacting at its end. -->
       <div class="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">

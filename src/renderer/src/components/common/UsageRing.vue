@@ -4,8 +4,11 @@ import { computed } from 'vue'
 import { clampPercent, usageLevel, usageTextClass } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 
-/** Small circular gauge for a usage percentage, green, orange or red like the usage meters. */
-const props = withDefaults(defineProps<{ percent: number; size?: number; class?: HTMLAttributes['class'] }>(), {
+/**
+ * Small circular gauge for a usage percentage, green, orange or red like the usage meters. `spinning`:
+ * what it measures is being redone (the context compacted), so a turning arc stands in for the value.
+ */
+const props = withDefaults(defineProps<{ percent: number; size?: number; spinning?: boolean; class?: HTMLAttributes['class'] }>(), {
   size: 16,
 })
 
@@ -22,12 +25,24 @@ const level = computed(() => usageLevel(value.value))
     :width="size"
     :height="size"
     :viewBox="`0 0 ${size} ${size}`"
-    :data-level="level"
-    :class="cn('shrink-0 -rotate-90', usageTextClass[level], props.class)"
+    :data-level="spinning ? undefined : level"
+    :class="cn('shrink-0', spinning ? 'animate-spin text-primary' : ['-rotate-90', usageTextClass[level]], props.class)"
   >
     <circle :cx="size / 2" :cy="size / 2" :r="radius" fill="none" :stroke-width="STROKE" class="stroke-foreground/15" />
     <circle
-      v-if="value > 0"
+      v-if="spinning"
+      :cx="size / 2"
+      :cy="size / 2"
+      :r="radius"
+      fill="none"
+      stroke="currentColor"
+      stroke-linecap="round"
+      :stroke-width="STROKE"
+      :stroke-dasharray="circumference"
+      :stroke-dashoffset="circumference * 0.7"
+    />
+    <circle
+      v-else-if="value > 0"
       :cx="size / 2"
       :cy="size / 2"
       :r="radius"

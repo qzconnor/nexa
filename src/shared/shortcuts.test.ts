@@ -34,10 +34,20 @@ describe('matchAppShortcut', () => {
     expect(matchAppShortcut(key('P', { shiftKey: true }))).toEqual({ action: 'palette', prefix: '>' })
   })
 
+  it('scales the window with plus, minus and 0', () => {
+    expect(matchAppShortcut(key('+', {}, 'BracketRight'))).toEqual({ action: 'zoom', step: 1 })
+    // US layouts: the plus is Shift+=, and Ctrl+= zooms in browsers as well.
+    expect(matchAppShortcut(key('+', { shiftKey: true }, 'Equal'))).toEqual({ action: 'zoom', step: 1 })
+    expect(matchAppShortcut(key('=', {}, 'Equal'))).toEqual({ action: 'zoom', step: 1 })
+    expect(matchAppShortcut(key('+', {}, 'NumpadAdd'))).toEqual({ action: 'zoom', step: 1 })
+    expect(matchAppShortcut(key('-', {}, 'Slash'))).toEqual({ action: 'zoom', step: -1 })
+    expect(matchAppShortcut(key('-', {}, 'NumpadSubtract'))).toEqual({ action: 'zoom', step: -1 })
+    expect(matchAppShortcut(key('0', {}, 'Digit0'))).toEqual({ action: 'zoom', step: 0 })
+  })
+
   it('leaves other keys to the fields', () => {
     expect(matchAppShortcut(key('a'))).toBeNull()
     expect(matchAppShortcut(key('t'))).toBeNull()
-    expect(matchAppShortcut(key('0', {}, 'Digit0'))).toBeNull()
     expect(matchAppShortcut(key('Tab', { ctrlKey: false }))).toBeNull()
     expect(matchAppShortcut(key('1', { altKey: true }, 'Digit1'))).toBeNull()
     expect(matchAppShortcut({ ...key('Tab'), type: 'keyup' })).toBeNull()

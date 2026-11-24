@@ -34,7 +34,7 @@ import { ThemeService } from './services/theme-service'
 import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
 import { handleFileProtocol, registerFileScheme } from './window/file-protocol'
-import { createMainWindow, openAppWindows, revealWindow } from './window/main-window'
+import { createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
 import { AppTray } from './window/tray'
 import { WindowMaterialController } from './window/material'
 
@@ -195,8 +195,14 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     const win = createMainWindow(settings.get(), userDataDir, { hidden })
     const material = new WindowMaterialController(win)
     let applied = ''
+    // The window starts at the setting's scale (createMainWindow); only changes are applied here.
+    let zoom = settings.get().appearance.zoom
     const applyAppearance = () => {
-      const { material: kind, keepMaterialActive } = settings.get().appearance
+      const { material: kind, keepMaterialActive, zoom: nextZoom } = settings.get().appearance
+      if (nextZoom !== zoom) {
+        zoom = nextZoom
+        setWindowZoom(win, zoom)
+      }
       const key = `${kind}:${keepMaterialActive}`
       if (key === applied) return
       applied = key

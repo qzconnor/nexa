@@ -93,6 +93,13 @@
       Startseite beginnt der Befehl einen neuen Chat
 - [x] Chatbreite „Normal“ und „Breit“ wächst auf großen Bildschirmen (4K, Ultrawide) mit: rund 40 % bzw.
       54 % der Chatspalte wie auf Full HD, nie schmaler als bisher (`--chat-width` mit `cqw`)
+- [x] Skalierung der ganzen Oberfläche von 67 % bis 200 % unter Einstellungen › Darstellung, mit Strg +
+      Plus, Strg + Minus und Strg + 0 überall im Fenster (Hinweis mit „Zurücksetzen“). Titelleiste und
+      Fensterknöpfe wachsen mit, die Seiten im Browser starten in derselben Größe. Die Einstellungen
+      öffnen immer bei „Allgemein“
+- [x] Eingeklappte Projekte, Ordner und Trenner zeigen, was ihre Chats tun: Spinner, solange einer
+      arbeitet, dazu ein Punkt für eine Rückfrage, einen Fehler oder eine ungelesene Antwort
+- [x] Der Kontextring an der Eingabe dreht sich, während die CLI den Kontext zusammenfasst
 - [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
       Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
       Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste
@@ -178,6 +185,10 @@
       verlassener Account bleibt bis zu seinem Reset gesperrt; ohne freien Account wartet der Chat mit
       Countdown; „Am Reset fortsetzen“ auch ohne Wechsel; nach dem Wechsel eine einstellbare Nachricht
       („Mach weiter“). Dateien dort: `auto-switch.ts`, `session-handoff.ts`, `account-choice.ts`.
+- [ ] **Prompts bearbeiten**: einen gesendeten Prompt ändern und neu schicken; der Chat geht von dort aus
+      weiter, alles, was danach kam (Antworten, Werkzeuge, spätere Prompts), fällt weg. Die CLIs setzen
+      an der Stelle an wie beim Abzweigen (Claude Code `--resume-session-at` der Antwort davor, Codex
+      `thread/fork` bis zum Turn davor; ein Zurücksetzen im selben Thread hat der App-Server 0.169 nicht).
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).

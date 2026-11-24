@@ -43,6 +43,8 @@ const props = defineProps<{
   ultracode?: boolean
   busy?: boolean
   context?: ContextUsage
+  /** The CLI compacts the chat's context right now (its ring turns meanwhile). */
+  compacting?: boolean
   /** The open chat (none on the start page): its context in detail, its MCP servers. */
   sessionId?: string
   /** More folders the chat's agent works in (`SessionMeta.dirs`). */
@@ -579,7 +581,7 @@ defineExpose({
       />
       <!-- The gear sits by the send button: what it sets (model, effort, permissions) goes with the prompt. -->
       <div class="ml-auto flex items-center gap-2">
-        <ContextCard v-if="context?.window" :session-id="sessionId" :provider="provider" :context="context" :busy="busy" />
+        <ContextCard v-if="context?.window" :session-id="sessionId" :provider="provider" :context="context" :busy="busy" :compacting="compacting" />
         <Button
           variant="ghost"
           size="sm"
