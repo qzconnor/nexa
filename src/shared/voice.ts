@@ -1,11 +1,38 @@
+import { visibleAccounts, type Account } from './accounts'
 import type { Unsubscribe } from './ipc'
 
 /**
  * Voice input in the composer: the window records the microphone, the main process streams it to
  * Claude's speech recognition (the one behind Claude Code's `/voice`) with the OAuth token of a Claude
  * account, and the text comes back while one speaks. It goes into the composer like typed text, so it
- * works the same for every CLI. Protocol: docs/PROTOCOLS.md, „Spracheingabe“.
+ * works the same for every CLI. Always through Claude: without a Claude login there is no voice input
+ * (Codex' own `/voice` is a spoken conversation, not dictation). Protocol: docs/PROTOCOLS.md, „Spracheingabe“.
  */
+
+/**
+ * The Claude accounts to try, in order: the one set, and only it; else (also when it was removed)
+ * the chat's, then those the user sees, then the others. API keys have no login for the recognition.
+ */
+export function voiceCandidates<T extends Pick<Account, 'id' | 'provider' | 'kind'>>(accounts: readonly T[], setting: string, chatAccount?: string): T[] {
+  const claude = accounts.filter((a) => a.provider === 'claude' && a.kind !== 'apiKey')
+  const chosen = claude.filter((a) => a.id === setting)
+  if (chosen.length) return chosen
+  const order = [...claude.filter((a) => a.id === chatAccount), ...visibleAccounts(claude, 'claude'), ...claude]
+  return [...new Set(order)]
+}
+
+/**
+ * Whether the composer offers the microphone: Claude is switched on in Nexa and one of the accounts
+ * to try is signed in. An expired login still counts: Claude Code renews it with its next start, and
+ * until then the take says so.
+ */
+export function voiceAvailable(
+  accounts: readonly Pick<Account, 'id' | 'provider' | 'kind' | 'authState'>[],
+  setting: string,
+  claudeEnabled: boolean,
+): boolean {
+  return claudeEnabled && voiceCandidates(accounts, setting).some((a) => a.authState === 'ok' || a.authState === 'expired')
+}
 
 /** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
 export const VoiceInvoke = {

@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import type { ContextUsage, PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { CommandOption, ModelDefaults } from '@shared/types'
+import { voiceAvailable } from '@shared/voice'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -18,6 +19,7 @@ import { FILE_TREE_DRAG_TYPE, mentionOf } from '@/lib/file-tree'
 import { fileImageUrl } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 import { spokenText, voiceAnchor, withSpoken, type VoiceAnchor } from '@/lib/voice-text'
+import { useAccountsStore } from '@/stores/accounts'
 import { useComposerStore } from '@/stores/composer'
 import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
@@ -35,7 +37,8 @@ import VoiceMeter from './VoiceMeter.vue'
  * as any other and waits in the chat until the agent takes it up; with the field empty, the button
  * stops the turn. `!` at the start turns it into the shell mode, as in Claude Code: the line runs
  * as a command in the chat's folder (on the start page in a new chat, as a first prompt would).
- * The microphone (Ctrl+M) writes what is said at the cursor while one speaks, for every CLI.
+ * The microphone (Ctrl+M) writes what is said at the cursor while one speaks, for every CLI; it is
+ * there while a Claude account is signed in (the recognition is Claude's).
  */
 const props = defineProps<{
   provider: ProviderId
@@ -80,6 +83,7 @@ const emit = defineEmits<{
 }>()
 const settings = useSettingsStore()
 const providers = useProvidersStore()
+const accounts = useAccountsStore()
 
 const composer = useComposerStore()
 const { relative, root: projectRoot } = useProjectPath()
@@ -135,9 +139,13 @@ const voice = useVoiceInput({
 const { state: voiceState, levels: voiceLevels } = voice
 /** A take runs: the field only shows what is heard until it ends. */
 const dictating = computed(() => voiceState.value !== 'idle')
+/** Only with a Claude login: there is no other recognition, also not in Codex chats. */
+const voiceReady = computed(() =>
+  voiceAvailable(accounts.accounts, settings.settings.chat.voiceAccount, settings.settings.claude.enabled),
+)
 
 async function startVoice(): Promise<void> {
-  if (props.disabled || dictating.value) return
+  if (props.disabled || dictating.value || !voiceReady.value) return
   const el = input.value
   const end = text.value.length
   voiceAt = voiceAnchor(text.value, el?.selectionStart ?? end, el?.selectionEnd ?? end)
@@ -684,6 +692,7 @@ defineExpose({
           </Button>
         </template>
         <Button
+          v-if="voiceReady || dictating"
           variant="ghost"
           size="icon-sm"
           :disabled="disabled && !dictating"

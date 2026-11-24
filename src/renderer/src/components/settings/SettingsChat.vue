@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { AppSettings, DeepPartial, UserShell } from '@shared/types'
-import { VOICE_LANGUAGES, voiceLanguage as resolveVoiceLanguage, voiceLanguageLabel } from '@shared/voice'
+import { voiceAvailable, VOICE_LANGUAGES, voiceLanguage as resolveVoiceLanguage, voiceLanguageLabel } from '@shared/voice'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -48,6 +48,13 @@ const voiceAccount = computed({
   // A removed account counts as „automatic“, here as in the main process.
   get: () => (claudeAccounts.value.some((a) => a.id === s.value.chat.voiceAccount) ? s.value.chat.voiceAccount : AUTOMATIC),
   set: (value: string) => update({ chat: { voiceAccount: value === AUTOMATIC ? '' : value } }),
+})
+const voiceDescription = computed(() => {
+  const base =
+    'Das Mikrofon in der Eingabe (Strg+M) schreibt mit, während du sprichst, in Chats mit jeder CLI. Erkannt wird immer mit der Spracherkennung von Claude, wie bei „/voice“ in Claude Code, auch in Codex-Chats.'
+  if (!s.value.claude.enabled) return `${base} Claude Code ist ausgeschaltet, deshalb gibt es gerade kein Mikrofon.`
+  if (!voiceAvailable(accounts.accounts, s.value.chat.voiceAccount, true)) return `${base} Dafür braucht es einen bei claude.ai angemeldeten Claude-Account; ohne ihn gibt es kein Mikrofon.`
+  return base
 })
 
 async function clearBrowserData(): Promise<void> {
@@ -99,11 +106,7 @@ function cleanUp(): void {
       </SettingField>
     </SettingsSection>
 
-    <SettingsSection
-      anchor="chat.voice"
-      title="Spracheingabe"
-      description="Das Mikrofon in der Eingabe (Strg+M) schreibt mit, während du sprichst, in Chats mit jeder CLI. Erkannt wird mit der Spracherkennung von Claude, wie bei „/voice“ in Claude Code; dafür braucht es einen bei claude.ai angemeldeten Claude-Account."
-    >
+    <SettingsSection anchor="chat.voice" title="Spracheingabe" :description="voiceDescription">
       <SettingField anchor="chat.voiceLanguage" label="Sprache" description="Die Sprache, in der du sprichst. Pro Aufnahme erkennt Claude eine Sprache.">
         <Select v-model="voiceLanguage">
           <SelectTrigger class="min-w-44 bg-background/60" aria-label="Sprache der Spracheingabe"><SelectValue /></SelectTrigger>

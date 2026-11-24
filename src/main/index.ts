@@ -138,10 +138,14 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
-  // The microphone in the composer: Claude's speech recognition with a Claude account's login, for every CLI.
+  // The microphone in the composer: Claude's speech recognition with a Claude account's login, for every
+  // CLI; without a Claude login there is none.
   const voice = new VoiceService({
     accounts: voiceAccounts(accounts),
-    settings: () => ({ account: settings.get().chat.voiceAccount, language: settings.get().chat.voiceLanguage }),
+    settings: () => {
+      const current = settings.get()
+      return { claudeEnabled: current.claude.enabled, account: current.chat.voiceAccount, language: current.chat.voiceLanguage }
+    },
     locale: () => app.getLocale(),
     userAgent: `nexa/${app.getVersion()}`,
   })

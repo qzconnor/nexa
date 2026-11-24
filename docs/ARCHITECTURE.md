@@ -248,7 +248,9 @@ endet. Der nächste Prompt bekommt alle `!`-Befehle seit dem letzten Prompt als 
 
 Das Mikrofon neben dem Senden-Knopf (oder Strg+M im Eingabefeld) diktiert in die Eingabe, für jede CLI:
 erkannt wird immer mit Claudes Spracherkennung, der Text landet wie getippt im Feld (Protokoll in
-`PROTOCOLS.md`, „Spracheingabe“). `useVoiceInput` öffnet das Mikrofon (`getUserMedia`; das Hauptfenster
+`PROTOCOLS.md`, „Spracheingabe“). Ohne angemeldeten Claude-Account oder mit ausgeschaltetem Claude Code
+gibt es kein Mikrofon (`voiceAvailable` in `shared/voice.ts`); Codex' eigenes `/voice` ist ein
+Sprachgespräch und taugt nicht zum Diktat (`PROTOCOLS.md`, Codex, „Sprache“). `useVoiceInput` öffnet das Mikrofon (`getUserMedia`; das Hauptfenster
 darf nur Audio, `main-window.ts`) in einem `AudioContext` mit 16 kHz; das Worklet `lib/voice-worklet.ts`
 macht daraus 16-Bit-PCM in Stücken von 64 ms samt Lautstärke für den Pegel (`VoiceMeter`). Die Stücke
 gehen über `voice:audio` an `VoiceService`, der sie bis zur stehenden Verbindung puffert. Die Wörter

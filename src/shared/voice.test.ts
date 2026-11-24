@@ -1,5 +1,45 @@
 import { describe, expect, it } from 'vitest'
-import { parseVoiceMessage, voiceKeyterms, voiceLanguage } from './voice'
+import type { Account } from './accounts'
+import { parseVoiceMessage, voiceAvailable, voiceCandidates, voiceKeyterms, voiceLanguage } from './voice'
+
+type Row = Pick<Account, 'id' | 'provider' | 'kind' | 'authState'>
+const row = (id: string, patch: Partial<Row> = {}): Row => ({ id, provider: 'claude', kind: 'oauth', authState: 'ok', ...patch })
+
+describe('voiceCandidates', () => {
+  const list = [row('system', { kind: 'system' }), row('b'), row('key', { kind: 'apiKey' }), row('c'), row('x', { provider: 'codex' })]
+
+  it('tries the chat’s account first, then the others; never API keys or other CLIs', () => {
+    expect(voiceCandidates(list, '', 'c').map((a) => a.id)).toEqual(['c', 'b', 'system'])
+    // A Codex chat's account isn't one: the Claude accounts in their order.
+    expect(voiceCandidates(list, '', 'x').map((a) => a.id)).toEqual(['b', 'c', 'system'])
+  })
+
+  it('tries only the account set, unless it was removed', () => {
+    expect(voiceCandidates(list, 'b', 'c').map((a) => a.id)).toEqual(['b'])
+    expect(voiceCandidates(list, 'gone', 'c').map((a) => a.id)).toEqual(['c', 'b', 'system'])
+  })
+})
+
+describe('voiceAvailable', () => {
+  it('needs Claude switched on and a Claude account signed in', () => {
+    expect(voiceAvailable([row('a')], '', true)).toBe(true)
+    expect(voiceAvailable([row('a')], '', false)).toBe(false)
+    expect(voiceAvailable([row('a', { authState: 'missing' }), row('k', { kind: 'apiKey' })], '', true)).toBe(false)
+  })
+
+  it('is not there with Codex alone', () => {
+    expect(voiceAvailable([row('x', { provider: 'codex' })], '', true)).toBe(false)
+  })
+
+  it('counts an expired login, which Claude Code renews', () => {
+    expect(voiceAvailable([row('a', { authState: 'expired' })], '', true)).toBe(true)
+    expect(voiceAvailable([row('a', { authState: 'dead' })], '', true)).toBe(false)
+  })
+
+  it('asks only the account set', () => {
+    expect(voiceAvailable([row('a', { authState: 'missing' }), row('b')], 'a', true)).toBe(false)
+  })
+})
 
 describe('voiceLanguage', () => {
   it('takes the language set', () => {

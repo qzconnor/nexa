@@ -1,11 +1,20 @@
 import { randomUUID } from 'node:crypto'
-import { visibleAccounts, type Account } from '@shared/accounts'
-import { parseVoiceMessage, voiceKeyterms, voiceLanguage, VOICE_SAMPLE_RATE, type VoiceStartInput, type VoiceUpdate } from '@shared/voice'
+import type { Account } from '@shared/accounts'
+import {
+  parseVoiceMessage,
+  voiceCandidates,
+  voiceKeyterms,
+  voiceLanguage,
+  VOICE_SAMPLE_RATE,
+  type VoiceStartInput,
+  type VoiceUpdate,
+} from '@shared/voice'
 
 /**
  * Claude's speech recognition, as Claude Code's `/voice` uses it: a WebSocket to the API with the
  * OAuth token of a claude.ai login, PCM in, the words so far out. The window records; this only
- * forwards and keeps the stream alive. Protocol: docs/PROTOCOLS.md, „Spracheingabe“.
+ * forwards and keeps the stream alive. Also in Codex chats: there is no other recognition, so without
+ * Claude there is no voice input. Protocol: docs/PROTOCOLS.md, „Spracheingabe“.
  */
 
 const BASE_URL = 'wss://api.anthropic.com/api/ws/speech_to_text/voice_stream'
@@ -40,6 +49,8 @@ export interface VoiceAccounts {
 }
 
 export interface VoiceSettings {
+  /** Claude Code is switched on in Nexa: switched off, Nexa doesn't talk to Anthropic for it at all. */
+  claudeEnabled: boolean
   /** The Claude account to use; `''`: the chat's, else the first that is signed in. */
   account: string
   /** `''`: the system's. */
@@ -59,18 +70,6 @@ export interface VoiceDeps {
   locale: () => string
   userAgent: string
   connect?: (url: string, headers: Record<string, string>) => VoiceSocket
-}
-
-/**
- * The Claude accounts to try, in order: the one set, and only it; else (also when it was removed)
- * the chat's, then those the user sees, then the others. API keys have no login for the recognition.
- */
-export function voiceCandidates(accounts: readonly Account[], setting: string, chatAccount?: string): Account[] {
-  const claude = accounts.filter((a) => a.provider === 'claude' && a.kind !== 'apiKey')
-  const chosen = claude.filter((a) => a.id === setting)
-  if (chosen.length) return chosen
-  const order = [...claude.filter((a) => a.id === chatAccount), ...visibleAccounts(claude, 'claude'), ...claude]
-  return [...new Set(order)]
 }
 
 /** Why no account could be used, for the toast. */
@@ -115,6 +114,8 @@ export class VoiceService {
   /** Opens a session; throws (with a message for the user) when no Claude account has a usable login. */
   start(owner: VoiceOwner, input: VoiceStartInput): string {
     const settings = this.deps.settings()
+    // The window offers no microphone then; this is for a call that comes anyway.
+    if (!settings.claudeEnabled) throw new Error('Die Spracheingabe läuft über Claude, und Claude Code ist in Nexa ausgeschaltet.')
     const accounts = this.deps.accounts.list()
     let token: string | null = null
     for (const account of voiceCandidates(accounts, settings.account, input.account)) {

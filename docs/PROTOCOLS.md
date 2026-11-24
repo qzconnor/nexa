@@ -403,6 +403,26 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   "usageLimitExceeded"` (`CodexErrorInfo` aus `generate-ts`). Nexa markiert den Turn dann mit `limit`;
   andere Fehler wie `rateLimitExceeded` oder `sessionBudgetExceeded` gelten als gewöhnlicher Fehler.
 
+### Sprache (`/voice`)
+
+`/voice` in der TUI ist kein Diktat, sondern ein Sprachgespräch: Ein Echtzeit-Modell hört zu, antwortet
+hörbar und gibt Aufgaben an Codex weiter. Nexa nutzt es nicht, die Spracheingabe läuft immer über Claude
+(siehe „Spracheingabe“ bei Claude Code). Abgelesen an Codex 0.169 (`generate-ts --experimental`):
+
+- **App-Server** (nur mit `capabilities.experimentalApi`): `thread/realtime/start { threadId,
+  outputModality: "text" | "audio", transport, version, prompt, … }`, Audio per
+  `thread/realtime/appendAudio { threadId, audio: { data (base64), sampleRate, numChannels, … } }`, Ende
+  mit `thread/realtime/stop`. Zurück kommen `thread/realtime/transcript/delta` und `…/done` (mit `role`),
+  `outputAudio/delta`, `sdp`, `error`, `closed`.
+- **Mit ChatGPT-Login** nur über WebRTC (`transport: { type: "webrtc", sdp }`, Antwort als
+  `thread/realtime/sdp`) und nur als Audio-Gespräch: `transport: websocket` meldet „realtime conversation
+  requires API key auth“, Textausgabe „requires realtime v2“, v2 „AVAS realtime calls require realtime v1
+  or v3“. Der Aufruf geht an `chatgpt.com/backend-api/codex/realtime/calls`; mit einem Free-Plan kam 404.
+- **`codex-voice-host`** (`codex-resources/voice/bin`, GStreamer mit Opus und RTP) ist der Audio- und
+  WebRTC-Teil dieses Gesprächs für die TUI, keine Spracherkennung zum Mitschreiben.
+- Die Features `in_app_dictation` und `in_app_voice` sind Schalter für die Desktop-App von Codex, nicht
+  für die CLI.
+
 ## Nexa-MCP-Server
 
 Streamable HTTP auf `127.0.0.1:<port>/mcp`, Bearer-Token. Jeder Run bekommt ein eigenes Token, das seinen

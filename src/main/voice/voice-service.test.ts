@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '@shared/accounts'
 import type { VoiceUpdate } from '@shared/voice'
-import { noAccountMessage, voiceCandidates, VoiceService, type VoiceOwner, type VoiceSocket } from './voice-service'
+import { noAccountMessage, VoiceService, type VoiceOwner, type VoiceSocket } from './voice-service'
 
 function account(id: string, patch: Partial<Account> = {}): Account {
   return { id, name: id, provider: 'claude', kind: 'oauth', authState: 'ok', ...patch } as Account
@@ -48,7 +48,7 @@ class FakeSocket implements VoiceSocket {
   }
 }
 
-function setup(options: { accounts?: Account[]; tokens?: Record<string, string>; setting?: string; language?: string } = {}) {
+function setup(options: { accounts?: Account[]; tokens?: Record<string, string>; setting?: string; language?: string; claudeEnabled?: boolean } = {}) {
   const sockets: FakeSocket[] = []
   const updates: VoiceUpdate[] = []
   const gone: (() => void)[] = []
@@ -62,7 +62,7 @@ function setup(options: { accounts?: Account[]; tokens?: Record<string, string>;
   const tokens = options.tokens ?? { a: 'tok-a' }
   const service = new VoiceService({
     accounts: { list: () => options.accounts ?? [account('a')], token: (id) => tokens[id] ?? null },
-    settings: () => ({ account: options.setting ?? '', language: options.language ?? '' }),
+    settings: () => ({ claudeEnabled: options.claudeEnabled ?? true, account: options.setting ?? '', language: options.language ?? '' }),
     locale: () => 'de-DE',
     userAgent: 'nexa/test',
     connect: (url, headers) => {
@@ -83,18 +83,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('voiceCandidates', () => {
-  const list = [account('system', { kind: 'system' }), account('b'), account('key', { kind: 'apiKey' }), account('c'), { ...account('x'), provider: 'codex' } as Account]
-
-  it('tries the chat’s account first, then the others; never API keys or other CLIs', () => {
-    expect(voiceCandidates(list, '', 'c').map((a) => a.id)).toEqual(['c', 'b', 'system'])
-  })
-
-  it('tries only the account set, unless it was removed', () => {
-    expect(voiceCandidates(list, 'b', 'c').map((a) => a.id)).toEqual(['b'])
-    expect(voiceCandidates(list, 'gone', 'c').map((a) => a.id)).toEqual(['c', 'b', 'system'])
-  })
-
+describe('noAccountMessage', () => {
   it('says why no account could be used', () => {
     expect(noAccountMessage([{ ...account('b'), authState: 'expired' }], '')).toContain('„b“ bei claude.ai ist abgelaufen')
     expect(noAccountMessage([], '')).toContain('angemeldeten Claude-Account')
@@ -119,6 +108,18 @@ describe('VoiceService', () => {
     const { service, owner, sockets } = setup({ tokens: {} })
     expect(() => service.start(owner, {})).toThrow('angemeldeten Claude-Account')
     expect(sockets).toHaveLength(0)
+  })
+
+  it('stays away from Anthropic while Claude Code is switched off, even in a Codex chat', () => {
+    const { service, owner, sockets } = setup({ claudeEnabled: false })
+    expect(() => service.start(owner, { account: 'codex-account' })).toThrow('Claude Code ist in Nexa ausgeschaltet')
+    expect(sockets).toHaveLength(0)
+  })
+
+  it('uses a Claude account for a Codex chat', () => {
+    const { service, owner, sockets } = setup({ accounts: [account('a'), { ...account('x'), provider: 'codex' } as Account], tokens: { a: 'tok-a', x: 'tok-x' } })
+    service.start(owner, { account: 'x' })
+    expect(sockets[0]!.headers.Authorization).toBe('Bearer tok-a')
   })
 
   it('keeps the audio until the connection stands, then keeps it alive', () => {
