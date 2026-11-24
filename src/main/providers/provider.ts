@@ -1,5 +1,17 @@
 import type { ChatItem, ContextDetail, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
-import type { CommandOption, McpServerInfo, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage, SendInput, ShellOutput } from '@shared/types'
+import type {
+  CommandOption,
+  ConnectorSettings,
+  McpAuthStart,
+  McpServerInfo,
+  ModelDefaults,
+  ModelOption,
+  PluginInfo,
+  ProviderStatus,
+  ProviderUsage,
+  SendInput,
+  ShellOutput,
+} from '@shared/types'
 
 /** An MCP server as a CLI reports it; whether it is on for the project is Nexa's. */
 export type McpServerState = Omit<McpServerInfo, 'enabled'>
@@ -107,6 +119,18 @@ export interface AgentRun {
    * start (the next prompt starts it anew, see `mcpOff`).
    */
   setMcpEnabled?(name: string, enabled: boolean): Promise<boolean>
+  /** Connects an MCP server anew (one that failed, or signed in since). */
+  reconnectMcp?(name: string): Promise<void>
+  /**
+   * Starts the sign-in of an MCP server in the running CLI, which then takes the browser's answer;
+   * null when it needs none (signed in already).
+   */
+  authenticateMcp?(name: string): Promise<McpAuthStart | null>
+  /**
+   * Loads the plugins again after one was switched; false when the CLI takes them only at its start
+   * (the next prompt starts it anew).
+   */
+  reloadPlugins?(): Promise<boolean>
   /**
    * Compacts the conversation now, as a turn of its own, for CLIs that have a call for it (Codex);
    * the others take `/compact` as a prompt.
@@ -133,6 +157,16 @@ export interface AgentProvider {
   commands(account: AccountContext, cwd: string): Promise<CommandOption[]>
   /** The MCP servers the CLI would start in a folder, without a chat of its own running there. */
   mcpServers(account: AccountContext, cwd: string): Promise<McpServerState[]>
+  /** The next look at the MCP servers connects them anew (one that failed, or signed in since). */
+  reconnectMcp(account: AccountContext, cwd: string, name: string): Promise<void>
+  /** Starts the sign-in of an MCP server without a chat running; null when it needs none. */
+  authenticateMcp(account: AccountContext, cwd: string, name: string): Promise<McpAuthStart | null>
+  /** Where the user sets up the connectors of the CLI. */
+  connectorSettings(account: AccountContext): ConnectorSettings
+  /** The plugins installed for a folder, each on or off. */
+  plugins(account: AccountContext, cwd: string): Promise<PluginInfo[]>
+  /** Switches a plugin in the CLI's own settings (also outside Nexa); running chats load it anew. */
+  setPluginEnabled(account: AccountContext, cwd: string, id: string, enabled: boolean): Promise<void>
   start(options: RunOptions, sink: RunSink): Promise<AgentRun>
   /**
    * Limits of the account's plan without a running session, if the CLI can tell. `wake`: also when

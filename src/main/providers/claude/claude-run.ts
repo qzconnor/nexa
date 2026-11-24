@@ -15,7 +15,7 @@ import type {
   ToolItem,
 } from '@shared/chat'
 import { compactionNotice } from '@shared/chat'
-import type { ShellOutput, UsageWindow } from '@shared/types'
+import type { McpAuthStart, ShellOutput, UsageWindow } from '@shared/types'
 import { renderSpecOf } from '@shared/render'
 import { isPlainObject } from '@shared/utils'
 import type { CliBinary } from '../cli-binary'
@@ -23,6 +23,7 @@ import { cliEnv } from '../cli-binary'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
 import { claudeMcpServers } from '../mcp-servers'
+import { claudeAuthStart } from '../plugins'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import { contextDetailOf } from './claude-context'
 import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
@@ -140,6 +141,8 @@ export class ClaudeRun implements AgentRun {
   private limitHit = false
   private model: string | undefined
   private stopping = false
+  /** The user's MCP servers switched off for the project, as this process knows them. */
+  private readonly mcpOff = new Set<string>()
 
   constructor(
     binary: CliBinary,
@@ -161,7 +164,12 @@ export class ClaudeRun implements AgentRun {
       .catch(() => undefined)
     // Claude Code keeps a switch only for the process, so each start applies the project's again;
     // written before the first prompt, they are through before it is read.
-    for (const name of options.mcpOff ?? []) {
+    for (const name of options.mcpOff ?? []) this.mcpOff.add(name)
+    this.applyMcpOff()
+  }
+
+  private applyMcpOff(): void {
+    for (const name of this.mcpOff) {
       void this.request({ subtype: 'mcp_toggle', serverName: name, enabled: false }).catch(() => undefined)
     }
   }
@@ -215,8 +223,35 @@ export class ClaudeRun implements AgentRun {
 
   async setMcpEnabled(name: string, enabled: boolean): Promise<boolean> {
     if (!this.process.alive) return false
+    if (enabled) this.mcpOff.delete(name)
+    else this.mcpOff.add(name)
     // A server the CLI doesn't know (gone from its config) has nothing to switch.
     await this.request({ subtype: 'mcp_toggle', serverName: name, enabled }).catch(() => undefined)
+    return true
+  }
+
+  async reconnectMcp(name: string): Promise<void> {
+    if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr.')
+    await this.request({ subtype: 'mcp_reconnect', serverName: name })
+  }
+
+  /**
+   * The process takes the browser's answer itself (its own OAuth) or the sign-in is on claude.ai (a
+   * connector), after which `reconnectMcp` connects it.
+   */
+  async authenticateMcp(name: string): Promise<McpAuthStart | null> {
+    if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr.')
+    return claudeAuthStart(await this.request({ subtype: 'mcp_authenticate', serverName: name }))
+  }
+
+  /**
+   * `/reload-plugins`: commands, agents, hooks and servers of the plugins as the settings now say. The
+   * servers it brings anew start switched on, so the project's switches go out again.
+   */
+  async reloadPlugins(): Promise<boolean> {
+    if (!this.process.alive) return false
+    await this.request({ subtype: 'reload_plugins' })
+    this.applyMcpOff()
     return true
   }
 

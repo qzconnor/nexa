@@ -86,6 +86,79 @@ export function probeClaude(binary: CliBinary, account: AccountEnv, options: Pro
   })
 }
 
+/** A Claude Code process without a prompt that answers control requests until it is stopped. */
+export interface ClaudeControl {
+  request(request: Json, timeoutMs?: number): Promise<Json>
+  stop(): void
+  readonly alive: boolean
+}
+
+/**
+ * Starts a Claude Code process like `probeClaude`, but keeps it for more than one round: for what
+ * takes a while, like an MCP server's sign-in, whose answer from the browser the process receives.
+ * Resolves once it answered `initialize`.
+ */
+export function openClaudeControl(binary: CliBinary, account: AccountEnv, cwd: string): Promise<ClaudeControl> {
+  const pending = new Map<string, { resolve: (value: Json) => void; reject: (error: Error) => void }>()
+  const proc = new JsonlProcess(binary.command(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence']), {
+    cwd,
+    env: cliEnv(account.set, account.unset),
+    onMessage: (m) => {
+      if (!isPlainObject(m) || m.type !== 'control_response' || !isPlainObject(m.response)) return
+      const id = typeof m.response.request_id === 'string' ? m.response.request_id : ''
+      const waiter = pending.get(id)
+      if (!waiter) return
+      pending.delete(id)
+      if (m.response.subtype === 'error') waiter.reject(new Error(typeof m.response.error === 'string' ? m.response.error : 'Claude Code hat die Anfrage abgelehnt.'))
+      else waiter.resolve(isPlainObject(m.response.response) ? m.response.response : {})
+    },
+    onExit: () => {
+      for (const waiter of pending.values()) waiter.reject(new Error('Claude Code wurde beendet.'))
+      pending.clear()
+    },
+  })
+  const control: ClaudeControl = {
+    request: (request, timeoutMs = PROBE_TIMEOUT_MS) =>
+      new Promise((resolve, reject) => {
+        const id = randomUUID()
+        const timer = setTimeout(() => {
+          pending.delete(id)
+          reject(new Error('Claude Code hat nicht rechtzeitig geantwortet.'))
+        }, timeoutMs)
+        pending.set(id, {
+          resolve: (value) => {
+            clearTimeout(timer)
+            resolve(value)
+          },
+          reject: (error) => {
+            clearTimeout(timer)
+            reject(error)
+          },
+        })
+        try {
+          proc.write({ type: 'control_request', request_id: id, request })
+        } catch (error) {
+          pending.delete(id)
+          clearTimeout(timer)
+          reject(error as Error)
+        }
+      }),
+    stop: () => {
+      if (proc.alive) void proc.stop(1000)
+    },
+    get alive() {
+      return proc.alive
+    },
+  }
+  return control.request({ subtype: 'initialize' }).then(
+    () => control,
+    (error: Error) => {
+      control.stop()
+      throw error
+    },
+  )
+}
+
 /**
  * Commands of Claude Code that only make sense in its terminal, or that Nexa does itself (model,
  * effort, title, a new chat; renderer `lib/chat-commands.ts` lists Nexa's in their place): left out

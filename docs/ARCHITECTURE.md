@@ -36,6 +36,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/project-service.ts` | Projekte (Ordner) und Trenner, ihre Reihenfolge, ausgeschaltete MCP-Server je Projekt; `project-sections.ts` macht ein Projekt zum Trenner |
 | `services/folder-prompts.ts` | Prompt eines Projekts oder Trenners (`prompts.md` im Ordner) lesen, schreiben und für den Systemprompt zusammensetzen |
 | `providers/mcp-servers.ts` | Antworten der CLIs auf die Frage nach ihren MCP-Servern → `McpServerState` (ohne Nexas eigenen) |
+| `providers/plugins.ts` | Plugins der CLIs (`claude plugin list --json`, Codex `plugin/installed`) → `PluginInfo`, Antworten auf das Schalten und auf die Anmeldung an MCP-Servern (`McpAuthStart`) |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten; Kanäle `import:*` in `import-ipc.ts` |
 | `import/cli-import.ts` | Übernahme der Sessions der CLIs selbst: Transkripte von Claude Code und Threads von Codex (`thread/list`) aus allen Accounts, je Ordner ein Projekt; Kanäle `import:cli-*` |
@@ -312,7 +313,13 @@ der Ordner bleibt auf der Platte.
   Das „+“ (`ComposerAddMenu`) hängt Dateien an (Bilder als Anhang, andere als `@`-Erwähnung), gibt dem
   Chat weitere Ordner (`SessionMeta.dirs`, Chips über der Eingabe) und schaltet unter „Konnektoren“ die
   MCP-Server des Projekts (`Project.mcpOff`; Claude Code im laufenden Prozess, sonst ab dem nächsten
-  Start). Läuft eine Antwort, geht Text in sie hinein (`UserItem.steer`): Er wartet in
+  Start). Ein fehlgeschlagener Server lässt sich dort neu verbinden, ein abgemeldeter anmelden
+  (`sessions.reconnectMcp`, `sessions.authenticateMcp`: im laufenden Prozess des Chats, sonst über den
+  Provider; die Seite öffnet der Browser des Systems), „Konnektoren verwalten“ führt zu claude.ai bzw. zur
+  `config.toml` von Codex. „Plugins ›“ (`ComposerPluginsMenu`) zeigt die installierten Plugins der CLI
+  für den Ordner und schaltet sie in den Einstellungen der CLI (`SessionService.setPluginEnabled`):
+  laufende Claude-Chats desselben Accounts laden die Plugins neu (`AgentRun.reloadPlugins`), Codex-Chats
+  ab dem nächsten Prompt. Läuft eine Antwort, geht Text in sie hinein (`UserItem.steer`): Er wartet in
   `SessionRuntime.queued` unter dem Chat, bis die CLI ihn aufnimmt (`RunSink.taken`: Claude Code meldet
   `command_lifecycle`, Codex nimmt ihn mit `turn/steer` sofort), und steht dann an dieser Stelle im
   Verlauf. Endet die CLI vorher, kommt er so in den Verlauf, wie er geschrieben wurde.

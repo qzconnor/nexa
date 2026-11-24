@@ -1,7 +1,17 @@
 import { canLogin, type AccountLoginState } from '@shared/accounts'
 import { PROVIDER_IDS, type ChatItem, type ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
-import type { AppSettings, CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
+import type {
+  AppSettings,
+  CommandOption,
+  ConnectorSettings,
+  McpAuthStart,
+  ModelDefaults,
+  ModelOption,
+  PluginInfo,
+  ProviderStatus,
+  ProviderUsage,
+} from '@shared/types'
 import { AccountLogins } from '../accounts/account-login'
 import type { AccountService } from '../accounts/account-service'
 import { TypedEmitter } from '../lib/typed-emitter'
@@ -125,6 +135,27 @@ export class ProviderService extends TypedEmitter<Events> {
   /** The MCP servers the CLI starts in a folder with this account (`accountId` resolved already). */
   mcpServers(id: ProviderId, accountId: string, cwd: string): Promise<McpServerState[]> {
     return this.providers[id].mcpServers(this.context(accountId), cwd)
+  }
+
+  reconnectMcp(id: ProviderId, accountId: string, cwd: string, name: string): Promise<void> {
+    return this.providers[id].reconnectMcp(this.context(accountId), cwd, name)
+  }
+
+  authenticateMcp(id: ProviderId, accountId: string, cwd: string, name: string): Promise<McpAuthStart | null> {
+    return this.providers[id].authenticateMcp(this.context(accountId), cwd, name)
+  }
+
+  connectorSettings(id: ProviderId, accountId: string): ConnectorSettings {
+    return this.providers[id].connectorSettings(this.context(accountId))
+  }
+
+  /** The plugins the CLI has installed for a folder with this account (`accountId` resolved already). */
+  plugins(id: ProviderId, accountId: string, cwd: string): Promise<PluginInfo[]> {
+    return this.providers[id].plugins(this.context(accountId), cwd)
+  }
+
+  setPluginEnabled(id: ProviderId, accountId: string, cwd: string, pluginId: string, enabled: boolean): Promise<void> {
+    return this.providers[id].setPluginEnabled(this.context(accountId), cwd, pluginId, enabled)
   }
 
   /** The CLI's conversations saved with an account, where its server lists them; null where it doesn't. */

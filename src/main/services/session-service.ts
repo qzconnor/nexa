@@ -21,7 +21,10 @@ import { enabledProviders, PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
   CliLink,
+  ConnectorSettings,
+  McpAuthStart,
   McpServerInfo,
+  PluginInfo,
   Project,
   SendInput,
   SessionCreateInput,
@@ -1002,15 +1005,8 @@ export class SessionService extends TypedEmitter<Events> {
    * one asked for the folder.
    */
   async mcpServers(id: string): Promise<McpServerInfo[]> {
-    const s = this.get(id)
-    const meta = s.meta
-    const project = this.projects.get(meta.projectId)
-    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
-    const provider = meta.provider
-    const live = s.run?.alive && s.runProvider === provider ? s.run : null
-    const list =
-      (live?.mcpServers ? await live.mcpServers().catch(() => null) : null) ??
-      (await this.providers.mcpServers(provider, this.accountFor(meta, provider), this.cwdOf(meta, project)))
+    const { provider, accountId, cwd, live, project } = this.cliTarget(id)
+    const list = (live?.mcpServers ? await live.mcpServers().catch(() => null) : null) ?? (await this.providers.mcpServers(provider, accountId, cwd))
     const off = new Set(project.mcpOff?.[provider] ?? [])
     return list.map((server) => ({ ...server, enabled: !off.has(server.name) }))
   }
@@ -1028,10 +1024,72 @@ export class SessionService extends TypedEmitter<Events> {
       const run = other.run
       if (other.meta.projectId !== projectId || other.runProvider !== provider || !run?.alive) continue
       if (await run.setMcpEnabled?.(name, enabled).catch(() => false)) continue
-      const status = other.runtime.status
-      if (status === 'running' || status === 'waiting' || status === 'starting') other.restartAfterTurn = true
-      else await this.stop(other.meta.id)
+      await this.restartForChange(other)
     }
+  }
+
+  /** The CLI, account and folder a chat's connectors and plugins belong to, with its run if that is the CLI's. */
+  private cliTarget(id: string): { provider: ProviderId; accountId: string; cwd: string; live: AgentRun | null; project: Project } {
+    const s = this.get(id)
+    const meta = s.meta
+    const project = this.projects.get(meta.projectId)
+    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
+    const provider = meta.provider
+    return {
+      provider,
+      accountId: this.accountFor(meta, provider),
+      cwd: this.cwdOf(meta, project),
+      live: s.run?.alive && s.runProvider === provider ? s.run : null,
+      project,
+    }
+  }
+
+  /** Connects an MCP server anew: in the chat's running CLI, else the next look at the servers starts it anew. */
+  async reconnectMcp(id: string, name: string): Promise<void> {
+    const { provider, accountId, cwd, live } = this.cliTarget(id)
+    if (live?.reconnectMcp) await live.reconnectMcp(name)
+    else await this.providers.reconnectMcp(provider, accountId, cwd, name)
+  }
+
+  /** Starts an MCP server's sign-in, in the chat's running CLI if there is one; null when it needs none. */
+  async authenticateMcp(id: string, name: string): Promise<McpAuthStart | null> {
+    const { provider, accountId, cwd, live } = this.cliTarget(id)
+    if (live?.authenticateMcp) return live.authenticateMcp(name)
+    return this.providers.authenticateMcp(provider, accountId, cwd, name)
+  }
+
+  /** Where the connectors of the chat's CLI are set up. */
+  connectorSettings(id: string): ConnectorSettings {
+    const { provider, accountId } = this.cliTarget(id)
+    return this.providers.connectorSettings(provider, accountId)
+  }
+
+  /** The plugins the chat's CLI has installed for its folder, each on or off. */
+  async plugins(id: string): Promise<PluginInfo[]> {
+    const { provider, accountId, cwd } = this.cliTarget(id)
+    return this.providers.plugins(provider, accountId, cwd)
+  }
+
+  /**
+   * Switches a plugin in the settings of the chat's CLI. Its running chats with the same account load
+   * the plugins anew where the CLI can (Claude Code), the others with their next prompt.
+   */
+  async setPluginEnabled(id: string, pluginId: string, enabled: boolean): Promise<void> {
+    const { provider, accountId, cwd } = this.cliTarget(id)
+    await this.providers.setPluginEnabled(provider, accountId, cwd, pluginId, enabled)
+    for (const other of this.sessions.values()) {
+      const run = other.run
+      if (other.runProvider !== provider || other.runAccount !== accountId || !run?.alive) continue
+      if (await run.reloadPlugins?.().catch(() => false)) continue
+      await this.restartForChange(other)
+    }
+  }
+
+  /** A change the CLI takes only at its start: it ends now, or after the turn that runs; the next prompt resumes it. */
+  private async restartForChange(s: SessionState): Promise<void> {
+    const status = s.runtime.status
+    if (status === 'running' || status === 'waiting' || status === 'starting') s.restartAfterTurn = true
+    else await this.stop(s.meta.id)
   }
 
   /** What fills the chat's context, by kind, as its CLI counts it; null when it can't (not running, Codex). */
@@ -1076,11 +1134,7 @@ export class SessionService extends TypedEmitter<Events> {
         if (dirs.length) meta.dirs = dirs
         else delete meta.dirs
         // The CLIs take their folders at the start: the next prompt resumes with them.
-        if (s.run) {
-          const status = s.runtime.status
-          if (status === 'running' || status === 'waiting' || status === 'starting') s.restartAfterTurn = true
-          else await this.stop(id)
-        }
+        if (s.run) await this.restartForChange(s)
       }
     }
     if (patch.account !== undefined && this.accounts.has(patch.account)) {
