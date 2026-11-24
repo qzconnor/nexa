@@ -106,7 +106,7 @@ const shownOutput = computed(() => (hasChanges.value && !failed.value ? '' : out
         </span>
         <span v-if="duration !== null && duration > 1500" class="tabular-nums opacity-0 transition-opacity group-hover/tool:opacity-100">{{ formatDuration(duration) }}</span>
         <span v-if="tool.exitCode !== undefined && tool.exitCode !== null && tool.exitCode !== 0" class="font-mono text-destructive">exit {{ tool.exitCode }}</span>
-        <Spinner v-if="running" class="size-3.5" />
+        <Spinner v-if="running" class="size-3.5 text-primary" />
         <XIcon v-else-if="failed" class="size-3.5 text-destructive" />
         <CircleSlashIcon v-else-if="tool.status === 'denied'" class="size-3.5" />
         <CheckIcon v-else class="size-3.5 text-(--tool-run) opacity-70" />

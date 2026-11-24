@@ -502,7 +502,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <MessageList v-show="!viewed" ref="list" :items="items" :session-id="meta.id" />
             </template>
             <div v-if="working" class="flex items-center gap-2 py-2 text-[0.85rem] text-muted-foreground">
-              <Spinner class="size-3.5" />
+              <Spinner class="size-3.5 text-primary" />
               <span class="text-shimmer">{{ working }}</span>
               <span v-if="elapsed" class="tabular-nums opacity-70">{{ elapsed }}</span>
             </div>

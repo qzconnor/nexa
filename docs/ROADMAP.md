@@ -125,6 +125,8 @@
       aus allen Accounts, nach Ordnern auf Projekte verteilt und auswählbar (Einrichtung, Einstellungen →
       Accounts, Befehlsliste). Der Verlauf kommt beim ersten Öffnen aus der CLI, der Chat geht in
       derselben Session weiter
+- [x] Gedanken ohne Einklappen (ganz ausblenden weiter über „Gedanken anzeigen“); was gerade arbeitet,
+      schimmert in der Akzentfarbe des Themes statt grau, die Spinner daneben ebenso
 
 ## Als Nächstes
 
