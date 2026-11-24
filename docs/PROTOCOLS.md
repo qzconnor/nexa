@@ -31,6 +31,10 @@ claude -p --input-format stream-json --output-format stream-json --verbose
 - **Ausgabe**: `system/init` (Sitzungs-ID, Modell, Werkzeuge), `stream_event` (Teil-Deltas für Text und
   Thinking), `assistant`/`user` (fertige Blöcke, `tool_use`/`tool_result`), `result` (Turn-Ende mit
   Kosten und Tokens), `rate_limit_event` (Usage-Fenster mit Prozent und Reset).
+- **Start ohne Prompt** (geprüft mit 2.1.331): `system/init` kommt erst mit dem ersten Prompt; vorher
+  antwortet Claude Code nur auf Control-Requests (`initialize`) und schickt `system/commands_changed`.
+  Startet Nexa die CLI ohne Prompt neu („Chat neu starten“), gilt sie mit der Antwort auf `initialize` als
+  bereit.
 - **Ergebnis eines Werkzeugs** (geprüft mit 2.1.331): Die `user`-Nachricht mit dem `tool_result` trägt
   daneben `tool_use_result`, das ganze Ergebnis-Objekt des Werkzeugs (im Transkript `toolUseResult`). Bei
   `Edit`, `MultiEdit` und `Write` steht darin `structuredPatch` (`oldStart`, `oldLines`, `newStart`,

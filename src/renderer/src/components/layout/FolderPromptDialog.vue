@@ -99,7 +99,7 @@ function onKeydown(event: KeyboardEvent): void {
         <DialogDescription class="flex flex-col gap-1.5">
           <span>
             {{ scope }} bekommt den Text zusätzlich als System-Prompt. Er gilt ab dem nächsten Start der CLI eines Chats: neue Chats
-            sofort, laufende nach „CLI beenden“ oder einem Neustart von Nexa.
+            sofort, laufende nach „Chat neu starten“ oder einem Neustart von Nexa.
           </span>
           <span v-if="outerNote">{{ outerNote }}</span>
         </DialogDescription>

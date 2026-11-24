@@ -161,7 +161,11 @@ export class ClaudeRun implements AgentRun {
     // Counted at once, not only after the first answer: a resumed conversation is as full as it was,
     // a new one starts with the system prompt and the tools.
     void this.request({ subtype: 'initialize' })
-      .then(() => this.contextDetail())
+      .then(() => {
+        // Started without a prompt (a restart): ready now. Its `init` only comes with the first prompt.
+        if (this.turnStartedAt === null) sink.runtime({ status: 'idle' })
+        return this.contextDetail()
+      })
       .catch(() => undefined)
     // Claude Code keeps a switch only for the process, so each start applies the project's again;
     // written before the first prompt, they are through before it is read.

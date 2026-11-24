@@ -13,6 +13,7 @@ import {
   PencilIcon,
   PowerIcon,
   RefreshCwIcon,
+  RotateCwIcon,
   SearchIcon,
   SquareTerminalIcon,
   Trash2Icon,
@@ -376,6 +377,17 @@ function remove(): void {
   if (meta.value) void chatActions.remove(meta.value)
 }
 
+const restarting = ref(false)
+async function restart(): Promise<void> {
+  if (!meta.value || restarting.value) return
+  restarting.value = true
+  try {
+    await chatActions.restart(meta.value)
+  } finally {
+    restarting.value = false
+  }
+}
+
 // ── Find in the chat (Ctrl+F, F3), as in a browser ──
 
 const list = ref<InstanceType<typeof MessageList> | null>(null)
@@ -462,7 +474,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           v-if="renaming"
           ref="titleInput"
           v-model="title"
-          class="min-w-0 flex-1 rounded-md border bg-background/60 px-2 py-0.5 text-sm font-medium outline-none"
+          class="field-sizing-content max-w-full min-w-40 rounded-md border bg-background/60 px-2 py-0.5 text-sm font-medium outline-none"
           @keydown.enter="finishRename(true)"
           @keydown.esc="finishRename(false)"
           @blur="finishRename(true)"
@@ -497,6 +509,16 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <button v-else type="button" class="min-w-0 truncate text-sm font-medium" :title="meta.title" @dblclick="startRename">{{ meta.title }}</button>
         <div class="ml-auto flex shrink-0 items-center gap-1">
           <StartCommandsMenu v-if="project" :project-id="project.id" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Chat neu starten"
+            :disabled="restarting"
+            v-tooltip="'Chat neu starten: übernimmt geänderte Einstellungen'"
+            @click="restart"
+          >
+            <RotateCwIcon :class="cn(restarting && 'animate-spin')" />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" size="icon-sm" aria-label="Mehr">
@@ -513,7 +535,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
               <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
-              <DropdownMenuItem :disabled="!runtime.connected" @select="sessions.stop(meta.id)"><PowerIcon /> CLI beenden</DropdownMenuItem>
+              <DropdownMenuItem :disabled="restarting" @select="restart"><RotateCwIcon /> Chat neu starten</DropdownMenuItem>
+              <DropdownMenuItem @select="chatActions.end(meta)"><PowerIcon /> Chat beenden</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</DropdownMenuItem>
             </DropdownMenuContent>

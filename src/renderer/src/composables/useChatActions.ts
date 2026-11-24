@@ -112,5 +112,62 @@ export function useChatActions() {
     await removal.remove([meta])
   }
 
-  return { state, group, working, open, newChat, rename, move, moveElsewhere, reveal, fork, copyLastAnswer, exportMarkdown, remove }
+  /** While the agent works, ending its CLI cuts off its answer: only when the user says so. */
+  async function cutOffOk(id: string, title: string, confirmText: string): Promise<boolean> {
+    const status = sessions.runtime(id).status
+    if (status !== 'running' && status !== 'waiting' && status !== 'starting') return true
+    return ui.confirm({ title, description: 'Der Agent arbeitet gerade. Seine Antwort bricht dabei ab.', confirmText })
+  }
+
+  /**
+   * Its CLI starts anew on the same conversation and takes up what changed since it started (Nexa's
+   * tools, the prompts of the project). The chat says „… startet“ meanwhile: no toast of its own.
+   */
+  async function restart(meta: SessionMeta): Promise<void> {
+    if (!(await cutOffOk(meta.id, 'Chat neu starten?', 'Neu starten'))) return
+    await attempt(() => sessions.restart(meta.id), 'Chat ließ sich nicht neu starten')
+  }
+
+  /** Its CLI ends and the start page shows, with the chat's project; the chat goes on with its next prompt. */
+  async function end(meta: SessionMeta): Promise<void> {
+    if (!(await cutOffOk(meta.id, 'Chat beenden?', 'Beenden'))) return
+    const done = await attempt(() => sessions.stop(meta.id).then(() => true), 'Chat ließ sich nicht beenden')
+    if (!done) return
+    if (sessions.activeId === meta.id) newChat(meta.projectId)
+  }
+
+  /**
+   * After a change a CLI takes only at its start: the open chat's runs on as it was, so a toast offers
+   * to start it anew. Without an open chat, or with its CLI not running, the next prompt takes it anyway.
+   */
+  function offerRestart(): void {
+    const meta = ui.view === 'chat' ? sessions.active : null
+    if (!meta || !sessions.runtime(meta.id).connected) return
+    toast('Gilt ab dem nächsten Start der CLI', {
+      // Several switches in a row: one toast. Long enough to finish with the settings and still find it.
+      id: 'restart-offer',
+      duration: 15_000,
+      description: `Der offene Chat „${meta.title}“ läuft noch mit den bisherigen Einstellungen.`,
+      action: { label: 'Chat neu starten', onClick: () => void restart(meta) },
+    })
+  }
+
+  return {
+    state,
+    group,
+    working,
+    open,
+    newChat,
+    rename,
+    move,
+    moveElsewhere,
+    reveal,
+    fork,
+    copyLastAnswer,
+    exportMarkdown,
+    remove,
+    restart,
+    end,
+    offerRestart,
+  }
 }

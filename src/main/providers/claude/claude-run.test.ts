@@ -44,6 +44,25 @@ describe('ClaudeRun prompts', () => {
     run = new ClaudeRun(binary, options, sink)
   })
 
+  /** Claude Code answers the `initialize` the run sent at its start. */
+  const initialized = async () => {
+    const request = fake.written.find((m) => (m as { request?: { subtype?: string } }).request?.subtype === 'initialize') as { request_id: string }
+    stream({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: {} } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  it('is ready without a prompt once Claude Code answers initialize (a restart)', async () => {
+    expect(runtime.status).toBe('starting')
+    await initialized()
+    expect(runtime).toMatchObject({ status: 'idle', connected: true })
+  })
+
+  it('stays at work when the prompt came before the answer to initialize', async () => {
+    await run.send({ id: 'p1', text: 'hallo' })
+    await initialized()
+    expect(runtime.status).toBe('running')
+  })
+
   it('names each prompt, so Claude Code can say when it takes it up', async () => {
     await run.send({ id: 'p1', text: 'hallo' })
     expect(fake.written.at(-1)).toMatchObject({ type: 'user', uuid: 'p1' })
