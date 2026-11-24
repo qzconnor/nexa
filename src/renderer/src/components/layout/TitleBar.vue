@@ -44,8 +44,17 @@ const shown = computed<ProviderId[]>(() => {
 const project = computed(() => (ui.view === 'chat' && sessions.active ? projects.get(sessions.active.projectId) : undefined))
 /** The folder itself: the project's, or one in it the chat works in. */
 const cwd = computed(() => (project.value ? (sessions.cwdOf(sessions.active) ?? project.value.path) : null))
-/** The way from the project to the chat's folder, e.g. `nexa/src`; empty for the project's own. */
-const subfolder = computed(() => (project.value && cwd.value ? subfolderSegments(cwd.value, project.value.path).join('/') : ''))
+/**
+ * The way from the project to the chat's folder, e.g. `nexa/src`; empty for the project's own. Empty
+ * for a chat's worktree too: the branch chip names it (`worktree-<name>`), and `.claude/worktrees/`
+ * would push the project's name out.
+ */
+const subfolder = computed(() => {
+  if (!project.value || !cwd.value) return ''
+  const worktree = ui.view === 'chat' ? sessions.active?.worktree : undefined
+  if (worktree && cwd.value === worktree.path) return ''
+  return subfolderSegments(cwd.value, project.value.path).join('/')
+})
 
 function openProject(): void {
   if (cwd.value) void window.api.app.openPath(cwd.value)
@@ -80,7 +89,8 @@ function openProject(): void {
             @click="openProject"
           >
             <FolderIcon class="size-3.5 shrink-0" />
-            <span class="truncate font-medium">{{ project.name }}</span>
+            <!-- Gives way to the subfolder slowly: the project is what tells chats apart. -->
+            <span class="shrink-[0.25] truncate font-medium">{{ project.name }}</span>
             <span v-if="subfolder" class="truncate">/ {{ subfolder }}</span>
           </button>
           <GitBranchChip :cwd="cwd ?? project.path" class="min-w-0" />
