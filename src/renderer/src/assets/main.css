@@ -639,6 +639,19 @@
     background: var(--surface-solid);
     pointer-events: none;
   }
+  /*
+   * Toasts (ui/sonner) as the cards over the chat look where nothing lies beneath them: the card's tint
+   * over the panel's opaque copy. They float outside the chat's stacking context, where no
+   * .frost-backing can get under the text, so a backdrop-filter would let the sharp text through.
+   * `--toast-tint` colours errors and warnings like the banners above the composer.
+   */
+  .toast-surface {
+    --toast-card: color-mix(in oklab, var(--card) 50%, transparent);
+    background:
+      linear-gradient(var(--toast-tint, transparent), var(--toast-tint, transparent)),
+      linear-gradient(var(--toast-card), var(--toast-card)),
+      var(--surface-solid);
+  }
 }
 
 /* Release notes as GitHub renders them (settings, „Updates“): one line per change under its section. */
