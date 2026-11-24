@@ -6,12 +6,15 @@ import type {
   AppInfo,
   AppSettings,
   CommandOption,
+  ConnectorSettings,
   DeepPartial,
   FolderPromptInfo,
+  McpAuthStart,
   McpServerInfo,
   ModelDefaults,
   ModelOption,
   Platform,
+  PluginInfo,
   Project,
   ProjectSection,
   PromptTarget,
@@ -110,6 +113,11 @@ export const IpcInvoke = {
   sessionsContext: 'sessions:context',
   sessionsMcpServers: 'sessions:mcp-servers',
   sessionsSetMcp: 'sessions:set-mcp',
+  sessionsReconnectMcp: 'sessions:reconnect-mcp',
+  sessionsAuthenticateMcp: 'sessions:authenticate-mcp',
+  sessionsConnectorSettings: 'sessions:connector-settings',
+  sessionsPlugins: 'sessions:plugins',
+  sessionsSetPlugin: 'sessions:set-plugin',
   sessionsSync: 'sessions:sync',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
@@ -324,6 +332,16 @@ export interface NexaApi {
     mcpServers(id: string): Promise<McpServerInfo[]>
     /** Switches a server on or off for the chat's project (its running chats take it at once or with the next prompt). */
     setMcp(id: string, name: string, enabled: boolean): Promise<void>
+    /** Connects a server of the chat's CLI anew (one that failed, or signed in since). */
+    reconnectMcp(id: string, name: string): Promise<void>
+    /** Starts a server's sign-in: the page to open; null when it needs none. */
+    authenticateMcp(id: string, name: string): Promise<McpAuthStart | null>
+    /** Where the connectors of the chat's CLI are set up (a page, or its config file). */
+    connectorSettings(id: string): Promise<ConnectorSettings>
+    /** The plugins the chat's CLI has installed for its folder. */
+    plugins(id: string): Promise<PluginInfo[]>
+    /** Switches a plugin in the CLI's own settings; its running chats load the plugins anew. */
+    setPlugin(id: string, pluginId: string, enabled: boolean): Promise<void>
     /**
      * Takes what was added to the chat's Claude Code conversation outside Nexa into the chat, and looks
      * where else it is open (`SessionRuntime.openElsewhere`); the number of items added.

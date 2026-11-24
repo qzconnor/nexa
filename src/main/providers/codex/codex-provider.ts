@@ -1,10 +1,12 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { ChatItem } from '@shared/chat'
-import type { CommandOption, ModelDefaults, ModelOption, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
+import type { CommandOption, ConnectorSettings, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
 import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
+import { defaultCodexHome } from '../../accounts/cli-files'
 import { CliBinary, type ResolvedCommand } from '../cli-binary'
 import { codexMcpServers } from '../mcp-servers'
+import { byPluginName, codexAuthStart, codexPlugins } from '../plugins'
 import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { CodexClient, type CodexServerRequest } from './codex-client'
 import { codexThreadItems } from './codex-items'
@@ -199,6 +201,39 @@ export class CodexProvider implements AgentProvider {
     return codexMcpServers(await this.server(account).client.request('mcpServerStatus/list', {}))
   }
 
+  /** Codex reads its MCP servers' config again and connects them anew, for all threads of the account. */
+  async reconnectMcp(account: AccountContext): Promise<void> {
+    await this.server(account).client.request('config/mcpServer/reload', {})
+  }
+
+  /**
+   * The app-server signs in to the server itself: it opens a local callback and takes the browser's
+   * answer (`mcpServer/oauthLogin/completed`), after which the servers connect anew.
+   */
+  async authenticateMcp(account: AccountContext, _cwd: string, name: string): Promise<McpAuthStart | null> {
+    return codexAuthStart(await this.server(account).client.request('mcpServer/oauth/login', { name }))
+  }
+
+  /** Codex keeps its MCP servers in the account's `config.toml`. */
+  connectorSettings(account: AccountContext): ConnectorSettings {
+    const home = account.set.CODEX_HOME ? resolve(account.set.CODEX_HOME) : defaultCodexHome()
+    return { path: join(home, 'config.toml') }
+  }
+
+  /** The installed plugins, from the marketplaces of the account and of the folder's repository. */
+  async plugins(account: AccountContext, cwd: string): Promise<PluginInfo[]> {
+    return codexPlugins(await this.server(account).client.request('plugin/installed', { cwds: [cwd] })).sort(byPluginName)
+  }
+
+  /**
+   * `[plugins."<id>"] enabled` in the account's `config.toml`, as Codex writes it when installing.
+   * Merged into the table, so the plugin's other keys stay; threads take it at their next start.
+   */
+  async setPluginEnabled(account: AccountContext, _cwd: string, id: string, enabled: boolean): Promise<void> {
+    await this.server(account).client.request('config/value/write', { keyPath: 'plugins', value: { [id]: { enabled } }, mergeStrategy: 'upsert' })
+    for (const key of this.skillCache.keys()) if (key.startsWith(`${account.accountId}\0`)) this.skillCache.delete(key)
+  }
+
   /** The default model of the account: Codex's own config may name one this plan can't use. */
   private async defaultModel(account: AccountEnv): Promise<string | undefined> {
     const models = await this.models({ ...account, accessToken: null })
@@ -307,6 +342,11 @@ export class CodexProvider implements AgentProvider {
     if (method === 'account/rateLimits/updated') {
       const usage = usageOfSnapshot(params.rateLimits, 'session')
       if (usage) this.onUsage?.(accountId, usage)
+      return
+    }
+    // A sign-in Nexa started is through: the server connects with the new login.
+    if (method === 'mcpServer/oauthLogin/completed' && params.success === true) {
+      void this.servers.get(accountId)?.client.request('config/mcpServer/reload', {}).catch(() => undefined)
       return
     }
     const threadId = typeof params.threadId === 'string' ? params.threadId : null
