@@ -64,7 +64,8 @@
 - [x] Nachrichten, während der Agent arbeitet: Sie warten wie in den CLIs blass unter dem Chat („Wartet“),
       bis der Agent sie aufnimmt, und stehen dann an dieser Stelle als normale Nachricht im Verlauf. In der
       Eingabe ein eigener Knopf dafür
-- [x] Gedanken offen im Verlauf statt eingeklappt
+- [x] Gedanken offen im Verlauf statt eingeklappt; stehen sie untereinander (nur Werkzeuge dazwischen),
+      zeigt ein Block den neuesten und blendet ihn beim Wechsel über
 - [x] „+“-Menü an der Eingabe wie in Claude Desktop statt der Büroklammer: „Dateien oder Fotos
       hinzufügen“ (Strg+U; Bilder hängen an, andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude
       `--add-dir`, Codex schreibbare Ordner; als Chips über der Eingabe), „Slash-Befehle“, „Konnektoren ›“
