@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
+import { artifactChatMap, artifactLinks, type ArtifactMentions } from '@shared/artifacts'
 import { folderKey, inFolder } from '@shared/folders'
 import {
   PROVIDER_IDS,
@@ -148,6 +149,8 @@ export class SessionService extends TypedEmitter<Events> {
   private readonly sessions = new Map<string, SessionState>()
   /** The prompts and answers of every chat for the search, by session, while `stamp` says the chat is unchanged. */
   private readonly searchCache = new Map<string, { stamp: string; texts: Promise<ChatText[]> }>()
+  /** The artifacts each saved chat names, by session, while `stamp` says it is unchanged. */
+  private readonly artifactCache = new Map<string, { stamp: string; mentions: Promise<ArtifactMentions> }>()
   private saveTimer: NodeJS.Timeout | null = null
 
   constructor(
@@ -637,6 +640,31 @@ export class SessionService extends TypedEmitter<Events> {
     // A failed read is tried again with the next search.
     texts.catch(() => this.searchCache.get(s.meta.id) === entry && this.searchCache.delete(s.meta.id))
     return texts
+  }
+
+  /** The chat each artifact came from, by the id in its link (see `artifactChatMap`). */
+  async artifactChats(): Promise<Record<string, string>> {
+    const states = [...this.sessions.values()].sort((a, b) => b.meta.updatedAt - a.meta.updatedAt)
+    for (const id of this.artifactCache.keys()) if (!this.sessions.has(id)) this.artifactCache.delete(id)
+    const none: ArtifactMentions = { published: [], named: [] }
+    const found = new Map<string, ArtifactMentions>()
+    await pool(states, 4, async (s) => {
+      found.set(s.meta.id, await this.artifactsOf(s).catch(() => none))
+    })
+    return artifactChatMap(states.map((s) => ({ id: s.meta.id, mentions: found.get(s.meta.id) ?? none })))
+  }
+
+  /** The artifacts a chat links to: an open one as it is now, a saved one read once until it changes. */
+  private artifactsOf(s: SessionState): Promise<ArtifactMentions> {
+    if (s.items) return Promise.resolve(artifactLinks(s.items))
+    const stamp = `saved:${s.meta.updatedAt}`
+    const cached = this.artifactCache.get(s.meta.id)
+    if (cached?.stamp === stamp) return cached.mentions
+    const mentions = this.savedItems(s).then((items) => artifactLinks(items))
+    const entry = { stamp, mentions }
+    this.artifactCache.set(s.meta.id, entry)
+    mentions.catch(() => this.artifactCache.get(s.meta.id) === entry && this.artifactCache.delete(s.meta.id))
+    return mentions
   }
 
   /** A Codex thread's chat, read through the app-server of the account whose folder keeps it. */

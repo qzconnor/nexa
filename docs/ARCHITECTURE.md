@@ -29,6 +29,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/account-login.ts` | `claude auth login` / `codex login` ohne Terminal: Link, Code, Ergebnis |
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
+| `artifacts/artifact-service.ts` | Claudes Artefakte auf claude.ai je Account (Liste, Vorschaubilder als `data:`-URL); Kanäle `artifacts:*` in `artifact-ipc.ts`, Typen und Link-Erkennung in `shared/artifacts.ts` |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
 | `accounts/conversation-files.ts` | Die Dateien einer Unterhaltung je Config-Ordner (Claude: Transkript, Subagents, Checkpoints; Codex: Rollouts) und ihre Größe, zum Löschen und Aufräumen |
 | `accounts/session-move.ts` | Verschiebt eine Session von Claude Code in den Projektordner eines anderen Arbeitsordners (wie `/cd`, aus dem Claude Manager) |
@@ -253,6 +254,12 @@ der Ordner bleibt auf der Platte.
   API. Eine Einstellung öffnet den Dialog an ihrer Karte oder Zeile (`ui.settingsAnchor`). Die Textsuche
   (Groß-/Kleinschreibung und Akzente egal) liegt in `shared/search.ts`, für Main und Renderer.
 - `stores/accounts.ts`: Accounts, laufende Logins, Vorgabe je CLI, Account eines Chats (`sessionAccount`).
+- **Artefakte** (`views/ArtifactsView.vue`, `ui.view = 'artifacts'`, Eintrag unter „Neuer Chat“): Claudes
+  Artefakte des gewählten Accounts als Karten mit Vorschaubild, Suche und Filtern (`lib/artifacts.ts`).
+  `stores/artifacts.ts` hält Listen und Bilder, solange die App läuft, und fragt
+  `SessionService.artifactChats` nach dem Chat jedes Artefakts (liest jeden gespeicherten Chat einmal, bis
+  er sich ändert). Ein Klick öffnet den Chat und das Artefakt in dessen Browser-Panel (ein Tab, der es
+  schon zeigt, wird wiederverwendet), ohne Chat im Standardbrowser.
 - Themes: eingebaute in `shared/themes/builtin.ts`, eigene als JSON-Dateien im Ordner `themes` der
   App-Daten (Format des Claude Managers, `ThemeService` überwacht den Ordner). `themes/apply.ts` setzt
   die Tokens, `themes/color-info.ts` beschreibt jede Farbe für den Editor.

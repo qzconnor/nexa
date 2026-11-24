@@ -22,6 +22,7 @@ import {
   SearchIcon,
   SeparatorHorizontalIcon,
   SettingsIcon,
+  ShapesIcon,
   SparklesIcon,
   SquarePenIcon,
   Trash2Icon,
@@ -126,6 +127,10 @@ const switchChoices = computed(() => {
         <CommandItem value="new-chat" filter-text="Neuer Chat Startseite" @select="run(() => chat.newChat())">
           <SquarePenIcon />
           Neuer Chat
+        </CommandItem>
+        <CommandItem value="artifacts" filter-text="Artefakte Seiten Dokumente claude.ai veröffentlicht Artifact" @select="run(() => (ui.view = 'artifacts'))">
+          <ShapesIcon />
+          Artefakte
         </CommandItem>
         <CommandItem value="add-project" filter-text="Projekt hinzufügen Ordner öffnen anlegen" @select="run(addProject)">
           <FolderPlusIcon />
