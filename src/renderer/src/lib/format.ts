@@ -58,15 +58,22 @@ export function formatClock(ms: number): string {
   return clock.format(ms)
 }
 
+/** A time ahead as a clock time, further away than most of a day with the weekday ("Do., 14:30"). */
+export function formatAhead(ms: number, now = Date.now()): string {
+  return ms - now < 20 * 3600_000 ? clock.format(ms) : weekdayClock.format(ms)
+}
+
 /** When a limit resets: "in 2 Std. 13 Min. · 17:54", further away with the weekday. */
 export function formatReset(ms: number, now = Date.now()): string {
   const ahead = ms - now
   if (ahead <= 0) return 'gleich'
-  const minutes = Math.round(ahead / 60_000)
-  const span =
-    minutes < 60 ? `${minutes} Min.` : minutes < 24 * 60 ? `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.` : `${Math.round(minutes / 60 / 24)} T.`
-  const at = ahead < 20 * 3600_000 ? clock.format(ms) : weekdayClock.format(ms)
-  return `in ${span} · ${at}`
+  return `in ${formatSpan(ahead)} · ${formatAhead(ms, now)}`
+}
+
+/** A stretch of time to a limit or a reset: "45 Min.", "2 Std. 13 Min.", "3 T." */
+export function formatSpan(ms: number): string {
+  const minutes = Math.round(Math.max(0, ms) / 60_000)
+  return minutes < 60 ? `${minutes} Min.` : minutes < 24 * 60 ? `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.` : `${Math.round(minutes / 60 / 24)} T.`
 }
 
 export function formatDateTime(ms: number): string {

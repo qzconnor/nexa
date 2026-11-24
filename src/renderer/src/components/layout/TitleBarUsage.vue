@@ -4,8 +4,10 @@ import { computed, ref } from 'vue'
 import { identityLabel, planLabel } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
+import type { UsageWindow } from '@shared/types'
 import AccountDot from '@/components/accounts/AccountDot.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
+import UsageResetLine from '@/components/common/UsageResetLine.vue'
 import UsageRing from '@/components/common/UsageRing.vue'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -13,8 +15,8 @@ import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { useClock } from '@/composables/useClock'
 import { attempt } from '@/lib/errors'
-import { formatRelative, formatReset } from '@/lib/format'
-import { clampPercent, shortWindowLabel, usageFillClass, usageLevel, usageTextClass } from '@/lib/usage'
+import { formatRelative } from '@/lib/format'
+import { clampPercent, forecastHint, shortWindowLabel, usageFillClass, usageLevel, usageTextClass } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProvidersStore } from '@/stores/providers'
@@ -42,6 +44,11 @@ const shownId = computed(() => {
 const shown = computed(() => accounts.get(shownId.value))
 const windows = computed(() => (providers.usageOf(shownId.value)?.windows ?? []).slice(0, 2))
 const latest = computed(() => Math.max(0, ...list.value.map((a) => providers.usageOf(a.id)?.updatedAt ?? 0)) || undefined)
+
+/** When the window's limit comes at this pace, if before its reset. */
+function limitAt(window: UsageWindow): string | null {
+  return forecastHint(window, now.value)?.at ?? null
+}
 
 async function refresh(): Promise<void> {
   refreshing.value = true
@@ -80,6 +87,8 @@ function openAccounts(): void {
           <span :class="cn('text-xs font-medium tabular-nums', clampPercent(w.usedPercent) >= 85 ? usageTextClass.high : 'text-foreground')">
             {{ clampPercent(w.usedPercent) }}&nbsp;%
           </span>
+          <!-- At this pace the limit comes before the reset: when, right in the title bar. -->
+          <span v-if="limitAt(w)" :class="cn('text-xs font-medium tabular-nums', usageTextClass.high)">→&nbsp;{{ limitAt(w) }}</span>
         </span>
       </Button>
     </PopoverTrigger>
@@ -115,7 +124,7 @@ function openAccounts(): void {
               <span :class="cn('tabular-nums', usageTextClass[usageLevel(w.usedPercent)])">{{ clampPercent(w.usedPercent) }} %</span>
             </div>
             <Progress :model-value="clampPercent(w.usedPercent)" :class="cn('h-1.5', usageFillClass[usageLevel(w.usedPercent)])" />
-            <div v-if="w.resetsAt" class="text-[0.7rem] text-muted-foreground">Zurückgesetzt {{ formatReset(w.resetsAt, now) }}</div>
+            <UsageResetLine :window="w" :now="now" class="text-[0.7rem]" />
           </div>
           <p v-if="!providers.usageOf(account.id)?.windows.length" class="pl-4 text-xs text-muted-foreground">
             {{

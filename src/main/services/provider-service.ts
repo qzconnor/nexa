@@ -18,6 +18,7 @@ import { TypedEmitter } from '../lib/typed-emitter'
 import { ClaudeProvider } from '../providers/claude/claude-provider'
 import { CodexProvider } from '../providers/codex/codex-provider'
 import type { AccountContext, AgentProvider, CliSessionInfo, McpServerState, RunUsage } from '../providers/provider'
+import { UsageSamples } from './usage-samples'
 
 const USAGE_POLL_MS = 5 * 60_000
 
@@ -45,6 +46,8 @@ export class ProviderService extends TypedEmitter<Events> {
   constructor(
     private readonly settings: () => AppSettings,
     private readonly accounts: AccountService,
+    /** The readings of the limit windows, for their forecast (none kept in tests). */
+    private readonly samples = new UsageSamples(null),
   ) {
     super()
     this.claude = new ClaudeProvider(() => settings().claude)
@@ -60,6 +63,7 @@ export class ProviderService extends TypedEmitter<Events> {
         if (ids.has(id)) continue
         this.logins.cancel(id)
         for (const provider of Object.values(this.providers)) void provider.forget(id)
+        this.samples.forget(id)
         if (this.usages.delete(id)) this.emit('usage', this.usage())
       }
       known = ids
@@ -174,13 +178,16 @@ export class ProviderService extends TypedEmitter<Events> {
     return [...this.usages.values()]
   }
 
-  /** New limits of an account. A failed reading keeps the windows known before, with its reason. */
+  /**
+   * New limits of an account, with the forecast of each window from its readings. A failed reading
+   * keeps the windows known before, with its reason.
+   */
   setUsage(accountId: string, usage: RunUsage): void {
     const previous = this.usages.get(accountId)
     const failed = !usage.windows.length && !!usage.message
     const next: ProviderUsage = failed && previous
       ? { ...previous, message: usage.message }
-      : { ...usage, accountId, plan: usage.plan ?? previous?.plan }
+      : { ...usage, accountId, plan: usage.plan ?? previous?.plan, windows: this.samples.record(accountId, usage.updatedAt, usage.windows) }
     this.usages.set(accountId, next)
     this.emit('usage', this.usage())
   }
@@ -250,6 +257,7 @@ export class ProviderService extends TypedEmitter<Events> {
   async dispose(): Promise<void> {
     if (this.pollTimer) clearInterval(this.pollTimer)
     this.logins.dispose()
+    await this.samples.flush()
     await Promise.all(Object.values(this.providers).map((p) => p.dispose().catch(() => undefined)))
   }
 }

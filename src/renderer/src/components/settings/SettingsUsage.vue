@@ -6,13 +6,14 @@ import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import type { UsageStats } from '@shared/types'
 import AccountDot from '@/components/accounts/AccountDot.vue'
+import UsageResetLine from '@/components/common/UsageResetLine.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { useClock } from '@/composables/useClock'
 import { attempt } from '@/lib/errors'
-import { formatRelative, formatReset, formatTokens } from '@/lib/format'
+import { formatRelative, formatTokens } from '@/lib/format'
 import { clampPercent, usageFillClass, usageLevel, usageTextClass } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
@@ -94,7 +95,7 @@ const chart = computed(() => {
                 <span :class="cn('font-medium tabular-nums', usageTextClass[usageLevel(w.usedPercent)])">{{ clampPercent(w.usedPercent) }} %</span>
               </div>
               <Progress :model-value="clampPercent(w.usedPercent)" :class="cn('h-1.5', usageFillClass[usageLevel(w.usedPercent)])" />
-              <span v-if="w.resetsAt" class="text-xs text-muted-foreground">Zurückgesetzt {{ formatReset(w.resetsAt, now) }}</span>
+              <UsageResetLine :window="w" :now="now" class="text-xs" />
             </div>
           </div>
           <span class="pl-4 text-xs text-muted-foreground">Stand {{ formatRelative(providers.usageOf(account.id)?.updatedAt, now) }}</span>

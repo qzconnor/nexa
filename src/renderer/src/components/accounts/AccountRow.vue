@@ -3,6 +3,7 @@ import { CopyIcon, EllipsisIcon, FolderOpenIcon, GripVerticalIcon, KeyRoundIcon,
 import { computed } from 'vue'
 import { accountKindLabel, canLogin, duplicateOf, identityLabel, isSystemAccountId, planLabel, usesSecret, type Account } from '@shared/accounts'
 import { PROVIDERS } from '@shared/providers'
+import UsageResetLine from '@/components/common/UsageResetLine.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,7 +16,6 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { useClock } from '@/composables/useClock'
 import { attempt } from '@/lib/errors'
-import { formatReset } from '@/lib/format'
 import { clampPercent, shortWindowLabel, usageFillClass, usageLevel, usageTextClass } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
@@ -150,7 +150,7 @@ async function mergeIntoTwin(): Promise<void> {
           <span :class="cn('tabular-nums', usageTextClass[usageLevel(w.usedPercent)])">{{ clampPercent(w.usedPercent) }} %</span>
         </div>
         <Progress :model-value="clampPercent(w.usedPercent)" :class="cn('h-1', usageFillClass[usageLevel(w.usedPercent)])" />
-        <span v-if="w.resetsAt" class="truncate text-[0.7rem] text-muted-foreground">Zurückgesetzt {{ formatReset(w.resetsAt, now) }}</span>
+        <UsageResetLine :window="w" :now="now" class="text-[0.7rem]" />
       </div>
     </div>
     <p v-else-if="usage?.message" class="pl-5.5 text-xs text-muted-foreground">{{ usage.message }}</p>
