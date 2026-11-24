@@ -130,7 +130,7 @@
 - [x] Prompts bearbeiten: der Stift links neben einem Prompt ändert ihn im Chat und schickt ihn neu; was
       danach kam, fällt weg. Claude Code (`--resume-session-at` der Antwort davor) und Codex (`thread/fork`
       bis zum Turn davor) setzen ihre Unterhaltung an der Stelle fort, die alte bleibt dem Chat bis zum
-      Löschen
+      Löschen. Auch während der Agent arbeitet: Senden bricht seine Antwort ab
 - [x] Slash-Befehle, die die CLIs ohne Terminal nicht können, führt Nexa selbst aus, für Claude und Codex:
       `/clear` (`/reset`: Kontext im selben Chat leeren), `/new` (neuer Chat im selben Ordner mit denselben
       Einstellungen), `/diff` (alle

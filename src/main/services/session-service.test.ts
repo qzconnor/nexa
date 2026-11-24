@@ -522,8 +522,42 @@ describe('SessionService.edit', () => {
     const items = async () => (await sessions.history('chat'))!.items as ChatItem[]
     const prompt = async (text: string) => (await items()).find((i) => i.kind === 'user' && i.text === text)!.id
     const shown = async () => (await items()).map((i) => (i.kind === 'user' ? i.text : i.kind === 'notice' ? `notice:${i.text}` : i.id))
-    return { sessions, starts, sent, events, prompt, shown }
+    return { sessions, starts, sent, events, prompt, shown, run, sink: () => sink! }
   }
+
+  it('ends the turn the agent works on and goes on from the changed prompt', async () => {
+    const { sessions, starts, sent, prompt, shown, run, sink } = await talked('codex')
+    await sessions.send('chat', { text: 'dritte' })
+    sink().runtime({ status: 'running' })
+    sink().item({ kind: 'assistant', id: 'a3', ts: 31, provider: 'codex', text: 'Antwort 3, halb', streaming: true })
+    // The fake is the same for every start: what counts is that it was stopped before.
+    const stop = run.stop
+    let stopped = 0
+    run.stop = async () => {
+      stopped++
+      await stop()
+    }
+
+    await sessions.edit('chat', await prompt('dritte'), { text: 'dritte, anders' })
+
+    expect(stopped).toBe(1)
+    expect(await shown()).toEqual(['erste', 'a1', 'turn:t1', 'zweite', 'a2', 'turn:t2', 'dritte, anders'])
+    expect(starts.at(-1)).toMatchObject({ resumeId: THREAD, fork: { at: 't2' } })
+    expect(sent.at(-1)).toBe('dritte, anders')
+  })
+
+  it('waits for a shell in the background from before the prompt, not for one after it', async () => {
+    const { sessions, prompt, shown, sink } = await talked('codex')
+    const shell = { taskId: 'b1', background: true, status: 'running' as const }
+    sink().item({ kind: 'tool', id: 'sh', ts: 25, provider: 'codex', tool: 'bash', name: 'Bash', title: 'Befehl', status: 'done', shell, startedAt: 25 })
+    await sessions.send('chat', { text: 'dritte' })
+
+    await expect(sessions.edit('chat', await prompt('dritte'), { text: 'anders' })).rejects.toThrow('Hintergrund')
+    expect(await shown()).toContain('dritte')
+
+    await sessions.edit('chat', await prompt('zweite'), { text: 'zweite, anders' })
+    expect(await shown()).toEqual(['erste', 'a1', 'turn:t1', 'zweite, anders'])
+  })
 
   it('goes on from the Codex turn before the prompt, in a fork of the thread', async () => {
     const { sessions, starts, sent, events, prompt, shown } = await talked('codex')

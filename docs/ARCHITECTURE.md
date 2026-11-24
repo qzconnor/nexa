@@ -250,8 +250,11 @@ Renderer), jede CLI zweigt ihre Unterhaltung wie beim Abzweigen an ihrer letzten
 Nachricht der letzten Antwort davor, deren `msg_…` in der ID des Items steht), und der neue Text geht
 mit `send` hinaus. Die alte Unterhaltung kommt nach `earlierCli` und geht so mit dem Chat in den
 Papierkorb. Hat eine CLI vor dem Prompt nicht geantwortet, beginnt sie neu, mit dem Chat davor als
-`<nexa-context>`. Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, solange
-der Chat ruht; was die Agents an Dateien geändert haben, bleibt.
+`<nexa-context>`. Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, auch
+während der Agent arbeitet: `edit` beendet dann die CLI samt ihrem Turn, Prompts in der Warteschlange
+landen hinter dem bearbeiteten und fallen mit weg. Nur eine Shell im Hintergrund oder ein Agent von vor
+dem Prompt hält es auf, sie stünden sonst als laufend im Chat. Was die Agents an Dateien geändert
+haben, bleibt.
 
 ### Shell-Modus (`!`)
 

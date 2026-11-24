@@ -382,15 +382,20 @@ export class SessionService extends TypedEmitter<Events> {
    * (answers, tools, later prompts) is gone. Each CLI branches its conversation off at its last answer
    * before the prompt, as `fork` does, into a new one at its next start; the old one stays the chat's
    * (`earlierCli`) and goes along when the chat is deleted. Files the agent changed stay as they are.
+   * While the agent works, the turn ends here: what it does belongs to what came after the prompt.
    */
   async edit(id: string, itemId: string, input: SendInput): Promise<void> {
     const s = await this.loaded(id)
-    this.requireAtRest(s, 'bearbeiten')
     const meta = s.meta
     const project = this.projects.get(meta.projectId)
     if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
     const at = s.index.get(itemId)
     if (at === undefined || s.items[at]?.kind !== 'user') throw new Error('Diesen Prompt gibt es im Chat nicht mehr.')
+    // Shells and agents started after the prompt go with the rest of it; one from before it would stay
+    // in the chat, said to run, while its process ends with the CLI's.
+    if (this.inBackground(s, s.items.slice(0, at))) {
+      throw new Error('Im Hintergrund läuft noch eine Shell oder ein Agent von vor diesem Prompt. Sobald sie fertig sind, lässt er sich bearbeiten.')
+    }
     // Above a `/clear` no CLI knows the chat any more.
     if (at < (meta.contextFrom ?? 0)) throw new Error('Prompts über „Kontext geleert“ lassen sich nicht mehr bearbeiten.')
     if (!input.text.trim() && !input.images?.length) return
@@ -399,7 +404,8 @@ export class SessionService extends TypedEmitter<Events> {
     if (!this.providers.isReady(meta.provider)) throw new Error(`${PROVIDERS[meta.provider].name} ist nicht installiert.`)
     this.requireSignedIn(meta, meta.provider)
 
-    // Its process holds the conversation as it was.
+    // Its process holds the conversation as it was, and a turn it still works on; prompts queued for
+    // that turn land after the edited one and go with it.
     if (s.run) await this.stop(id)
     const before = s.items.slice(0, at)
     const cwd = this.cwdOf(meta, project)
@@ -548,14 +554,19 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /** Whether the chat's CLI is at rest: no turn, question, shell or agent of it that still runs. */
-  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' | 'leeren' | 'bearbeiten' = 'verschieben'): void {
+  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' | 'leeren' = 'verschieben'): void {
     const status = s.runtime.status
     if (status === 'running' || status === 'starting' || status === 'waiting') {
       throw new Error(`Der Chat arbeitet gerade. Sobald er fertig ist, lässt er sich ${action}.`)
     }
+    if (this.inBackground(s, s.items ?? [])) throw new Error(`Im Hintergrund läuft noch eine Shell oder ein Agent des Chats. Sobald sie fertig sind, lässt er sich ${action}.`)
+  }
+
+  /** Whether a shell in the background or an agent of `items` still runs. */
+  private inBackground(s: SessionState, items: readonly ChatItem[]): boolean {
     // Only a CLI that still runs has them; after a restart a state left on "running" means nothing.
-    const background = s.run?.alive && s.items?.some((i) => (i.kind === 'tool' && i.shell?.background && i.shell.status === 'running') || (i.kind === 'agent' && i.status === 'running'))
-    if (background) throw new Error(`Im Hintergrund läuft noch eine Shell oder ein Agent des Chats. Sobald sie fertig sind, lässt er sich ${action}.`)
+    if (!s.run?.alive) return false
+    return items.some((i) => (i.kind === 'tool' && i.shell?.background && i.shell.status === 'running') || (i.kind === 'agent' && i.status === 'running'))
   }
 
   /** Claude Code's transcript of the chat into the project folder of `to`; without one there is nothing to move. */

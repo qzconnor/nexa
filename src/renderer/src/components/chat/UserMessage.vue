@@ -17,11 +17,11 @@ import Markdown from './Markdown.vue'
  * A prompt of the user, on the right; the CLI it went to is shown when the session switched. One sent
  * while the agent works waits faded below the chat (`queued`) until the CLI takes it up, then stands
  * in the chat where it did, as any other. Its pictures open large in Nexa's viewer. An `editable` one
- * can be changed in place and sent anew: what came after it goes (`sessions.edit`); while the agent
- * works (`editBusy`) its pencil only says so. A message from another chat's agent (`from`) is outlined
- * instead of filled and names that chat, which it opens.
+ * can be changed in place and sent anew: what came after it goes (`sessions.edit`), while the agent
+ * works (`busy`) its answer too. A message from another chat's agent (`from`) is outlined instead of
+ * filled and names that chat, which it opens.
  */
-const props = defineProps<{ item: UserItem; showProvider?: boolean; queued?: boolean; sessionId?: string; editable?: boolean; editBusy?: boolean }>()
+const props = defineProps<{ item: UserItem; showProvider?: boolean; queued?: boolean; sessionId?: string; editable?: boolean; busy?: boolean }>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 /** The sending chat as it is called now (renamed since, perhaps); gone: as it was called then. */
@@ -44,7 +44,6 @@ const sending = ref(false)
 const field = useTemplateRef<HTMLTextAreaElement>('field')
 
 async function startEdit(): Promise<void> {
-  if (props.editBusy) return
   draft.value = props.item.text
   editing.value = true
   await nextTick()
@@ -114,7 +113,10 @@ function onKey(event: KeyboardEvent): void {
         @keydown="onKey"
       />
       <div class="flex items-center justify-between gap-3 pl-2">
-        <span class="text-[0.72rem] text-muted-foreground">Was danach kam, fällt weg. Geänderte Dateien bleiben, wie sie sind.</span>
+        <span class="text-[0.72rem] text-muted-foreground">
+          <template v-if="busy">Senden bricht ab, woran der Agent gerade arbeitet. </template>Was danach kam, fällt weg. Geänderte Dateien bleiben, wie
+          sie sind.
+        </span>
         <div class="flex shrink-0 items-center gap-1">
           <Button variant="ghost" size="sm" :disabled="sending" @click="editing = false">Abbrechen</Button>
           <Button size="sm" :disabled="sending || (!draft.trim() && !item.images?.length)" @click="submit">
@@ -140,15 +142,9 @@ function onKey(event: KeyboardEvent): void {
         v-if="editable && sessionId && !sender"
         variant="ghost"
         size="icon-xs"
-        :class="
-          cn(
-            'absolute top-1/2 right-full mr-1.5 -translate-y-1/2 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-            editBusy && 'cursor-default group-hover:opacity-40',
-          )
-        "
+        class="absolute top-1/2 right-full mr-1.5 -translate-y-1/2 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
         aria-label="Prompt bearbeiten"
-        :aria-disabled="editBusy || undefined"
-        v-tooltip="editBusy ? 'Bearbeiten geht, sobald der Agent fertig ist' : 'Bearbeiten und neu senden'"
+        v-tooltip="'Bearbeiten und neu senden'"
         @click="startEdit"
       >
         <PencilIcon />
