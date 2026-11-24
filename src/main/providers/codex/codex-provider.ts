@@ -12,10 +12,14 @@ import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServer
 import { TITLE_INSTRUCTIONS, TITLE_TIMEOUT_MS, cleanTitle, titleRequest } from '../titles'
 import { CodexClient, type CodexServerRequest } from './codex-client'
 import { codexThreadItems } from './codex-items'
+import { codexThreadHeld } from './codex-presence'
 import { CodexRun } from './codex-run'
 
 /** Pages of `thread/list` read at most: 5,000 threads, more than anyone keeps. */
 const MAX_THREAD_PAGES = 50
+/** Turns of `thread/turns/list` per page, and pages at most, when only the newest turns count. */
+const TURN_PAGE = 10
+const MAX_TURN_PAGES = 20
 
 type Json = Record<string, unknown>
 
@@ -347,9 +351,38 @@ export class CodexProvider implements AgentProvider {
    * A thread's chat as Codex keeps it, with every turn. Codex reads it from the account's own records:
    * a rollout only copied into the folder (another account's thread) has none there.
    */
-  async history(account: AccountContext, sessionId: string): Promise<ChatItem[]> {
-    const response = await this.server(account).client.request('thread/read', { threadId: sessionId, includeTurns: true })
-    return isPlainObject(response.thread) ? codexThreadItems(response.thread) : []
+  async history(account: AccountContext, sessionId: string, since?: number): Promise<ChatItem[]> {
+    const client = this.server(account).client
+    if (since === undefined) {
+      const response = await client.request('thread/read', { threadId: sessionId, includeTurns: true })
+      return isPlainObject(response.thread) ? codexThreadItems(response.thread) : []
+    }
+    // The newest turns, page by page, back to one that started well before `since`: the whole of a
+    // long thread is megabytes, read every few seconds while a terminal works on it.
+    const turns: Json[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < MAX_TURN_PAGES; page++) {
+      const response: Json = await client.request('thread/turns/list', { threadId: sessionId, cursor, limit: TURN_PAGE, sortDirection: 'desc', itemsView: 'full' })
+      const data = Array.isArray(response.data) ? response.data.filter(isPlainObject) : []
+      turns.push(...data)
+      cursor = typeof response.nextCursor === 'string' ? response.nextCursor : null
+      if (!cursor || data.some((turn) => typeof turn.startedAt === 'number' && turn.startedAt * 1000 < since - 60_000)) break
+    }
+    return codexThreadItems({ turns: turns.reverse() })
+  }
+
+  /**
+   * Another Codex has the thread loaded (the TUI, VS Code, the desktop app): it holds its writer lock,
+   * and none of Nexa's servers has it loaded. Those hold it up to a minute after their chat let go.
+   */
+  async openElsewhere(_account: AccountContext, sessionId: string, configDir: string): Promise<string | null> {
+    if (!(await codexThreadHeld(configDir, sessionId))) return null
+    for (const { client } of this.servers.values()) {
+      if (!client.alive) continue
+      const loaded = await client.request('thread/loaded/list', {}).catch(() => null)
+      if (Array.isArray(loaded?.data) && loaded.data.includes(sessionId)) return null
+    }
+    return 'Codex außerhalb von Nexa'
   }
 
   async usage(account: AccountContext, wake: boolean): Promise<RunUsage | null> {

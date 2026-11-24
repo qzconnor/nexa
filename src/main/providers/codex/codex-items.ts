@@ -223,6 +223,25 @@ export function codexThreadItems(thread: Json): ChatItem[] {
   return items
 }
 
+/**
+ * The turns in a thread's history (`codexThreadItems`) that came to it outside Nexa: finished, none of
+ * their items known to the chat (Nexa's own carry Codex's ids, all but the prompt), and ended from
+ * `since` on, which leaves out what a forked thread copied of the one it came from.
+ */
+export function codexTurnsFromOutside(items: readonly ChatItem[], known: (id: string) => boolean, since: number): ChatItem[] {
+  const found: ChatItem[] = []
+  let turn: ChatItem[] = []
+  for (const item of items) {
+    turn.push(item)
+    if (item.kind !== 'turn') continue
+    // Codex counts in seconds.
+    if (item.ts > since - 1000 && !turn.some((i) => known(i.id))) found.push(...turn)
+    turn = []
+  }
+  // What follows the last turn's end still runs.
+  return found
+}
+
 function historyItem(raw: Json, at: number, interrupted: boolean): ChatItem | null {
   const id = str(raw.id)
   if (!id) return null

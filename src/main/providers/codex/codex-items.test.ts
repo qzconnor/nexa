@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { codexThreadItems } from './codex-items'
+import { codexThreadItems, codexTurnsFromOutside } from './codex-items'
 
 const turn = (id: string, items: object[], more: object = {}) => ({ id, items, itemsView: 'full', status: 'completed', error: null, startedAt: 100, completedAt: 110, durationMs: 10_000, ...more })
 
@@ -76,5 +76,34 @@ describe('codexThreadItems', () => {
   it('tells a turn that hit the plan’s limit', () => {
     const items = codexThreadItems({ turns: [turn('turn-1', [], { status: 'failed', error: { message: 'Limit erreicht', codexErrorInfo: 'usageLimitExceeded' } })] })
     expect(items).toMatchObject([{ kind: 'turn', status: 'error', error: 'Limit erreicht', limit: true }])
+  })
+})
+
+describe('codexTurnsFromOutside', () => {
+  const prompt = (id: string, text: string) => ({ type: 'userMessage', id, content: [{ type: 'text', text }] })
+  const answer = (id: string, text: string) => ({ type: 'agentMessage', id, text, phase: 'final_answer' })
+  const history = codexThreadItems({
+    turns: [
+      // Copied by a fork from the thread it came from, before the chat's time.
+      turn('old', [prompt('u0', 'Früher'), answer('a0', 'Alt')], { startedAt: 50, completedAt: 60 }),
+      // Nexa's own: its answer is in the chat by Codex's id, its prompt by Nexa's.
+      turn('own', [prompt('u1', 'In Nexa'), answer('a1', 'Hier')], { startedAt: 100, completedAt: 110 }),
+      turn('outside', [prompt('u2', 'Im Terminal'), answer('a2', 'Dort')], { startedAt: 200, completedAt: 210 }),
+      turn('running', [prompt('u3', 'Noch dran')], { startedAt: 300, status: 'inProgress', completedAt: null }),
+    ],
+  })
+
+  it('takes the finished turns the chat doesn’t know, from the time it last held the thread', () => {
+    const known = new Set(['a1', 'turn:own'])
+    const found = codexTurnsFromOutside(history, (id) => known.has(id), 110_500)
+    expect(found.map((i) => i.id)).toEqual(['u2', 'a2', 'turn:outside'])
+  })
+
+  it('leaves a turn out that the chat knows only partly', () => {
+    expect(codexTurnsFromOutside(history, (id) => id === 'a2' || id === 'turn:own' || id === 'a1', 0)).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ id: 'turn:outside' })]),
+    )
+    // Nothing known and no time: every finished turn.
+    expect(codexTurnsFromOutside(history, () => false, 0).filter((i) => i.kind === 'turn').map((i) => i.id)).toEqual(['turn:old', 'turn:own', 'turn:outside'])
   })
 })

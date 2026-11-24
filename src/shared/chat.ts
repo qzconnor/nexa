@@ -374,10 +374,11 @@ export interface SessionRuntime {
   /** Since when the CLI compacts the conversation; the turn waits for it. */
   compactingSince?: number
   /**
-   * Where else the CLI's conversation is open right now („Claude Code im Terminal“): both would write
-   * to it, each going on from what it knows. Looked at when the chat opens and the window gets focus.
+   * Where else one of the chat's CLI conversations is open right now („Claude Code im Terminal“): both
+   * would write to it, each going on from what it knows (Codex refuses Nexa the thread meanwhile).
+   * Looked at when the chat opens and the window gets focus.
    */
-  openElsewhere?: string
+  openElsewhere?: { provider: ProviderId; where: string }
   /**
    * Prompts sent while the CLI works that it hasn't taken up yet (Claude Code does at its next step,
    * as its own queue): each joins the chat where the CLI takes it, until then it waits below it.

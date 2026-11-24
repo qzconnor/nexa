@@ -3,7 +3,7 @@ import type { ChatItem } from '@shared/chat'
 import type { RunOptions, RunSink } from '../provider'
 import type { CodexClient } from './codex-client'
 import { commandView, unwrapShell } from './codex-items'
-import { CodexRun, codexMcpConfig, skillInputs } from './codex-run'
+import { CodexRun, codexMcpConfig, heldElsewhere, skillInputs } from './codex-run'
 
 const sink: RunSink = { item: () => {}, delta: () => {}, runtime: () => {}, cliSession: () => {}, usage: () => {}, taken: () => {}, exited: () => {} }
 
@@ -93,6 +93,15 @@ describe('CodexRun.connect', () => {
     })
     expect(calls.map((c) => c.method)).toEqual(['thread/fork', 'thread/fork'])
     expect(calls[1]!.params.lastTurnId).toBeUndefined()
+  })
+
+  it('says in words that another Codex has the thread open', async () => {
+    const refuse = async () => {
+      throw new Error('thread/resume failed: thread t1 already has an active writer')
+    }
+    await expect(connect({ resumeId: 't1' }, refuse)).rejects.toThrow('in Codex außerhalb von Nexa offen')
+    const other = new Error('boom')
+    expect(heldElsewhere(other)).toBe(other)
   })
 })
 

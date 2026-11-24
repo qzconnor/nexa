@@ -47,7 +47,7 @@ import type { AccountService } from '../accounts/account-service'
 import { claudePaths, codexPaths } from '../accounts/cli-files'
 import { claudeSessionFiles, codexRollouts, codexThreadFiles, diskSize } from '../accounts/conversation-files'
 import { relocateClaudeSession } from '../accounts/session-move'
-import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript } from '../accounts/session-transfer'
+import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript, findCodexRollout } from '../accounts/session-transfer'
 import { readClaudeChat, readClaudeChatSince } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { pool } from '../lib/pool'
@@ -56,6 +56,7 @@ import type { NexaMcpServer } from '../mcp/mcp-server'
 import { nexaToolsOn, type NexaToolGrant } from '../mcp/tool-grant'
 import { claudeOpenElsewhere } from '../providers/claude/claude-presence'
 import { forkPoint } from '../providers/claude/claude-transcript'
+import { codexTurnsFromOutside } from '../providers/codex/codex-items'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { folderPromptText } from './folder-prompts'
 import { handoffContext, sessionInstructions, userShellContext } from './instructions'
@@ -82,12 +83,16 @@ interface SessionState {
   mcpToken: string | null
   /** The CLI takes a change only at its start (Codex's MCP servers): it ends after the turn that runs. */
   restartAfterTurn?: boolean
-  /** Claude Code's transcript as last read for what came from outside (its mtime): unchanged, it isn't read again. */
-  syncedMtime?: number
+  /** Each CLI's conversation file as last read for what came from outside (its mtime): unchanged, it isn't read again. */
+  syncedMtime?: Partial<Record<ProviderId, number>>
+  /** Where Codex keeps the chat's thread (`key`: its folder and id), and when that was looked up. */
+  rollout?: { key: string; path: string | null; at: number }
   /** While one look at the transcript runs, the next asks for the same. */
   syncing?: Promise<number>
+  /** Ends an idle Codex run (`releaseWhenIdle`). */
+  releaseTimer?: ReturnType<typeof setTimeout>
   /** The last turns taken in from outside: their note, how many prompts it counts, their last item. */
-  outside?: { noticeId: string; prompts: number; lastId: string }
+  outside?: { provider: ProviderId; noticeId: string; prompts: number; lastId: string }
 }
 
 interface Events extends Record<string, unknown[]> {
@@ -137,6 +142,11 @@ function conversationLookup(search: boolean): ConversationLookup {
 }
 
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
+/**
+ * How long a Codex run stays idle before it lets go of its thread. Codex's server keeps it loaded
+ * another minute after that, so the TUI can open the chat about two minutes after Nexa's last turn.
+ */
+const CODEX_RELEASE_MS = 60_000
 /** Chats a search returns at most; with more, another word narrows it down better than scrolling. */
 const MAX_SEARCH_HITS = 200
 /** The tool name of the commands the user runs with `!`: Nexa's, no CLI's. */
@@ -239,7 +249,7 @@ export class SessionService extends TypedEmitter<Events> {
       const link = meta.cli[provider]
       if (link) {
         link.seenItems = imported.length
-        if (provider === 'claude') link.synced = Date.now()
+        link.synced = Date.now()
       }
       if (!imported.length) imported = [notice('Den Verlauf dieser Session gab die CLI nicht heraus', 'Sie geht trotzdem dort weiter, wo sie aufgehört hat.')]
     } catch (error) {
@@ -574,10 +584,10 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /**
-   * Takes into the chat what Claude Code's conversation gained outside Nexa (`claude --resume` in a
-   * terminal, Claude Desktop) since the chat last held it, finished turns only, and notes where else it
-   * is open now. Nexa's own CLI of the chat, idle, holds the conversation as it was: it ends, and the
-   * next prompt resumes with what came. The number of items added.
+   * Takes into the chat what its CLIs' conversations gained outside Nexa (`claude --resume` or the
+   * Codex TUI in a terminal, Claude Desktop, VS Code) since the chat last held them, finished turns
+   * only, and notes where else one is open now. Nexa's own CLI of the chat, idle, holds the
+   * conversation as it was: it ends, and the next prompt resumes with what came. The number of items added.
    */
   syncCli(id: string): Promise<number> {
     const s = this.get(id)
@@ -588,60 +598,124 @@ export class SessionService extends TypedEmitter<Events> {
   private async readOutside(s: SessionState): Promise<number> {
     await this.loaded(s.meta.id)
     const meta = s.meta
-    const link = meta.cli.claude
     const project = this.projects.get(meta.projectId)
     // A conversation not forked yet is the other chat's: what comes to it there isn't this chat's.
-    if (!link || link.fork || !project || !s.items) return 0
-    // Not into a turn at work, of either CLI: its items would come between the turn's.
-    const busy = () => {
-      const status = s.runtime.status
-      return !!s.run?.alive && (status === 'running' || status === 'waiting' || status === 'starting')
+    const linked = PROVIDER_IDS.filter((p) => meta.cli[p] && !meta.cli[p]!.fork)
+    if (!linked.length || !project || !s.items) return 0
+    let elsewhere: SessionRuntime['openElsewhere']
+    for (const provider of linked) {
+      const where = elsewhere ? null : await this.openElsewhere(s, provider).catch(() => null)
+      if (where) elsewhere = { provider, where }
     }
-    const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(meta, 'claude'))
-    const own = s.run?.alive && s.runProvider === 'claude' ? s.run.pid : undefined
-    const elsewhere = (await claudeOpenElsewhere(paths.configDir, link.sessionId, own))?.where
-    if (elsewhere !== s.runtime.openElsewhere) {
+    const before = s.runtime.openElsewhere
+    if (elsewhere?.where !== before?.where || elsewhere?.provider !== before?.provider) {
       const { openElsewhere: _, ...rest } = s.runtime
       this.setRuntime(s, elsewhere ? { ...rest, openElsewhere: elsewhere } : rest)
     }
-    if (busy()) return 0
+    let added = 0
+    for (const provider of linked) {
+      // Not into a turn at work, of either CLI: its items would come between the turn's.
+      if (this.busy(s)) break
+      const found = provider === 'claude' ? await this.claudeOutside(s, project) : await this.codexOutside(s)
+      if (found && !this.busy(s)) added += await this.takeOutside(s, provider, found)
+    }
+    return added
+  }
 
+  private busy(s: SessionState): boolean {
+    const status = s.runtime.status
+    return !!s.run?.alive && (status === 'running' || status === 'waiting' || status === 'starting')
+  }
+
+  /** Where else the chat's conversation with a CLI is open now, other than in Nexa's own run of it. */
+  private async openElsewhere(s: SessionState, provider: ProviderId): Promise<string | null> {
+    const link = s.meta.cli[provider]!
+    const own = !!s.run?.alive && s.runProvider === provider
+    if (provider === 'claude') {
+      const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(s.meta, 'claude'))
+      return (await claudeOpenElsewhere(paths.configDir, link.sessionId, own ? s.run!.pid : undefined))?.where ?? null
+    }
+    // Nexa's own run holds the thread's lock, and so does one about to start.
+    if (own || s.starting) return null
+    const accountId = this.codexAccount(s.meta)
+    return this.providers.openElsewhere('codex', accountId, link.sessionId, link.configDir ?? this.configDirOf('codex', accountId))
+  }
+
+  /** Sessions from before the mark: the chat's newest item, which came after what the CLI wrote for it. */
+  private syncedSince(s: SessionState, link: CliLink): number {
+    return link.synced ?? (s.items ?? []).reduce((max, item) => Math.max(max, item.ts), 0)
+  }
+
+  /** What Claude Code's transcript gained since the chat last held it. */
+  private async claudeOutside(s: SessionState, project: Project): Promise<{ items: ChatItem[]; last: number } | null> {
+    const meta = s.meta
+    const link = meta.cli.claude!
+    const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(meta, 'claude'))
     const transcript = await findClaudeTranscript(paths.projectsDir, link.sessionId, this.cwdOf(meta, project))
     const info = transcript ? await stat(transcript).catch(() => null) : null
-    // Sessions from before the mark: the chat's newest item, which came after what Claude Code wrote for it.
-    const since = link.synced ?? s.items.reduce((max, item) => Math.max(max, item.ts), 0)
-    if (!transcript || !info || !since || info.mtimeMs <= since || info.mtimeMs === s.syncedMtime) return 0
-    s.syncedMtime = info.mtimeMs
-    const added = await readClaudeChatSince(transcript, since, s.items)
-    if (!added || busy()) return 0
-    const fresh = added.items.filter((item) => !s.index.has(item.id))
-    if (fresh.length && s.run?.alive && s.runProvider === 'claude') await this.stop(meta.id)
+    const since = this.syncedSince(s, link)
+    if (!transcript || !info || !since || info.mtimeMs <= since || info.mtimeMs === s.syncedMtime?.claude) return null
+    s.syncedMtime = { ...s.syncedMtime, claude: info.mtimeMs }
+    return readClaudeChatSince(transcript, since, s.items ?? [])
+  }
+
+  /**
+   * The turns Codex's thread gained since the chat last held it. Only one process at a time has a
+   * thread loaded (codex-presence.ts): what came while Nexa held it is all Nexa's own.
+   */
+  private async codexOutside(s: SessionState): Promise<{ items: ChatItem[]; last: number } | null> {
+    const link = s.meta.cli.codex!
+    const accountId = this.codexAccount(s.meta)
+    const configDir = link.configDir ?? this.configDirOf('codex', accountId)
+    const key = `${configDir}|${link.sessionId}`
+    // A thread without a turn has no file yet: looked for again a minute later.
+    if (s.rollout?.key !== key || (!s.rollout.path && Date.now() - s.rollout.at > 60_000)) {
+      s.rollout = { key, path: await findCodexRollout(codexPaths(configDir).sessionsDir, link.sessionId), at: Date.now() }
+    }
+    const info = s.rollout.path ? await stat(s.rollout.path).catch(() => null) : null
+    const since = this.syncedSince(s, link)
+    if (!info || !since || info.mtimeMs <= since || info.mtimeMs === s.syncedMtime?.codex) return null
+    s.syncedMtime = { ...s.syncedMtime, codex: info.mtimeMs }
+    const history = await this.providers.history('codex', accountId, link.sessionId, since)
+    const items = codexTurnsFromOutside(history ?? [], (id) => s.index.has(id), since)
+    return items.length ? { items, last: items.reduce((max, item) => Math.max(max, item.ts), since) } : null
+  }
+
+  /** Puts what came from outside into the chat, under one note. The number of items new to it. */
+  private async takeOutside(s: SessionState, provider: ProviderId, found: { items: ChatItem[]; last: number }): Promise<number> {
+    const meta = s.meta
+    const link = meta.cli[provider]!
+    const items = s.items ?? []
+    const fresh = found.items.filter((item) => !s.index.has(item.id))
+    if (fresh.length && s.run?.alive && s.runProvider === provider) await this.stop(meta.id)
     if (fresh.length) {
       // Turn after turn from a terminal next to Nexa: one note over all of them, as long as nothing
       // came in Nexa between.
-      const earlier = s.outside && s.items.at(-1)?.id === s.outside.lastId ? s.items[s.index.get(s.outside.noticeId) ?? -1] : undefined
+      const earlier =
+        s.outside?.provider === provider && items.at(-1)?.id === s.outside.lastId ? items[s.index.get(s.outside.noticeId) ?? -1] : undefined
       const prompts = (earlier ? s.outside!.prompts : 0) + fresh.filter((i) => i.kind === 'user').length
       const noticeId = earlier?.id ?? randomUUID()
+      const name = PROVIDERS[provider].name
       this.put(s, {
         kind: 'notice',
         id: noticeId,
         ts: earlier?.ts ?? fresh[0]!.ts,
-        provider: 'claude',
+        provider,
         level: 'info',
         text: 'Außerhalb von Nexa weitergeführt',
         detail:
           prompts === 0
-            ? 'Antworten aus Claude Code übernommen'
+            ? `Antworten aus ${name} übernommen`
             : prompts === 1
-              ? 'Ein Prompt mit Antwort aus Claude Code übernommen'
-              : `${prompts} Prompts mit Antworten aus Claude Code übernommen`,
+              ? `Ein Prompt mit Antwort aus ${name} übernommen`
+              : `${prompts} Prompts mit Antworten aus ${name} übernommen`,
       })
-      s.outside = { noticeId, prompts, lastId: fresh.at(-1)!.id }
+      s.outside = { provider, noticeId, prompts, lastId: fresh.at(-1)!.id }
     }
-    for (const item of added.items) this.put(s, item)
-    // seenItems stays: Claude Code's own items don't count as unseen anyway, and what Codex said
+    for (const item of found.items) this.put(s, item)
+    // seenItems stays: the CLI's own items don't count as unseen anyway, and what the other CLI said
     // before them still has to reach it with the next prompt.
-    link.synced = added.last
+    link.synced = found.last
     const answer = fresh.findLast((i) => i.kind === 'assistant' && !i.parentId && i.text.trim())
     if (answer?.kind === 'assistant') meta.preview = firstLine(answer.text, 100)
     if (fresh.length) meta.updatedAt = Date.now()
@@ -718,9 +792,13 @@ export class SessionService extends TypedEmitter<Events> {
   private async codexHistory(meta: SessionMeta): Promise<ChatItem[]> {
     const link = meta.cli.codex
     if (!link) return []
-    const saved = link.accountId ?? systemAccountId('codex')
-    const accountId = this.accounts.has(saved) ? saved : this.accountFor(meta, 'codex')
-    return (await this.providers.history('codex', accountId, link.sessionId)) ?? []
+    return (await this.providers.history('codex', this.codexAccount(meta), link.sessionId)) ?? []
+  }
+
+  /** The account whose folder keeps the chat's Codex thread. */
+  private codexAccount(meta: SessionMeta): string {
+    const saved = meta.cli.codex?.accountId ?? systemAccountId('codex')
+    return this.accounts.has(saved) ? saved : this.accountFor(meta, 'codex')
   }
 
   /** The chat as saved, without loading it into the session; an imported one not opened yet from its CLI's history. */
@@ -962,8 +1040,8 @@ export class SessionService extends TypedEmitter<Events> {
           const link = meta.cli[provider]
           if (link) {
             link.seenItems = s.items?.length ?? 0
-            // What Claude Code wrote to its transcript up to here is in the chat already.
-            if (provider === 'claude') link.synced = Date.now()
+            // What the CLI wrote to its conversation up to here is in the chat already.
+            link.synced = Date.now()
           }
           meta.updatedAt = Date.now()
           this.saveSoon()
@@ -1002,10 +1080,7 @@ export class SessionService extends TypedEmitter<Events> {
       },
       exited: (error) => {
         if (!current()) return
-        // A turn cut off by the end of the process: what it wrote is Nexa's own, not from outside.
-        const status = s.runtime.status
-        const link = meta.cli[provider]
-        if (provider === 'claude' && link && (status === 'running' || status === 'waiting' || status === 'starting')) link.synced = Date.now()
+        this.markOwn(s, provider)
         s.run = null
         s.runProvider = null
         s.runAccount = null
@@ -1052,7 +1127,8 @@ export class SessionService extends TypedEmitter<Events> {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.releaseQueued(s)
-      this.setRuntime(s, { status: 'error', connected: false, error: message })
+      // With the context ring and the note where else the chat is open (often why it didn't start).
+      this.setRuntime(s, this.atRest(s, { status: 'error', error: message }))
       throw error
     }
   }
@@ -1350,10 +1426,7 @@ export class SessionService extends TypedEmitter<Events> {
   async stop(id: string): Promise<void> {
     const s = this.get(id)
     const run = s.run
-    // Stopped in the middle of a turn: what it wrote to the transcript is Nexa's own (see `exited`).
-    const link = s.meta.cli.claude
-    const status = s.runtime.status
-    if (run && s.runProvider === 'claude' && link && (status === 'running' || status === 'waiting' || status === 'starting')) link.synced = Date.now()
+    if (run && s.runProvider) this.markOwn(s, s.runProvider)
     s.run = null
     s.runProvider = null
     s.runAccount = null
@@ -1361,6 +1434,19 @@ export class SessionService extends TypedEmitter<Events> {
     await run?.stop().catch(() => undefined)
     this.releaseQueued(s)
     this.setRuntime(s, this.atRest(s))
+  }
+
+  /**
+   * A run lets go of its conversation: what the CLI wrote to it so far is Nexa's own, not from outside.
+   * Claude Code's counts from the end of the last turn, so only a turn cut off matters; Codex's thread
+   * was Nexa's alone while the run held it (codex-presence.ts), up to now, and not at all when it
+   * never got hold of it.
+   */
+  private markOwn(s: SessionState, provider: ProviderId): void {
+    const link = s.meta.cli[provider]
+    const status = s.runtime.status
+    const held = provider === 'codex' ? s.runtime.connected : status === 'running' || status === 'waiting' || status === 'starting'
+    if (link && held) link.synced = Date.now()
   }
 
   /**
@@ -1436,8 +1522,8 @@ export class SessionService extends TypedEmitter<Events> {
   /**
    * The files of a chat's CLI conversations, in the config folder of every account of the CLI (and the
    * one it was saved in). Not those of a fork that hasn't run yet (they are the other chat's), nor
-   * those another chat goes on with (`shared`, `<provider>:<id>`), nor those of a Claude Code session
-   * open outside Nexa (`openElsewhere`; it would write them again).
+   * those another chat goes on with (`shared`, `<provider>:<id>`), nor those of a conversation open
+   * outside Nexa (`openElsewhere`; it would write them again).
    */
   private async conversationFiles(
     meta: SessionMeta,
@@ -1452,12 +1538,13 @@ export class SessionService extends TypedEmitter<Events> {
     for (const [provider, link] of links) {
       if (!link || link.fork || shared.has(`${provider}:${link.sessionId}`)) continue
       for (const dir of this.conversationDirs(provider, link)) {
-        if (provider === 'codex') {
-          files.push(...codexThreadFiles(await lookup.codex(dir), link.sessionId))
-          continue
-        }
-        const found = await claudeSessionFiles(dir, link.sessionId, cwd, lookup.search)
-        if (found.length > 0 && lookup.search && (await claudeOpenElsewhere(dir, link.sessionId).catch(() => null))) {
+        const found =
+          provider === 'codex' ? codexThreadFiles(await lookup.codex(dir), link.sessionId) : await claudeSessionFiles(dir, link.sessionId, cwd, lookup.search)
+        const open = async (): Promise<unknown> =>
+          provider === 'codex'
+            ? this.providers.openElsewhere('codex', this.codexAccount(meta), link.sessionId, dir)
+            : claudeOpenElsewhere(dir, link.sessionId)
+        if (found.length > 0 && lookup.search && (await open().catch(() => null))) {
           openElsewhere = true
           continue
         }
@@ -1561,7 +1648,29 @@ export class SessionService extends TypedEmitter<Events> {
     s.runtime = runtime
     // Saved with the next save of the session (a turn's end at the latest), not on every count.
     if (runtime.context) s.meta.context = runtime.context
+    this.releaseWhenIdle(s)
     this.emit('event', { type: 'runtime', sessionId: s.meta.id, runtime })
+  }
+
+  /**
+   * A Codex run idle for a while lets go of its thread: while one of Nexa's servers has it loaded,
+   * Codex refuses it to the TUI and every other program (codex-presence.ts). The next prompt resumes it.
+   */
+  private releaseWhenIdle(s: SessionState): void {
+    const idle = () =>
+      s.runProvider === 'codex' && !!s.run?.alive && s.runtime.status === 'idle' && !s.runtime.queued?.length && !s.runtime.compactingSince
+    if (!idle()) {
+      clearTimeout(s.releaseTimer)
+      s.releaseTimer = undefined
+      return
+    }
+    if (s.releaseTimer) return
+    const run = s.run
+    s.releaseTimer = setTimeout(() => {
+      s.releaseTimer = undefined
+      if (s.run === run && idle()) void this.stop(s.meta.id).catch(() => undefined)
+    }, CODEX_RELEASE_MS)
+    s.releaseTimer.unref?.()
   }
 
   private saveSoon(): void {

@@ -412,9 +412,9 @@ export interface CliLink {
    */
   configDir?: string
   /**
-   * Claude Code: the time (ms) up to which the chat holds its transcript. Entries after it came from a
-   * CLI outside Nexa (`claude --resume` in a terminal) and are read into the chat; missing: the time of
-   * the chat's last item (sessions from before).
+   * The time (ms) up to which the chat holds the CLI's conversation (Claude Code's transcript, Codex's
+   * thread). What came after it came from outside Nexa (`claude --resume`, the Codex TUI) and is read
+   * into the chat; missing: the time of the chat's last item (sessions from before).
    */
   synced?: number
   /**
