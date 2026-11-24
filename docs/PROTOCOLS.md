@@ -108,9 +108,31 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   (`.claude.json` bleibt gleich), Nexa schickt es deshalb nach jedem Start für die Server, die im Projekt
   aus sind. Ohne laufenden Chat fragt Nexa einen kurzen Prozess (`initialize`, gut 2 s warten, bis die
   Server verbunden sind, dann `mcp_status`). Weitere Untertypen, die Nexa noch nicht nutzt:
-  `mcp_reconnect`, `mcp_authenticate`, `reload_plugins`, `rewind_files`, `cancel_async_message`
-  (eine eingereihte Nachricht zurücknehmen), `mcp_read_resource`, `apply_flag_settings`,
-  `get_session_cost`, `set_cwd`.
+  `rewind_files`, `cancel_async_message` (eine eingereihte Nachricht zurücknehmen), `mcp_read_resource`,
+  `apply_flag_settings`, `get_session_cost`, `set_cwd`.
+- **Neu verbinden und Anmelden** (geprüft mit 2.1.330): `mcp_reconnect { serverName }` antwortet ohne
+  Inhalt, sobald der Server wieder verbunden ist, sonst mit dem Fehler des Servers.
+  `mcp_authenticate { serverName }` antwortet mit `authUrl`, `requiresUserAction` und
+  `callbackExpected`. Bei einem claude.ai-Konnektor ist es eine Seite auf claude.ai
+  (`…/mcp/start-auth/<server>`), `callbackExpected: false`: Man meldet sich dort an, danach verbindet
+  `mcp_reconnect` den Server im laufenden Prozess (ein neuer Prozess holt die Konnektoren ohnehin frisch).
+  Bei eigenem OAuth des Servers wartet der Prozess selbst auf die Weiterleitung des Browsers
+  (`callbackExpected: true`, dazu `redirectScheme`, `state`, `callbackPort`); er muss also laufen, bis die
+  Anmeldung durch ist. Ohne laufenden Chat hält Nexa dafür einen eigenen Prozess bis zu 5 min offen und
+  fragt `mcp_status`, bis der Server verbunden ist. `requiresUserAction: false` ohne `authUrl`: schon
+  angemeldet.
+- **Plugins** (geprüft mit 2.1.330): `claude plugin list --json` (im Ordner des Chats, mit der Umgebung
+  des Accounts, knapp 1 s) nennt jede Installation: `id` (`<plugin>@<marktplatz>`), `version`, `scope`
+  (`user`, `project`, `local`), `projectPath` (bei `project` und `local`), `installPath`, `mcpServers` und
+  `enabled`, so wie die Einstellungen aus diesem Ordner gesehen sagen. Eingebaute Plugins (`@builtin`)
+  stehen nicht darin. Name und Beschreibung stehen im Manifest `<installPath>/.claude-plugin/plugin.json`.
+  `claude plugin enable|disable <id> --json` schaltet wie `/plugin` im Scope der Installation
+  (`--scope` erkennt es selbst) und antwortet mit einer Zeile `{"outcome":"ok","scope":…}`: Aus schreibt
+  `enabledPlugins: { "<id>": false }` in `<config>/settings.json` (Scope `user`) bzw.
+  `.claude/settings.local.json` (`local`), An nimmt den Eintrag wieder heraus. Der laufende Prozess lädt
+  die Plugins mit `reload_plugins` neu; die Antwort enthält `commands`, `agents`, `plugins[]` (`name`,
+  `path`, `source` = die ID, `version`; nur geladene), `mcpServers` und `error_count`. Neu geladene Server
+  von Plugins sind wieder an, Nexa schaltet die im Projekt ausgeschalteten danach erneut ab.
 - **Weitere Ordner**: `--add-dir=<ordner>` (je Ordner einmal) gibt Claude Zugriff außerhalb des
   Arbeitsordners; gilt für den Prozess, Nexa startet ihn bei einer Änderung neu.
 
@@ -226,7 +248,21 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 - **MCP-Server**: `mcpServerStatus/list` liefert `data[]` mit `name`, `runtimeStatus`, `authStatus`,
   `tools` (Objekt je Werkzeug) und `serverInfo`; dabei ist `codex_apps`, Codex' eigener Server für die
   Apps, den Nexa nicht anzeigt. Umschalten geht nur über die Konfiguration des Threads, also ab dem
-  nächsten Start des Threads.
+  nächsten Start des Threads. `mcpServer/oauth/login { name, threadId? }` startet die Anmeldung an einem
+  Server: Antwort `{ authorizationUrl, loginId }`, der App-Server nimmt die Weiterleitung selbst entgegen
+  und meldet `mcpServer/oauthLogin/completed` (`name`, `success`, `error`). `config/mcpServer/reload`
+  (ohne Parameter) liest die Server aus der Konfiguration neu und verbindet sie; Nexa nutzt es für „Neu
+  verbinden“ und nach einer Anmeldung. Ein unbekannter Name ergibt „No MCP server named '…' found.“
+- **Plugins** (geprüft mit 0.169): `plugin/installed { cwds }` liefert `marketplaces[]` (`name`, `path`,
+  `interface.displayName`, `plugins[]`) mit den installierten Plugins; `plugin/list` dazu die nicht
+  installierten. Je Plugin `id` (`<name>@<marktplatz>`), `name`, `version` (entfernt) bzw. `localVersion`,
+  `installed`, `enabled`, `availability` (`AVAILABLE`, `DISABLED_BY_ADMIN`), `disabledReason`,
+  `interface` (`displayName`, `shortDescription`, `longDescription`, Logos). Die Apps von ChatGPT kommen
+  als Plugins des Marktplatzes `openai-curated-remote`. Ein- und ausgeschaltet wird in der `config.toml`
+  des Accounts: `[plugins."<id>"] enabled = true|false` (so schreibt es auch `plugin/install`). Nexa
+  schreibt mit `config/value/write { keyPath: "plugins", value: { "<id>": { enabled } }, mergeStrategy:
+  "upsert" }`: `upsert` führt die Tabellen zusammen, andere Schlüssel des Plugins bleiben, und eine ID
+  mit Punkten bricht keinen gepunkteten Schlüssel. Threads übernehmen das erst bei ihrem nächsten Start.
 - **Turn**: `turn/start`; während ein Turn läuft, gehen weitere Nachrichten über `turn/steer`
   (`{ threadId, input, expectedTurnId, clientUserMessageId? }`, Antwort `{ turnId }`; ist der Turn
   schon vorbei, ein Fehler). Beide nehmen `clientUserMessageId`, das als `clientId` am `userMessage`-Item

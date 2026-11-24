@@ -1,18 +1,32 @@
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { CommandOption, ModelDefaults, ModelOption, ProviderSettings, ProviderStatus } from '@shared/types'
-import { isPlainObject } from '@shared/utils'
+import type { CommandOption, ConnectorSettings, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus } from '@shared/types'
+import { firstLine, isPlainObject } from '@shared/utils'
 import { fetchClaudeUsage } from '../../accounts/claude-usage'
 import { CliBinary, cliEnv, type ResolvedCommand } from '../cli-binary'
 import { claudeMcpServers } from '../mcp-servers'
+import { byPluginName, claudeAuthStart, claudeManifest, claudePlugins, claudePluginToggleError } from '../plugins'
 import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
-import { claudeCommands, claudeModels, probeClaude } from './claude-probe'
+import { claudeCommands, claudeModels, openClaudeControl, probeClaude, type ClaudeControl } from './claude-probe'
 import { ClaudeRun } from './claude-run'
 
 /** The MCP servers of a folder without a running chat are asked again after this. */
 const MCP_TTL_MS = 60_000
 /** How long the asking process gives the servers to connect before it asks for their state. */
 const MCP_CONNECT_MS = 2500
+/** An MCP server's sign-in may first look up the server's auth endpoints. */
+const AUTH_ANSWER_MS = 30_000
+/** How long a process waits for the browser's answer to a sign-in it started. */
+const AUTH_WAIT_MS = 5 * 60_000
+
+async function readJson(path: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(path, 'utf8'))
+  } catch {
+    return null
+  }
+}
 
 /** The commands of a folder are asked again after this; skills added meanwhile come then. */
 const COMMANDS_TTL_MS = 5 * 60_000
@@ -169,6 +183,89 @@ export class ClaudeProvider implements AgentProvider {
     const servers = claudeMcpServers(answers[1])
     this.mcpCache.set(key, { servers, at: Date.now() })
     return servers
+  }
+
+  /** Without a chat running there, each look starts the servers anew: the cached one goes. */
+  async reconnectMcp(account: AccountContext, cwd: string): Promise<void> {
+    this.mcpCache.delete(`${account.accountId}\0${cwd}`)
+  }
+
+  /**
+   * Starts an MCP server's sign-in in a process of its own. A claude.ai connector signs in on claude.ai
+   * and needs nothing more from it; for its own OAuth, Claude Code waits for the browser's redirect, so
+   * the process stays until the server is connected or `AUTH_WAIT_MS` have passed.
+   */
+  async authenticateMcp(account: AccountContext, cwd: string, name: string): Promise<McpAuthStart | null> {
+    const control = await openClaudeControl(this.binary, account, cwd)
+    let start: McpAuthStart | null
+    try {
+      // The servers connect after `initialize`; the sign-in needs the server's config loaded.
+      await new Promise((resolve) => setTimeout(resolve, MCP_CONNECT_MS))
+      start = claudeAuthStart(await control.request({ subtype: 'mcp_authenticate', serverName: name }, AUTH_ANSWER_MS))
+    } catch (error) {
+      control.stop()
+      throw error
+    }
+    this.mcpCache.delete(`${account.accountId}\0${cwd}`)
+    if (!start?.waits) {
+      control.stop()
+      return start
+    }
+    void this.awaitSignIn(control, name).finally(() => {
+      control.stop()
+      this.mcpCache.delete(`${account.accountId}\0${cwd}`)
+    })
+    return start
+  }
+
+  private async awaitSignIn(control: ClaudeControl, name: string): Promise<void> {
+    const until = Date.now() + AUTH_WAIT_MS
+    while (control.alive && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+      const servers = claudeMcpServers(await control.request({ subtype: 'mcp_status' }).catch(() => null))
+      if (servers.find((s) => s.name === name)?.status === 'connected') return
+    }
+  }
+
+  /** claude.ai's connectors are set up on claude.ai; the others Claude Code keeps in its own files. */
+  connectorSettings(): ConnectorSettings {
+    return { url: 'https://claude.ai/settings/connectors' }
+  }
+
+  /**
+   * The plugins installed for a folder (`claude plugin list --json`, run there with the account), with
+   * the description from each one's manifest.
+   */
+  async plugins(account: AccountContext, cwd: string): Promise<PluginInfo[]> {
+    const result = await this.binary.output(['plugin', 'list', '--json'], { cwd, env: cliEnv(account.set, account.unset) })
+    let raw: unknown
+    try {
+      raw = JSON.parse(result.stdout)
+    } catch {
+      throw new Error(firstLine(result.stderr) || 'Claude Code hat die Plugins nicht genannt.')
+    }
+    const plugins = await Promise.all(
+      claudePlugins(raw, cwd).map(async ({ installPath, ...plugin }): Promise<PluginInfo> => {
+        if (!installPath) return plugin
+        const manifest = claudeManifest(await readJson(join(installPath, '.claude-plugin', 'plugin.json')))
+        return { ...plugin, name: manifest.name ?? plugin.name, description: manifest.description, version: plugin.version ?? manifest.version }
+      }),
+    )
+    return plugins.sort(byPluginName)
+  }
+
+  /**
+   * Switches a plugin as `/plugin` does (`claude plugin enable|disable`): in the settings of the scope
+   * it is installed in, also for Claude Code outside Nexa. The commands and servers it brings come and
+   * go with it.
+   */
+  async setPluginEnabled(account: AccountContext, cwd: string, id: string, enabled: boolean): Promise<void> {
+    const result = await this.binary.output(['plugin', enabled ? 'enable' : 'disable', id, '--json'], { cwd, env: cliEnv(account.set, account.unset) })
+    const error = claudePluginToggleError(result.stdout)
+    if (error) throw new Error(error === 'Claude Code hat nicht geantwortet.' && result.stderr.trim() ? firstLine(result.stderr) : error)
+    for (const cache of [this.commandCache, this.mcpCache]) {
+      for (const key of cache.keys()) if (key.startsWith(`${account.accountId}\0`)) cache.delete(key)
+    }
   }
 
   async start(options: RunOptions, sink: RunSink): Promise<AgentRun> {
