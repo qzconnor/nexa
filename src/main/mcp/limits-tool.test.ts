@@ -21,6 +21,9 @@ function account(id: string, patch: Partial<Account> = {}): Account {
     authState: 'ok',
     identity: { email: null, displayName: null, organizationName: null, organizationType: null, subscriptionType: 'max' },
     tokenExpiresAt: null,
+    loginEndsAt: null,
+    tokenSavedAt: null,
+    renewable: false,
     extraArgs: [],
     ...patch,
   }
