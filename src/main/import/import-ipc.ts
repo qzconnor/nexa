@@ -7,7 +7,8 @@ import type { CliSessionImport } from './cli-import'
 function importInput(input: unknown): ImportInput {
   const groups = isPlainObject(input) && Array.isArray(input.groups) ? input.groups.filter((g): g is string => typeof g === 'string') : null
   if (!groups) throw new Error('Ungültiger Parameter: groups')
-  return { groups }
+  const extras = isPlainObject(input) && Array.isArray(input.extras) ? input.extras.filter((e): e is string => typeof e === 'string') : []
+  return { groups, extras }
 }
 
 /** The window's side of taking over from the Claude Manager and from the CLIs' own folders. */

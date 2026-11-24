@@ -28,6 +28,9 @@
 - [x] Releases wie im Claude Manager: semantic-release auf `main`, Installer für Windows (mit `nx` im PATH),
       AppImage/deb/rpm für Linux, Auto-Update mit Versionshinweisen in den Einstellungen
 - [x] Übernahme aus dem Claude Manager (Workspaces, Accounts, Sessions) bei der Einrichtung und in den Einstellungen
+- [x] Übernahme aus dem Claude Manager vollständig und nachholbar: auch Workspace-Prompts (`cm_prompts.md` →
+      `prompts.md`), eigene Themes sowie Namen und Pins schon übernommener Chats; erneut gelesen bietet sie
+      einzeln an, was Nexa noch fehlt
 - [x] Unterordner in Projekten: Chats arbeiten in einem Ordner des Projekts, die Sidebar zeigt ihn als Ebene
 - [x] Tabellen mit Abständen, festem Kopf und Sortierung per Klick auf die Spalte
 - [x] Standard-Account einer CLI ausgeblendet, sobald ein eigener Account da ist
@@ -72,6 +75,8 @@
       hinzufügen“ (Strg+U; Bilder hängen an, andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude
       `--add-dir`, Codex schreibbare Ordner; als Chips über der Eingabe), „Slash-Befehle“, „Konnektoren ›“
 - [x] Zahnrad der Eingabe direkt links vom Senden-Knopf statt neben Account und CLI
+- [x] Eingabe während der Arbeit des Agents wie sonst: kein gestrichelter Rahmen und kein eigener Knopf
+      „In die laufende Antwort“ mehr, die Nachricht zeigt „Wartet“ im Chat
 - [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
       Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
       Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste

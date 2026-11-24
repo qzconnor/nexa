@@ -1,22 +1,26 @@
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir, readFile } from 'node:fs/promises'
+import { basename, extname, join } from 'node:path'
 import { sameLogin, systemAccountId, type Account, type AccountIdentity, type AccountKind } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
 import { folderKey } from '@shared/folders'
 import type { ClaudeManagerFound, ImportAccount, ImportInput, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
 import type { AppSettings, Project, SessionMeta } from '@shared/types'
 import { DEFAULT_SECTION_ID } from '@shared/sections'
+import { parseThemeFile } from '@shared/themes/file'
 import { isPlainObject } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { defaultClaudeConfigDir, defaultCodexHome } from '../accounts/cli-files'
 import { pool } from '../lib/pool'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { summarizeClaudeTranscript, type TranscriptSummary } from '../providers/claude/claude-transcript'
+import { readFolderPrompt, writeFolderPrompt } from '../services/folder-prompts'
 import type { ProjectService } from '../services/project-service'
 import { projectToSection } from '../services/project-sections'
 import type { SessionService } from '../services/session-service'
+import type { ThemeService } from '../services/theme-service'
 import { listTranscripts, type TranscriptFile } from './claude-sessions'
+import { planExtras, type CmTheme, type PlannedExtra } from './cm-extras'
 import { importedSessionMeta, isDirectory, planGroups, projectFolder, sessionTitle, type PlacedGroup } from './import-plan'
 
 /**
@@ -25,7 +29,8 @@ import { importedSessionMeta, isDirectory, planGroups, projectFolder, sessionTit
  * subfolders are projects). Nexa takes the workspaces as separators with their subfolders as projects
  * under them, other folders as projects under the default separator; the accounts with the same folders,
  * so their logins and conversations stay where they are; and every session as a chat that resumes Claude
- * Code's conversation. The Claude Manager's files are only read.
+ * Code's conversation. Besides, the workspaces' prompts, its own themes and the names and pins of
+ * sessions (cm-extras.ts). The Claude Manager's files are only read.
  */
 
 /** An account of the Claude Manager (its `accounts.json`, without the encrypted secret). */
@@ -48,7 +53,14 @@ export interface CmData {
   names: Record<string, string>
   /** Pinned sessions, by session id in lower case. */
   pinned: Set<string>
+  /** The workspaces' prompts (`cm_prompts.md` in their folders), those with text only. */
+  prompts: { path: string; text: string }[]
+  /** Its own themes, a JSON file each in `themes`. */
+  themeFiles: string[]
 }
+
+/** Where the Claude Manager keeps a workspace's prompt, in its folder. */
+export const CM_PROMPT_FILE = 'cm_prompts.md'
 
 /** The Claude Manager's data folder: `Claude Manager` (older installs), else `Signalbox`. */
 export function claudeManagerDir(appData: string): string | null {
@@ -108,7 +120,28 @@ export async function readClaudeManager(dir: string): Promise<CmData> {
   if (isPlainObject(marks) && isPlainObject(marks.marks)) {
     for (const [id, mark] of Object.entries(marks.marks)) if (isPlainObject(mark) && mark.pinned === true) pinned.add(id.toLowerCase())
   }
-  return { dir, workspaces: folders, accounts: cmAccounts(accounts, dir), names: named, pinned }
+  const prompts = (
+    await Promise.all(
+      folders.map(async (path) => ({ path, text: (await readFile(join(path, CM_PROMPT_FILE), 'utf8').catch(() => '')).replace(/^﻿/, '').trim() })),
+    )
+  ).filter((p) => p.text)
+  const themeDir = join(dir, 'themes')
+  const themeFiles = (await readdir(themeDir).catch(() => [] as string[])).filter((name) => extname(name).toLowerCase() === '.json').map((name) => join(themeDir, name))
+  return { dir, workspaces: folders, accounts: cmAccounts(accounts, dir), names: named, pinned, prompts, themeFiles }
+}
+
+/** The Claude Manager's themes that can be read, with their names. */
+async function readCmThemes(files: readonly string[]): Promise<CmTheme[]> {
+  const themes = await Promise.all(
+    files.map(async (file) => {
+      try {
+        return { file, name: parseThemeFile(await readJson(file), basename(file, extname(file))).name }
+      } catch {
+        return null
+      }
+    }),
+  )
+  return themes.filter((t): t is CmTheme => t !== null)
 }
 
 /** A session found in an account's folder, with what its transcript says. */
@@ -119,6 +152,7 @@ export interface FoundSession extends TranscriptFile {
 interface Scan {
   data: CmData
   groups: PlacedGroup<FoundSession>[]
+  extras: PlannedExtra[]
   preview: ImportPreview
 }
 
@@ -175,6 +209,7 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
     private readonly projects: ProjectService,
     private readonly sessions: SessionService,
     private readonly accounts: AccountService,
+    private readonly themes: Pick<ThemeService, 'list' | 'importFrom'>,
     private readonly settings: () => AppSettings,
   ) {
     super()
@@ -223,6 +258,14 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
     const groups = planGroups(found, data.workspaces, this.projects.list(), isDirectory).filter(
       (g) => g.sessions > 0 || (g.kind === 'workspace' && !this.projects.sectionByPath(g.path)),
     )
+    const extras = planExtras({
+      prompts: await Promise.all(data.prompts.map(async (p) => ({ ...p, current: await readFolderPrompt(p.path) }))),
+      themes: await readCmThemes(data.themeFiles),
+      nexaThemes: (await this.themes.list()).flatMap((entry) => (entry.theme ? [entry.theme.name] : [])),
+      names: data.names,
+      pinned: data.pinned,
+      chats: this.sessions.list(),
+    })
     const preview: ImportPreview = {
       dir,
       accounts: this.planAccounts(data.accounts).map(({ account: a, action, into }) => ({
@@ -234,10 +277,11 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
         ...(into ? { into: into.name } : {}),
       })),
       groups: groups.map(({ members: _members, ...group }) => group),
+      extras: extras.map((p) => p.extra),
       known: newest.size - todo.length,
       skipped,
     }
-    this.last = { data, groups, preview }
+    this.last = { data, groups, extras, preview }
     return preview
   }
 
@@ -312,7 +356,39 @@ export class ClaudeManagerImport extends TypedEmitter<{ progress: [ImportProgres
     }
     for (const id of fresh) await this.projects.gather(id)
     const sessions = this.sessions.adopt(metas)
+    const extras = await this.takeExtras(scan.extras, new Set(input.extras ?? []))
     this.last = null
-    return { sections: this.projects.sections().length - sectionsBefore, projects: this.projects.list().length - projectsBefore, sessions, accounts }
+    return { sections: this.projects.sections().length - sectionsBefore, projects: this.projects.list().length - projectsBefore, sessions, accounts, ...extras }
+  }
+
+  /** The extras chosen; one that fails leaves the others be. */
+  private async takeExtras(planned: readonly PlannedExtra[], chosen: ReadonlySet<string>): Promise<Pick<ImportResult, 'prompts' | 'themes' | 'names' | 'pins'>> {
+    const done = { prompts: 0, themes: 0, names: 0, pins: 0 }
+    /** How many of the chats changed; one deleted since the scan is left out. */
+    const each = async <T,>(items: readonly T[], change: (item: T) => Promise<unknown>) => {
+      let changed = 0
+      for (const item of items) if (await change(item).then(() => true, () => false)) changed++
+      return changed
+    }
+    for (const { extra, task } of planned) {
+      if (!task || !chosen.has(extra.id)) continue
+      try {
+        if (task.kind === 'prompt') {
+          // Not over a prompt written in Nexa since the scan.
+          if ((await readFolderPrompt(task.path)).trim()) continue
+          await writeFolderPrompt(task.path, task.text)
+          done.prompts++
+        } else if (task.kind === 'theme') {
+          done.themes += (await this.themes.importFrom([task.file])).imported.length
+        } else if (task.kind === 'names') {
+          done.names += await each(task.renames, (r) => this.sessions.update(r.id, { title: r.title }))
+        } else {
+          done.pins += await each(task.ids, (id) => this.sessions.update(id, { pinned: true }))
+        }
+      } catch (error) {
+        console.warn('[import] could not be taken over', extra.id, error)
+      }
+    }
+    return done
   }
 }
