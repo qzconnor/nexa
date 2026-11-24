@@ -71,6 +71,10 @@
 - [x] „+“-Menü an der Eingabe wie in Claude Desktop statt der Büroklammer: „Dateien oder Fotos
       hinzufügen“ (Strg+U; Bilder hängen an, andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude
       `--add-dir`, Codex schreibbare Ordner; als Chips über der Eingabe), „Slash-Befehle“, „Konnektoren ›“
+- [x] Zahnrad der Eingabe direkt links vom Senden-Knopf statt neben Account und CLI
+- [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
+      Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
+      Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste
 - [x] Einzelne MCP-Server an- und ausschalten unter „Konnektoren“: Schalter mit Zustand, Werkzeugen und
       Suche, gilt für alle Chats des Projekts. Ungenutzte (nie angemeldete) wie in der CLI eingeklappt. Claude Code schaltet im laufenden Prozess um (`mcp_status`,
       `mcp_toggle`, gilt nur für den Prozess, daher wendet Nexa es bei jedem Start an); Codex über

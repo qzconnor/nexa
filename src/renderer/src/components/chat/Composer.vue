@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import type { ContextUsage, PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { CommandOption, ModelDefaults } from '@shared/types'
+import ImageViewer from '@/components/common/ImageViewer.vue'
 import { Button } from '@/components/ui/button'
 import { useProjectPath } from '@/composables/useProjectPath'
 import { appCommandOf, appCommandOptions, mergeCommands, type AppCommand } from '@/lib/chat-commands'
@@ -23,10 +24,10 @@ import ComposerSettings from './ComposerSettings.vue'
 import ComposerSuggest from './ComposerSuggest.vue'
 
 /**
- * Where prompts are written: text, pasted or dropped images, commands, skills and files completed
- * as they are typed; below it the CLI and account, and behind the gear model, effort, Ultracode and
- * permission mode. While the agent works, sending steers it (Codex) or queues the prompt (Claude),
- * and the button next to it stops the turn.
+ * Where prompts are written: text, pasted or dropped images (a click shows one large), commands,
+ * skills and files completed as they are typed; below it the CLI and account, and by the send button
+ * the gear with model, effort, Ultracode and permission mode. While the agent works, sending steers it
+ * (Codex) or queues the prompt (Claude), and the button next to it stops the turn.
  */
 const props = defineProps<{
   provider: ProviderId
@@ -74,6 +75,8 @@ const text = ref('')
 const images = ref<string[]>([])
 const input = ref<HTMLTextAreaElement | null>(null)
 const dragging = ref(false)
+/** The attached picture shown large; null while none is. */
+const viewing = ref<number | null>(null)
 
 const canSend = computed(() => !props.disabled && (text.value.trim().length > 0 || images.value.length > 0))
 const placeholder = computed(() => (props.busy ? 'Nachricht senden, während der Agent arbeitet …' : `Nachricht an ${PROVIDERS[props.provider].name} …`))
@@ -458,7 +461,9 @@ defineExpose({
     </div>
     <div v-if="images.length" class="flex flex-wrap gap-2 px-3 pt-3">
       <div v-for="(image, i) in images" :key="image" class="group/img relative">
-        <img :src="fileImageUrl(image)" alt="" class="size-16 rounded-lg border object-cover" />
+        <button type="button" class="block cursor-zoom-in rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50" aria-label="Bild groß ansehen" @click="viewing = i">
+          <img :src="fileImageUrl(image)" alt="" draggable="false" class="size-16 rounded-lg border object-cover" />
+        </button>
         <button
           type="button"
           class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border bg-popover opacity-0 transition-opacity group-hover/img:opacity-100"
@@ -493,21 +498,22 @@ defineExpose({
         @update:provider="emit('update:provider', $event)"
         @update:account="emit('update:account', $event)"
       />
-      <Button
-        variant="ghost"
-        size="sm"
-        :class="cn('min-w-0 gap-1.5 px-2 text-muted-foreground', settingsOpen && 'bg-muted text-foreground')"
-        :aria-expanded="settingsOpen"
-        aria-label="Modell, Denkaufwand und Freigaben"
-        v-tooltip="'Modell, Denkaufwand und Freigaben'"
-        @click="settingsOpen = !settingsOpen"
-      >
-        <SettingsIcon class="size-3.5" />
-        <span v-for="chip in chips" :key="chip.label" :class="cn('truncate text-[0.8rem]', chip.class)">{{ chip.label }}</span>
-        <ChevronDownIcon :class="cn('size-3 opacity-60 transition-transform', settingsOpen && 'rotate-180')" />
-      </Button>
+      <!-- The gear sits by the send button: what it sets (model, effort, permissions) goes with the prompt. -->
       <div class="ml-auto flex items-center gap-2">
         <ContextCard v-if="context?.window" :session-id="sessionId" :provider="provider" :context="context" :busy="busy" />
+        <Button
+          variant="ghost"
+          size="sm"
+          :class="cn('min-w-0 gap-1.5 px-2 text-muted-foreground', settingsOpen && 'bg-muted text-foreground')"
+          :aria-expanded="settingsOpen"
+          aria-label="Modell, Denkaufwand und Freigaben"
+          v-tooltip="'Modell, Denkaufwand und Freigaben'"
+          @click="settingsOpen = !settingsOpen"
+        >
+          <SettingsIcon class="size-3.5" />
+          <span v-for="chip in chips" :key="chip.label" :class="cn('truncate text-[0.8rem]', chip.class)">{{ chip.label }}</span>
+          <ChevronDownIcon :class="cn('size-3 opacity-60 transition-transform', settingsOpen && 'rotate-180')" />
+        </Button>
         <Button v-if="busy && !canSend" size="icon-sm" variant="secondary" aria-label="Anhalten" @click="emit('stop')">
           <SquareIcon class="size-3 fill-current" />
         </Button>
@@ -549,5 +555,6 @@ defineExpose({
         />
       </div>
     </div>
+    <ImageViewer v-model:index="viewing" :images="images" />
   </div>
 </template>
