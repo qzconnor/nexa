@@ -78,6 +78,10 @@
 - [x] Zahnrad der Eingabe direkt links vom Senden-Knopf statt neben Account und CLI
 - [x] Eingabe während der Arbeit des Agents wie sonst: kein gestrichelter Rahmen und kein eigener Knopf
       „In die laufende Antwort“ mehr, die Nachricht zeigt „Wartet“ im Chat
+- [x] Angeheftete Chats wie im Claude Manager ganz oben über den Trennern („Angeheftet“, die neuesten
+      zuerst, mit Projekt), zusätzlich weiter in ihrem Projekt
+- [x] Rückfragen: Optionen untereinander statt zweispaltig; beantwortet stehen Fragen und Antworten
+      untereinander und vollständig statt abgeschnitten in einer Zeile
 - [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
       Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
       Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste
