@@ -6,7 +6,7 @@ import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
 import type { ChatItem, SessionRuntime } from '@shared/chat'
 import { claudeProjectKey } from '../accounts/cli-files'
-import type { AgentProvider, AgentRun, RunInput, RunSink } from '../providers/provider'
+import type { AgentProvider, AgentRun, RunInput, RunOptions, RunSink } from '../providers/provider'
 import { SessionService } from './session-service'
 
 const CWD = 'F:\\Projekte\\demo'
@@ -335,5 +335,113 @@ describe('SessionService.storage', () => {
     expect(await bytes()).toEqual({ chat: 4 + 9, empty: 0 })
     settings.chat.deleteCliConversations = false
     expect(await bytes()).toEqual({ chat: 4, empty: 0 })
+  })
+})
+
+describe('SessionService.clear', () => {
+  /** A chat with one finished turn in GONE; the CLI's starts and prompts are recorded. */
+  async function talked(patch: Partial<SessionMeta> = {}) {
+    let sink: RunSink | null = null
+    const starts: RunOptions[] = []
+    const sent: string[] = []
+    /** The prompts the model was asked to name the chat by; it names it „Über <prompt>“. */
+    const asked: string[] = []
+    const title = async (prompt: string) => {
+      asked.push(prompt)
+      return `Über ${prompt}`
+    }
+    const run = { alive: true, send: async (input: RunInput) => void sent.push(input.text), stop: async () => {}, title } as unknown as AgentRun
+    const sessions = await start([meta('chat', { title: 'Mein Chat', pinned: true, ...patch })], {
+      start: async (options, s) => {
+        starts.push(options)
+        sink = s
+        return run
+      },
+    })
+    await sessions.send('chat', { text: 'erste' })
+    sink!.cliSession(GONE)
+    sink!.item({ kind: 'assistant', id: 'a1', ts: 2, provider: 'claude', text: 'Antwort' })
+    sink!.item({ kind: 'turn', id: 'turn1', ts: 3, provider: 'claude', status: 'done' })
+    sink!.runtime({ status: 'idle', context: { used: 1000, max: 200_000 } as never })
+    const items = async () => (await sessions.history('chat'))!.items as ChatItem[]
+    return { sessions, sink: () => sink!, starts, sent, asked, items }
+  }
+
+  it('names a chat the model named again by its first prompt after it', async () => {
+    const { sessions, asked } = await talked({ titleSource: 'auto', title: 'Neue Session' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(sessions.list()[0]!.title).toBe('Über erste')
+
+    await sessions.clear('chat')
+    await sessions.send('chat', { text: 'zweite' })
+    await sessions.send('chat', { text: 'dritte' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(asked).toEqual(['erste', 'zweite'])
+    expect(sessions.list()[0]).toMatchObject({ title: 'Über zweite', titleSource: 'auto' })
+  })
+
+  it('keeps a name the user gave', async () => {
+    const { sessions, asked } = await talked()
+    await sessions.clear('chat')
+    await sessions.send('chat', { text: 'zweite' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(asked).toEqual([])
+    expect(sessions.list()[0]).toMatchObject({ title: 'Mein Chat', titleSource: 'user' })
+  })
+
+  it('starts a new conversation in the same chat, without what came before', async () => {
+    const { sessions, starts, sent, items } = await talked()
+
+    const cleared = await sessions.clear('chat')
+
+    expect(cleared).toMatchObject({ id: 'chat', title: 'Mein Chat', pinned: true, cli: {}, contextFrom: 4 })
+    expect(cleared.earlierCli).toEqual([{ claude: expect.objectContaining({ sessionId: GONE }) }])
+    expect(cleared).not.toHaveProperty('context')
+    expect((await items()).at(-1)).toMatchObject({ kind: 'notice', cleared: true, text: 'Kontext geleert' })
+
+    await sessions.send('chat', { text: 'zweite' })
+    expect(starts.map((o) => o.resumeId)).toEqual([undefined, undefined])
+    // No context from before: the CLI gets the prompt alone.
+    expect(sent).toEqual(['erste', 'zweite'])
+  })
+
+  it('hands no CLI what came before, not when switching either', async () => {
+    const { sessions, sent } = await talked()
+    await sessions.clear('chat')
+    await sessions.update('chat', { provider: 'codex' })
+    await sessions.send('chat', { text: 'zweite' })
+    expect(sent.at(-1)).toBe('zweite')
+  })
+
+  it('adds nothing when nothing was said since', async () => {
+    const { sessions, items } = await talked()
+    await sessions.clear('chat')
+    const count = (await items()).length
+    const again = await sessions.clear('chat')
+    expect((await items()).length).toBe(count)
+    expect(again.earlierCli).toHaveLength(1)
+  })
+
+  it('waits for the agent to finish', async () => {
+    const { sessions, sink } = await talked()
+    sink().runtime({ status: 'running' })
+    await expect(sessions.clear('chat')).rejects.toThrow('lässt er sich leeren')
+  })
+
+  it('takes the conversations from before along when the chat is deleted', async () => {
+    await claudeSession(claudeA, GONE)
+    const { sessions } = await talked()
+    await sessions.clear('chat')
+    expect(await sessions.remove(['chat'])).toMatchObject({ removed: ['chat'], trashed: 3 })
+  })
+
+  it('leaves them to the chat a fork came from', async () => {
+    const { sessions } = await talked()
+    await sessions.clear('chat')
+    const fork = await sessions.fork('chat')
+    expect(fork).not.toHaveProperty('earlierCli')
+    expect(fork.contextFrom).toBe(4)
   })
 })

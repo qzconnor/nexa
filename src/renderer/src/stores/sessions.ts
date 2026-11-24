@@ -143,6 +143,13 @@ export const useSessionsStore = defineStore('sessions', () => {
     return meta
   }
 
+  /** Empties the chat's context; it stays where it is, with a notice in its history. */
+  async function clear(id: string): Promise<void> {
+    const meta = await window.api.sessions.clear(id)
+    const at = all.value.findIndex((m) => m.id === id)
+    if (at >= 0) all.value[at] = meta
+  }
+
   async function send(id: string, input: SendInput): Promise<void> {
     await window.api.sessions.send(id, { text: input.text, images: input.images ? [...input.images] : undefined })
   }
@@ -218,6 +225,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     close,
     create,
     fork,
+    clear,
     send,
     update,
     move,

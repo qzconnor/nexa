@@ -7,7 +7,8 @@ const cli = (name: string, extra: Partial<CommandOption> = {}): CommandOption =>
 describe('appCommandOf', () => {
   it('finds a command by its name or alias, with what follows it', () => {
     expect(appCommandOf('/diff', 'claude')?.command.id).toBe('diff')
-    expect(appCommandOf('/new', 'claude')?.command.id).toBe('clear')
+    expect(appCommandOf('/reset', 'claude')?.command.id).toBe('clear')
+    expect(appCommandOf('/new', 'claude')?.command.id).toBe('new')
     expect(appCommandOf('/branch Anderer Weg', 'claude')).toMatchObject({ command: { id: 'fork' }, args: 'Anderer Weg' })
     expect(appCommandOf('  /rename  Neuer Titel ', 'codex')).toMatchObject({ command: { id: 'rename' }, args: 'Neuer Titel' })
     expect(appCommandOf('/RENAME x', 'claude')?.command.id).toBe('rename')

@@ -166,7 +166,7 @@ export function chatMarkdown(info: ChatMarkdownInfo, items: readonly ChatItem[],
       case 'notice':
         flush()
         author = null
-        if (item.compaction) blocks.push('---', `*${plain([item.text, item.detail].filter(Boolean).join(' · '))}*`)
+        if (item.compaction || item.cleared) blocks.push('---', `*${plain([item.text, item.detail].filter(Boolean).join(' · '))}*`)
         else if (item.level !== 'info') blocks.push(`> **${plain(item.text)}**${item.detail ? ` ${plain(item.detail)}` : ''}`)
         else blocks.push(`*${plain([item.text, item.detail].filter(Boolean).join(' · '))}*`)
         break

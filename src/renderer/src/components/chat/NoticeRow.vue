@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronsDownUpIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon } from '@lucide/vue'
+import { ChevronsDownUpIcon, CircleAlertIcon, EraserIcon, InfoIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { NoticeItem } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
@@ -37,6 +37,15 @@ const hint = computed(() => {
       <ChevronsDownUpIcon class="size-3.5 shrink-0" />
       <span class="truncate">{{ compaction.trigger === 'auto' ? 'Kontext automatisch zusammengefasst' : 'Kontext zusammengefasst' }}</span>
       <span v-if="tokens" class="shrink-0 tabular-nums opacity-80">· {{ tokens }}</span>
+    </span>
+    <div class="h-px flex-1 bg-border" />
+  </div>
+  <!-- Emptied with /clear: a divider as for a compaction, but above it the agent knows nothing at all. -->
+  <div v-else-if="item.cleared" role="separator" class="my-3 flex items-center gap-3 text-[0.78rem] text-muted-foreground">
+    <div class="h-px flex-1 bg-border" />
+    <span v-tooltip="'Ab hier fängt die Unterhaltung neu an. Was darüber steht, kennt der Agent nicht mehr.'" class="flex min-w-0 items-center gap-1.5">
+      <EraserIcon class="size-3.5 shrink-0" />
+      <span class="truncate">{{ item.text }}</span>
     </span>
     <div class="h-px flex-1 bg-border" />
   </div>

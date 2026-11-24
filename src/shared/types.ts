@@ -406,6 +406,16 @@ export interface SessionMeta {
   /** First words of the last prompt or answer, for the sidebar. */
   preview?: string
   cli: Partial<Record<ProviderId, CliLink>>
+  /**
+   * The CLIs' conversations from before each `/clear`, the oldest first: no CLI goes on with them, but
+   * they are the chat's and go along when it is deleted.
+   */
+  earlierCli?: Partial<Record<ProviderId, CliLink>>[]
+  /**
+   * The item from which on the conversation counts, after the last `/clear`: what is above it stays
+   * readable in the chat but goes to no CLI any more (not as context when switching either).
+   */
+  contextFrom?: number
   /** The account each CLI runs this chat with; missing: the default account of the CLI. */
   accounts?: Partial<Record<ProviderId, string>>
   /**

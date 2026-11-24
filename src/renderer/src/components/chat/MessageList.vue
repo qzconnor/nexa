@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronsDownUpIcon, ChevronsUpDownIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import type { ChatItem } from '@shared/chat'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
@@ -39,12 +40,31 @@ const first = computed(() => {
   // Not placed yet, or gone (another chat, a rewind): the newest page.
   return at >= 0 ? at : Math.max(0, list.length - PAGE)
 })
-const shown = computed(() => (first.value ? blocks.value.slice(first.value) : blocks.value))
+/**
+ * The last `/clear` of the main thread: what is above it no CLI knows any more, so it stays folded
+ * until the user opens it. -1 without one (or with nothing above it).
+ */
+const clearedAt = computed(() =>
+  props.parentId ? -1 : blocks.value.findLastIndex((b) => b.type === 'item' && b.item.kind === 'notice' && !!b.item.cleared),
+)
+const earlierOpen = ref(false)
+const folded = computed(() => clearedAt.value > 0 && !earlierOpen.value)
+/** The first block shown: the page, folded not above the `/clear`. */
+const start = computed(() => (folded.value ? Math.max(first.value, clearedAt.value) : first.value))
+const shown = computed(() => (start.value ? blocks.value.slice(start.value) : blocks.value))
+const clearedKey = computed(() => (clearedAt.value > 0 ? keyOf(blocks.value[clearedAt.value]!) : null))
+/** The prompts above the `/clear`, for its button. */
+const earlierPrompts = computed(() =>
+  blocks.value.slice(0, Math.max(0, clearedAt.value)).filter((b) => b.type === 'item' && b.item.kind === 'user').length,
+)
 
 watch(
   () => [props.sessionId, blocks.value.length] as const,
   ([id], before) => {
-    if (id !== before?.[0]) anchor.value = null
+    if (id !== before?.[0]) {
+      anchor.value = null
+      earlierOpen.value = false
+    }
     const list = blocks.value
     if (anchor.value === null && list.length) anchor.value = keyOf(list[first.value]!)
     if (id !== before?.[0]) void nextTick(watchTop)
@@ -74,7 +94,8 @@ function watchTop(): void {
 let adding = false
 /** Adds the page before the shown blocks, keeping in view what the user was looking at. */
 async function showOlder(): Promise<void> {
-  if (!first.value || adding) return
+  // Folded, the page above the `/clear` comes only when the user opens it.
+  if (!first.value || adding || (folded.value && first.value <= clearedAt.value)) return
   adding = true
   const el = scroller
   const fromBottom = el ? el.scrollHeight - el.scrollTop : 0
@@ -102,18 +123,33 @@ onMounted(() => {
 
 onBeforeUnmount(() => observer?.disconnect())
 
-/** All blocks at once, for the search in the chat; what the user was looking at stays in view. */
+/** All blocks at once, for the search in the chat, also those above a `/clear`; what the user was looking at stays in view. */
 async function showAll(): Promise<void> {
-  if (!first.value) return
+  if (!start.value) return
   const el = scroller
   const fromBottom = el ? el.scrollHeight - el.scrollTop : 0
+  earlierOpen.value = true
   anchor.value = keyOf(blocks.value[0]!)
   await nextTick()
   if (el) el.scrollTop = el.scrollHeight - fromBottom
 }
 
-/** Blocks not shown yet (older ones above the page). */
-const hidden = computed(() => first.value)
+/**
+ * Opens or folds what is above the `/clear`, keeping the divider where it is on screen. Opened, the
+ * last page before it shows and older ones come as the user scrolls up.
+ */
+async function toggleEarlier(): Promise<void> {
+  const el = scroller
+  const fromBottom = el ? el.scrollHeight - el.scrollTop : 0
+  earlierOpen.value = !earlierOpen.value
+  if (earlierOpen.value && first.value > clearedAt.value - PAGE) anchor.value = keyOf(blocks.value[Math.max(0, clearedAt.value - PAGE)]!)
+  await nextTick()
+  if (el) el.scrollTop = el.scrollHeight - fromBottom
+  watchTop()
+}
+
+/** Blocks not shown yet (older ones above the page, or above a folded `/clear`). */
+const hidden = computed(() => start.value)
 
 defineExpose({ hidden, showAll })
 
@@ -141,7 +177,7 @@ const providerChanges = computed(() => {
   <div ref="root" class="flex flex-col" data-find-blocks>
     <div ref="top" />
     <button
-      v-if="first"
+      v-if="start > (folded ? clearedAt : 0)"
       type="button"
       data-find-skip
       class="mx-auto mb-2 rounded-full px-3 py-1 text-[0.78rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -150,6 +186,19 @@ const providerChanges = computed(() => {
       Ältere Nachrichten laden
     </button>
     <template v-for="block in shown" :key="keyOf(block)">
+      <!-- Right above the divider of the last /clear: open or fold what came before it. -->
+      <button
+        v-if="keyOf(block) === clearedKey"
+        type="button"
+        data-find-skip
+        :aria-expanded="!folded"
+        class="mx-auto mt-1 flex items-center gap-1.5 rounded-full px-3 py-1 text-[0.78rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        @click="toggleEarlier"
+      >
+        <component :is="folded ? ChevronsUpDownIcon : ChevronsDownUpIcon" class="size-3.5" />
+        {{ folded ? 'Früheren Verlauf anzeigen' : 'Früheren Verlauf einklappen' }}
+        <span v-if="folded && earlierPrompts" class="tabular-nums opacity-80">· {{ earlierPrompts }} {{ earlierPrompts === 1 ? 'Nachricht' : 'Nachrichten' }}</span>
+      </button>
       <ToolGroup v-if="block.type === 'tools'" :tools="block.tools" />
       <BrowserCard v-else-if="block.type === 'browser'" :tools="block.tools" :block-id="block.id" :session-id="sessionId" :live="block.id === liveBrowser" />
       <ThinkingBlock v-else-if="block.type === 'thinking'" :items="block.items" />

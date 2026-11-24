@@ -216,6 +216,7 @@ const api: NexaApi = {
     move: (id, target) => invoke(IpcInvoke.sessionsMove, id, target),
     compact: (id) => invoke(IpcInvoke.sessionsCompact, id),
     fork: (id) => invoke(IpcInvoke.sessionsFork, id),
+    clear: (id) => invoke(IpcInvoke.sessionsClear, id),
     exportMarkdown: (id) => invoke(IpcInvoke.sessionsExportMarkdown, id),
     lastAnswer: (id) => invoke(IpcInvoke.sessionsLastAnswer, id),
     onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),

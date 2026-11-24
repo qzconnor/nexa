@@ -213,6 +213,8 @@ export interface NoticeItem extends ItemBase {
   detail?: string
   /** The CLI compacted the conversation here; `text` and `detail` say so in words as well. */
   compaction?: Compaction
+  /** The context was emptied here (`/clear`): what is above it, no CLI knows any more. */
+  cleared?: boolean
 }
 
 /**
