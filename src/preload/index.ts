@@ -236,9 +236,14 @@ const api: NexaApi = {
     onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),
     onEvent: (cb) => subscribe(IpcEvent.sessionEvent, cb),
     onShow: (cb) => subscribe(IpcEvent.showSession, cb),
+    onFind: (cb) => subscribe(IpcEvent.findSessions, cb),
   },
   api: {
     status: () => invoke(IpcInvoke.apiStatus),
+  },
+  command: {
+    status: () => invoke(IpcInvoke.commandStatus),
+    setRegistered: (registered) => invoke(IpcInvoke.commandSetRegistered, registered),
   },
 }
 

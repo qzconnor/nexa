@@ -33,6 +33,22 @@ export async function listTranscripts(configDir: string): Promise<TranscriptFile
   return found
 }
 
+/** The transcript of one session in a config folder, in whichever project folder it lies; null without one. */
+export async function findTranscript(configDir: string, id: string): Promise<TranscriptFile | null> {
+  // The id becomes a file name.
+  if (!/^[\w-]+$/.test(id)) return null
+  const projectsDir = join(configDir, 'projects')
+  const keys = await readdir(projectsDir, { withFileTypes: true }).catch(() => [])
+  let found: TranscriptFile | null = null
+  for (const key of keys) {
+    if (!key.isDirectory()) continue
+    const file = join(projectsDir, key.name, `${id}.jsonl`)
+    const info = await stat(file).catch(() => null)
+    if (info?.isFile() && (!found || info.mtimeMs > found.mtimeMs)) found = { id, file, configDir, mtimeMs: info.mtimeMs }
+  }
+  return found
+}
+
 /**
  * The chat of a Claude Code transcript, its subagents' work included: Claude Code keeps each one's
  * transcript in `<id>/subagents/agent-*.jsonl` beside it, with the call that started it in `.meta.json`.

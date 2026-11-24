@@ -13,7 +13,7 @@ import { summarizeClaudeTranscript } from '../providers/claude/claude-transcript
 import type { ProjectService } from '../services/project-service'
 import type { ProviderService } from '../services/provider-service'
 import type { SessionService } from '../services/session-service'
-import { listTranscripts } from './claude-sessions'
+import { findTranscript, listTranscripts } from './claude-sessions'
 import { importedSessionMeta, isDirectory, planGroups, type CliSession, type PlacedGroup } from './import-plan'
 
 /**
@@ -141,5 +141,42 @@ export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] 
     const sessions = this.sessions.adopt(metas)
     this.last = null
     return { projects: this.projects.list().length - projectsBefore, sessions }
+  }
+
+  /**
+   * One conversation of a CLI by its id (`nx -r <id>`), taken over as `run` takes them, into the project
+   * its folder lies in (else one of its own); the chat's id, or null when no account's folder has it.
+   */
+  async takeOver(id: string): Promise<string | null> {
+    const session = (await this.findClaude(id)) ?? (await this.findCodex(id))
+    if (!session) return null
+    const [group] = planGroups([session], [], this.projects.list(), isDirectory)
+    if (!group?.exists) throw new Error(`Den Ordner „${session.summary.cwd}“ dieser Session gibt es nicht mehr.`)
+    const project = await this.projects.create({ path: group.path })
+    this.sessions.adopt([importedSessionMeta(session, project, this.settings())])
+    return this.sessions.list().find((meta) => meta.cli[session.provider]?.sessionId === id)?.id ?? null
+  }
+
+  /** The transcript of a Claude Code session in the accounts' folders, where it was written to last. */
+  private async findClaude(id: string): Promise<CliSession | null> {
+    let found: CliSession | null = null
+    for (const { account, configDir } of this.accountsOf('claude')) {
+      const file = await findTranscript(configDir, id)
+      if (!file || (found && found.mtimeMs >= file.mtimeMs)) continue
+      const text = await readFile(file.file, 'utf8').catch(() => null)
+      const summary = text === null ? null : summarizeClaudeTranscript(text)
+      if (summary && summary.messages > 0 && summary.cwd) found = { provider: 'claude', ...file, accountId: account.id, summary }
+    }
+    return found
+  }
+
+  private async findCodex(id: string): Promise<CliSession | null> {
+    for (const { account, configDir } of this.accountsOf('codex')) {
+      const thread = (await this.providers.sessions('codex', account.id).catch(() => null))?.find((t) => t.id === id)
+      if (!thread) continue
+      const { cwd, title, firstPrompt, createdAt, updatedAt } = thread
+      return { provider: 'codex', id, configDir, accountId: account.id, mtimeMs: updatedAt ?? createdAt ?? 0, summary: { cwd, title, firstPrompt, lastPrompt: null, createdAt, updatedAt } }
+    }
+    return null
   }
 }

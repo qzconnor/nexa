@@ -8,6 +8,7 @@ import { codexMcpServers } from '../mcp-servers'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import type { CodexClient, CodexServerRequest } from './codex-client'
 import { agentStatusOf, codexItem, codexTurnItem, COLLAB_TITLES, commandView, reasoningText, str, type Json } from './codex-items'
+import { codexOverrides } from './codex-overrides'
 
 export const CODEX_POLICY: Record<PermissionMode, { approvalPolicy: string; sandbox: 'read-only' | 'workspace-write' | 'danger-full-access' }> = {
   ask: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
@@ -131,6 +132,8 @@ export class CodexRun implements AgentRun {
     this.sink.runtime({ status: 'starting', connected: false })
     const policy = CODEX_POLICY[this.mode]
     const config: Json = {
+      // The user's `-c key=value` (account, `nx -- …`) first: they can't take Nexa's own server away.
+      ...codexOverrides(this.options.extraArgs).config,
       ...(this.options.mcp ? codexMcpConfig(this.options.mcp, this.mode) : {}),
       ...codexMcpOffConfig(this.options.mcpOff),
     }

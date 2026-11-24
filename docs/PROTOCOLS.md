@@ -340,8 +340,9 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 
 - **Start**: `initialize`, danach `account/read` (Anmeldung, Plan) und `account/rateLimits/read`.
 - **Session**: `thread/start` bzw. `thread/resume` mit `cwd`, `approvalPolicy`, `sandbox`,
-  `developerInstructions` und `config` mit dem MCP-Server von Nexa (gepunktete Schlüssel, gelten nur für
-  diesen Thread):
+  `developerInstructions` und `config` (gepunktete Schlüssel, gelten nur für diesen Thread). Darin zuerst
+  die `-c schlüssel=wert` aus den Argumenten des Accounts und des Chats (`nx -- …`, `codexOverrides`: Werte
+  als JSON statt TOML, `'text'` als TOML-Literal, sonst der Text), darüber der MCP-Server von Nexa:
   - `mcp_servers.nexa.url`
   - `mcp_servers.nexa.http_headers = { Authorization: "Bearer <token>" }`: ein Token je Thread, so
     erkennt der Server den Chat, auch wenn sich mehrere Threads einen App-Server teilen. Geprüft mit

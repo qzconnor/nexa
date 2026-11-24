@@ -9,6 +9,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '
 import { Kbd } from '@/components/ui/kbd'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { provideSettingsFilter, SETTINGS } from '@/composables/useSettingsSearch'
+import { isWindows } from '@/lib/platform'
 import { matchSettings } from '@/lib/settings-index'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
@@ -34,7 +35,13 @@ const ui = useUiStore()
 const accounts = useAccountsStore()
 
 const SECTIONS: { id: SettingsSection; label: string; description: string; icon: Component; page: Component }[] = [
-  { id: 'general', label: 'Allgemein', description: 'Fenster, Infobereich und Start', icon: SETTINGS_ICONS.general, page: SettingsGeneral },
+  {
+    id: 'general',
+    label: 'Allgemein',
+    description: isWindows ? 'Fenster, Infobereich, Start und Befehl nx' : 'Fenster, Infobereich und Start',
+    icon: SETTINGS_ICONS.general,
+    page: SettingsGeneral,
+  },
   { id: 'appearance', label: 'Darstellung', description: 'Theme, Skalierung, Fenster und Chat-Breite', icon: SETTINGS_ICONS.appearance, page: SettingsAppearance },
   { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
   { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
@@ -49,7 +56,7 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
   },
   { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: SETTINGS_ICONS.api, page: SettingsApi },
   { id: 'updates', label: 'Updates', description: 'Neue Versionen und was sich geändert hat', icon: SETTINGS_ICONS.updates, page: SettingsUpdates },
-  { id: 'about', label: 'Info', description: 'Version und Befehl nx', icon: SETTINGS_ICONS.about, page: SettingsAbout },
+  { id: 'about', label: 'Info', description: 'Version und App-Daten', icon: SETTINGS_ICONS.about, page: SettingsAbout },
 ]
 const current = computed(() => SECTIONS.find((s) => s.id === ui.settingsSection) ?? SECTIONS[0])
 

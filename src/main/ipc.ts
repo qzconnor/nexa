@@ -14,6 +14,7 @@ import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
 import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
+import type { CommandIntegration } from './command-integration'
 import type { GitService } from './files/git-service'
 import { listFontFamilies } from './lib/fonts'
 import type { AutoSwitch } from './services/auto-switch'
@@ -38,6 +39,7 @@ export interface AppContext {
   git: GitService
   notifications: NotificationService
   autoSwitch: AutoSwitch
+  command: CommandIntegration
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -360,6 +362,13 @@ export function registerIpc(ctx: AppContext): void {
   })
 
   handle(IpcInvoke.apiStatus, () => ctx.api.status())
+
+  // The `nx` command ------------------------------------------------------------------------------
+  handle(IpcInvoke.commandStatus, () => ctx.command.status())
+  handle(IpcInvoke.commandSetRegistered, (_e, registered: unknown) => {
+    if (typeof registered !== 'boolean') throw new Error('Ungültiger Parameter: registered')
+    return ctx.command.setRegistered(registered)
+  })
 
   handle(IpcInvoke.notificationsViewing, (_e, sessionId: unknown) =>
     ctx.notifications.setViewing(typeof sessionId === 'string' && sessionId ? sessionId : null),

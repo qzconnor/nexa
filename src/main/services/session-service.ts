@@ -247,6 +247,12 @@ export class SessionService extends TypedEmitter<Events> {
     return [...this.sessions.values()].map((s) => s.meta).sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
+  /** The chats whose CLI is up or at work; `nx` goes to one of them rather than starting another. */
+  running(): Set<string> {
+    const busy = (s: SessionState) => s.runtime.connected || ['starting', 'running', 'waiting'].includes(s.runtime.status)
+    return new Set([...this.sessions.values()].filter(busy).map((s) => s.meta.id))
+  }
+
   private get(id: string): SessionState {
     const s = this.sessions.get(id)
     if (!s) throw new Error('Die Session gibt es nicht mehr.')
@@ -309,6 +315,7 @@ export class SessionService extends TypedEmitter<Events> {
     if (asked) this.requireEnabled(asked)
     // The default may be off (settings edited by hand): then the first CLI that is on.
     const provider = asked ?? (settings[settings.defaults.provider].enabled ? settings.defaults.provider : (enabledProviders(settings)[0] ?? settings.defaults.provider))
+    const args = Array.isArray(input.cliArgs) ? input.cliArgs.filter((arg): arg is string => typeof arg === 'string').slice(0, 100) : []
     const now = Date.now()
     const meta: SessionMeta = {
       id: randomUUID(),
@@ -325,6 +332,7 @@ export class SessionService extends TypedEmitter<Events> {
       cli: {},
       accounts: { [provider]: this.accounts.resolve(provider, input.account, this.providers.defaultAccount(provider)) },
       ...(cwd ? { cwd } : {}),
+      ...(args.length ? { cliArgs: { [provider]: args } } : {}),
     }
     const s = this.state(meta)
     s.items = []
@@ -1306,7 +1314,7 @@ export class SessionService extends TypedEmitter<Events> {
           noChrome: !!mcp && tools.browserTools && tools.noClaudeInChrome,
           mcpOff: project.mcpOff?.[provider],
           dirs: meta.dirs,
-          extraArgs: this.accounts.extraArgs(accountId),
+          extraArgs: [...this.accounts.extraArgs(accountId), ...(meta.cliArgs?.[provider] ?? [])],
         },
         sink,
       )

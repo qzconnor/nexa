@@ -22,6 +22,8 @@ interface SectionDef {
   readonly fields?: readonly FieldDef[]
   /** Only while the Claude Manager's data is on this computer (its import). */
   readonly claudeManagerData?: boolean
+  /** Only shown on Windows, with all its rows (the `nx` command). */
+  readonly windowsOnly?: boolean
 }
 
 interface TabDef {
@@ -60,6 +62,16 @@ const TREE = [
             label: 'Mit Windows starten',
             keywords: 'Autostart Anmeldung Login hochfahren Systemstart automatisch starten',
           },
+        ],
+      },
+      {
+        id: 'general.command',
+        title: 'Befehl „nx“',
+        keywords: 'nx Kommandozeile Terminal Explorer Adressleiste CLI starten',
+        windowsOnly: true,
+        fields: [
+          { id: 'general.commandRegistered', label: 'Befehl einrichten', keywords: 'PATH installieren registrieren abmelden entfernen' },
+          { id: 'general.nxReuseChat', label: 'Offenen Chat wiederverwenden', keywords: 'Ordner wechseln neuer Chat' },
         ],
       },
     ],
@@ -335,7 +347,6 @@ const TREE = [
     label: 'Info',
     sections: [
       { id: 'about.app', title: 'Nexa', keywords: 'Version Über Datenordner App-Daten Speicherort' },
-      { id: 'about.command', title: 'Befehl nx', keywords: 'Kommandozeile Terminal Explorer Adressleiste CLI starten' },
     ],
   },
 ] as const satisfies readonly TabDef[]
@@ -367,7 +378,7 @@ export function settingsIndex(platform: string, claudeManagerData = true): Setti
   const entries: SettingsEntry[] = []
   for (const tab of TREE as readonly TabDef[]) {
     for (const section of tab.sections) {
-      if (section.claudeManagerData && !claudeManagerData) continue
+      if ((section.claudeManagerData && !claudeManagerData) || (section.windowsOnly && !windows)) continue
       entries.push({
         id: section.id as SettingsAnchor,
         kind: 'section',

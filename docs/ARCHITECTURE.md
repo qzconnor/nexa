@@ -20,7 +20,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | --- | --- |
 | `index.ts` | Start, Single-Instance, `nx`-Weiterleitung, Verdrahtung der Services |
 | `ipc.ts` | Alle IPC-Kanäle, Event-Weiterleitung an die Fenster |
-| `launch.ts` | Liest `--nx=<base64>` und die `nx`-Argumente |
+| `launch.ts` | Liest `--nx=<base64>` und die `nx`-Argumente, entscheidet, welcher Chat sich öffnet (`resolveLaunch`) |
+| `command-integration.ts` | Befehl `nx` an- und abmelden und sein Zustand, über `nx.exe --nx-register`/`--nx-unregister`/`--nx-status` |
 | `services/settings-service.ts` | `settings.json`, Defaults aus `shared/defaults.ts` |
 | `services/theme-service.ts` | Themes (aus dem Claude Manager übernommen) |
 | `services/provider-service.ts` | Registriert Provider, Erkennung, Usage je Account (Abfrage, Polling), Browser-Logins |
@@ -494,6 +495,37 @@ den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet ern
   des Updaters, Herunterladen und Neustart (mit Rückfrage, wenn noch Antworten laufen), Versionshinweise der
   Releases mit den PR-Beschreibungen als „Details“. Ein Punkt am Einstellungen-Knopf der Sidebar zeigt ein
   wartendes Update oder ungelesene Neuerungen nach einem Update.
+
+## Befehl `nx`
+
+`nx.exe` (`src/launcher/nx.cs`, ein GUI-Programm, damit der Explorer kein Konsolenfenster zeigt) gibt nur
+den Ordner des Aufrufs und seine Argumente als einen Base64-Schalter `--nx=` an `Nexa.exe` weiter; läuft
+Nexa schon, kommt die Anfrage über `requestSingleInstanceLock` als `additionalData` bei der laufenden Instanz
+an (`second-instance`, geprüft mit `isLaunchRequest`). Was sie bedeutet, entscheidet `launch.ts` ohne
+Seiteneffekte: `parseLaunchArgs` liest die Argumente (wie `cm` im Claude Manager: `-a`, `-c`, `-r [id]`,
+`-n`, `-m`, `--claude`/`--codex`, `--` für die CLI) und lehnt Widersprüche ab, `resolveLaunch` macht daraus
+mit Einstellungen, Accounts, Projekten, Chats und `SessionService.running()` einen Plan: einen Chat öffnen,
+einen neuen anlegen, eine Unterhaltung der CLIs übernehmen (`CliSessionImport.takeOver`: Transkript per
+`findTranscript` in den Claude-Ordnern bzw. Thread aus `thread/list` der Codex-Accounts, eingeordnet wie beim
+Import) oder die Schnellsuche mit den Chats des Ordners zeigen (`event:find-sessions`). `index.ts` führt den
+Plan aus; Fehler erscheinen als Dialog „„nx“ konnte keinen Chat öffnen“.
+
+- **Offener Chat** (`general.nxReuseChat`): ein Chat im Ordner (`cwd`, sonst der des Projekts), dessen CLI
+  verbunden ist oder arbeitet, oder der noch leer ist (kein Prompt, keine Unterhaltung einer CLI). `-a`,
+  `--claude`, `--codex` grenzen ihn und den Chat von `-c` ein; ein Chat ohne eigenen Account zählt mit dem
+  Standard-Account seiner CLI.
+- **Account** (`findAccount`): ID, Name, E-Mail, sonst ein eindeutiger Teil des Namens, unter den sichtbaren
+  Accounts der eingeschalteten CLIs (oder der genannten); passen Accounts beider CLIs, gewinnt die
+  Standard-CLI. Ohne `--claude`/`--codex` bestimmt der Account die CLI des neuen Chats.
+- **Argumente für die CLI** stehen in `SessionMeta.cliArgs` je CLI und kommen bei jedem Start hinter die des
+  Accounts (`RunOptions.extraArgs`). Claude Code nimmt sie unverändert. Der App-Server von Codex gehört allen
+  Chats eines Accounts; `codexOverrides` macht aus `-c schlüssel=wert` die `config` des Threads (Nexas
+  MCP-Server geht vor), andere Argumente lehnt `resolveLaunch` für Codex ab.
+- **An- und abmelden**: `CommandIntegration` (`command-integration.ts`, Kanäle `command:*`) ruft
+  `nx.exe --nx-status`, `--nx-register` und `--nx-unregister`; nx.exe schreibt selbst Benutzer-PATH und App
+  Path. Gehört der App Path einem anderen Programm, nennt der Status es als Hinweis (`reg query`). Nur in der
+  installierten App unter Windows; ein Entwicklungs-Build meldet sich nie an. Die Einstellungen zeigen es unter
+  Allgemein › Befehl „nx“ (`SettingsCommand.vue`).
 
 ## Releases
 

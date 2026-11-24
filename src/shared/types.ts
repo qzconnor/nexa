@@ -135,6 +135,11 @@ export interface GeneralSettings {
   runInTray: boolean
   /** Starts with the user's login (`--autostart`); with `runInTray` without showing the window. */
   launchAtLogin: boolean
+  /**
+   * `nx` goes to a chat of the folder that is open (its CLI runs, or it is still empty) instead of
+   * starting another one (main/launch.ts).
+   */
+  nxReuseChat: boolean
 }
 
 /**
@@ -485,6 +490,11 @@ export interface SessionMeta {
   /** The account each CLI runs this chat with; missing: the default account of the CLI. */
   accounts?: Partial<Record<ProviderId, string>>
   /**
+   * Arguments for a CLI from `nx -- …`, added to each of its starts for this chat after those of the
+   * account (Codex takes only `-c key=value`, as the thread's config).
+   */
+  cliArgs?: Partial<Record<ProviderId, string[]>>
+  /**
    * The folder the agent works in when it isn't the project's own: a folder in it, which the sidebar
    * shows as a level of its own under the project (as the Claude Manager does).
    */
@@ -518,6 +528,8 @@ export interface SessionCreateInput {
   effort?: string
   ultracode?: boolean
   permissionMode?: PermissionMode
+  /** Arguments for the chat's CLI (`nx -- …`, see `SessionMeta.cliArgs`). */
+  cliArgs?: string[]
 }
 
 export interface SessionUpdateInput {
@@ -615,4 +627,15 @@ export interface ApiStatus {
   port: number | null
   token: string | null
   error?: string
+}
+
+/** The `nx` command on this computer (main/command-integration.ts). */
+export interface CommandStatus {
+  /** nx.exe is part of the installed app (Windows only). */
+  available: boolean
+  /** On the user PATH and registered for the Explorer address bar. */
+  registered: boolean
+  launcherPath: string | null
+  /** Why `nx` may not work, e.g. another program's `nx`. */
+  hint: string | null
 }

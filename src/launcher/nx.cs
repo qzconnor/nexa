@@ -7,7 +7,7 @@
 // It is a GUI-subsystem program so that Explorer doesn't flash a console window. Output (help,
 // errors) goes to the console of the calling shell via AttachConsole.
 //
-// Internal switches used by the installer and the settings page:
+// Internal switches used by the installer and the settings page (src/main/command-integration.ts):
 //   --nx-register    add the folder of nx.exe to the user PATH and register the App Path
 //   --nx-unregister  undo both
 //   --nx-status      exit code 0 when both are registered, 1 otherwise
@@ -38,12 +38,18 @@ static class Program
         "",
         "Nexa – Chat mit Claude Code oder Codex aus der Kommandozeile öffnen",
         "",
-        "  nx                    neuer Chat im aktuellen Ordner",
+        "  nx                    neuer Chat im aktuellen Ordner (oder der dort offene, siehe Einstellungen)",
         "  nx <ordner>           neuer Chat in <ordner>",
-        "  nx -c                 letzten Chat in diesem Ordner öffnen",
+        "  nx -a <account>       mit Account (Name, E-Mail oder ID, von Claude Code oder Codex)",
         "  nx --claude           mit Claude Code",
         "  nx --codex            mit Codex",
+        "  nx -c                 letzten Chat in diesem Ordner öffnen",
+        "  nx -r <id>            Chat fortsetzen: aus Nexa, eine Session von Claude Code oder ein Thread von Codex",
+        "  nx -r                 Chats dieses Ordners zur Auswahl",
+        "  nx -n                 neuer Chat, auch wenn im Ordner schon einer offen ist",
         "  nx -m \"<prompt>\"      Chat öffnen und den Prompt gleich senden",
+        "  nx -- <argumente>     Argumente an die CLI weitergeben, z. B. nx -- --model opus",
+        "                        (Codex nimmt nur -c schlüssel=wert)",
         "",
         "Auch in der Explorer-Adressleiste: \"nx\" öffnet einen Chat im angezeigten Ordner.",
         "",

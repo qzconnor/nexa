@@ -471,6 +471,32 @@ describe('SessionService with what came to its Codex thread outside Nexa', () =>
   })
 })
 
+describe('SessionService for nx', () => {
+  it('keeps the arguments given for the CLI of a new chat', async () => {
+    const sessions = await start([])
+    expect((await sessions.create({ projectId: 'p1', cliArgs: ['--model', 'opus'] })).cliArgs).toEqual({ claude: ['--model', 'opus'] })
+    expect(await sessions.create({ projectId: 'p1', cliArgs: [] })).not.toHaveProperty('cliArgs')
+  })
+
+  it("starts the CLI with the chat's own arguments, and counts the chat as running while it is up", async () => {
+    let options: RunOptions | null = null
+    let sink: RunSink | null = null
+    const run = { alive: true, send: async () => {}, stop: async () => {} } as unknown as AgentRun
+    const sessions = await start([meta('chat', { cliArgs: { claude: ['--model', 'opus'], codex: ['-c', 'a=1'] } }), meta('other', {})], {
+      start: async (o, s) => {
+        options = o
+        sink = s
+        return run
+      },
+    })
+    expect(sessions.running().size).toBe(0)
+    await sessions.send('chat', { text: 'los' })
+    sink!.runtime({ status: 'running' })
+    expect(options!.extraArgs).toEqual(['--model', 'opus'])
+    expect([...sessions.running()]).toEqual(['chat'])
+  })
+})
+
 describe('SessionService.storage', () => {
   it('counts Nexa’s history and the CLI’s files', async () => {
     await claudeSession(claudeA, GONE)

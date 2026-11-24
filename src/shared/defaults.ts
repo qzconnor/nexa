@@ -14,6 +14,7 @@ export function defaultSettings(): AppSettings {
     general: {
       runInTray: false,
       launchAtLogin: false,
+      nxReuseChat: true,
     },
     appearance: {
       theme: DEFAULT_THEME_ID,

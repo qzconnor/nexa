@@ -33,13 +33,33 @@ Explorers: `nx` eintippen, Enter, und Nexa öffnet einen Chat im angezeigten Ord
 | Aufruf | Wirkung |
 |---|---|
 | `nx` | neuer Chat im aktuellen Ordner |
-| `nx <ordner>` | neuer Chat in `<ordner>` |
-| `nx -c` | letzten Chat in diesem Ordner öffnen |
+| `nx <ordner>` | neuer Chat in `<ordner>` (auch `~`) |
+| `nx -a <account>` | mit Account: Name, E-Mail oder ID, auch ein Teil des Namens, von Claude Code oder Codex |
 | `nx --claude`, `nx --codex` | mit Claude Code bzw. Codex |
+| `nx -c` | letzten Chat in diesem Ordner öffnen |
+| `nx -r <id>` | Chat fortsetzen: per ID des Chats, der Session von Claude Code oder des Threads von Codex |
+| `nx -r` | die Chats dieses Ordners zur Auswahl (Schnellsuche) |
+| `nx -n` | neuer Chat, auch wenn im Ordner schon einer offen ist |
 | `nx -m "<prompt>"` | Chat öffnen und den Prompt gleich senden |
+| `nx -- <argumente>` | Argumente an die CLI des neuen Chats, z. B. `nx -- --model opus` |
+
+**Offener Chat**: Läuft die CLI eines Chats im Ordner noch oder ist ein Chat dort noch leer, wechselt `nx`
+zu ihm, statt einen neuen zu öffnen (abschaltbar unter *Einstellungen › Allgemein › Befehl „nx“*). `-n`,
+`-m` und Argumente für die CLI öffnen immer einen neuen. `-a`, `--claude` und `--codex` grenzen ein, welcher
+Chat bei `-c` und als offener Chat in Frage kommt, und bestimmen, womit ein neuer startet; passt ein Name auf
+Accounts beider CLIs, gilt die CLI, mit der neue Chats starten.
+
+**Fortsetzen**: `nx -r <id>` öffnet den Chat mit dieser ID oder den, der die Session von Claude Code bzw. den
+Thread von Codex fortführt. Kennt Nexa sie noch nicht (z. B. aus dem Terminal), holt es sie aus den Ordnern
+der Accounts als neuen Chat herein, wie *Einstellungen › Import*.
+
+**Argumente für die CLI**: Claude Code bekommt sie unverändert bei jedem Start dieses Chats. Codex läuft als
+App-Server für alle Chats eines Accounts und nimmt deshalb nur seine Konfiguration `-c schlüssel=wert`
+(`--config`), die für den Thread des Chats gilt, z. B. `nx --codex -- -c model_reasoning_effort=high`.
 
 `nx.exe` (`src/launcher/nx.cs`) liegt im Unterordner `bin` der Installation, nur dieser Ordner kommt in den
-Benutzer-PATH. Die Deinstallation entfernt ihn wieder.
+Benutzer-PATH. Die Deinstallation entfernt ihn wieder; unter *Einstellungen › Allgemein › Befehl „nx“* lässt
+er sich auch von Hand ab- und wieder anmelden. Einen `nx` eines anderen Programms übernimmt Nexa nicht.
 
 ## Entwicklung
 

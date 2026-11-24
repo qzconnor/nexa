@@ -24,14 +24,5 @@ const openUserData = () => app.info && void window.api.app.openPath(app.info.use
         </Button>
       </div>
     </SettingsSection>
-
-    <SettingsSection anchor="about.command" title="Befehl nx" description="Im Terminal oder in der Explorer-Adressleiste.">
-      <pre class="selectable font-mono text-[0.75rem] text-muted-foreground">nx                neuer Chat im aktuellen Ordner
-nx &lt;ordner&gt;       neuer Chat in &lt;ordner&gt;
-nx -c             letzten Chat in diesem Ordner öffnen
-nx --claude       mit Claude Code
-nx --codex        mit Codex
-nx -m "&lt;prompt&gt;"  Chat öffnen und den Prompt gleich senden</pre>
-    </SettingsSection>
   </div>
 </template>

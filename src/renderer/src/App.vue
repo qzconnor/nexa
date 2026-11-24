@@ -66,6 +66,11 @@ onMounted(async () => {
       ui.view = 'chat'
       void attempt(() => sessions.open(id), 'Session ließ sich nicht öffnen')
     })
+    // `nx -r` without an id: the folder's chats to pick from, as Claude Code's `--resume` offers them.
+    window.api.sessions.onFind((query) => {
+      ui.paletteQuery = query
+      ui.paletteOpen = true
+    })
     // A notification about an account's limits or login.
     window.api.settings.onOpen((section) => ui.openSettings(section))
     ready.value = true

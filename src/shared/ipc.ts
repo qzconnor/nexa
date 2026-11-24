@@ -7,6 +7,7 @@ import type {
   AppInfo,
   AppSettings,
   CommandOption,
+  CommandStatus,
   ConnectorSettings,
   DeepPartial,
   FolderPromptInfo,
@@ -143,6 +144,9 @@ export const IpcInvoke = {
   notificationsTest: 'notifications:test',
 
   apiStatus: 'api:status',
+
+  commandStatus: 'command:status',
+  commandSetRegistered: 'command:set-registered',
 } as const
 
 /** Events from main to the window. */
@@ -164,6 +168,8 @@ export const IpcEvent = {
   sessionEvent: 'event:session',
   /** The `nx` command or the local API asks the window to show a session. */
   showSession: 'event:show-session',
+  /** `nx -r` without an id: the quick open with the folder's chats (the query). */
+  findSessions: 'event:find-sessions',
   /** A notification about an account's limits or login asks the window to show them in the settings. */
   openSettings: 'event:open-settings',
 } as const
@@ -402,9 +408,17 @@ export interface NexaApi {
     onChanged(cb: (list: SessionMeta[]) => void): Unsubscribe
     onEvent(cb: (event: SessionEvent) => void): Unsubscribe
     onShow(cb: (id: string) => void): Unsubscribe
+    /** `nx -r` without an id: the quick open, searching for `query` (the folder's project). */
+    onFind(cb: (query: string) => void): Unsubscribe
   }
   api: {
     status(): Promise<ApiStatus>
+  }
+  /** The `nx` command: on the user PATH and in the Explorer's address bar (Windows, installed app). */
+  command: {
+    status(): Promise<CommandStatus>
+    /** Registers or unregisters it through nx.exe; the state afterwards. */
+    setRegistered(registered: boolean): Promise<CommandStatus>
   }
 }
 

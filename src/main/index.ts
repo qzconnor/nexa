@@ -10,6 +10,7 @@ import { BrowserControl } from './browser/browser-control'
 import { registerBrowserIpc } from './browser/browser-ipc'
 import { BrowserTabs } from './browser/browser-tabs'
 import { BrowserTools } from './browser/browser-tools'
+import { CommandIntegration } from './command-integration'
 import { FileActivityTracker } from './files/activity-tracker'
 import { FileTreeService } from './files/file-tree-service'
 import { registerFilesIpc } from './files/files-ipc'
@@ -18,7 +19,7 @@ import { ClaudeManagerImport } from './import/claude-manager'
 import { CliSessionImport } from './import/cli-import'
 import { registerImportIpc } from './import/import-ipc'
 import { forwardWindowState, registerIpc } from './ipc'
-import { isLaunchRequest, parseLaunch, readLaunchRequest, type LaunchRequest } from './launch'
+import { isLaunchRequest, readLaunchRequest, resolveLaunch, type LaunchRequest } from './launch'
 import { AccountService } from './accounts/account-service'
 import { APP_NAME, userDataFolder } from './lib/app-folder'
 import { AUTOSTART_ARG, setLaunchAtLogin } from './lib/login-item'
@@ -151,7 +152,9 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
 
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
   const git = new GitService()
-  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications, autoSwitch })
+  // The `nx` command on the user PATH, (un)registered on the settings page.
+  const command = new CommandIntegration()
+  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications, autoSwitch, command })
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
@@ -184,10 +187,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
 
   // Taking over the Claude Manager's workspaces, accounts, sessions, prompts and themes, and the
   // sessions in the CLIs' own folders (first start, or later in the settings).
-  registerImportIpc(
-    new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, themes, () => settings.get()),
-    new CliSessionImport(projects, sessions, accounts, providers, () => settings.get()),
-  )
+  const cliImport = new CliSessionImport(projects, sessions, accounts, providers, () => settings.get())
+  registerImportIpc(new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, themes, () => settings.get()), cliImport)
 
   // New versions from the GitHub releases: checked after the start and every 4 hours (installed app only).
   const updates = new UpdateService(`nexa/${app.getVersion()}`)
@@ -198,15 +199,36 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   void providers.detect().then(() => providers.refreshUsage())
   providers.startPolling()
 
-  /** `nx` typed in a terminal or the Explorer address bar (src/launcher/nx.cs). */
+  /**
+   * `nx` typed in a terminal or the Explorer address bar (src/launcher/nx.cs). A chat that is open in
+   * the folder is only shown (setting `general.nxReuseChat`), see `resolveLaunch`.
+   */
   const openFromCommandLine = async (request: LaunchRequest) => {
     try {
-      const command = parseLaunch(request)
-      const project = await projects.create({ path: command.dir })
-      const last = command.continue ? sessions.list().find((s) => s.projectId === project.id && !s.archived) : undefined
-      const meta = last ?? (await sessions.create({ projectId: project.id, provider: command.provider ?? undefined }))
-      show(meta.id)
-      if (command.prompt) await sessions.send(meta.id, { text: command.prompt })
+      const plan = resolveLaunch(request, {
+        settings: settings.get(),
+        accounts: accounts.list(),
+        projects: projects.list(),
+        sessions: sessions.list(),
+        running: sessions.running(),
+      })
+      if (plan.kind === 'pick') {
+        reveal(IpcEvent.findSessions, plan.query)
+        return
+      }
+      let sessionId: string
+      if (plan.kind === 'open') sessionId = plan.sessionId
+      else if (plan.kind === 'takeOver') {
+        const taken = await cliImport.takeOver(plan.id)
+        if (!taken) throw new Error(`Keine Session „${plan.id}“: weder ein Chat in Nexa noch eine Session von Claude Code oder ein Thread von Codex in den Ordnern der Accounts.`)
+        sessionId = taken
+      } else {
+        const project = await projects.create({ path: plan.dir })
+        const meta = await sessions.create({ projectId: project.id, provider: plan.provider, account: plan.account ?? undefined, cliArgs: plan.cliArgs })
+        sessionId = meta.id
+      }
+      show(sessionId)
+      if (plan.prompt) await sessions.send(sessionId, { text: plan.prompt })
     } catch (error) {
       const win = mainWindow
       const options = {
