@@ -37,6 +37,15 @@ describe('nexaToolView', () => {
     expect(nexaToolView(tool({ name: 'nexa.browser_navigate', server: 'nexa', tool: 'mcp' }))?.title).toBe('Seite öffnen')
     expect(nexaToolView(tool({ name: 'mcp__nexa__something_new', server: 'nexa', tool: 'mcp' }))?.title).toBe('something new')
   })
+
+  it('names the chat a message goes to, by its title for an id', () => {
+    const titleOf = (id: string) => (id === 'c1' ? 'Code-Review' : undefined)
+    const send = (to: string) => tool({ name: 'nexa.chat_send', server: 'nexa', tool: 'mcp', input: { to, text: 'Hallo' } })
+    expect(nexaToolView(send('c1'), titleOf)).toEqual({ title: 'Nachricht an Chat', detail: '„Code-Review“', plumbing: false })
+    expect(nexaToolView(send('Review'), titleOf)?.detail).toBe('„Review“')
+    const created = tool({ name: 'mcp__nexa__chat_new', server: 'nexa', tool: 'mcp', input: { cli: 'codex', text: 'x', title: 'Prüfen' } })
+    expect(nexaToolView(created)).toEqual({ title: 'Neuer Chat', detail: 'Codex · „Prüfen“', plumbing: false })
+  })
 })
 
 describe('toolSummary', () => {

@@ -14,23 +14,25 @@ export interface NexaToolGrant {
 
 /** Whether a CLI gets Nexa's MCP server at all. */
 export function nexaToolsOn(tools: ToolSettings): boolean {
-  return tools.renderTools || tools.browserTools
+  return tools.renderTools || tools.browserTools || tools.chatTools
 }
 
 /**
- * The render tools and the browser's are used without asking; the browser tools that reach beyond
- * the page (`sensitive`: uploads, cookies and storage, request contents, scripts, deleting site
- * data) ask first.
+ * The render tools, the browser's and the chat tools are used without asking (the user switched the
+ * chat tools on for this, and each chat keeps its own permissions); the browser tools that reach
+ * beyond the page (`sensitive`: uploads, cookies and storage, request contents, scripts, deleting
+ * site data) ask first.
  */
 export function nexaToolGrant(
   tools: ToolSettings,
-  names: { render: readonly string[]; browser: readonly string[] },
+  names: { render: readonly string[]; browser: readonly string[]; chat?: readonly string[] },
   sensitive: ReadonlySet<string>,
 ): NexaToolGrant {
   const render = tools.renderTools ? names.render : []
   const browser = tools.browserTools ? names.browser : []
+  const chat = tools.chatTools ? (names.chat ?? []) : []
   return {
-    allowed: [...render, ...browser.filter((name) => !sensitive.has(name))],
+    allowed: [...render, ...browser.filter((name) => !sensitive.has(name)), ...chat],
     ask: browser.filter((name) => sensitive.has(name)),
   }
 }

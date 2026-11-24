@@ -3,7 +3,7 @@ import type { AgentItem, AgentStatus, ChatItem, ShellStatus, ToolItem, TurnItem 
 import { compactionNotice } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
 import { firstLine, isPlainObject } from '@shared/utils'
-import { AGENT_TOOLS, compactionOf, resultText, todosOf, viewOfClaudeTool } from './claude-tools'
+import { AGENT_TOOLS, changesFromResult, compactionOf, resultText, todosOf, viewOfClaudeTool } from './claude-tools'
 
 /**
  * Claude Code's own transcript of a session (`<config>/projects/<key>/<id>.jsonl`) read as Nexa's
@@ -235,7 +235,7 @@ class ChatBuilder {
     const content = message.content
     if (Array.isArray(content)) {
       for (const block of content) {
-        if (isPlainObject(block) && block.type === 'tool_result' && typeof block.tool_use_id === 'string') this.result(block, ts)
+        if (isPlainObject(block) && block.type === 'tool_result' && typeof block.tool_use_id === 'string') this.result(block, ts, e.toolUseResult)
       }
     }
     // A subagent's only prompt is its task, which its agent item shows.
@@ -296,7 +296,8 @@ class ChatBuilder {
     return true
   }
 
-  private result(block: Json, ts: number): void {
+  /** `outcome`: the entry's `toolUseResult`, Claude Code's whole result of the call (an edit's patch). */
+  private result(block: Json, ts: number, outcome?: unknown): void {
     const known = this.get(block.tool_use_id as string)
     if (!known) return
     const text = resultText(block.content)
@@ -313,6 +314,8 @@ class ChatBuilder {
     if (known.kind !== 'tool') return
     const denied = isError && DENIED.test(text) && text.length < 400
     const next: ToolItem = { ...known, status: denied ? 'denied' : isError ? 'error' : 'done', output: text, endedAt: ts }
+    const changes = isError ? null : changesFromResult(known.changes, outcome)
+    if (changes) next.changes = changes
     const background = /running in background with ID:\s*(\S+)/i.exec(text)
     if (next.tool === 'bash' && background) next.shell = { taskId: background[1]!, background: true, status: 'stopped' }
     this.put(next)

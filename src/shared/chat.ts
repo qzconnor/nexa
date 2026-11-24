@@ -33,6 +33,15 @@ export interface UserItem extends ItemBase {
    * steers it, Claude Code takes it up at its next step). It stands in the chat where the CLI took it.
    */
   steer?: boolean
+  /** Not the user's: the agent of another chat sent it with Nexa's chat tools (main/mcp/chat-tools.ts). */
+  from?: ChatOrigin
+}
+
+/** The chat a message came from, as it was when it sent it. */
+export interface ChatOrigin {
+  sessionId: string
+  title: string
+  provider: ProviderId
 }
 
 export interface AssistantItem extends ItemBase {

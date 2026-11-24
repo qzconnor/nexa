@@ -23,6 +23,18 @@ describe('nexaToolGrant', () => {
   it('starts the server only while one kind of tool is on', () => {
     expect(nexaToolsOn(tools({ renderTools: false, browserTools: false }))).toBe(false)
     expect(nexaToolsOn(tools({ renderTools: false }))).toBe(true)
+    expect(nexaToolsOn(tools({ renderTools: false, browserTools: false, chatTools: true }))).toBe(true)
+  })
+
+  it('allows the chat tools only once the user switched them on', () => {
+    const withChat = { ...names, chat: ['chat_list', 'chat_send'] }
+    expect(nexaToolGrant(tools({ browserTools: false }), withChat, sensitive).allowed).toEqual(['render_chart', 'render_table'])
+    expect(nexaToolGrant(tools({ browserTools: false, chatTools: true }), withChat, sensitive).allowed).toEqual([
+      'render_chart',
+      'render_table',
+      'chat_list',
+      'chat_send',
+    ])
   })
 })
 

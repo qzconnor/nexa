@@ -77,7 +77,11 @@ export function diffTexts(oldText: string, newText: string, context = 3): DiffLi
   return out
 }
 
-/** A unified diff (Codex's `fileChange`) as lines. */
+/**
+ * A unified diff (Codex's `fileChange`, Claude Code's `structuredPatch`) as lines with the file's own
+ * numbers. Between hunks stands a gap like the one `diffTexts` leaves, with the heading git puts after
+ * `@@` (the function) if there is one; the numbers already say where the first one starts.
+ */
 export function parseUnifiedDiff(diff: string): DiffLine[] {
   const out: DiffLine[] = []
   let o = 0
@@ -88,7 +92,8 @@ export function parseUnifiedDiff(diff: string): DiffLine[] {
     if (hunk) {
       o = Number(hunk[1])
       n = Number(hunk[2])
-      out.push({ kind: 'hunk', text: raw, old: null, new: null })
+      const heading = hunk[3]!.trim()
+      if (out.length || heading) out.push({ kind: 'hunk', text: heading ? `⋯ ${heading}` : '⋯', old: null, new: null })
     } else if (raw.startsWith('+')) {
       out.push({ kind: 'add', text: raw.slice(1), old: null, new: n++ })
     } else if (raw.startsWith('-')) {

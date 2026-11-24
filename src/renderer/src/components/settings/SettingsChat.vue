@@ -204,7 +204,7 @@ function cleanUp(): void {
     <SettingsSection
       anchor="chat.tools"
       title="Nexa-Werkzeuge"
-      description="Nexas eigener MCP-Server: die Agents zeichnen damit direkt im Chat und bedienen den Browser neben ihm."
+      description="Nexas eigener MCP-Server: die Agents zeichnen damit direkt im Chat, bedienen den Browser neben ihm und erreichen deine anderen Chats."
     >
       <SettingField anchor="chat.renderTools" label="Diagramme, Charts und Tabellen" description="Gilt für neu gestartete CLIs.">
         <Switch :model-value="s.tools.renderTools" @update:model-value="(v: boolean) => update({ tools: { renderTools: v } })" />
@@ -226,6 +226,13 @@ function cleanUp(): void {
           :disabled="!s.tools.browserTools"
           @update:model-value="(v: boolean) => update({ tools: { noClaudeInChrome: v } })"
         />
+      </SettingField>
+      <SettingField
+        anchor="chat.chatTools"
+        label="Nachrichten zwischen Chats"
+        description="Die Agents schreiben deinen anderen Chats, auch von Claude zu Codex und zurück, lesen deren Antworten und legen neue Chats an. Jeder Chat behält seine eigenen Freigaben. Gilt für neu gestartete CLIs."
+      >
+        <Switch :model-value="s.tools.chatTools" @update:model-value="(v: boolean) => update({ tools: { chatTools: v } })" />
       </SettingField>
       <SettingField
         anchor="chat.browserData"

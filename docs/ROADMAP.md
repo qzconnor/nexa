@@ -191,8 +191,19 @@
       dazukam, kommt mit einer Notiz in den Chat (`thread/turns/list`), und ein Hinweis warnt, solange der
       Thread dort offen ist. Ein ruhender Codex-Chat gibt seinen Thread nach einer Minute frei, damit die
       TUI ihn öffnen kann
+- [x] Nachrichten zwischen Chats (Einstellung „Nachrichten zwischen Chats“, aus bis man sie einschaltet):
+      Die Agents erreichen über Nexas MCP-Server die anderen Chats beim Namen, auch umbenannte, auch von
+      Claude zu Codex und zurück: `chat_list`, `chat_read`, `chat_send`, `chat_new`. Die Nachricht steht
+      umrandet mit „Nachricht von …“ im Chat und nennt dem Agent den Absender zum Antworten; nach zehn
+      Nachrichten zwischen Chats ohne den Nutzer ist Schluss
 
 ## Als Nächstes
+
+- [ ] **Nachrichten an Claude-Sitzungen außerhalb von Nexa** (Terminal, VS Code) über das Peer-Protokoll
+      von Claude Code (`PROTOCOLS.md`, „Nachrichten zwischen Sitzungen“). Senden ist einfach, für Antworten
+      müsste Nexa eine eigene Pipe anmelden. Für Codex außerhalb von Nexa erst prüfen, ob die Queue
+      (`thread/queue/*`) einen Thread erreicht, den die TUI hält. Und prüfen, wie Nachrichten ankommen, die
+      eine Claude-Sitzung von außen per `SendMessage` an einen Chat von Nexa schickt, und sie als solche zeigen.
 
 - [ ] **Sites von Codex** auf der Seite „Artefakte“, sobald der App-Server sie herausgibt (0.169 hat keine
       Methode dafür). Dazu für Claudes Artefakte: umbenennen, löschen und anpinnen wie im Claude Manager.
@@ -215,7 +226,7 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       wie ein Branch) und vorhandenen Worktrees (`WorktreeDialog.vue`, `lib/worktree.ts`); `worktreeCheck`
       in `files/git-service.ts` ist schon da, aber nicht in Preload und UI.
 - [ ] **Werkzeuge der App für die Agents** im Nexa-MCP-Server: `limits` (eigene Limits und die der anderen
-      Accounts), `sessions_search` / `session_read` (frühere Chats durchsuchen und lesen)
+      Accounts), `sessions_search` (frühere Chats durchsuchen; lesen geht mit `chat_read`)
       (`browser/app-tools/*`).
 - [ ] **`nx` wie `cm`**: `-a <account>`, `-r [id]`, `-n`, `-- <args>` für die CLI, offenen Chat
       wiederverwenden, Befehl in den Einstellungen an- und abmelden (`cli/launch.ts`, `SettingsCommand.vue`).

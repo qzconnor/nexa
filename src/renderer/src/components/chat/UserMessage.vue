@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ClockIcon, PencilIcon } from '@lucide/vue'
-import { nextTick, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import type { UserItem } from '@shared/chat'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
@@ -10,16 +10,32 @@ import { attempt } from '@/lib/errors'
 import { fileImageUrl } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
+import { useUiStore } from '@/stores/ui'
 import Markdown from './Markdown.vue'
 
 /**
  * A prompt of the user, on the right; the CLI it went to is shown when the session switched. One sent
  * while the agent works waits faded below the chat (`queued`) until the CLI takes it up, then stands
  * in the chat where it did, as any other. Its pictures open large in Nexa's viewer. An `editable` one
- * can be changed in place and sent anew: what came after it goes (`sessions.edit`).
+ * can be changed in place and sent anew: what came after it goes (`sessions.edit`). A message from
+ * another chat's agent (`from`) is outlined instead of filled and names that chat, which it opens.
  */
 const props = defineProps<{ item: UserItem; showProvider?: boolean; queued?: boolean; sessionId?: string; editable?: boolean }>()
 const sessions = useSessionsStore()
+const ui = useUiStore()
+/** The sending chat as it is called now (renamed since, perhaps); gone: as it was called then. */
+const sender = computed(() => {
+  const from = props.item.from
+  if (!from) return null
+  const meta = sessions.get(from.sessionId)
+  return { ...from, title: meta?.title ?? from.title, exists: !!meta }
+})
+
+function openSender(): void {
+  if (!sender.value?.exists) return
+  ui.view = 'chat'
+  void attempt(() => sessions.open(sender.value!.sessionId), 'Session ließ sich nicht öffnen')
+}
 const viewing = ref<number | null>(null)
 const editing = ref(false)
 const draft = ref('')
@@ -62,6 +78,17 @@ function onKey(event: KeyboardEvent): void {
 
 <template>
   <div :class="cn('flex flex-col items-end gap-1.5', queued ? 'py-1.5' : 'py-3')">
+    <button
+      v-if="sender"
+      type="button"
+      :disabled="!sender.exists"
+      class="flex max-w-[85%] items-center gap-1.5 rounded-md text-[0.72rem] text-muted-foreground outline-none enabled:hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+      v-tooltip="sender.exists ? 'Von einem anderen Chat gesendet, nicht von dir. Klicken öffnet ihn.' : 'Von einem anderen Chat gesendet, den es nicht mehr gibt.'"
+      @click="openSender"
+    >
+      <ProviderIcon :provider="sender.provider" class="size-3 shrink-0" />
+      <span class="truncate">Nachricht von „{{ sender.title }}“</span>
+    </button>
     <div v-if="item.images?.length" :class="cn('flex flex-wrap justify-end gap-2', queued && 'opacity-60')">
       <button
         v-for="(image, i) in item.images"
@@ -95,11 +122,20 @@ function onKey(event: KeyboardEvent): void {
         </div>
       </div>
     </div>
-    <div v-else-if="item.text" :class="cn('group relative max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5', queued && 'opacity-60')">
+    <div
+      v-else-if="item.text"
+      :class="
+        cn(
+          'group relative max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5',
+          sender ? 'border border-border bg-transparent' : 'bg-secondary',
+          queued && 'opacity-60',
+        )
+      "
+    >
       <Markdown :text="item.text" breaks />
       <!-- Left of the bubble, so that it takes no room under every prompt. -->
       <Button
-        v-if="editable && sessionId"
+        v-if="editable && sessionId && !sender"
         variant="ghost"
         size="icon-xs"
         class="absolute top-1/2 right-full mr-1.5 -translate-y-1/2 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"

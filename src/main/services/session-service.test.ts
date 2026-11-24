@@ -748,3 +748,49 @@ describe('SessionService.runShell', () => {
     expect(await ended(sessions)).toMatchObject({ status: 'denied', exitCode: undefined })
   }, 20_000)
 })
+
+describe('SessionService between chats', () => {
+  /** Two chats whose CLIs take what they are sent; `sent` has it per chat. */
+  async function twoChats() {
+    const sent: Record<string, RunInput[]> = {}
+    const sessions = await start([meta('a', { title: 'Plan' }), meta('b', { title: 'Review', provider: 'codex' })], {
+      start: async (options: RunOptions) =>
+        ({ alive: true, send: async (input: RunInput) => void (sent[options.sessionId] ??= []).push(input), stop: async () => {} }) as unknown as AgentRun,
+    })
+    const users = async (id: string) => ((await sessions.history(id))!.items as ChatItem[]).filter((i) => i.kind === 'user')
+    return { sessions, sent, users }
+  }
+
+  it('delivers a message marked with the chat it came from', async () => {
+    const { sessions, sent, users } = await twoChats()
+    await sessions.sendFromChat('a', 'b', 'Bitte prüfen.')
+
+    expect(await users('b')).toMatchObject([{ text: 'Bitte prüfen.', from: { sessionId: 'a', title: 'Plan', provider: 'claude' } }])
+    expect(sent.b![0]!.text).toMatch(/^<nexa-message from-chat="Plan" chat-id="a" cli="Claude Code">\nBitte prüfen\.\n<\/nexa-message>/)
+    expect(sent.b![0]!.text).toContain('(to: "a")')
+  })
+
+  it('stops two chats that keep answering each other, until the user writes', async () => {
+    const { sessions } = await twoChats()
+    for (let i = 0; i < 10; i++) await sessions.sendFromChat(i % 2 ? 'b' : 'a', i % 2 ? 'a' : 'b', `#${i}`)
+    await expect(sessions.sendFromChat('a', 'b', 'noch eine')).rejects.toThrow(/10 messages between chats in a row/)
+
+    await sessions.send('a', { text: 'Weiter so' })
+    await expect(sessions.sendFromChat('a', 'b', 'noch eine')).resolves.toBeUndefined()
+  })
+
+  it('refuses a message to the chat itself', async () => {
+    const { sessions } = await twoChats()
+    await expect(sessions.sendFromChat('a', 'a', 'x')).rejects.toThrow(/cannot send to itself/)
+  })
+
+  it('starts a new chat beside the sender with its first message', async () => {
+    const { sessions, sent, users } = await twoChats()
+    const created = await sessions.newFromChat('a', { provider: 'codex', text: 'Schau dir das an', title: 'Codex-Review' })
+
+    expect(created).toMatchObject({ projectId: 'p1', provider: 'codex', title: 'Codex-Review', titleSource: 'user' })
+    expect(await users(created.id)).toMatchObject([{ text: 'Schau dir das an', from: { sessionId: 'a' } }])
+    expect(sent[created.id]).toHaveLength(1)
+    expect(sessions.peerChats().map((c) => c.title)).toContain('Codex-Review')
+  })
+})

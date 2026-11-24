@@ -105,6 +105,11 @@ export interface ToolSettings {
    * takes Nexa's browser instead of the user's Chrome.
    */
   noClaudeInChrome: boolean
+  /**
+   * The agents reach the other chats of Nexa (`chat_*` of Nexa's MCP server): list and read them,
+   * send them messages, start new ones; also from Claude Code to Codex and back.
+   */
+  chatTools: boolean
 }
 
 export interface GeneralSettings {

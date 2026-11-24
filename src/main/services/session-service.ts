@@ -7,6 +7,7 @@ import { folderKey, inFolder } from '@shared/folders'
 import {
   PROVIDER_IDS,
   type ChatItem,
+  type ChatOrigin,
   type ContextDetail,
   type InteractionRequest,
   type InteractionResponse,
@@ -60,7 +61,7 @@ import { forkPoint } from '../providers/claude/claude-transcript'
 import { codexTurnsFromOutside } from '../providers/codex/codex-items'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { folderPromptText } from './folder-prompts'
-import { handoffContext, sessionInstructions, userShellContext } from './instructions'
+import { chatMessage, handoffContext, sessionInstructions, userShellContext } from './instructions'
 import type { ProjectService } from './project-service'
 import type { ProviderService } from './provider-service'
 import { chatTexts, findInChat, type ChatText } from './session-search'
@@ -94,6 +95,25 @@ interface SessionState {
   releaseTimer?: ReturnType<typeof setTimeout>
   /** The last turns taken in from outside: their note, how many prompts it counts, their last item. */
   outside?: { provider: ProviderId; noticeId: string; prompts: number; lastId: string }
+  /**
+   * How many messages between chats led here since the user last wrote in one of them: the user's own
+   * prompt sets it to 0, a message from another chat to one more than that chat's.
+   */
+  chatChain?: number
+}
+
+/** A chat as the agents of other chats see it (Nexa's chat tools, mcp/chat-tools.ts). */
+export interface PeerChat {
+  id: string
+  title: string
+  provider: ProviderId
+  projectId: string
+  project: string
+  /** The folder its agent works in. */
+  folder: string
+  status: SessionRuntime['status']
+  updatedAt: number
+  archived: boolean
 }
 
 interface Events extends Record<string, unknown[]> {
@@ -156,6 +176,11 @@ const MAX_SEARCH_HITS = 200
 const USER_SHELL_TOOL = 'NexaShell'
 /** Output of a `!` command the chat keeps: its end (a server logging for hours would fill the transcript). */
 const MAX_USER_SHELL_OUTPUT = 100_000
+/**
+ * Messages between chats in a row without the user: enough for asking, answering and a few rounds of
+ * review, while two agents that keep answering each other stop before they use up the limits.
+ */
+export const MAX_CHAT_CHAIN = 10
 
 
 /**
@@ -889,7 +914,8 @@ export class SessionService extends TypedEmitter<Events> {
     }
   }
 
-  async send(id: string, input: SendInput): Promise<void> {
+  /** `from`: the message comes from another chat's agent (`sendFromChat`), not from the user. */
+  async send(id: string, input: SendInput, from?: { origin: ChatOrigin; chain: number }): Promise<void> {
     const s = await this.loaded(id)
     const meta = s.meta
     const project = this.projects.get(meta.projectId)
@@ -928,7 +954,9 @@ export class SessionService extends TypedEmitter<Events> {
       text,
       images: input.images?.length ? input.images : undefined,
       ...(steer ? { steer: true } : {}),
+      ...(from ? { from: from.origin } : {}),
     }
+    s.chatChain = from?.chain ?? 0
     // Into the chat where the CLI takes it up (`taken`), as in the CLIs: until then it waits below.
     if (steer) this.setRuntime(s, { ...s.runtime, queued: [...(s.runtime.queued ?? []), user] })
     else this.put(s, user)
@@ -946,13 +974,77 @@ export class SessionService extends TypedEmitter<Events> {
       this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `${PROVIDERS[provider].name} übernimmt die Session`, detail: 'Mit dem bisherigen Verlauf als Kontext' })
     }
     try {
-      await run.send({ id: user.id, text: [context, shellContext, text].filter(Boolean).join('\n\n'), images: input.images })
+      const message = from ? chatMessage(from.origin, text) : text
+      await run.send({ id: user.id, text: [context, shellContext, message].filter(Boolean).join('\n\n'), images: input.images })
     } catch (error) {
       // It never reached the CLI: it stays in the chat as written, as any prompt that failed.
       this.takeQueued(s, user.id)
       throw error
     }
     if (first && text && this.settings().chat.autoTitles) void this.autoTitle(s, run, text)
+  }
+
+  /** The chats as the agents of other chats see them, the newest first. */
+  peerChats(): PeerChat[] {
+    return this.list().map((meta) => {
+      const project = this.projects.get(meta.projectId)
+      return {
+        id: meta.id,
+        title: meta.title,
+        provider: meta.provider,
+        projectId: meta.projectId,
+        project: project?.name ?? '',
+        folder: project ? this.cwdOf(meta, project) : (meta.cwd ?? ''),
+        status: this.sessions.get(meta.id)?.runtime.status ?? 'idle',
+        updatedAt: meta.updatedAt,
+        archived: !!meta.archived,
+      }
+    })
+  }
+
+  /**
+   * A message of one chat's agent to another chat: it goes in like a prompt (into the running turn, or
+   * starting the CLI), marked with where it came from. Refused after `MAX_CHAT_CHAIN` messages between
+   * chats in a row without the user.
+   */
+  async sendFromChat(fromId: string, toId: string, text: string): Promise<void> {
+    if (fromId === toId) throw new Error('This is the chat you are in; a chat cannot send to itself.')
+    const sender = this.get(fromId)
+    this.get(toId)
+    const chain = this.nextChain(sender)
+    const origin: ChatOrigin = { sessionId: fromId, title: sender.meta.title, provider: sender.runProvider ?? sender.meta.provider }
+    await this.send(toId, { text }, { origin, chain })
+  }
+
+  /** The place in a chain of messages between chats that a message from this chat takes. */
+  private nextChain(sender: SessionState): number {
+    const chain = (sender.chatChain ?? 0) + 1
+    if (chain > MAX_CHAT_CHAIN) {
+      throw new Error(
+        `Nexa stopped this: ${MAX_CHAT_CHAIN} messages between chats in a row without the user. Tell your user what is open; the chain starts anew once they write in a chat.`,
+      )
+    }
+    return chain
+  }
+
+  /**
+   * A new chat that one chat's agent starts, in its own project and folder, with the default account,
+   * model and permissions of the CLI; its first prompt is the message.
+   */
+  async newFromChat(fromId: string, input: { provider: ProviderId; text: string; title?: string }): Promise<SessionMeta> {
+    const sender = this.get(fromId)
+    // Refused before there is a chat: an empty one in the sidebar would only be in the way.
+    this.nextChain(sender)
+    if (!this.providers.isReady(input.provider)) throw new Error(`${PROVIDERS[input.provider].name} is not installed.`)
+    const meta = await this.create({ projectId: sender.meta.projectId, cwd: sender.meta.cwd, provider: input.provider })
+    const title = input.title?.trim()
+    if (title) {
+      meta.title = title
+      meta.titleSource = 'user'
+    }
+    // Should the CLI fail to start, the chat stays with the message and the error, as one the user started.
+    await this.sendFromChat(fromId, meta.id, input.text)
+    return meta
   }
 
   /**
@@ -1191,6 +1283,7 @@ export class SessionService extends TypedEmitter<Events> {
             sessionInstructions({
               renderTools: !!mcp && tools.renderTools,
               browserTools: !!mcp && tools.browserTools,
+              chatTools: !!mcp && tools.chatTools,
               projectName: project.name,
             }),
             // The user's own for the project and the separators around it (`prompts.md`).

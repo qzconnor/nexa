@@ -24,6 +24,7 @@ import { APP_NAME, userDataFolder } from './lib/app-folder'
 import { AUTOSTART_ARG, setLaunchAtLogin } from './lib/login-item'
 import { loadShellEnv } from './lib/shell-env'
 import { NexaMcpServer } from './mcp/mcp-server'
+import { ChatTools } from './mcp/chat-tools'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { AutoSwitch } from './services/auto-switch'
 import { ProjectService } from './services/project-service'
@@ -74,10 +75,12 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const providers = new ProviderService(() => settings.get(), accounts, new UsageSamples(join(userDataDir, 'usage-samples.json')))
   const projects = new ProjectService(userDataDir)
 
-  // Nexa's own MCP server: the tools that draw charts, diagrams and tables in the chat, and the browser
-  // beside each chat. Every run gets a token of its own, which says whose browser it drives.
+  // Nexa's own MCP server: the tools that draw charts, diagrams and tables in the chat, the browser
+  // beside each chat, and the other chats. Every run gets a token of its own, which says whose browser
+  // it drives and which chat sends.
   let browserTools: BrowserTools | null = null
-  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools))
+  let chatTools: ChatTools | null = null
+  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools))
   await mcp.start().catch((error) => console.error('[mcp] server could not start', error))
 
   const sessions = new SessionService(
@@ -90,6 +93,15 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     (tools) => grantFor(tools, browserTools),
     (path) => shell.trashItem(path),
   )
+  chatTools = new ChatTools({
+    list: () => sessions.peerChats(),
+    items: async (id) => (await sessions.history(id))?.items ?? null,
+    send: (from, to, text) => sessions.sendFromChat(from, to, text),
+    create: async (from, input) => {
+      const meta = await sessions.newFromChat(from, input)
+      return { id: meta.id, title: meta.title }
+    },
+  })
 
   // The browser beside each chat: its tabs (kept with the app's data) and what the agents do in them.
   const sessionMeta = (id: string) => sessions.list().find((s) => s.id === id)
