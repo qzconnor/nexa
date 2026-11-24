@@ -18,8 +18,9 @@ defineOptions({
 const props = withDefaults(
   defineProps<SelectContentProps & { class?: HTMLAttributes['class'] }>(),
   {
-    position: 'item-aligned',
-    align: 'center',
+    // Under the trigger like the other menus, not laid over it at the chosen item.
+    position: 'popper',
+    align: 'start',
   },
 )
 const emits = defineEmits<SelectContentEmits>()
@@ -47,7 +48,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       <SelectViewport
         :data-position="position"
         :class="cn(
-          'data-[position=popper]:h-(--reka-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--reka-select-trigger-width)',
+          'p-1 data-[position=popper]:h-(--reka-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--reka-select-trigger-width)',
         )"
       >
         <slot />

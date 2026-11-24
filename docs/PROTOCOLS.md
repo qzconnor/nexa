@@ -195,6 +195,30 @@ Nexa je Account auf der Seite „Artefakte“ (`main/artifacts/artifact-service.
 - Nur mit Browser-Login oder Setup-Token, nicht mit API-Key. Ein abgelaufenes Access-Token erneuert
   Nexa nicht selbst; das tut Claude Code beim nächsten Start mit dem Account.
 
+### Spracheingabe (`/voice`)
+
+Claude Code diktiert mit `/voice` über eine Spracherkennung von Anthropic; Nexa nutzt dieselbe für das
+Mikrofon in der Eingabe, für Chats mit jeder CLI (`main/voice/voice-service.ts`). Abgelesen an Claude
+Code 2.1.331 und mit einer Testaufnahme geprüft.
+
+- **Verbindung**: WebSocket `wss://api.anthropic.com/api/ws/speech_to_text/voice_stream?encoding=linear16&sample_rate=16000&channels=1&endpointing_ms=300&utterance_end_ms=1000&language=<code>&use_conversation_engine=true`
+  mit `Authorization: Bearer <accessToken>` (Browser-Login oder Setup-Token, kein API-Key), `x-app: cli`
+  und optional `x-config-keyterms` (erwartete Wörter, durch Kommas getrennt, nur druckbares ASCII, höchstens
+  1024 Zeichen). Ohne gültiges Token lehnt der Server das Upgrade ab.
+- **Sprachen**: `en es fr ja de pt it ko hi id ru pl tr nl uk el cs da sv no`; Claude Code fällt bei
+  anderen auf `en` zurück (Einstellung `language`, auch als Name wie „Deutsch“).
+- **Hin**: Audio als Binärnachrichten (16-Bit-PCM little-endian, mono, 16 kHz; Nexa schickt 64 ms je
+  Nachricht), dazu `{"type":"KeepAlive"}` gleich nach dem Öffnen und alle 8 s, damit eine Pause die
+  Verbindung nicht beendet. `{"type":"CloseStream"}` beendet die Aufnahme; danach kein Audio mehr.
+- **Zurück** (Text-JSON): `{"type":"TranscriptText","data":"…"}` (auch `TranscriptInterim`) ist die
+  laufende Äußerung bisher, jedes Mal vollständig, nicht nur das neue Stück (`"Bitte"`, `"Bitte erstelle"`
+  …). `{"type":"TranscriptEndpoint"}` schließt sie ab; die nächste `TranscriptText` beginnt eine neue.
+  Fehler kommen als `{"type":"TranscriptError","description"|"error_code":…}` oder
+  `{"type":"error","message":…}`.
+- **Ende**: Nach `CloseStream` kommt die letzte Äußerung, dann `TranscriptEndpoint`, dann schließt der
+  Server mit 1000. Claude Code wartet darauf höchstens 5 s und gibt nach 1,5 s ohne neue Wörter auf; was
+  bis dahin als `TranscriptText` kam, zählt dann als gesagt. Nexa hält es genauso.
+
 ### Transkripte (`projects/<key>/<id>.jsonl`)
 
 Was Claude Code selbst speichert und Nexa beim Übernehmen liest (`claude-transcript.ts`):
@@ -378,6 +402,26 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 - **Turn am Limit**: `turn/completed` mit `turn.status: "failed"` und `turn.error.codexErrorInfo:
   "usageLimitExceeded"` (`CodexErrorInfo` aus `generate-ts`). Nexa markiert den Turn dann mit `limit`;
   andere Fehler wie `rateLimitExceeded` oder `sessionBudgetExceeded` gelten als gewöhnlicher Fehler.
+
+### Sprache (`/voice`)
+
+`/voice` in der TUI ist kein Diktat, sondern ein Sprachgespräch: Ein Echtzeit-Modell hört zu, antwortet
+hörbar und gibt Aufgaben an Codex weiter. Nexa nutzt es nicht, die Spracheingabe läuft immer über Claude
+(siehe „Spracheingabe“ bei Claude Code). Abgelesen an Codex 0.169 (`generate-ts --experimental`):
+
+- **App-Server** (nur mit `capabilities.experimentalApi`): `thread/realtime/start { threadId,
+  outputModality: "text" | "audio", transport, version, prompt, … }`, Audio per
+  `thread/realtime/appendAudio { threadId, audio: { data (base64), sampleRate, numChannels, … } }`, Ende
+  mit `thread/realtime/stop`. Zurück kommen `thread/realtime/transcript/delta` und `…/done` (mit `role`),
+  `outputAudio/delta`, `sdp`, `error`, `closed`.
+- **Mit ChatGPT-Login** nur über WebRTC (`transport: { type: "webrtc", sdp }`, Antwort als
+  `thread/realtime/sdp`) und nur als Audio-Gespräch: `transport: websocket` meldet „realtime conversation
+  requires API key auth“, Textausgabe „requires realtime v2“, v2 „AVAS realtime calls require realtime v1
+  or v3“. Der Aufruf geht an `chatgpt.com/backend-api/codex/realtime/calls`; mit einem Free-Plan kam 404.
+- **`codex-voice-host`** (`codex-resources/voice/bin`, GStreamer mit Opus und RTP) ist der Audio- und
+  WebRTC-Teil dieses Gesprächs für die TUI, keine Spracherkennung zum Mitschreiben.
+- Die Features `in_app_dictation` und `in_app_voice` sind Schalter für die Desktop-App von Codex, nicht
+  für die CLI.
 
 ## Nexa-MCP-Server
 

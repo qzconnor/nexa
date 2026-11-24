@@ -30,6 +30,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `artifacts/artifact-service.ts` | Claudes Artefakte auf claude.ai je Account (Liste, Vorschaubilder als `data:`-URL); Kanäle `artifacts:*` in `artifact-ipc.ts`, Typen und Link-Erkennung in `shared/artifacts.ts` |
+| `voice/voice-service.ts` | Spracheingabe: wählt einen Claude-Account mit gültigem Login, streamt die Aufnahme an Claudes Spracherkennung (WebSocket, wie `/voice` in Claude Code) und meldet die Wörter dem Fenster; Kanäle `voice:*` in `voice-ipc.ts`, Typen und Sprachen in `shared/voice.ts` |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
 | `accounts/conversation-files.ts` | Die Dateien einer Unterhaltung je Config-Ordner (Claude: Transkript, Subagents, Checkpoints; Codex: Rollouts) und ihre Größe, zum Löschen und Aufräumen |
 | `accounts/session-move.ts` | Verschiebt eine Session von Claude Code in den Projektordner eines anderen Arbeitsordners (wie `/cd`, aus dem Claude Manager) |
@@ -242,6 +243,30 @@ auf der Platte (die Agents können Nexas Dateien lesen); die Oberfläche sagt da
 läuft, geht die Ausgabe nur an das Fenster; gespeichert wird sie (ihr Ende, 100 000 Zeichen), wenn er
 endet. Der nächste Prompt bekommt alle `!`-Befehle seit dem letzten Prompt als `<nexa-shell>`
 (`userShellContext`) vorangestellt; beim Wechsel der CLI stehen ältere als eine Zeile im `<nexa-context>`.
+
+### Spracheingabe
+
+Das Mikrofon neben dem Senden-Knopf (oder Strg+M im Eingabefeld) diktiert in die Eingabe, für jede CLI:
+erkannt wird immer mit Claudes Spracherkennung, der Text landet wie getippt im Feld (Protokoll in
+`PROTOCOLS.md`, „Spracheingabe“). Ohne angemeldeten Claude-Account oder mit ausgeschaltetem Claude Code
+gibt es kein Mikrofon (`voiceAvailable` in `shared/voice.ts`); Codex' eigenes `/voice` ist ein
+Sprachgespräch und taugt nicht zum Diktat (`PROTOCOLS.md`, Codex, „Sprache“).
+
+`useVoiceInput` öffnet das Mikrofon (`getUserMedia`; das Hauptfenster darf nur Audio, `main-window.ts`),
+das unter `settings.chat.voiceMicrophone` steht, gemerkt mit seinem Namen statt der pro Profil gesalzenen
+Geräte-ID (`lib/microphones.ts`); ist es nicht angeschlossen, das des Systems. Aufgenommen wird in einem
+`AudioContext` mit 16 kHz; das Worklet `lib/voice-worklet.ts`
+macht daraus 16-Bit-PCM in Stücken von 64 ms samt Lautstärke für den Pegel (`VoiceMeter`). Die Stücke
+gehen über `voice:audio` an `VoiceService`, der sie bis zur stehenden Verbindung puffert. Die Wörter
+kommen als `voice:event` zurück; `Composer` schreibt sie an die Stelle des Cursors beim Start
+(`lib/voice-text.ts`), solange die Aufnahme läuft ist das Feld schreibgeschützt. Ein erneuter Klick, Esc
+oder Strg+M beendet die Aufnahme und wartet auf die letzten Wörter; Enter beendet sie und sendet danach.
+Mit `settings.chat.voiceAutoStop` endet sie auch von selbst: Jedes Stück prüft `pauseOver`
+(`lib/voice-text.ts`), gezählt ab den letzten neuen Wörtern (2 s, vor dem ersten 8 s), solange der Pegel
+keine Sprache zeigt. Mit `settings.chat.voiceAutoSend` geht die Nachricht ab, wenn eine Aufnahme mit
+Wörtern endet (Klick, Strg+M, Pause), nicht nach Esc oder einem Fehler. Der Account: `settings.chat.voiceAccount`, sonst der des Chats, wenn er ein Claude-Account ist, sonst der
+erste mit gültigem Login (`voiceCandidates`); die Sprache `settings.chat.voiceLanguage`, sonst die des
+Systems (`app.getLocale()`).
 
 ## Accounts
 

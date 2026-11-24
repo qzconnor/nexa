@@ -33,6 +33,8 @@ import { SettingsService } from './services/settings-service'
 import { ThemeService } from './services/theme-service'
 import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
+import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
+import { VoiceService } from './voice/voice-service'
 import { handleFileProtocol, registerFileScheme } from './window/file-protocol'
 import { createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
 import { AppTray } from './window/tray'
@@ -136,6 +138,19 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
+  // The microphone in the composer: Claude's speech recognition with a Claude account's login, for every
+  // CLI; without a Claude login there is none.
+  const voice = new VoiceService({
+    accounts: voiceAccounts(accounts),
+    settings: () => {
+      const current = settings.get()
+      return { claudeEnabled: current.claude.enabled, account: current.chat.voiceAccount, language: current.chat.voiceLanguage }
+    },
+    locale: () => app.getLocale(),
+    userAgent: `nexa/${app.getVersion()}`,
+  })
+  registerVoiceIpc(voice)
+  app.on('will-quit', () => voice.dispose())
 
   // The file panel beside the chat: the project's tree with git's view, and what the agents do to files.
   const files = new FileTreeService((path) => shell.trashItem(path))

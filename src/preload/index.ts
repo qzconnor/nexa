@@ -5,6 +5,7 @@ import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
+import { VoiceEvent, VoiceInvoke } from '@shared/voice'
 
 function subscribe<Args extends unknown[]>(channel: string, cb: (...args: Args) => void): Unsubscribe {
   const listener = (_event: IpcRendererEvent, ...args: unknown[]) => cb(...(args as Args))
@@ -63,6 +64,13 @@ const api: NexaApi = {
     list: (accountId) => invoke(ArtifactsInvoke.list, accountId),
     thumbnail: (accountId, id, dark) => invoke(ArtifactsInvoke.thumbnail, accountId, id, dark),
     chats: () => invoke(ArtifactsInvoke.chats),
+  },
+  voice: {
+    start: (input) => invoke(VoiceInvoke.start, input),
+    audio: (id, chunk) => invoke(VoiceInvoke.audio, id, chunk),
+    stop: (id) => invoke(VoiceInvoke.stop, id),
+    cancel: (id) => invoke(VoiceInvoke.cancel, id),
+    onUpdate: (cb) => subscribe(VoiceEvent.event, cb),
   },
   git: {
     branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),
