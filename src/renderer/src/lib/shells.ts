@@ -34,7 +34,7 @@ export { plainOutput } from '@shared/terminal'
 
 const START_PREFIX = 'start:'
 
-/** The side panel's id for a start command of the chat's project; no tool item's id looks like it. */
+/** The id a start command of the chat's project is unfolded by in the dock; no tool item's id looks like it. */
 export function startShellId(commandId: string): string {
   return `${START_PREFIX}${commandId}`
 }
@@ -47,6 +47,16 @@ export function startCommandOf(shellId: string | null | undefined): string | nul
 /** The shells of a chat that run right now, oldest first: in the background or the foreground, subagents' too. */
 export function runningShells(items: readonly ChatItem[]): ToolItem[] {
   return items.filter((i): i is ToolItem => i.kind === 'tool' && isCommand(i) && shellStatus(i) === 'running')
+}
+
+/**
+ * The dock's rows: its shells, and the one unfolded when it isn't among them (opened from its row in
+ * the chat, in the foreground or long ended). Oldest first.
+ */
+export function dockRows(items: readonly ChatItem[], dock: readonly ToolItem[], openId: string | null): ToolItem[] {
+  if (!openId || dock.some((s) => s.id === openId)) return [...dock]
+  const open = items.find((i): i is ToolItem => i.kind === 'tool' && i.id === openId)
+  return open ? [...dock, open].sort((a, b) => a.startedAt - b.startedAt) : [...dock]
 }
 
 /**

@@ -41,6 +41,7 @@ import type { UpdatesApi } from './updates'
 import type { CliImportApi, ImportApi } from './import-ipc'
 import type { SectionLayout } from './sections'
 import type { StartCommandsApi } from './start-commands'
+import type { TerminalsApi } from './terminals'
 import type { VoiceApi } from './voice'
 
 /** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
@@ -219,6 +220,8 @@ export interface NexaApi {
   voice: VoiceApi
   /** The projects' start commands, run as shells beside the chats (shared/start-commands.ts). */
   startCommands: StartCommandsApi
+  /** The user's terminals beside the chats (shared/terminals.ts). */
+  terminals: TerminalsApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

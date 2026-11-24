@@ -75,6 +75,15 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   `background_tasks_changed` (die ganze Liste, die noch läuft). `get_task_output { task_id }` liefert die
   letzten 8 KiB der Ausgabe (`output`, `truncated`), auch nach dem Ende, solange der Prozess lebt;
   `stop_task { task_id }` beendet die Shell. Mit dem Prozess von Claude Code enden auch seine Shells.
+- **Ausgabedateien und Kodierung**: Eine Shell im Hintergrund schreibt in `…\tasks\<task_id>.output` im
+  Temp-Ordner von Claude Code; den Pfad nennt das `tool_result` („Output is being written to: …“, je nach
+  Fall auch ohne Doppelpunkt) und `task_notification.output_file` (erst am Ende; `task_started` hat ihn
+  nicht). Im Vordergrund gibt es keine Datei. Claude Code liest alles als UTF-8; Windows-Konsolenprogramme
+  (ping, ipconfig …) schreiben ohne Konsole aber in der DOS-Codepage (850), ihre Umlaute kommen in
+  `get_task_output`, im `tool_result` und in einem `Read` der Datei als `�` an. Ein `Read` solcher Dateien
+  hängt „[This file is not valid UTF-8: …]“ an. Nexa liest die Datei deshalb selbst
+  (`providers/claude/output-encoding.ts`): die Ausgabe für `shellOutput` und die `�`-Zeilen eines `Read`,
+  jede nur, wenn die Bytes noch genau die Zeile ergeben, die Claude Code gelesen hat.
 - **Slash-Befehle** (geprüft mit 2.1.330): `initialize` und `system/commands_changed` nennen nur, was im
   Stream-Modus geht. Lokale Befehle antworten mit einer `assistant`-Nachricht von `model: "<synthetic>"`
   und einem `result` ohne Usage: `/context` (Markdown-Tabelle), `/usage` und `/cost` (Limits und

@@ -28,6 +28,7 @@ import {
   SparklesIcon,
   SquarePenIcon,
   SquareTerminalIcon,
+  TerminalIcon,
   Trash2Icon,
 } from '@lucide/vue'
 import { computed } from 'vue'
@@ -48,6 +49,7 @@ import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useStartCommandsStore } from '@/stores/start-commands'
+import { useTerminalsStore } from '@/stores/terminals'
 import { useUiStore } from '@/stores/ui'
 import PaletteInput from './PaletteInput.vue'
 
@@ -63,6 +65,7 @@ const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const startCommands = useStartCommandsStore()
+const terminals = useTerminalsStore()
 const chat = useChatActions()
 
 /** Closes the quick open first, so the keyboard is back in the window before the action runs. */
@@ -240,6 +243,16 @@ const switchChoices = computed(() => {
             <SearchIcon />
             Im Chat suchen
             <CommandShortcut>Strg+F</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            v-if="ui.view === 'chat'"
+            value="chat-terminal"
+            filter-text="Terminal öffnen ausblenden Shell Konsole PowerShell Bash Kommandozeile"
+            @select="run(() => terminals.toggle(meta!.id), true)"
+          >
+            <TerminalIcon />
+            {{ terminals.isOpen(meta.id) ? 'Terminal ausblenden' : 'Terminal öffnen' }}
+            <CommandShortcut>Strg+Ö</CommandShortcut>
           </CommandItem>
           <CommandItem value="chat-pin" filter-text="Chat anheften lösen oben halten" @select="run(() => update({ pinned: !meta!.pinned }))">
             <PinOffIcon v-if="meta.pinned" />

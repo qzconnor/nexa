@@ -1062,6 +1062,15 @@ export class SessionService extends TypedEmitter<Events> {
     return { provider: s.meta.provider, accountId: this.accountFor(s.meta, s.meta.provider) }
   }
 
+  /** Where the user's terminal beside a chat starts, and the account whose login it gets: the chat's CLI's. */
+  terminalTarget(id: string): { cwd: string; accountId: string } {
+    const s = this.sessions.get(id)
+    if (!s) throw new Error('Den Chat gibt es nicht mehr.')
+    const project = this.projects.get(s.meta.projectId)
+    if (!project) throw new Error('Das Projekt des Chats gibt es nicht mehr.')
+    return { cwd: this.cwdOf(s.meta, project), accountId: this.chatAccount(id)!.accountId }
+  }
+
   /**
    * A message of one chat's agent to another chat: it goes in like a prompt (into the running turn, or
    * starting the CLI), marked with where it came from. Refused after `MAX_CHAT_CHAIN` messages between

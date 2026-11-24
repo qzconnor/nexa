@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { CircleStopIcon, PlayIcon, RotateCwIcon } from '@lucide/vue'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ShellStatus } from '@shared/chat'
-import { relativeDir, startCommandLabel } from '@shared/start-commands'
+import { relativeDir } from '@shared/start-commands'
 import type { StartCommand } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -12,10 +12,11 @@ import { formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useStartCommandsStore } from '@/stores/start-commands'
+import ShellOutput from './ShellOutput.vue'
 
 /**
- * A start command of the chat's project in the shell panel: what its last run wrote, and the buttons
- * to start, restart or end it. Main keeps the output; it is asked for while the command runs.
+ * A start command of the chat's project unfolded in the dock, below its line: what its last run
+ * wrote, and the buttons to start, restart or end it. Main keeps the output; it is asked for while the command runs.
  */
 const props = defineProps<{ projectId: string; command: StartCommand }>()
 const projects = useProjectsStore()
@@ -50,19 +51,6 @@ const truncated = ref(false)
 const loadError = ref<string | null>(null)
 let seq = 0
 
-// The output follows its end, unless the user scrolled up to read.
-const pre = ref<HTMLElement | null>(null)
-let pinned = true
-function onScroll(): void {
-  const el = pre.value
-  if (el) pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24
-}
-watch(output, async () => {
-  if (!pinned) return
-  await nextTick()
-  if (pre.value) pre.value.scrollTop = pre.value.scrollHeight
-})
-
 async function load(): Promise<void> {
   const mine = ++seq
   try {
@@ -84,7 +72,6 @@ watch(
     if (started !== before?.[0]) {
       output.value = ''
       truncated.value = false
-      pinned = true
     }
     if (started === undefined) return
     void load()
@@ -122,27 +109,14 @@ async function stop(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
-    <div class="truncate text-[0.95rem] font-medium" :title="startCommandLabel(command)">{{ startCommandLabel(command) }}</div>
-    <pre
-      class="selectable max-h-32 shrink-0 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.78rem] whitespace-pre-wrap text-(--code-fg)"
-    ><span class="text-(--syn-comment) select-none">$ </span>{{ run?.command ?? command.command }}</pre>
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-      <span class="rounded bg-muted px-1.5">Startbefehl</span>
-      <span v-if="run?.shell">{{ run.shell }}</span>
-      <span v-if="status" :class="cn(running && 'text-shimmer', status === 'error' && 'text-destructive')">
-        {{ STATE[status] }}<template v-if="running"> seit {{ elapsed }}</template><template v-else> nach {{ elapsed }}</template>
-      </span>
-      <span v-else>Läuft nicht</span>
-      <span v-if="exitCode !== null" class="font-mono text-destructive">exit {{ exitCode }}</span>
-      <span class="truncate font-mono" :title="run?.cwd">{{ folder }}</span>
-    </div>
-    <p v-if="edited" class="text-xs text-muted-foreground">Geändert: Der neue Befehl gilt ab „Neu starten“.</p>
-
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-medium text-muted-foreground">Ausgabe</span>
-      <span v-if="truncated" class="text-xs text-muted-foreground">(nur das Ende)</span>
-      <div class="ml-auto flex items-center gap-1">
+  <div class="flex min-w-0 flex-col gap-2">
+    <div class="flex min-w-0 items-start gap-3">
+      <code
+        class="selectable line-clamp-3 min-w-0 flex-1 pt-0.5 font-mono text-[0.76rem] break-all text-muted-foreground"
+        :title="run?.command ?? command.command"
+        ><span class="text-(--syn-comment) select-none">$ </span>{{ run?.command ?? command.command }}</code
+      >
+      <div class="flex shrink-0 items-center gap-1">
         <template v-if="running">
           <Button variant="ghost" size="xs" :disabled="!!pending" @click="restart">
             <Spinner v-if="pending === 'start'" />
@@ -162,24 +136,29 @@ async function stop(): Promise<void> {
         </Button>
       </div>
     </div>
-    <p v-if="run?.error" class="selectable shrink-0 rounded-md bg-destructive/10 px-3 py-2 text-[0.8rem] text-destructive">{{ run.error }}</p>
-    <pre
-      v-if="output"
-      ref="pre"
-      :class="
-        cn(
-          'selectable min-h-0 flex-1 overflow-auto rounded-md border bg-(--code-bg) px-3 py-2 font-mono text-[0.75rem] whitespace-pre-wrap text-(--code-fg)',
-          status === 'error' && 'border-destructive/40',
-        )
-      "
-      @scroll="onScroll"
-      >{{ output.length > 60000 ? '…\n' + output.slice(-60000) : output }}</pre
-    >
-    <div v-else class="flex flex-1 items-start text-[0.82rem] text-muted-foreground">
-      <span v-if="loadError">{{ loadError }}</span>
-      <span v-else-if="!run">Noch nicht gestartet.</span>
-      <span v-else-if="running">Noch keine Ausgabe.</span>
-      <span v-else-if="!run.error">Keine Ausgabe.</span>
+
+    <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-muted-foreground">
+      <span v-if="status" :class="cn(running && 'text-shimmer', status === 'error' && 'text-destructive')">
+        {{ STATE[status] }} {{ running ? 'seit' : 'nach' }} {{ elapsed }}
+      </span>
+      <span v-else>läuft nicht</span>
+      <span v-if="exitCode !== null" class="font-mono text-destructive">exit {{ exitCode }}</span>
+      <span class="rounded bg-muted px-1.5">Startbefehl</span>
+      <span v-if="run?.shell">{{ run.shell }}</span>
+      <span class="max-w-[18rem] truncate font-mono" :title="run?.cwd">{{ folder }}</span>
+      <span v-if="truncated">nur das Ende der Ausgabe</span>
+      <span v-if="edited">· geändert, gilt ab „Neu starten“</span>
+    </div>
+    <p v-if="run?.error" class="selectable rounded-md bg-destructive/10 px-3 py-1.5 text-[0.78rem] text-destructive">{{ run.error }}</p>
+
+    <div class="h-[min(18rem,36vh)]">
+      <ShellOutput :text="output" :failed="status === 'error'">
+        <span v-if="loadError">{{ loadError }}</span>
+        <span v-else-if="!run">Noch nicht gestartet.</span>
+        <span v-else-if="running">Noch keine Ausgabe.</span>
+        <span v-else-if="!run.error">Keine Ausgabe.</span>
+        <span v-else>Ohne Ausgabe beendet.</span>
+      </ShellOutput>
     </div>
   </div>
 </template>

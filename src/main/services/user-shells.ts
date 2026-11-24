@@ -1,8 +1,9 @@
-import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { posix, win32 } from 'node:path'
 import type { UserShell } from '@shared/types'
-import { codePageDecoder, decodeText, type ByteDecoder } from '../lib/text-encoding'
+import { consoleDecoder, knownConsoleDecoder } from '../lib/console-code-page'
+import { decodeText } from '../lib/text-encoding'
 
 /** How a command typed after `!` in the composer runs: which program, with which arguments. */
 export interface ShellLaunch {
@@ -32,7 +33,7 @@ export function findOnPath(name: string, env: NodeJS.ProcessEnv, platform: NodeJ
 }
 
 /** Git for Windows' bash: next to the git on the PATH, else where its installer puts it. */
-function gitBash(env: NodeJS.ProcessEnv, exists: Exists): string | null {
+export function gitBash(env: NodeJS.ProcessEnv, exists: Exists): string | null {
   const git = findOnPath('git.exe', env, 'win32', exists)
   const candidates = [
     // <Git>\cmd\git.exe → <Git>\bin\bash.exe
@@ -97,23 +98,6 @@ export interface ShellSink {
   exit(result: { code: number | null; stopped: boolean; error?: string }): void
 }
 
-/**
- * How Windows' console programs (ping, ipconfig, cmd's `dir` …) write without a console: in the DOS
- * code page of the system (850 in Germany), while PowerShell, git and node write UTF-8. Lines that
- * aren't UTF-8 are read in it. Asked once; until it answers, Windows-1252 stands in.
- */
-let consoleDecoder: ByteDecoder | undefined
-let askedCodePage = false
-
-function askConsoleCodePage(): void {
-  if (askedCodePage || process.platform !== 'win32') return
-  askedCodePage = true
-  execFile('reg', ['query', String.raw`HKLM\SYSTEM\CurrentControlSet\Control\Nls\CodePage`, '/v', 'OEMCP'], { windowsHide: true }, (error, stdout) => {
-    const codePage = Number(/OEMCP\s+REG_SZ\s+(\d+)/.exec(stdout ?? '')?.[1])
-    if (!error && codePage) consoleDecoder = codePageDecoder(codePage)
-  })
-}
-
 /** Raw output kept per command: a server that logs for hours mustn't fill the memory. */
 const MAX_BYTES = 1024 * 1024
 /** Output reaches the chat at most this often while the command runs. */
@@ -136,7 +120,8 @@ export class UserShells {
 
   /** Starts `launch` for the command `itemId` (a chat's item, a start command) of `owner` (the chat, the project). */
   run(owner: string, itemId: string, launch: ShellLaunch, cwd: string, sink: ShellSink): void {
-    askConsoleCodePage()
+    // Lines of console programs aren't UTF-8 (see consoleDecoder); asked now, it has answered by their first output.
+    void consoleDecoder()
     let child: ChildProcess
     try {
       child = spawn(launch.file, launch.args, {
@@ -165,7 +150,7 @@ export class UserShells {
     let timer: NodeJS.Timeout | null = null
     const flush = () => {
       timer = null
-      sink.output(decodeText(Buffer.concat(chunks), consoleDecoder))
+      sink.output(decodeText(Buffer.concat(chunks), knownConsoleDecoder()))
     }
     const take = (chunk: Buffer) => {
       chunks.push(chunk)

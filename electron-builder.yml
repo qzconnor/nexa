@@ -12,13 +12,16 @@ electronDist: node_modules/electron/dist
 files:
   - out/**
   - package.json
-  # Debug symbols and koffi's sources and docs are not needed at runtime.
+  # Debug symbols, the native modules' sources and docs, and prebuilds for other systems are not needed at runtime.
   - '!**/*.{pdb,map}'
   - '!node_modules/koffi/{doc,vendor,cnoke.cjs,CHANGELOG.md}'
+  - '!node_modules/node-pty/{src,deps,third_party,scripts,binding.gyp}'
+  - '!node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}'
 
 asar: true
-# koffi's native module (.node) must live on disk.
+# Native modules (.node), node-pty's ConPTY helpers and its worker script must live on disk.
 asarUnpack:
+  - node_modules/node-pty/**
   - node_modules/koffi/**
   - node_modules/@koromix/**
 
@@ -33,7 +36,8 @@ electronFuses:
   enableNodeCliInspectArguments: false
   onlyLoadAppFromAsar: true
 
-# koffi uses Node-API and ships prebuilds, nothing has to be compiled for Electron.
+# koffi and node-pty use Node-API, so nothing has to be compiled for Electron: Windows takes the
+# prebuilds, on Linux `npm ci` compiles node-pty once for Node, which Electron loads as well.
 npmRebuild: false
 
 # Where the installed app looks for updates (electron-updater reads it from app-update.yml).
@@ -92,6 +96,10 @@ linux:
     entry:
       Keywords: claude;claude code;codex;chat;ai;agent;
   files:
+    # Linux has no node-pty prebuilds: `npm ci` compiles it, only the module itself is needed.
+    - '!node_modules/node-pty/prebuilds/**'
+    - '!node_modules/node-pty/build/{Makefile,config.gypi,*.mk,node_gyp_bins}'
+    - '!node_modules/node-pty/build/Release/{obj.target,.deps}'
     # koffi only calls Windows APIs (the window material).
     - '!node_modules/koffi/**'
     - '!node_modules/@koromix/**'

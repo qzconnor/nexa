@@ -16,6 +16,7 @@ import {
   RotateCwIcon,
   SearchIcon,
   SquareTerminalIcon,
+  TerminalIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from '@lucide/vue'
@@ -32,6 +33,7 @@ import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import ChangesView from '@/components/files/ChangesView.vue'
 import DiffView from '@/components/files/DiffView.vue'
 import FileTreePanel from '@/components/files/FileTreePanel.vue'
+import TerminalPanel from '@/components/terminal/TerminalPanel.vue'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -62,6 +64,7 @@ import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useStartCommandsStore } from '@/stores/start-commands'
+import { useTerminalsStore } from '@/stores/terminals'
 import { useUiStore } from '@/stores/ui'
 import AgentDock from './AgentDock.vue'
 import AgentThread from './AgentThread.vue'
@@ -70,7 +73,6 @@ import Composer from './Composer.vue'
 import LimitBanner from './LimitBanner.vue'
 import MessageList from './MessageList.vue'
 import ShellDock from './ShellDock.vue'
-import ShellPanel from './ShellPanel.vue'
 import StartCommandsMenu from './StartCommandsMenu.vue'
 import TodoCard from './TodoCard.vue'
 import UserMessage from './UserMessage.vue'
@@ -110,6 +112,15 @@ watch(
   { immediate: true },
 )
 const busy = computed(() => runtime.value.status === 'running' || runtime.value.status === 'waiting' || runtime.value.status === 'starting')
+
+// ── The user's terminal on the right ──
+
+const terminals = useTerminalsStore()
+const terminalOpen = computed(() => terminals.isOpen(meta.value?.id))
+// Hidden while it had the keyboard: back to the composer, not to nowhere.
+watch(terminalOpen, (open, before) => {
+  if (before && !open && document.activeElement?.closest('[aria-label="Terminal"]')) void nextTick(() => composer.value?.focus())
+})
 
 // ── The file panel on the left, and a file's changes over the timeline ──
 
@@ -222,6 +233,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key !== 'Escape' || !diff.value || !meta.value || escapeTaken(event)) return
   event.preventDefault()
   fileTree.closeDiff(meta.value.id)
+})
+
+// Escape folds a shell unfolded in the dock, before it would leave an agent's work below.
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || event.defaultPrevented || !ui.shellId || diff.value) return
+  if (document.querySelector('[role="menu"], [role="dialog"], [role="listbox"]')) return
+  event.preventDefault()
+  ui.shellId = null
 })
 
 // Escape goes back, as in the CLI; not while a menu or dialog takes it.
@@ -512,6 +531,24 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           <Button
             variant="ghost"
             size="icon-sm"
+            :class="cn('relative', terminalOpen && 'bg-muted')"
+            :aria-label="terminalOpen ? 'Terminal ausblenden' : 'Terminal öffnen'"
+            :aria-pressed="terminalOpen"
+            :disabled="!project"
+            v-tooltip.bottom="`${terminalOpen ? 'Terminal ausblenden' : 'Terminal im Ordner des Chats'} (Strg+Ö)`"
+            @click="terminals.toggle(meta.id)"
+          >
+            <TerminalIcon />
+            <!-- Hidden, its shells still run. -->
+            <span
+              v-if="!terminalOpen && terminals.runningIn(meta.id).length"
+              aria-hidden="true"
+              class="absolute top-1 right-1 size-1.5 rounded-full bg-(--tool-run) ring-2 ring-background"
+            />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             aria-label="Chat neu starten"
             :disabled="restarting"
             v-tooltip="'Chat neu starten: übernimmt geänderte Einstellungen'"
@@ -663,8 +700,12 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               enter-active-class="transition duration-200"
               leave-active-class="transition duration-150"
             >
-              <div v-if="dockShellList.length" class="frost-backing pointer-events-auto mb-2 min-w-0 flex-[1_1_16rem] rounded-xl">
-                <ShellDock :shells="dockShellList" />
+              <!-- A shell unfolded in the dock takes the composer's width, the agents above it. -->
+              <div
+                v-if="dockShellList.length || ui.shellId"
+                :class="cn('frost-backing pointer-events-auto mb-2 min-w-0 rounded-xl', ui.shellId ? 'basis-full' : 'flex-[1_1_16rem]')"
+              >
+                <ShellDock :shells="dockShellList" :items="items" :session-id="meta.id" :project-id="project?.id" />
               </div>
             </Transition>
           </div>
@@ -724,7 +765,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
     </div>
-    <ShellPanel v-if="ui.shellId" :items="items" :session-id="meta.id" :project-id="project?.id" />
+    <TerminalPanel :session-id="meta.id" />
     <BrowserPanel :session-id="meta.id" />
     <ChatStatusDialog v-model:open="statusOpen" :meta="meta" :runtime="runtime" :cwd="cwd" />
   </div>

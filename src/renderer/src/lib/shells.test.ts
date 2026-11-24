@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem, ToolItem } from '@shared/chat'
-import { dockShells, plainOutput, runningShells, shellCommand, shellStatus, startCommandOf, startShellId } from './shells'
+import { dockRows, dockShells, plainOutput, runningShells, shellCommand, shellStatus, startCommandOf, startShellId } from './shells'
 
 const tool = (over: Partial<ToolItem>): ToolItem => ({
   kind: 'tool',
@@ -41,6 +41,22 @@ describe('dockShells', () => {
 
   it('is empty once none runs', () => {
     expect(dockShells([prompt, bg('build', 'done')])).toEqual([])
+  })
+})
+
+describe('dockRows', () => {
+  const server = tool({ id: 'server', startedAt: 3, shell: { taskId: 's', background: true, status: 'running' } })
+  const items: ChatItem[] = [tool({ id: 'old', startedAt: 1, status: 'done' }), server, tool({ id: 'later', startedAt: 5, status: 'done' })]
+
+  it('adds the open shell to the dock, oldest first', () => {
+    expect(dockRows(items, [server], 'old').map((t) => t.id)).toEqual(['old', 'server'])
+    expect(dockRows(items, [server], 'later').map((t) => t.id)).toEqual(['server', 'later'])
+  })
+
+  it('keeps the dock as it is when the open one is in it, a start command or none', () => {
+    expect(dockRows(items, [server], 'server').map((t) => t.id)).toEqual(['server'])
+    expect(dockRows(items, [server], 'start:dev').map((t) => t.id)).toEqual(['server'])
+    expect(dockRows(items, [server], null).map((t) => t.id)).toEqual(['server'])
   })
 })
 

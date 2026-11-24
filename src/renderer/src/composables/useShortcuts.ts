@@ -6,6 +6,7 @@ import { DEFAULT_ZOOM, normalizeZoom, stepZoom } from '@shared/zoom'
 import { attempt } from '@/lib/errors'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
+import { useTerminalsStore } from '@/stores/terminals'
 import { useUiStore } from '@/stores/ui'
 import { useChatActions } from './useChatActions'
 
@@ -20,6 +21,7 @@ export function useShortcuts(ready: Ref<boolean>): void {
   const sessions = useSessionsStore()
   const settings = useSettingsStore()
   const ui = useUiStore()
+  const terminals = useTerminalsStore()
   const chat = useChatActions()
 
   /**
@@ -81,6 +83,11 @@ export function useShortcuts(ready: Ref<boolean>): void {
       case 'zoom':
         zoom(shortcut.step)
         return
+      case 'toggle-terminal': {
+        const id = openId()
+        if (id) terminals.toggle(id)
+        return
+      }
     }
   }
 
