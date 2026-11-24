@@ -18,6 +18,10 @@
       Einstellungen, Vorgabe je CLI, Wechsel im laufenden Chat mit Übernahme der Unterhaltung
 - [x] Login im UI: `claude auth login` / `codex login` mit Link, Code-Eingabe und Status
 - [x] Claude-Usage ohne laufende Session über die OAuth-Usage-Schnittstelle, Limits je Account
+- [x] Automatischer Account-Wechsel am Limit (wie „Account wechseln“ im Claude Manager): Der Chat geht mit
+      dem nächsten freien Account derselben CLI in der Reihenfolge der Accountliste weiter; der verlassene
+      bleibt bis zu seinem Reset gesperrt; ohne freien Account wartet der Chat mit Countdown; „Am Reset
+      fortsetzen“ auch ohne Wechsel; danach eine einstellbare Nachricht („Mach weiter“)
 - [x] Dateien und Aktivität wie im Claude Manager: Dateibaum mit Git, angefasste Dateien, Diffs und
       Review-Kommentare als Panel neben dem Chat
 - [x] Eigener Browser aus dem Claude Manager als Panel rechts neben dem Chat, mit allen Browser-Werkzeugen
@@ -192,11 +196,6 @@
 
 - [ ] **Sites von Codex** auf der Seite „Artefakte“, sobald der App-Server sie herausgibt (0.169 hat keine
       Methode dafür). Dazu für Claudes Artefakte: umbenennen, löschen und anpinnen wie im Claude Manager.
-- [ ] **Automatischer Account-Wechsel bei erreichtem Limit** (wie „Account wechseln“ im Claude Manager):
-      Chat mit dem nächsten freien Account derselben CLI fortsetzen, Reihenfolge einstellbar. Ein
-      verlassener Account bleibt bis zu seinem Reset gesperrt; ohne freien Account wartet der Chat mit
-      Countdown; „Am Reset fortsetzen“ auch ohne Wechsel; nach dem Wechsel eine einstellbare Nachricht
-      („Mach weiter“). Dateien dort: `auto-switch.ts`, `session-handoff.ts`, `account-choice.ts`.
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).
 - [ ] **Shell-Detailansicht überarbeiten**: die Ansicht einer Shell neben dem Chat mit Ausgabe, Status und

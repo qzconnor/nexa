@@ -223,6 +223,7 @@ const api: NexaApi = {
     remove: (ids) => invoke(IpcInvoke.sessionsRemove, ids),
     storage: () => invoke(IpcInvoke.sessionsStorage),
     stop: (id) => invoke(IpcInvoke.sessionsStop, id),
+    resumeAtReset: (id, on) => invoke(IpcInvoke.sessionsResumeAtReset, id, on),
     search: (query) => invoke(IpcInvoke.sessionsSearch, query),
     move: (id, target) => invoke(IpcInvoke.sessionsMove, id, target),
     compact: (id) => invoke(IpcInvoke.sessionsCompact, id),

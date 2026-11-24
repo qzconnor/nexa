@@ -118,6 +118,19 @@ const TREE = [
           'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan ChatGPT Plus Pro OpenAI CODEX_HOME Konfigurationsordner hinzufügen entfernen Limits Usage Reihenfolge sortieren verschieben',
       },
       {
+        id: 'accounts.limit',
+        title: 'Bei erreichtem Limit',
+        keywords: 'Limit Usage Rate Limit erschöpft aufgebraucht Reset Kontingent Abo',
+        fields: [
+          {
+            id: 'accounts.autoSwitch',
+            label: 'Account automatisch wechseln',
+            keywords: 'Account wechseln weitermachen fortsetzen nächster freier Reihenfolge warten Countdown Reset automatisch',
+          },
+          { id: 'accounts.continuePrompt', label: 'Nachricht zum Weitermachen', keywords: 'Mach weiter Prompt Text fortsetzen Reset Nachricht' },
+        ],
+      },
+      {
         id: 'accounts.cliImport',
         title: 'Sessions der CLIs übernehmen',
         keywords:

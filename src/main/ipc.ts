@@ -15,6 +15,7 @@ import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
 import type { GitService } from './files/git-service'
+import type { AutoSwitch } from './services/auto-switch'
 import type { NotificationService } from './services/notification-service'
 import type { ProjectService } from './services/project-service'
 import { projectToSection } from './services/project-sections'
@@ -35,6 +36,7 @@ export interface AppContext {
   api: ApiServer
   git: GitService
   notifications: NotificationService
+  autoSwitch: AutoSwitch
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -335,6 +337,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsRemove, (_e, ids: unknown) => sessions.remove(idList(ids, 'Die Sessions')))
   handle(IpcInvoke.sessionsStorage, () => sessions.storage())
   handle(IpcInvoke.sessionsStop, (_e, id: unknown) => sessions.stop(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsResumeAtReset, (_e, id: unknown, on: unknown) => ctx.autoSwitch.resumeAtReset(str(id, 'Die Session'), on === true))
   handle(IpcInvoke.sessionsSearch, (_e, query: unknown) => sessions.search(typeof query === 'string' ? query.slice(0, 200) : ''))
   handle(IpcInvoke.sessionsMove, (_e, id: unknown, target: unknown) => sessions.move(str(id, 'Die Session'), moveArg(target)))
   handle(IpcInvoke.sessionsCompact, (_e, id: unknown) => sessions.compact(str(id, 'Die Session')))

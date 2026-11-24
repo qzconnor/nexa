@@ -3,7 +3,10 @@ import { DEFAULT_THEME_ID } from './themes/builtin'
 import type { AppSettings, ProviderSettings } from './types'
 import { DEFAULT_ZOOM } from './zoom'
 
-const provider = (): ProviderSettings => ({ enabled: true, path: '', model: '', effort: '', extraArgs: [] })
+/** What a chat says when it goes on after a limit, unless the user wrote their own (`chat.continuePrompt`). */
+export const DEFAULT_CONTINUE_PROMPT = 'Mach weiter'
+
+const provider = (): ProviderSettings =>({ enabled: true, path: '', model: '', effort: '', extraArgs: [] })
 
 /** Settings of a fresh install; the folder for new projects is filled in by the main process. */
 export function defaultSettings(): AppSettings {
@@ -42,6 +45,8 @@ export function defaultSettings(): AppSettings {
       voiceMicrophone: '',
       voiceAutoStop: false,
       voiceAutoSend: false,
+      autoSwitch: false,
+      continuePrompt: DEFAULT_CONTINUE_PROMPT,
     },
     tools: {
       renderTools: true,

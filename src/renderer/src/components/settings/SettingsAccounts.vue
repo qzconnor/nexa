@@ -1,19 +1,25 @@
 <script setup lang="ts">
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Account } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
+import { DEFAULT_CONTINUE_PROMPT } from '@shared/defaults'
+import type { ChatSettings } from '@shared/types'
 import AccountList from '@/components/accounts/AccountList.vue'
 import RemoveAccountDialog from '@/components/accounts/RemoveAccountDialog.vue'
 import ClaudeManagerImport from '@/components/setup/ClaudeManagerImport.vue'
 import CliSessionsImport from '@/components/setup/CliSessionsImport.vue'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useSettingsFilter } from '@/composables/useSettingsSearch'
 import { attempt } from '@/lib/errors'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProvidersStore } from '@/stores/providers'
+import { useSettingsStore } from '@/stores/settings'
+import SettingField from './SettingField.vue'
 import SettingsSection from './SettingsSection.vue'
 
 /**
@@ -27,6 +33,12 @@ const removeOpen = ref(false)
 const refreshing = ref(false)
 const filter = useSettingsFilter()
 const claudeManager = useClaudeManager()
+const settings = useSettingsStore()
+const chat = computed(() => settings.settings.chat)
+
+function updateChat(patch: Partial<ChatSettings>): void {
+  void attempt(() => settings.update({ chat: patch }), 'Speichern fehlgeschlagen')
+}
 
 function add(provider: ProviderId): void {
   accounts.formRequest = { account: null, provider }
@@ -77,6 +89,30 @@ async function refresh(): Promise<void> {
         </Button>
       </template>
       <AccountList provider="codex" @remove="remove" />
+    </SettingsSection>
+
+    <SettingsSection anchor="accounts.limit" title="Bei erreichtem Limit" description="Wenn ein Chat am Limit seines Accounts stehen bleibt.">
+      <SettingField
+        anchor="accounts.autoSwitch"
+        label="Account automatisch wechseln"
+        description="Der Chat geht mit dem nächsten freien Account derselben CLI weiter, in der Reihenfolge oben; der verlassene bleibt bis zu seinem Reset außen vor. Ist keiner frei, wartet der Chat auf den ersten Reset. API-Keys nimmt der Wechsel nie, sie kosten pro Token. „Am Reset fortsetzen“ im Chat geht auch ohne den Wechsel."
+      >
+        <Switch :model-value="chat.autoSwitch" @update:model-value="(v: boolean) => updateChat({ autoSwitch: v })" />
+      </SettingField>
+      <SettingField
+        anchor="accounts.continuePrompt"
+        for="continue-prompt"
+        label="Nachricht zum Weitermachen"
+        description="Geht nach dem Wechsel oder am Reset hinaus, damit der Agent dort weitermacht, wo er stehen blieb."
+      >
+        <Input
+          id="continue-prompt"
+          :model-value="chat.continuePrompt"
+          :placeholder="DEFAULT_CONTINUE_PROMPT"
+          class="h-8 w-56"
+          @change="(e: Event) => updateChat({ continuePrompt: (e.target as HTMLInputElement).value.trim() })"
+        />
+      </SettingField>
     </SettingsSection>
 
     <div v-if="filter.shows('accounts.cliImport')" data-setting="accounts.cliImport">

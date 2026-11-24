@@ -84,6 +84,13 @@ export interface ChatSettings {
   voiceAutoStop: boolean
   /** A take that ends with words heard sends the prompt right away; Esc ends one without sending. */
   voiceAutoSend: boolean
+  /**
+   * A chat that hits its account's limit goes on with the next free account of the same CLI, in the
+   * order of the accounts list; with none free it waits for the first reset (main/services/auto-switch.ts).
+   */
+  autoSwitch: boolean
+  /** What a chat says when it goes on after a limit, with another account or at the reset; `''`: „Mach weiter“. */
+  continuePrompt: string
 }
 
 export type UserShell = 'powershell' | 'gitbash' | 'cmd'

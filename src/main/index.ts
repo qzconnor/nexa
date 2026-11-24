@@ -28,6 +28,7 @@ import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { ProjectService } from './services/project-service'
 import { ProviderService } from './services/provider-service'
 import { UsageSamples } from './services/usage-samples'
+import { AutoSwitch } from './services/auto-switch'
 import { NotificationService } from './services/notification-service'
 import { SessionService } from './services/session-service'
 import { SettingsService } from './services/settings-service'
@@ -133,9 +134,12 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     open: { chat: (id) => show(id), settings: (section) => reveal(IpcEvent.openSettings, section) },
   })
 
+  // A chat at its account's limit: goes on with the next free account, or at the reset.
+  const autoSwitch = new AutoSwitch({ sessions, providers, accounts, settings, userDataDir })
+
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
   const git = new GitService()
-  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications })
+  registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications, autoSwitch })
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
@@ -164,6 +168,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   })
   await api.init()
   await notifications.init()
+  await autoSwitch.init()
 
   // Taking over the Claude Manager's workspaces, accounts, sessions, prompts and themes, and the
   // sessions in the CLIs' own folders (first start, or later in the settings).
@@ -292,8 +297,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     cleanedUp = true
     tray.dispose()
     updates.dispose()
+    // Before the runs end: nothing goes on after a limit while Nexa quits.
+    const switchSaved = autoSwitch.dispose()
     // Ends the CLI processes (they would outlive the app) and writes what is pending.
-    void Promise.allSettled([sessions.dispose(), providers.dispose(), browserTabs.flush()])
+    void Promise.allSettled([sessions.dispose(), providers.dispose(), browserTabs.flush(), switchSaved])
       .then(() => {
         api.dispose()
         notifications.dispose()

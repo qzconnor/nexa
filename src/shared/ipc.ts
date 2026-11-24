@@ -128,6 +128,7 @@ export const IpcInvoke = {
   sessionsRemove: 'sessions:remove',
   sessionsStorage: 'sessions:storage',
   sessionsStop: 'sessions:stop',
+  sessionsResumeAtReset: 'sessions:resume-at-reset',
   sessionsSearch: 'sessions:search',
   sessionsMove: 'sessions:move',
   sessionsCompact: 'sessions:compact',
@@ -373,6 +374,11 @@ export interface NexaApi {
     storage(): Promise<SessionStorage[]>
     /** Ends the CLI process of the session; the next prompt resumes it. */
     stop(id: string): Promise<void>
+    /**
+     * „Am Reset fortsetzen“ for a chat at its account's limit: it goes on by itself once the limit resets
+     * (`SessionRuntime.resume`); `on` false stops that, also a wait of the automatic account switch.
+     */
+    resumeAtReset(id: string, on: boolean): Promise<void>
     /** Chats whose prompts and answers hold every word of `query`; empty: reads them ahead for the next search. */
     search(query: string): Promise<SessionSearchHit[]>
     /** Into another project or folder: the chat goes on there with its conversation (not while its CLI works). */

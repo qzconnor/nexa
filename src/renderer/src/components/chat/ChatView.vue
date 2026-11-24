@@ -64,6 +64,7 @@ import AgentDock from './AgentDock.vue'
 import AgentThread from './AgentThread.vue'
 import ChatStatusDialog from './ChatStatusDialog.vue'
 import Composer from './Composer.vue'
+import LimitBanner from './LimitBanner.vue'
 import MessageList from './MessageList.vue'
 import ShellDock from './ShellDock.vue'
 import ShellPanel from './ShellPanel.vue'
@@ -639,6 +640,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               </p>
             </div>
           </div>
+          <LimitBanner
+            :session-id="meta.id"
+            :provider="meta.provider"
+            :account-id="accounts.sessionAccount(meta)"
+            :runtime="runtime"
+            :items="items"
+            :busy="busy"
+          />
           <div class="frost-backing pointer-events-auto rounded-2xl">
             <Composer
               ref="composer"

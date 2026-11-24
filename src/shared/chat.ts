@@ -384,6 +384,20 @@ export interface SessionRuntime {
    * as its own queue): each joins the chat where the CLI takes it, until then it waits below it.
    */
   queued?: UserItem[]
+  /** The chat stopped at its account's limit and goes on by itself (main/services/auto-switch.ts). */
+  resume?: SessionResume
+}
+
+/** When and with which account a chat at its limit goes on: at the first reset of an account it may use. */
+export interface SessionResume {
+  /** When it goes on; null: no account it may use ever will (all signed out). */
+  at: number | null
+  /** `at` is a guess: no CLI said when the limit resets. */
+  estimated?: boolean
+  /** The account it goes on with. */
+  accountId: string | null
+  /** The user asked for it („Am Reset fortsetzen“); else the automatic account switch waits. */
+  byUser: boolean
 }
 
 export type SessionEvent =
