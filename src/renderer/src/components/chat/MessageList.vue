@@ -152,6 +152,7 @@ const providerChanges = computed(() => {
     <template v-for="block in shown" :key="keyOf(block)">
       <ToolGroup v-if="block.type === 'tools'" :tools="block.tools" />
       <BrowserCard v-else-if="block.type === 'browser'" :tools="block.tools" :block-id="block.id" :session-id="sessionId" :live="block.id === liveBrowser" />
+      <ThinkingBlock v-else-if="block.type === 'thinking'" :items="block.items" />
       <template v-else>
         <UserMessage
           v-if="block.item.kind === 'user'"
@@ -164,7 +165,6 @@ const providerChanges = computed(() => {
         >
           <Markdown :text="block.item.text" :streaming="block.item.streaming" />
         </div>
-        <ThinkingBlock v-else-if="block.item.kind === 'thinking'" :item="block.item" />
         <template v-else-if="block.item.kind === 'tool'">
           <RenderBlock v-if="block.item.render" :spec="block.item.render" />
           <ToolRow v-else :tool="block.item" />

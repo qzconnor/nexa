@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ToolItem } from '@shared/chat'
-import { nexaToolView, toolSummary } from './tools'
+import type { ChatItem, ToolItem } from '@shared/chat'
+import { chatBlocks, nexaToolView, toolSummary } from './tools'
 
 const tool = (patch: Partial<ToolItem>): ToolItem => ({
   kind: 'tool',
@@ -42,5 +42,22 @@ describe('nexaToolView', () => {
 describe('toolSummary', () => {
   it('doesn’t count Claude loading Nexa’s tools', () => {
     expect(toolSummary([loads('select:mcp__nexa__render_chart'), tool({ tool: 'bash' })])).toBe('1 Befehl')
+  })
+})
+
+describe('chatBlocks', () => {
+  const thought = (id: string, text = id): ChatItem => ({ kind: 'thinking', id, ts: 0, provider: 'codex', text })
+  const say = (id: string): ChatItem => ({ kind: 'assistant', id, ts: 0, provider: 'codex', text: id })
+  const shape = (items: ChatItem[]) =>
+    chatBlocks(items, null, true).map((b) => (b.type === 'thinking' ? b.items.map((i) => i.id) : b.type === 'item' ? b.item.id : b.tools.map((t) => t.id)))
+
+  it('shows thoughts in a row as one block, with the calls between them in the group above', () => {
+    const items = [thought('t1'), tool({ id: 'a' }), thought('t2'), tool({ id: 'b' }), thought('t3'), say('fertig'), thought('t4')]
+    expect(shape(items)).toEqual([['t1'], ['a', 'b'], ['t2', 't3'], 'fertig', ['t4']])
+  })
+
+  it('leaves out empty thoughts and all of them when they are hidden', () => {
+    expect(shape([thought('t1', ' '), thought('t2')])).toEqual([['t2']])
+    expect(chatBlocks([thought('t1')], null, false)).toEqual([])
   })
 })

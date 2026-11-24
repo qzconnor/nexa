@@ -15,7 +15,7 @@ import {
   WrenchIcon,
 } from '@lucide/vue'
 import type { Component } from 'vue'
-import type { ChatItem, ToolItem, ToolKind } from '@shared/chat'
+import type { ChatItem, ThinkingItem, ToolItem, ToolKind } from '@shared/chat'
 import { isRenderTool, RENDER_SERVER, type RenderToolName } from '@shared/render'
 
 /** Icon and colour per kind of tool, as Claude Manager's file tree colours what Claude does. */
@@ -38,7 +38,12 @@ export const TOOL_META: Record<ToolKind, { icon: Component; color: string }> = {
 export const AGENT_ICON = BotIcon
 
 /** A block of the timeline: one item, tool calls in a row, or what an agent did in the browser in a row. */
-export type ChatBlock = { type: 'item'; item: ChatItem } | { type: 'tools'; id: string; tools: ToolItem[] } | { type: 'browser'; id: string; tools: ToolItem[] }
+export type ChatBlock =
+  | { type: 'item'; item: ChatItem }
+  | { type: 'tools'; id: string; tools: ToolItem[] }
+  | { type: 'browser'; id: string; tools: ToolItem[] }
+  /** Thoughts in a row: one block that shows the newest. */
+  | { type: 'thinking'; id: string; items: ThinkingItem[] }
 
 /**
  * The action of one of the browser tools of Nexa's MCP server (`navigate` for `browser_navigate`), as
@@ -187,13 +192,18 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
       group.push(item)
       continue
     }
-    if (item.kind === 'thinking' && (!showThinking || !item.text.trim())) continue
-    if (item.kind === 'assistant' && !item.text.trim() && !item.streaming) continue
-    // Thinking between tool calls doesn't break their group.
-    if (item.kind !== 'thinking') {
-      group = null
-      browser = null
+    if (item.kind === 'thinking') {
+      if (!showThinking || !item.text.trim()) continue
+      // Thinking between tool calls doesn't break their group (the calls after it join the group above),
+      // so thoughts would stand one under the other: one block, the newest in place of the one before.
+      const last = blocks.at(-1)
+      if (last?.type === 'thinking') last.items.push(item)
+      else blocks.push({ type: 'thinking', id: `thinking:${item.id}`, items: [item] })
+      continue
     }
+    if (item.kind === 'assistant' && !item.text.trim() && !item.streaming) continue
+    group = null
+    browser = null
     blocks.push({ type: 'item', item })
   }
   return blocks
