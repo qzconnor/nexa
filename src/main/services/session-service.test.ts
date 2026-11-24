@@ -22,6 +22,8 @@ let codexA: string
 let settings: AppSettings
 let trashed: string[]
 let service: SessionService | null
+/** What the CLI's server gives as a conversation's chat (`ProviderService.history`). */
+let readHistory: (accountId: string, sessionId: string) => Promise<ChatItem[] | null>
 
 async function put(path: string, text = 'x'): Promise<void> {
   await mkdir(join(path, '..'), { recursive: true })
@@ -65,13 +67,14 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
     ],
     claudePaths: (id: string) => ({ configDir: id === 'claude-a' ? claudeA : claudeB }),
     codexPaths: () => ({ configDir: codexA }),
+    has: (id: string) => ['claude-a', 'claude-b', 'codex-a'].includes(id),
     resolve: () => 'claude-a',
     get: () => ({ id: 'claude-a', kind: 'system' }),
     env: () => ({ accountId: 'claude-a', set: {}, unset: [] }),
     extraArgs: () => [],
   }
   const projects = { get: (id: string) => (id === 'p1' ? { id, path: CWD } : undefined), touch: async () => {}, promptsFor: async () => [] }
-  const providers = { isReady: () => true, defaultAccount: () => 'claude-a', get: () => provider, setUsage: () => {} }
+  const providers = { isReady: () => true, defaultAccount: () => 'claude-a', get: () => provider, setUsage: () => {}, history: (_id: string, accountId: string, sessionId: string) => readHistory(accountId, sessionId) }
   const mcp = { revoke: vi.fn(), running: false }
   service = new SessionService(
     dataDir,
@@ -98,6 +101,7 @@ beforeEach(async () => {
   settings = defaultSettings()
   trashed = []
   service = null
+  readHistory = async () => null
 })
 
 afterEach(async () => {
@@ -217,6 +221,33 @@ describe('SessionService.send while the agent works', () => {
     expect(await texts()).toEqual(['erste', 'zweite'])
     expect(runtime()).toMatchObject({ status: 'idle' })
     expect(runtime()).not.toHaveProperty('queued')
+  })
+})
+
+describe('SessionService with a session taken over from Codex', () => {
+  const imported = () => meta('chat', { provider: 'codex', cli: { codex: { sessionId: THREAD, seenItems: 0, accountId: 'codex-a' } }, importedFrom: THREAD })
+
+  it('reads its history once, through the app-server of the account that keeps it', async () => {
+    const asked: string[] = []
+    readHistory = async (accountId, sessionId) => {
+      asked.push(`${accountId}:${sessionId}`)
+      return [{ kind: 'user', id: 'u1', ts: 1, provider: 'codex', text: 'Hallo' }]
+    }
+    const sessions = await start([imported()])
+
+    expect((await sessions.history('chat'))!.items).toMatchObject([{ kind: 'user', text: 'Hallo' }])
+    expect((await sessions.history('chat'))!.items).toHaveLength(1)
+    expect(asked).toEqual([`codex-a:${THREAD}`])
+    const saved = sessions.list()[0]!
+    expect(saved).not.toHaveProperty('importedFrom')
+    // Codex has seen all of it: the next prompt doesn't send it again as context.
+    expect(saved.cli.codex!.seenItems).toBe(1)
+  })
+
+  it('says so when Codex keeps no history of it', async () => {
+    readHistory = async () => []
+    const sessions = await start([imported()])
+    expect((await sessions.history('chat'))!.items).toMatchObject([{ kind: 'notice', level: 'warning' }])
   })
 })
 

@@ -1,28 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import type {
-  AgentItem,
-  AgentStatus,
-  FileChange,
-  InteractionItem,
-  InteractionRequest,
-  InteractionResponse,
-  PermissionMode,
-  PermissionOption,
-  ToolItem,
-  ToolStatus,
-} from '@shared/chat'
+import type { AgentItem, AgentStatus, InteractionItem, InteractionRequest, InteractionResponse, PermissionMode, PermissionOption, ToolItem } from '@shared/chat'
 import { compactionNotice } from '@shared/chat'
-import { renderSpecOf } from '@shared/render'
 import type { CommandOption } from '@shared/types'
 import { firstLine, isPlainObject } from '@shared/utils'
 import { codexToolApprovals } from '../../mcp/tool-grant'
 import { codexMcpServers } from '../mcp-servers'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import type { CodexClient, CodexServerRequest } from './codex-client'
-
-type Json = Record<string, unknown>
-
-const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
+import { agentStatusOf, codexItem, codexTurnItem, COLLAB_TITLES, commandView, reasoningText, str, type Json } from './codex-items'
 
 export const CODEX_POLICY: Record<PermissionMode, { approvalPolicy: string; sandbox: 'read-only' | 'workspace-write' | 'danger-full-access' }> = {
   ask: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
@@ -70,71 +55,6 @@ function sandboxPolicy(mode: PermissionMode, cwd: string, dirs: readonly string[
     default:
       return { type: 'workspaceWrite', writableRoots: [cwd, ...dirs], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
   }
-}
-
-const COLLAB_TITLES: Record<string, string> = {
-  spawnAgent: 'Agent starten',
-  sendInput: 'Nachricht an Agent',
-  sendMessage: 'Nachricht an Agent',
-  resumeAgent: 'Agent fortsetzen',
-  wait: 'Auf Agents warten',
-  closeAgent: 'Agent beenden',
-  followupTask: 'Folgeaufgabe an Agent',
-  interruptAgent: 'Agent unterbrechen',
-  listAgents: 'Agents auflisten',
-}
-
-function agentStatusOf(status: unknown): AgentStatus | null {
-  switch (status) {
-    case 'pendingInit':
-    case 'running':
-      return 'running'
-    case 'completed':
-    case 'shutdown':
-      return 'done'
-    case 'errored':
-    case 'notFound':
-      return 'error'
-    case 'interrupted':
-      return 'stopped'
-    default:
-      return null
-  }
-}
-
-function toolStatusOf(status: unknown): ToolStatus {
-  switch (status) {
-    case 'completed':
-      return 'done'
-    case 'failed':
-      return 'error'
-    case 'declined':
-      return 'denied'
-    default:
-      return 'running'
-  }
-}
-
-function changesOf(raw: unknown): FileChange[] {
-  if (!Array.isArray(raw)) return []
-  return raw.filter(isPlainObject).map((c) => {
-    const kind = isPlainObject(c.kind) ? c.kind : {}
-    return {
-      path: str(c.path) ?? '',
-      type: kind.type === 'add' ? 'add' : kind.type === 'delete' ? 'delete' : 'update',
-      diff: str(c.diff),
-      movePath: str(kind.move_path),
-    }
-  })
-}
-
-function mcpResultText(result: unknown, error: unknown): string | undefined {
-  if (isPlainObject(error) && typeof error.message === 'string') return error.message
-  if (!isPlainObject(result) || !Array.isArray(result.content)) return undefined
-  return result.content
-    .map((c) => (isPlainObject(c) && c.type === 'text' && typeof c.text === 'string' ? c.text : ''))
-    .filter(Boolean)
-    .join('\n')
 }
 
 /**
@@ -471,19 +391,8 @@ export class CodexRun implements AgentRun {
         if (prompt) this.sink.taken(prompt)
         return
       }
-      case 'agentMessage':
-        this.sink.item({
-          ...base,
-          kind: 'assistant',
-          text: str(item.text) ?? '',
-          streaming: !completed,
-          phase: item.phase === 'final_answer' ? 'final' : item.phase === 'commentary' ? 'commentary' : undefined,
-        })
-        return
       case 'reasoning': {
-        const summary = Array.isArray(item.summary) ? item.summary.filter((s): s is string => typeof s === 'string') : []
-        const content = Array.isArray(item.content) ? item.content.filter((s): s is string => typeof s === 'string') : []
-        const text = (summary.length ? summary : content).join('\n\n')
+        const text = reasoningText(item)
         if (!completed || !text.trim()) {
           if (completed && this.thinking.has(id)) this.sink.item({ ...base, kind: 'thinking', text, streaming: false })
           return
@@ -492,88 +401,6 @@ export class CodexRun implements AgentRun {
         this.sink.item({ ...base, kind: 'thinking', text, streaming: false })
         return
       }
-      case 'commandExecution': {
-        const command = str(item.command) ?? ''
-        const view = commandView(command, item.commandActions)
-        return this.putTool({
-          ...base,
-          kind: 'tool',
-          tool: view.tool,
-          name: 'commandExecution',
-          title: view.title,
-          detail: view.detail,
-          input: { command, cwd: item.cwd },
-          output: str(item.aggregatedOutput),
-          exitCode: typeof item.exitCode === 'number' ? item.exitCode : null,
-          status: completed ? (typeof item.exitCode === 'number' && item.exitCode !== 0 ? 'error' : toolStatusOf(item.status)) : 'running',
-          startedAt,
-          endedAt,
-        })
-      }
-      case 'fileChange': {
-        const changes = changesOf(item.changes)
-        return this.putTool({
-          ...base,
-          kind: 'tool',
-          tool: changes.every((c) => c.type === 'add') ? 'write' : 'edit',
-          name: 'fileChange',
-          title: changes.length > 1 ? `${changes.length} Dateien ändern` : 'Datei ändern',
-          detail: changes[0]?.path,
-          changes,
-          status: completed ? toolStatusOf(item.status) : 'running',
-          startedAt,
-          endedAt,
-        })
-      }
-      case 'mcpToolCall': {
-        const server = str(item.server) ?? 'mcp'
-        const tool = str(item.tool) ?? 'tool'
-        const render = renderSpecOf(server, tool, item.arguments)
-        return this.putTool({
-          ...base,
-          kind: 'tool',
-          tool: render ? 'render' : 'mcp',
-          name: `${server}.${tool}`,
-          title: render ? (render.type === 'diagram' ? 'Diagramm' : 'Darstellung') : tool.replace(/_/g, ' '),
-          server,
-          input: item.arguments,
-          render,
-          output: mcpResultText(item.result, item.error),
-          status: completed ? (isPlainObject(item.error) ? 'error' : toolStatusOf(item.status)) : 'running',
-          startedAt,
-          endedAt,
-        })
-      }
-      case 'dynamicToolCall': {
-        const tool = str(item.tool) ?? 'tool'
-        return this.putTool({
-          ...base,
-          kind: 'tool',
-          tool: 'other',
-          name: tool,
-          title: tool.replace(/_/g, ' '),
-          input: item.arguments,
-          status: completed ? (item.success === false ? 'error' : 'done') : 'running',
-          startedAt,
-          endedAt,
-        })
-      }
-      case 'webSearch': {
-        const action = isPlainObject(item.action) ? item.action : {}
-        return this.putTool({
-          ...base,
-          kind: 'tool',
-          tool: 'web',
-          name: 'webSearch',
-          title: 'Im Web suchen',
-          detail: str(item.query) ?? str(action.query) ?? str(action.url),
-          status: completed ? 'done' : 'running',
-          startedAt,
-          endedAt,
-        })
-      }
-      case 'imageView':
-        return this.putTool({ ...base, kind: 'tool', tool: 'image', name: 'imageView', title: 'Bild ansehen', detail: str(item.path), status: 'done', startedAt, endedAt })
       case 'collabAgentToolCall':
         return this.onCollab(item, parentId, completed, startedAt, endedAt)
       case 'subAgentActivity': {
@@ -597,11 +424,10 @@ export class CodexRun implements AgentRun {
         if (!parentId) this.endCompacting()
         return
       }
-      case 'enteredReviewMode':
-      case 'exitedReviewMode':
-        if (completed) this.sink.item({ ...base, kind: 'notice', level: 'info', text: item.type === 'enteredReviewMode' ? 'Review gestartet' : 'Review beendet', detail: str(item.review) })
-        return
     }
+    const view = codexItem(item, parentId, completed, now)
+    if (view?.kind === 'tool') this.putTool(view)
+    else if (view) this.sink.item(view)
   }
 
   private putTool(tool: ToolItem): void {
@@ -696,23 +522,11 @@ export class CodexRun implements AgentRun {
 
   private onTurnCompleted(params: Json): void {
     const turn = isPlainObject(params.turn) ? params.turn : {}
-    const error = isPlainObject(turn.error) ? turn.error : null
-    const status = turn.status === 'interrupted' ? 'interrupted' : turn.status === 'failed' ? 'error' : 'done'
+    const item = codexTurnItem(turn, { inputTokens: this.lastTokens?.input, outputTokens: this.lastTokens?.output, model: this.model })
+    item.durationMs ??= this.turnStartedAt ? Date.now() - this.turnStartedAt : undefined
     this.cancelOpen()
-    this.finishRunning(status === 'interrupted')
-    this.sink.item({
-      kind: 'turn',
-      id: `turn:${str(turn.id) ?? randomUUID()}`,
-      ts: Date.now(),
-      provider: 'codex',
-      status,
-      durationMs: typeof turn.durationMs === 'number' ? turn.durationMs : this.turnStartedAt ? Date.now() - this.turnStartedAt : undefined,
-      inputTokens: this.lastTokens?.input,
-      outputTokens: this.lastTokens?.output,
-      model: this.model,
-      error: error ? (str(error.message) ?? 'Fehler') : undefined,
-      ...(error?.codexErrorInfo === 'usageLimitExceeded' ? { limit: true } : {}),
-    })
+    this.finishRunning(item.status === 'interrupted')
+    this.sink.item(item)
     this.turnId = null
     this.turnStartedAt = null
     this.compacting = null
@@ -875,46 +689,4 @@ function answerFor(request: CodexServerRequest, response: InteractionResponse): 
         : { action: 'cancel', content: null, _meta: null }
   }
   return {}
-}
-
-/**
- * What a command of Codex does: its `commandActions` name the command without the shell around it
- * (`powershell.exe -Command …`) and tell reading, listing and searching apart from the rest.
- */
-export function commandView(command: string, actions: unknown): { tool: 'bash' | 'read' | 'search'; title: string; detail: string; command: string } {
-  const list = Array.isArray(actions) ? actions.filter(isPlainObject) : []
-  const inner = list.length ? list.map((a) => String(a.command ?? '')).filter(Boolean).join(' && ') : unwrapShell(command)
-  const plain = inner || command
-  if (list.length === 1) {
-    const action = list[0]
-    if (action.type === 'read' && typeof action.path === 'string') return { tool: 'read', title: 'Datei lesen', detail: action.path, command: plain }
-    if (action.type === 'listFiles') return { tool: 'search', title: 'Dateien auflisten', detail: String(action.path ?? plain), command: plain }
-    if (action.type === 'search') {
-      return { tool: 'search', title: 'Suchen', detail: [action.query, action.path].filter((x) => typeof x === 'string' && x).join(' in ') || plain, command: plain }
-    }
-  }
-  return { tool: 'bash', title: 'Befehl ausführen', detail: firstLine(plain, 200), command: plain }
-}
-
-/** `"…\powershell.exe" -Command '…'` or `bash -lc '…'` → the command inside. */
-export function unwrapShell(command: string): string {
-  const match = /^\s*(?:"([^"]+)"|(\S+))\s+(?:[-/]\w+\s+)*?(?:-Command|-c|-lc|\/c)\s+([\s\S]+)$/i.exec(command)
-  if (!match) return command
-  const exe = (match[1] ?? match[2] ?? '').split(/[\\/]/).pop() ?? ''
-  const shell = /^(?:powershell|pwsh)(?:\.exe)?$/i.test(exe)
-    ? 'powershell'
-    : /^(?:bash|sh|zsh)(?:\.exe)?$/i.test(exe)
-      ? 'posix'
-      : /^cmd(?:\.exe)?$/i.test(exe)
-        ? 'cmd'
-        : null
-  if (!shell) return command
-  const inner = match[3].trim()
-  const quoted = /^(['"])([\s\S]*)\1$/.exec(inner)
-  if (!quoted) return inner
-  const [, quote, body] = quoted
-  // Undo the escapes of the shell's quoting: '' in PowerShell's single quotes, \" in POSIX double quotes.
-  if (shell === 'powershell') return quote === "'" ? body.replace(/''/g, "'") : body.replace(/`"|""/g, '"')
-  if (shell === 'posix' && quote === '"') return body.replace(/\\(["\\$`])/g, '$1')
-  return body
 }

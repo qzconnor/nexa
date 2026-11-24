@@ -2,7 +2,8 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptSummary } from '../providers/claude/claude-transcript'
 import type { AccountIdentity } from '@shared/accounts'
-import { cmAccounts, planAccounts, planGroups, projectFolder, sessionTitle, type CmAccount, type FoundSession } from './claude-manager'
+import { cmAccounts, planAccounts, type CmAccount, type FoundSession } from './claude-manager'
+import { planGroups, projectFolder, sessionTitle } from './import-plan'
 
 const summary = (cwd: string | null, updatedAt: number, patch: Partial<TranscriptSummary> = {}): TranscriptSummary => ({
   cwd,

@@ -11,6 +11,7 @@ import {
   FolderOpenIcon,
   FolderPlusIcon,
   GitForkIcon,
+  HistoryIcon,
   PanelLeftIcon,
   PencilIcon,
   PinIcon,
@@ -141,6 +142,14 @@ const switchChoices = computed(() => {
         >
           <BrushCleaningIcon />
           Chats aufräumen…
+        </CommandItem>
+        <CommandItem
+          value="import-cli-sessions"
+          filter-text="Sessions der CLIs übernehmen importieren Import Claude Code Codex Terminal IDE vorhandene bestehende Unterhaltungen"
+          @select="run(() => ui.openSettings('accounts', 'accounts.cliImport'), true)"
+        >
+          <HistoryIcon />
+          Sessions der CLIs übernehmen…
         </CommandItem>
         <CommandItem value="toggle-sidebar" filter-text="Seitenleiste ein- ausblenden Sidebar Projekte" @select="run(() => ui.toggleSidebar())">
           <PanelLeftIcon />

@@ -6,6 +6,7 @@ import type { ProviderId } from '@shared/chat'
 import AccountRow from '@/components/accounts/AccountRow.vue'
 import RemoveAccountDialog from '@/components/accounts/RemoveAccountDialog.vue'
 import ClaudeManagerImport from '@/components/setup/ClaudeManagerImport.vue'
+import CliSessionsImport from '@/components/setup/CliSessionsImport.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useSettingsFilter } from '@/composables/useSettingsSearch'
@@ -75,6 +76,10 @@ async function refresh(): Promise<void> {
       </template>
       <AccountRow v-for="account in accounts.ofProvider('codex')" :key="account.id" :account="account" @remove="remove(account)" />
     </SettingsSection>
+
+    <div v-if="filter.shows('accounts.cliImport')" data-setting="accounts.cliImport">
+      <CliSessionsImport />
+    </div>
 
     <div v-if="filter.shows('accounts.import')" data-setting="accounts.import">
       <ClaudeManagerImport always />

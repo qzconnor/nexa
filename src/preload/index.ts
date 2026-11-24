@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
-import { ImportEvent, ImportInvoke } from '@shared/import-ipc'
+import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
 
@@ -51,6 +51,11 @@ const api: NexaApi = {
     scan: () => invoke(ImportInvoke.scan),
     run: (input) => invoke(ImportInvoke.run, input),
     onProgress: (cb) => subscribe(ImportEvent.progress, cb),
+  },
+  cliImport: {
+    scan: () => invoke(CliImportInvoke.scan),
+    run: (input) => invoke(CliImportInvoke.run, input),
+    onProgress: (cb) => subscribe(CliImportEvent.progress, cb),
   },
   git: {
     branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),

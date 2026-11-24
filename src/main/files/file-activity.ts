@@ -1,7 +1,7 @@
 import type { ToolItem } from '@shared/chat'
 import type { FileTouch } from '@shared/files'
 import { isPlainObject } from '@shared/utils'
-import { commandView } from '../providers/codex/codex-run'
+import { commandView } from '../providers/codex/codex-items'
 import { shellFiles } from './shell-files'
 
 /**

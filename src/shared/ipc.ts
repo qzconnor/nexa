@@ -33,7 +33,7 @@ import type {
 import type { FilesApi, GitApi } from './files-ipc'
 import type { BrowserApi } from './browser-ipc'
 import type { UpdatesApi } from './updates'
-import type { ImportApi } from './import-ipc'
+import type { CliImportApi, ImportApi } from './import-ipc'
 import type { SectionLayout } from './sections'
 
 /** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
@@ -186,6 +186,8 @@ export interface NexaApi {
   updates: UpdatesApi
   /** Taking over from the Claude Manager (shared/import-ipc.ts). */
   claudeManager: ImportApi
+  /** Taking over the sessions in the CLIs' own folders (shared/import-ipc.ts). */
+  cliImport: CliImportApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

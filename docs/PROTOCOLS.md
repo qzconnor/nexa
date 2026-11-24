@@ -248,6 +248,18 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   wie die von `thread/resume`, mit der neuen `thread.id`. Ein unbekannter Turn ergibt den Fehler
   „turn not found: …“; Nexa zweigt dann den ganzen Thread ab. Mit `ephemeral: true` (nichts wird
   gespeichert) verlangt der Server `excludeTurns: true`. Geprüft mit 0.169.
+- **Liste und Verlauf** (Übernahme vorhandener Threads): `thread/list { limit, cursor, sourceKinds }`
+  antwortet mit `{ data, nextCursor }`, den Threads im `CODEX_HOME` des Servers: `id`, `cwd`, `name`
+  (vom Nutzer gesetzt, sonst `null`), `preview` (der erste Prompt), `createdAt`/`updatedAt` in Sekunden,
+  `ephemeral`, `parentThreadId` (Subagents), `path` (Rollout) und `source`. Nexa fragt
+  `sourceKinds: ["cli", "vscode", "appServer"]`, also ohne `codex exec`, und lässt Subagents und
+  flüchtige Threads weg. `thread/read { threadId, includeTurns: true }` gibt den Thread mit `turns[]`
+  (`id`, `items`, `status` `completed`/`interrupted`/`failed`/`inProgress`, `error`, `startedAt`,
+  `completedAt` in Sekunden, `durationMs`); die Items sind dieselben wie in `item/completed`, Prompts als
+  `userMessage` mit `content[]` (`text`, `localImage` mit `path`). Die Turns kennt `thread/read` nur aus
+  den Aufzeichnungen des eigenen Accounts (`state_<n>.sqlite`): Für einen Rollout, der bloß in den
+  Ordner kopiert wurde, kommen keine. `thread/resume` mit `excludeTurns: false` gäbe sie auch, ohne den
+  Rollout anzufassen, hängt den Thread aber an den Server. Geprüft mit 0.169.
 - **Slash-Befehle** kennt der App-Server nicht: `/…` ginge als Text an das Modell. Nexa führt seine eigenen
   aus (renderer `lib/chat-commands.ts`), die Skills kommen mit `skills/list` und gehen als `$name`.
 - **Anfragen vom Server** (Antwort nötig): `item/commandExecution/requestApproval`,

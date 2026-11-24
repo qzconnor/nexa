@@ -207,33 +207,31 @@ export class SessionService extends TypedEmitter<Events> {
     return s as SessionState & { items: ChatItem[] }
   }
 
-  /** The saved chat; for a session taken over from Claude Code, its transcript read once into one. */
+  /** The saved chat; for a session taken over from a CLI, its history read once into one. */
   private async read(s: SessionState): Promise<ChatItem[]> {
     const items = await this.store.load(s.meta.id)
     const source = s.meta.importedFrom
     if (items.length || !source) return items
     const meta = s.meta
+    // Imported sessions have the one CLI they came from.
+    const provider: ProviderId = meta.cli.codex && !meta.cli.claude ? 'codex' : 'claude'
+    const notice = (text: string, detail: string): ChatItem => ({ kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'warning', text, detail })
     let imported: ChatItem[]
     try {
-      imported = await readClaudeChat(source)
-      // Claude Code has seen all of it: the next prompt resumes its conversation without context.
-      const link = meta.cli.claude
+      imported = provider === 'codex' ? await this.codexHistory(meta) : await readClaudeChat(source)
+      // The CLI has seen all of it: the next prompt resumes its conversation without context.
+      const link = meta.cli[provider]
       if (link) {
         link.seenItems = imported.length
-        link.synced = Date.now()
+        if (provider === 'claude') link.synced = Date.now()
       }
+      if (!imported.length) imported = [notice('Den Verlauf dieser Session gab die CLI nicht heraus', 'Sie geht trotzdem dort weiter, wo sie aufgehört hat.')]
     } catch (error) {
-      console.warn('[sessions] transcript could not be read', error)
+      console.warn('[sessions] history could not be read', error)
       imported = [
-        {
-          kind: 'notice',
-          id: randomUUID(),
-          ts: Date.now(),
-          provider: 'claude',
-          level: 'warning',
-          text: 'Der Verlauf dieser Session ist nicht mehr da',
-          detail: 'Claude Code hat sein Transkript gelöscht oder es liegt nicht mehr am alten Ort.',
-        },
+        provider === 'codex'
+          ? notice('Der Verlauf dieser Session ließ sich nicht lesen', error instanceof Error ? error.message : String(error))
+          : notice('Der Verlauf dieser Session ist nicht mehr da', 'Claude Code hat sein Transkript gelöscht oder es liegt nicht mehr am alten Ort.'),
       ]
     }
     delete meta.importedFrom
@@ -638,14 +636,23 @@ export class SessionService extends TypedEmitter<Events> {
     return texts
   }
 
-  /** The chat as saved, without loading it into the session; an imported one not opened yet from Claude Code's transcript. */
+  /** A Codex thread's chat, read through the app-server of the account whose folder keeps it. */
+  private async codexHistory(meta: SessionMeta): Promise<ChatItem[]> {
+    const link = meta.cli.codex
+    if (!link) return []
+    const saved = link.accountId ?? systemAccountId('codex')
+    const accountId = this.accounts.has(saved) ? saved : this.accountFor(meta, 'codex')
+    return (await this.providers.history('codex', accountId, link.sessionId)) ?? []
+  }
+
+  /** The chat as saved, without loading it into the session; an imported one not opened yet from its CLI's history. */
   private async savedItems(s: SessionState): Promise<ChatItem[]> {
     // No rewrite of the file: the session may load and write to it meanwhile.
     const items = await this.store.load(s.meta.id, { compact: false })
     const source = s.meta.importedFrom
     if (items.length || !source) return items
     try {
-      return await readClaudeChat(source)
+      return s.meta.cli.codex && !s.meta.cli.claude ? await this.codexHistory(s.meta) : await readClaudeChat(source)
     } catch {
       return []
     }

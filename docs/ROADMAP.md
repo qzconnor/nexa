@@ -121,6 +121,10 @@
       Checkpoints in den Papierkorb, aus jedem Account mit einer Kopie (abschaltbar unter Einstellungen →
       Chat). Gelöschte Chats verschwinden sofort und lassen sich 8 s lang zurückholen. „Chats aufräumen“
       filtert nach Projekt, Alter, Größe und Archiv und löscht mehrere auf einmal
+- [x] Sessions der CLIs übernehmen ohne Claude Manager: Transkripte von Claude Code und Threads von Codex
+      aus allen Accounts, nach Ordnern auf Projekte verteilt und auswählbar (Einrichtung, Einstellungen →
+      Accounts, Befehlsliste). Der Verlauf kommt beim ersten Öffnen aus der CLI, der Chat geht in
+      derselben Session weiter
 
 ## Als Nächstes
 
@@ -141,8 +145,6 @@
       Countdown; „Am Reset fortsetzen“ auch ohne Wechsel; nach dem Wechsel eine einstellbare Nachricht
       („Mach weiter“). Dateien dort: `auto-switch.ts`, `session-handoff.ts`, `account-choice.ts`.
 - [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
-- [ ] **Bestehende CLI-Sessions importieren** ohne Claude Manager (`~/.claude/projects`, `~/.codex/sessions`);
-  aus dem Claude Manager geht es schon (siehe oben), der Transkript-Leser für Claude ist da.
 - [ ] **Automatische Titel** für Sessions über das Modell statt der ersten Zeile.
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt „Konnektoren verwalten“.

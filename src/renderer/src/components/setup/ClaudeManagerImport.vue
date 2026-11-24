@@ -208,7 +208,7 @@ const resultText = computed(() => {
       <div class="flex flex-wrap items-center justify-between gap-2">
         <p class="text-xs text-muted-foreground">
           <template v-if="preview.known">{{ sessionsText(preview.known) }} hat Nexa schon. </template>
-          <template v-if="preview.skipped">{{ sessionsText(preview.skipped) }} ohne Inhalt oder Ordner bleiben weg.</template>
+          <template v-if="preview.skipped">{{ sessionsText(preview.skipped) }} ohne Inhalt oder Ordner {{ preview.skipped === 1 ? 'bleibt' : 'bleiben' }} weg.</template>
         </p>
         <div class="flex gap-2">
           <Button variant="ghost" size="sm" :disabled="step === 'running'" @click="step = 'idle'">Abbrechen</Button>

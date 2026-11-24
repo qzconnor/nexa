@@ -13,6 +13,7 @@ import { FileTreeService } from './files/file-tree-service'
 import { registerFilesIpc } from './files/files-ipc'
 import { GitService } from './files/git-service'
 import { ClaudeManagerImport } from './import/claude-manager'
+import { CliSessionImport } from './import/cli-import'
 import { registerImportIpc } from './import/import-ipc'
 import { forwardWindowState, registerIpc } from './ipc'
 import { isLaunchRequest, parseLaunch, readLaunchRequest, type LaunchRequest } from './launch'
@@ -141,8 +142,12 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   await api.init()
   await notifications.init()
 
-  // Taking over the Claude Manager's workspaces, accounts and sessions (first start, or later in the settings).
-  registerImportIpc(new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, () => settings.get()))
+  // Taking over the Claude Manager's workspaces, accounts and sessions, and the sessions in the CLIs'
+  // own folders (first start, or later in the settings).
+  registerImportIpc(
+    new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, () => settings.get()),
+    new CliSessionImport(projects, sessions, accounts, providers, () => settings.get()),
+  )
 
   // New versions from the GitHub releases: checked after the start and every 4 hours (installed app only).
   const updates = new UpdateService(`nexa/${app.getVersion()}`)
