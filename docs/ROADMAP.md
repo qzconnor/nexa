@@ -123,6 +123,10 @@
       alte bleibt, wie er ist. Claude Code (`--fork-session`, `--resume-session-at` der letzten Antwort) und
       Codex (`thread/fork` bis zum letzten Turn) setzen eine Kopie ihrer Unterhaltung fort. Im Menü des
       Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als `/fork [Name]` (`/branch`)
+- [x] Prompts bearbeiten: der Stift links neben einem Prompt ändert ihn im Chat und schickt ihn neu; was
+      danach kam, fällt weg. Claude Code (`--resume-session-at` der Antwort davor) und Codex (`thread/fork`
+      bis zum Turn davor) setzen ihre Unterhaltung an der Stelle fort, die alte bleibt dem Chat bis zum
+      Löschen
 - [x] Slash-Befehle, die die CLIs ohne Terminal nicht können, führt Nexa selbst aus, für Claude und Codex:
       `/clear` (`/reset`: Kontext im selben Chat leeren), `/new` (neuer Chat im selben Ordner mit denselben
       Einstellungen), `/diff` (alle
@@ -193,10 +197,6 @@
       verlassener Account bleibt bis zu seinem Reset gesperrt; ohne freien Account wartet der Chat mit
       Countdown; „Am Reset fortsetzen“ auch ohne Wechsel; nach dem Wechsel eine einstellbare Nachricht
       („Mach weiter“). Dateien dort: `auto-switch.ts`, `session-handoff.ts`, `account-choice.ts`.
-- [ ] **Prompts bearbeiten**: einen gesendeten Prompt ändern und neu schicken; der Chat geht von dort aus
-      weiter, alles, was danach kam (Antworten, Werkzeuge, spätere Prompts), fällt weg. Die CLIs setzen
-      an der Stelle an wie beim Abzweigen (Claude Code `--resume-session-at` der Antwort davor, Codex
-      `thread/fork` bis zum Turn davor; ein Zurücksetzen im selben Thread hat der App-Server 0.169 nicht).
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).
 - [ ] **Shell-Detailansicht überarbeiten**: die Ansicht einer Shell neben dem Chat mit Ausgabe, Status und

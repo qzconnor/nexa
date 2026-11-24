@@ -308,6 +308,9 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsCreate, (_e, input: unknown) => sessions.create(input as never))
   handle(IpcInvoke.sessionsOpen, (_e, id: unknown) => sessions.open(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsSend, (_e, id: unknown, input: unknown) => sessions.send(str(id, 'Die Session'), input as never))
+  handle(IpcInvoke.sessionsEdit, (_e, id: unknown, itemId: unknown, input: unknown) =>
+    sessions.edit(str(id, 'Die Session'), str(itemId, 'Der Prompt'), input as never),
+  )
   handle(IpcInvoke.sessionsInterrupt, (_e, id: unknown) => sessions.interrupt(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsRespond, (_e, id: unknown, itemId: unknown, response: unknown) =>
     sessions.respond(str(id, 'Die Session'), str(itemId, 'Die Frage'), response as never),

@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
-import type { ChatItem, SessionRuntime, ToolItem } from '@shared/chat'
-import { claudeProjectKey } from '../accounts/cli-files'
+import type { ChatItem, SessionEvent, SessionRuntime, ToolItem } from '@shared/chat'
+import { claudeProjectKey, codexPaths } from '../accounts/cli-files'
 import type { AgentProvider, AgentRun, RunInput, RunOptions, RunSink } from '../providers/provider'
 import { SessionService } from './session-service'
 
@@ -70,7 +70,7 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
       { id: 'codex-a', provider: 'codex' },
     ],
     claudePaths: (id: string) => ({ configDir: id === 'claude-a' ? claudeA : claudeB }),
-    codexPaths: () => ({ configDir: codexA }),
+    codexPaths: () => codexPaths(codexA),
     has: (id: string) => ['claude-a', 'claude-b', 'codex-a'].includes(id),
     resolve: () => 'claude-a',
     get: () => ({ id: 'claude-a', kind: 'system' }),
@@ -443,6 +443,98 @@ describe('SessionService.storage', () => {
     expect(await bytes()).toEqual({ chat: 4 + 9, empty: 0 })
     settings.chat.deleteCliConversations = false
     expect(await bytes()).toEqual({ chat: 4, empty: 0 })
+  })
+})
+
+describe('SessionService.edit', () => {
+  /** A chat with two finished turns of a CLI; the CLI's starts and prompts are recorded. */
+  async function talked(provider: 'claude' | 'codex') {
+    let sink: RunSink | null = null
+    const starts: RunOptions[] = []
+    const sent: string[] = []
+    const run = {
+      alive: true,
+      send: async (input: RunInput) => void sent.push(input.text),
+      stop: async () => {
+        run.alive = false
+      },
+    }
+    const sessions = await start([meta('chat', { provider })], {
+      start: async (options, s) => {
+        starts.push(options)
+        sink = s
+        run.alive = true
+        return run as unknown as AgentRun
+      },
+    })
+    const turn = (n: number) => {
+      sink!.item({ kind: 'assistant', id: provider === 'codex' ? `a${n}` : `msg_${n}:0`, ts: n * 10 + 1, provider, text: `Antwort ${n}` })
+      sink!.item({ kind: 'turn', id: provider === 'codex' ? `turn:t${n}` : `r${n}`, ts: n * 10 + 2, provider, status: 'done' })
+      sink!.runtime({ status: 'idle' })
+    }
+    // Where the CLI keeps the conversation, for the next start to find it.
+    if (provider === 'codex') await put(join(codexA, 'sessions', '2026', '11', '23', `rollout-2026-11-23T10-00-00-${THREAD}.jsonl`))
+    await sessions.send('chat', { text: 'erste' })
+    sink!.cliSession(provider === 'codex' ? THREAD : GONE)
+    turn(1)
+    await sessions.send('chat', { text: 'zweite' })
+    turn(2)
+    const events: SessionEvent[] = []
+    sessions.on('event', (event) => void events.push(event))
+    const items = async () => (await sessions.history('chat'))!.items as ChatItem[]
+    const prompt = async (text: string) => (await items()).find((i) => i.kind === 'user' && i.text === text)!.id
+    const shown = async () => (await items()).map((i) => (i.kind === 'user' ? i.text : i.kind === 'notice' ? `notice:${i.text}` : i.id))
+    return { sessions, starts, sent, events, prompt, shown }
+  }
+
+  it('goes on from the Codex turn before the prompt, in a fork of the thread', async () => {
+    const { sessions, starts, sent, events, prompt, shown } = await talked('codex')
+
+    await sessions.edit('chat', await prompt('zweite'), { text: 'zweite, anders' })
+
+    expect(await shown()).toEqual(['erste', 'a1', 'turn:t1', 'zweite, anders'])
+    expect(events).toContainEqual({ type: 'truncated', sessionId: 'chat', length: 3 })
+    expect(starts.at(-1)).toMatchObject({ resumeId: THREAD, fork: { at: 't1' } })
+    expect(sent.at(-1)).toBe('zweite, anders')
+    const saved = sessions.list()[0]!
+    expect(saved.cli.codex).toMatchObject({ sessionId: THREAD, fork: { at: 't1' }, seenItems: 3 })
+    // The thread with the old prompt stays the chat's, to go along when it is deleted.
+    expect(saved.earlierCli).toEqual([{ codex: expect.objectContaining({ sessionId: THREAD }) }])
+  })
+
+  it('goes on from Claude Code’s answer before the prompt', async () => {
+    const { sessions, starts, prompt } = await talked('claude')
+    const entries = [
+      { type: 'user', uuid: 'u1', message: { role: 'user', content: 'erste' } },
+      { type: 'assistant', uuid: 'x1', message: { id: 'msg_1', role: 'assistant', content: [{ type: 'text', text: 'Antwort 1' }] } },
+      { type: 'user', uuid: 'u2', message: { role: 'user', content: 'zweite' } },
+      { type: 'assistant', uuid: 'x2', message: { id: 'msg_2', role: 'assistant', content: [{ type: 'text', text: 'Antwort 2' }] } },
+    ]
+    await put(join(claudeA, 'projects', claudeProjectKey(CWD), `${GONE}.jsonl`), entries.map((e) => JSON.stringify(e)).join('\n'))
+
+    await sessions.edit('chat', await prompt('zweite'), { text: 'zweite, anders' })
+
+    expect(starts.at(-1)).toMatchObject({ resumeId: GONE, fork: { at: 'x1' } })
+    expect(sessions.list()[0]!.cli.claude).toMatchObject({ fork: { at: 'x1' }, seenItems: 3 })
+  })
+
+  it('starts the CLI anew when the first prompt changes', async () => {
+    const { sessions, starts, sent, prompt, shown } = await talked('codex')
+
+    await sessions.edit('chat', await prompt('erste'), { text: 'ganz anders' })
+
+    expect(await shown()).toEqual(['ganz anders'])
+    expect(starts.at(-1)!.resumeId).toBeUndefined()
+    expect(sent.at(-1)).toBe('ganz anders')
+    expect(sessions.list()[0]!.earlierCli).toHaveLength(1)
+  })
+
+  it('leaves the chat as it is when the prompt can’t go out', async () => {
+    const { sessions, prompt, shown } = await talked('codex')
+    settings.codex.enabled = false
+
+    await expect(sessions.edit('chat', await prompt('zweite'), { text: 'anders' })).rejects.toThrow('ausgeschaltet')
+    expect(await shown()).toEqual(['erste', 'a1', 'turn:t1', 'zweite', 'a2', 'turn:t2'])
   })
 })
 

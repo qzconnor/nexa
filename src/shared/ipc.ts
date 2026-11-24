@@ -109,6 +109,7 @@ export const IpcInvoke = {
   sessionsCreate: 'sessions:create',
   sessionsOpen: 'sessions:open',
   sessionsSend: 'sessions:send',
+  sessionsEdit: 'sessions:edit',
   sessionsInterrupt: 'sessions:interrupt',
   sessionsRespond: 'sessions:respond',
   sessionsShellOutput: 'sessions:shell-output',
@@ -332,6 +333,11 @@ export interface NexaApi {
     /** The session with its chat; doesn't start the CLI. */
     open(id: string): Promise<SessionDetail>
     send(id: string, input: SendInput): Promise<void>
+    /**
+     * Sends a prompt of the chat anew, changed: everything after it goes, and the CLIs go on from the
+     * answer before it (not while the chat works).
+     */
+    edit(id: string, itemId: string, input: SendInput): Promise<void>
     interrupt(id: string): Promise<void>
     respond(id: string, itemId: string, response: InteractionResponse): Promise<void>
     /** The end of a shell's output (`itemId`: its tool item, see `ToolItem.shell`). */

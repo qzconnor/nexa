@@ -390,7 +390,8 @@ export type SessionEvent =
   | { type: 'item'; sessionId: string; item: ChatItem }
   | { type: 'delta'; sessionId: string; itemId: string; field: 'text' | 'output'; text: string }
   | { type: 'runtime'; sessionId: string; runtime: SessionRuntime }
-  | { type: 'cleared'; sessionId: string }
+  /** The chat keeps only its first `length` items: a prompt was edited, what came after it is gone. */
+  | { type: 'truncated'; sessionId: string; length: number }
 
 export function isPendingInteraction(item: ChatItem): item is InteractionItem {
   return item.kind === 'interaction' && item.state === 'pending'

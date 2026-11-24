@@ -503,14 +503,16 @@ function endsTurn(e: Json): boolean {
 /**
  * Where a fork of the conversation ends (`--resume-session-at`): the uuid of the main thread's last
  * message from the model that calls no tool. One that calls a tool would leave the call without its
- * result, so a turn cut off in a tool call ends with the text before it. Null when there is none.
+ * result, so a turn cut off in a tool call ends with the text before it. `upTo`: the API's id of a
+ * message (`msg_…`) the fork ends with, not later. Null when there is none.
  */
-export function forkPoint(text: string): string | null {
+export function forkPoint(text: string, upTo?: string): string | null {
   const lines = text.split('\n')
+  let reached = !upTo
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]!
     // Only assistant lines are parsed; the rest of a long transcript isn't worth it.
-    if (!line.startsWith('{"') || !line.includes('"assistant"')) continue
+    if (!line.startsWith('{"') || !line.includes('"assistant"') || (!reached && !line.includes(upTo!))) continue
     let entry: unknown
     try {
       entry = JSON.parse(line)
@@ -518,6 +520,10 @@ export function forkPoint(text: string): string | null {
       continue
     }
     if (!isPlainObject(entry) || entry.type !== 'assistant' || entry.isSidechain || entry.isMeta || !str(entry.uuid)) continue
+    if (!reached) {
+      if (!isPlainObject(entry.message) || entry.message.id !== upTo) continue
+      reached = true
+    }
     const content = isPlainObject(entry.message) ? entry.message.content : undefined
     if (Array.isArray(content) && content.some((block) => isPlainObject(block) && block.type === 'tool_use')) continue
     return entry.uuid as string

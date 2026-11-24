@@ -346,6 +346,73 @@ export class SessionService extends TypedEmitter<Events> {
     return meta
   }
 
+  /**
+   * Sends a prompt of the chat anew, changed: the chat goes on from before it, and what came after it
+   * (answers, tools, later prompts) is gone. Each CLI branches its conversation off at its last answer
+   * before the prompt, as `fork` does, into a new one at its next start; the old one stays the chat's
+   * (`earlierCli`) and goes along when the chat is deleted. Files the agent changed stay as they are.
+   */
+  async edit(id: string, itemId: string, input: SendInput): Promise<void> {
+    const s = await this.loaded(id)
+    this.requireAtRest(s, 'bearbeiten')
+    const meta = s.meta
+    const project = this.projects.get(meta.projectId)
+    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
+    const at = s.index.get(itemId)
+    if (at === undefined || s.items[at]?.kind !== 'user') throw new Error('Diesen Prompt gibt es im Chat nicht mehr.')
+    // Above a `/clear` no CLI knows the chat any more.
+    if (at < (meta.contextFrom ?? 0)) throw new Error('Prompts über „Kontext geleert“ lassen sich nicht mehr bearbeiten.')
+    if (!input.text.trim() && !input.images?.length) return
+    // What would stop the prompt, before the chat loses anything.
+    this.requireEnabled(meta.provider)
+    if (!this.providers.isReady(meta.provider)) throw new Error(`${PROVIDERS[meta.provider].name} ist nicht installiert.`)
+    this.requireSignedIn(meta, meta.provider)
+
+    // Its process holds the conversation as it was.
+    if (s.run) await this.stop(id)
+    const before = s.items.slice(0, at)
+    const cwd = this.cwdOf(meta, project)
+    for (const provider of PROVIDER_IDS) {
+      const link = meta.cli[provider]
+      if (!link) continue
+      const point = await this.editPoint(s, provider, link, before, cwd).catch(() => null)
+      // One not forked yet is still the other chat's.
+      if (!link.fork) meta.earlierCli = [...(meta.earlierCli ?? []), { [provider]: structuredClone(link) }]
+      const { synced: _synced, ...kept } = link
+      // Without an answer of the CLI before the prompt, it starts anew, with the chat as context.
+      if (point) meta.cli[provider] = { ...kept, fork: { at: point.at }, seenItems: Math.min(link.seenItems, point.seen) }
+      else delete meta.cli[provider]
+    }
+    for (const item of s.items.splice(at)) s.index.delete(item.id)
+    s.outside = undefined
+    delete meta.context
+    await this.store.rewrite(id, s.items)
+    this.emit('event', { type: 'truncated', sessionId: id, length: at })
+    this.setRuntime(s, { ...IDLE })
+    await this.send(id, input)
+  }
+
+  /**
+   * Where a CLI's conversation goes on from when the chat goes on from `before`: Codex's last turn in
+   * it, Claude Code's last answer in it; `seen`, how many of the chat's items the CLI knows then.
+   */
+  private async editPoint(s: SessionState, provider: ProviderId, link: CliLink, before: ChatItem[], cwd: string): Promise<{ at: string; seen: number } | null> {
+    if (provider === 'codex') {
+      const end = before.findLastIndex((i) => i.kind === 'turn' && i.provider === 'codex' && i.id.startsWith('turn:'))
+      return end < 0 ? null : { at: before[end]!.id.slice('turn:'.length), seen: end + 1 }
+    }
+    // Its answers are `<message id>:<block>`, the message's id is in the transcript.
+    const answer = before.findLastIndex((i) => i.kind === 'assistant' && i.provider === 'claude' && !i.parentId && i.id.includes(':'))
+    if (answer < 0) return null
+    const id = before[answer]!.id
+    const paths = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(this.accountFor(s.meta, 'claude'))
+    const transcript = await findClaudeTranscript(paths.projectsDir, link.sessionId, cwd)
+    const at = transcript ? forkPoint(await readFile(transcript, 'utf8'), id.slice(0, id.lastIndexOf(':'))) : null
+    if (!at) return null
+    const end = before.findIndex((i, n) => n > answer && i.kind === 'turn')
+    return { at, seen: end < 0 ? before.length : end + 1 }
+  }
+
   /** Where a fork of the chat's conversation with a CLI ends: Claude Code's last answer, Codex's last turn. */
   private async forkPointOf(s: SessionState & { items: ChatItem[] }, provider: ProviderId, link: CliLink, cwd: string): Promise<string | null> {
     if (provider === 'codex') {
@@ -450,7 +517,7 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /** Whether the chat's CLI is at rest: no turn, question, shell or agent of it that still runs. */
-  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' | 'leeren' = 'verschieben'): void {
+  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' | 'leeren' | 'bearbeiten' = 'verschieben'): void {
     const status = s.runtime.status
     if (status === 'running' || status === 'starting' || status === 'waiting') {
       throw new Error(`Der Chat arbeitet gerade. Sobald er fertig ist, lässt er sich ${action}.`)
@@ -919,6 +986,16 @@ export class SessionService extends TypedEmitter<Events> {
     if (!this.settings()[provider].enabled) throw new Error(`${PROVIDERS[provider].name} ist in den Einstellungen ausgeschaltet (Einstellungen › CLIs).`)
   }
 
+  /** The account the chat's next prompt to a CLI goes with, if it is signed in. */
+  private requireSignedIn(meta: SessionMeta, provider: ProviderId): string {
+    const accountId = this.accountFor(meta, provider)
+    const account = this.accounts.get(accountId)
+    if (account.kind !== 'system' && account.authState === 'missing') {
+      throw new Error(`„${account.name}“ ist nicht angemeldet. Melde dich unter Einstellungen → Accounts an.`)
+    }
+    return accountId
+  }
+
   private accountFor(meta: SessionMeta, provider: ProviderId): string {
     const link = meta.cli[provider]
     const chosen = meta.accounts?.[provider] ?? (link ? (link.accountId ?? systemAccountId(provider)) : undefined)
@@ -931,11 +1008,7 @@ export class SessionService extends TypedEmitter<Events> {
    */
   private async useAccount(s: SessionState, provider: ProviderId, cwd: string): Promise<string> {
     const meta = s.meta
-    const accountId = this.accountFor(meta, provider)
-    const account = this.accounts.get(accountId)
-    if (account.kind !== 'system' && account.authState === 'missing') {
-      throw new Error(`„${account.name}“ ist nicht angemeldet. Melde dich unter Einstellungen → Accounts an.`)
-    }
+    const accountId = this.requireSignedIn(meta, provider)
     meta.accounts = { ...meta.accounts, [provider]: accountId }
     const link = meta.cli[provider]
     const from = link ? (link.accountId ?? systemAccountId(provider)) : null
@@ -948,7 +1021,7 @@ export class SessionService extends TypedEmitter<Events> {
         link.accountId = accountId
         link.configDir = this.configDirOf(provider, accountId)
       } else delete meta.cli[provider]
-      this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `Weiter mit Account „${account.name}“`, detail: moved ? undefined : 'Mit dem bisherigen Verlauf als Kontext' })
+      this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `Weiter mit Account „${this.accounts.get(accountId).name}“`, detail: moved ? undefined : 'Mit dem bisherigen Verlauf als Kontext' })
       this.saveSoon()
     }
     // Before the CLI starts with `--resume` (or `thread/resume`), it must find the conversation; when it

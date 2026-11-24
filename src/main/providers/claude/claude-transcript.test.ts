@@ -234,4 +234,17 @@ describe('forkPoint', () => {
     expect(forkPoint(lines(user('u1', 1, 'Frage')))).toBeNull()
     expect(forkPoint('')).toBeNull()
   })
+
+  it('ends with a given message, for a prompt edited further up', () => {
+    const text = lines(
+      user('u1', 1, 'Erste'),
+      assistant('m1', 2, [{ type: 'text', text: 'Eins' }]),
+      assistant('m1', 3, [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } }]),
+      user('u2', 4, 'Zweite'),
+      assistant('m2', 5, [{ type: 'text', text: 'Zwei' }]),
+    )
+    expect(forkPoint(text, 'm1')).toBe('m1-2')
+    expect(forkPoint(text, 'm2')).toBe('m2-5')
+    expect(forkPoint(text, 'm9')).toBeNull()
+  })
 })

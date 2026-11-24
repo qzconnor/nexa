@@ -87,9 +87,8 @@ export const useSessionsStore = defineStore('sessions', () => {
         else if (event.field === 'output' && item.kind === 'tool') item.output = (item.output ?? '') + event.text
         break
       }
-      case 'cleared':
-        chat.items.splice(0)
-        chat.index.clear()
+      case 'truncated':
+        for (const item of chat.items.splice(event.length)) chat.index.delete(item.id)
         break
     }
   }
@@ -152,6 +151,11 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function send(id: string, input: SendInput): Promise<void> {
     await window.api.sessions.send(id, { text: input.text, images: input.images ? [...input.images] : undefined })
+  }
+
+  /** A prompt of the chat sent anew, changed: what came after it goes. */
+  async function edit(id: string, itemId: string, input: SendInput): Promise<void> {
+    await window.api.sessions.edit(id, itemId, { text: input.text, images: input.images ? [...input.images] : undefined })
   }
 
   async function update(id: string, patch: SessionUpdateInput): Promise<void> {
@@ -227,6 +231,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     fork,
     clear,
     send,
+    edit,
     update,
     move,
     respond,

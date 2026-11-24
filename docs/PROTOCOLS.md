@@ -81,7 +81,10 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   `--resume-session-at <uuid>` (versteckt, im Agent SDK `resumeSessionAt`) nimmt die Unterhaltung nur
   bis zu diesem Eintrag mit, der neue Prompt hängt direkt daran (`parentUuid`). Nexa merkt sich beim
   Abzweigen die letzte `assistant`-Zeile des Hauptstrangs ohne `tool_use` (`forkPoint`), damit kein
-  Aufruf ohne Ergebnis übrig bleibt und spätere Turns des anderen Chats nicht mitkommen.
+  Aufruf ohne Ergebnis übrig bleibt und spätere Turns des anderen Chats nicht mitkommen. Beim Bearbeiten
+  eines Prompts weiter oben endet sie an der letzten Zeile der Nachricht davor: Jede Zeile trägt die
+  `message.id` der API (`msg_…`), dieselbe wie `api_message_id` im Stream, und ein Block einer Nachricht
+  steht je in einer eigenen Zeile mit eigener `uuid`.
 - **Zusammenfassen des Kontexts** (automatisch oder mit `/compact`; geprüft mit 2.1.330):
   `system/status` mit `status: "compacting"` beim Start und danach alle 30 s erneut, am Ende `status: null`
   mit `compact_result` (`success`, `failed`, dann ggf. `compact_error`). Danach `system/compact_boundary`

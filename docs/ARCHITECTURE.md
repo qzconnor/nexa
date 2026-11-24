@@ -241,6 +241,16 @@ gespeichert und durchsuchbar, geht aber auch beim Wechsel der CLI nicht mehr als
 der erste Prompt nach `contextFrom` neu; einen eigenen Namen (`'user'`) lässt das stehen. `/new` legt
 stattdessen einen neuen Chat mit denselben Einstellungen an.
 
+Einen Prompt bearbeiten (Stift links neben dem Prompt, `UserMessage`) geht im selben Chat ab dem Prompt
+neu weiter (`SessionService.edit`): Der Chat wird vor ihm gekürzt (Ereignis `truncated` an den
+Renderer), jede CLI zweigt ihre Unterhaltung wie beim Abzweigen an ihrer letzten Antwort davor ab
+(`CliLink.fork`, `editPoint`: bei Codex der letzte Turn davor, bei Claude Code `forkPoint` bis zur
+Nachricht der letzten Antwort davor, deren `msg_…` in der ID des Items steht), und der neue Text geht
+mit `send` hinaus. Die alte Unterhaltung kommt nach `earlierCli` und geht so mit dem Chat in den
+Papierkorb. Hat eine CLI vor dem Prompt nicht geantwortet, beginnt sie neu, mit dem Chat davor als
+`<nexa-context>`. Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, solange
+der Chat ruht; was die Agents an Dateien geändert haben, bleibt.
+
 ### Shell-Modus (`!`)
 
 `!` am Anfang des Eingabefelds schaltet in den Shell-Modus wie in Claude Code (pinker Rahmen,
