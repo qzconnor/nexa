@@ -534,13 +534,20 @@ JSON-RPC-Antwort. Browser-Aktionen können lange dauern (Warten auf die Seite, �
 ### Nachrichten zwischen Chats (`chat_*`)
 
 Mit der Einstellung „Nachrichten zwischen Chats“ (`tools.chatTools`, aus bis der Nutzer sie einschaltet)
-erreichen die Agents die anderen Chats, unabhängig von der CLI (`mcp/chat-tools.ts`). Den Absender kennt
-der Server am Token.
+erreichen die Agents die anderen Chats, unabhängig von der CLI (`mcp/chat-tools.ts`), und durchsuchen sie
+(`sessions_search` reicht wie `chat_read` in andere Chats und hängt deshalb am selben Schalter). Den
+Absender kennt der Server am Token.
 
 - `chat_list { query?, archived?, limit? }`: die anderen Chats, die neuesten zuerst, mit Titel, CLI,
   Projekt, Zustand und ID.
 - `chat_read { chat, last? }`: die letzten Prompts und Antworten des Hauptstrangs (ohne Zwischentexte von
   Codex, ohne Subagents).
+- `sessions_search { query, project?, limit? }`: frühere Chats, archivierte eingeschlossen, deren Titel oder
+  deren Prompts und Antworten alle Wörter enthalten (Groß-/Kleinschreibung und Akzente egal,
+  Anführungszeichen um die Wörter zählen nicht), die neuesten zuerst: Titel, CLI, Projekt, zuletzt aktiv
+  (relativ und Datum), ID und ein Ausschnitt um den Treffer (`SessionService.search`, dieselbe Suche wie die
+  Schnellsuche, mit ihrem Zwischenspeicher). `project` grenzt auf Projektname oder Ordner ein; 10 Treffer,
+  höchstens 50. Gelesen wird ein Treffer mit `chat_read`.
 - `chat_send { to, text }`: geht über `SessionService.sendFromChat` wie ein Prompt hinein (in den
   laufenden Turn oder mit Start der CLI) und steht im Chat mit `UserItem.from`.
 - `chat_new { cli, text, title? }`: ein neuer Chat im Projekt und Ordner des Absenders, mit Account,
@@ -555,3 +562,18 @@ Nutzer ist, keine Freigaben ersetzt und mit `chat_send` an `chat-id` beantwortet
 (`instructions.ts`, `chatMessage`). Grenzen: 20 Nachrichten und neue Chats je Chat in 10 Minuten
 (`RATE_LIMIT`), 10 Nachrichten zwischen Chats in Folge, ohne dass der Nutzer in einem davon schrieb
 (`MAX_CHAT_CHAIN`, `SessionState.chatChain`).
+
+### Limits (`limits`)
+
+`limits {}` (`mcp/limits-tool.ts`, aus dem Claude Manager) antwortet mit Text: CLI und Account, mit denen
+der Chat läuft (`SessionService.chatAccount`: der der laufenden CLI, sonst der des nächsten Prompts), mit
+Plan, je Limit-Fenster Verbrauch, Reset und Prognose (`ProviderService.usage()`, Fenster auf Englisch:
+„5 hours“, „week“, „week, Opus“; ein Fenster, dessen Reset vorbei ist, zählt als leer), eine gescheiterte
+Messung, ob die CLI das Limit meldete und bis wann Nexa den Account sperrt (`availability`, mit den
+Sperren von `AutoSwitch`). Darunter die anderen sichtbaren Accounts der eingeschalteten CLIs in Kurzform
+(API-Keys: ohne Plan-Limits; abgemeldet) und ob der automatische Wechsel am Limit an ist. Zeiten lokal mit
+Zeitzone und Abstand („in 2 h“).
+
+Das Werkzeug hat keinen eigenen Schalter: Es kommt mit dem Server, sobald einer der Schalter unter
+„Nexa-Werkzeuge“ an ist (`nexaToolsOn`), und läuft ohne Rückfrage (`NexaToolGrant`, `app`). Es liest nur, und nur Zahlen des Nutzers, die die
+Titelleiste ohnehin zeigt; es erreicht weder Chats noch Dateien noch das Netz.

@@ -5,7 +5,7 @@
 ```
 Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  claude -p … / codex app-server
       ^                      │    │
-      └── Events ────────────┘    ├── Nexa-MCP-Server (HTTP, 127.0.0.1) <── Agenten rufen render_* und browser_* auf
+      └── Events ────────────┘    ├── Nexa-MCP-Server (HTTP, 127.0.0.1) <── Agenten rufen render_*, browser_*, chat_*, limits auf
                                   └── Lokale API (HTTP + SSE, 127.0.0.1) <── nx, Stream Deck, Skripte
 ```
 
@@ -65,7 +65,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts` |
 | `services/auto-switch.ts` | Am Limit eines Accounts (`attention` `limit`): den verlassenen Account bis zu seinem Reset sperren, mit `chat.autoSwitch` beim nächsten freien Account derselben CLI weitermachen, sonst bis zum ersten Reset warten (`SessionRuntime.resume`); gemerkt in `auto-switch.json`, siehe „Accounts“ |
 | `services/update-service.ts` | Updates aus den GitHub-Releases (electron-updater, Suche nach 10 s und alle 4 h), Versionshinweise über die GitHub-API bzw. den Atom-Feed; Kanäle `updates:*` in `updates-ipc.ts` |
-| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*` und `chat_*` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen |
+| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen |
 | `browser/browser-tabs.ts` | Tabs der Browser je Chat (`browser-tabs.json`): welche Seiten, welche gezeigt, wer sie geöffnet hat |
 | `browser/browser-control.ts` | Aus dem Claude Manager: steuert die Seiten für die Agents über das DevTools-Protokoll (`page-driver.ts`, Frames, Netzwerk, Routen, Dialoge, Emulation), Protokoll, Übernehmen |
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |

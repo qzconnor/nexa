@@ -267,12 +267,12 @@ const TREE = [
       {
         id: 'chat.tools',
         title: 'Nexa-Werkzeuge',
-        keywords: 'MCP Server Tools Werkzeuge',
+        keywords: 'MCP Server Tools Werkzeuge Limits Usage',
         fields: [
           { id: 'chat.renderTools', label: 'Diagramme, Charts und Tabellen', keywords: 'Mermaid Grafik Visualisierung rendern MCP' },
           { id: 'chat.browserTools', label: 'Browser neben dem Chat', keywords: 'Webseite Web testen Playwright Automatisierung MCP' },
           { id: 'chat.noClaudeInChrome', label: 'Ohne „Claude in Chrome“', keywords: 'Chrome Erweiterung Extension Browser' },
-          { id: 'chat.chatTools', label: 'Nachrichten zwischen Chats', keywords: 'Session senden weiterleiten Claude Codex Agenten MCP' },
+          { id: 'chat.chatTools', label: 'Nachrichten zwischen Chats', keywords: 'Session senden weiterleiten durchsuchen Suche frühere Claude Codex Agenten MCP' },
           { id: 'chat.browserData', label: 'Browserdaten', keywords: 'Cookies Cache abmelden löschen Browser' },
         ],
       },

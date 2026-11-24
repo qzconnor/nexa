@@ -121,8 +121,8 @@ export interface ToolSettings {
    */
   noClaudeInChrome: boolean
   /**
-   * The agents reach the other chats of Nexa (`chat_*` of Nexa's MCP server): list and read them,
-   * send them messages, start new ones; also from Claude Code to Codex and back.
+   * The agents reach the other chats of Nexa (`chat_*` and `sessions_search` of Nexa's MCP server):
+   * list, search and read them, send them messages, start new ones; also from Claude Code to Codex and back.
    */
   chatTools: boolean
 }

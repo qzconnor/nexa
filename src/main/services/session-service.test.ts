@@ -839,6 +839,14 @@ describe('SessionService between chats', () => {
     await expect(sessions.sendFromChat('a', 'b', 'noch eine')).resolves.toBeUndefined()
   })
 
+  it('names the CLI and account a chat runs with', async () => {
+    const { sessions } = await twoChats()
+    expect(sessions.chatAccount('b')?.provider).toBe('codex')
+    await sessions.send('a', { text: 'Los' })
+    expect(sessions.chatAccount('a')).toEqual({ provider: 'claude', accountId: 'claude-a' })
+    expect(sessions.chatAccount('gone')).toBeNull()
+  })
+
   it('refuses a message to the chat itself', async () => {
     const { sessions } = await twoChats()
     await expect(sessions.sendFromChat('a', 'a', 'x')).rejects.toThrow(/cannot send to itself/)

@@ -46,6 +46,12 @@ describe('nexaToolView', () => {
     const created = tool({ name: 'mcp__nexa__chat_new', server: 'nexa', tool: 'mcp', input: { cli: 'codex', text: 'x', title: 'Prüfen' } })
     expect(nexaToolView(created)).toEqual({ title: 'Neuer Chat', detail: 'Codex · „Prüfen“', plumbing: false })
   })
+
+  it('names a search of the chats by its words, and the limits', () => {
+    const search = tool({ name: 'nexa.sessions_search', server: 'nexa', tool: 'mcp', input: { query: 'Release Fehler', project: 'nexa' } })
+    expect(nexaToolView(search)).toEqual({ title: 'Chats durchsuchen', detail: '„Release Fehler“ in „nexa“', plumbing: false })
+    expect(nexaToolView(tool({ name: 'mcp__nexa__limits', server: 'nexa', tool: 'mcp' }))?.title).toBe('Limits abfragen')
+  })
 })
 
 describe('toolSummary', () => {

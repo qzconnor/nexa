@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import { IpcEvent } from '@shared/ipc'
-import { PROVIDERS } from '@shared/providers'
+import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { findTheme } from '@shared/themes/builtin'
 import { ApiServer } from './api/api-server'
 import { registerArtifactsIpc } from './artifacts/artifact-ipc'
@@ -26,6 +26,7 @@ import { AUTOSTART_ARG, setLaunchAtLogin } from './lib/login-item'
 import { loadShellEnv } from './lib/shell-env'
 import { NexaMcpServer } from './mcp/mcp-server'
 import { ChatTools } from './mcp/chat-tools'
+import { LimitsTool } from './mcp/limits-tool'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { AutoSwitch } from './services/auto-switch'
 import { ProjectService } from './services/project-service'
@@ -80,11 +81,12 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const projects = new ProjectService(userDataDir)
 
   // Nexa's own MCP server: the tools that draw charts, diagrams and tables in the chat, the browser
-  // beside each chat, and the other chats. Every run gets a token of its own, which says whose browser
-  // it drives and which chat sends.
+  // beside each chat, the other chats and the limits of the accounts. Every run gets a token of its
+  // own, which says whose browser it drives and which chat sends.
   let browserTools: BrowserTools | null = null
   let chatTools: ChatTools | null = null
-  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools))
+  let limitsTool: LimitsTool | null = null
+  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools, limitsTool))
   await mcp.start().catch((error) => console.error('[mcp] server could not start', error))
 
   const sessions = new SessionService(
@@ -100,6 +102,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   chatTools = new ChatTools({
     list: () => sessions.peerChats(),
     items: async (id) => (await sessions.history(id))?.items ?? null,
+    search: (query) => sessions.search(query),
     send: (from, to, text) => sessions.sendFromChat(from, to, text),
     create: async (from, input) => {
       const meta = await sessions.newFromChat(from, input)
@@ -152,6 +155,15 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
 
   // A chat at its account's limit: goes on with the next free account, or at the reset.
   const autoSwitch = new AutoSwitch({ sessions, providers, accounts, settings, userDataDir })
+  // What the agents learn of the limits (`limits`), with the accounts the switch leaves alone.
+  limitsTool = new LimitsTool({
+    chat: (id) => sessions.chatAccount(id),
+    accounts: () => accounts.list(),
+    usage: () => providers.usage(),
+    blocked: () => autoSwitch.blockedAccounts(),
+    providers: () => enabledProviders(settings.get()),
+    autoSwitch: () => settings.get().chat.autoSwitch,
+  })
 
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
   const git = new GitService()

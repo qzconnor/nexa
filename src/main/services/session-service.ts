@@ -1022,6 +1022,17 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /**
+   * The CLI a chat runs with and its account (Nexa's `limits` tool): the running CLI's, else those its
+   * next prompt goes with. Null for a chat that is gone.
+   */
+  chatAccount(id: string): { provider: ProviderId; accountId: string } | null {
+    const s = this.sessions.get(id)
+    if (!s) return null
+    if (s.run?.alive && s.runProvider && s.runAccount) return { provider: s.runProvider, accountId: s.runAccount }
+    return { provider: s.meta.provider, accountId: this.accountFor(s.meta, s.meta.provider) }
+  }
+
+  /**
    * A message of one chat's agent to another chat: it goes in like a prompt (into the running turn, or
    * starting the CLI), marked with where it came from. Refused after `MAX_CHAT_CHAIN` messages between
    * chats in a row without the user.
