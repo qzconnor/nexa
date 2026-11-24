@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { CircleAlertIcon, CircleCheckIcon, ClockAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { usesSecret, type Account } from '@shared/accounts'
+import { nexaRenewsLogin, usesSecret, type Account } from '@shared/accounts'
 import { cn } from '@/lib/utils'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{ account: Account }>()
+const settings = useSettingsStore()
 
 const status = computed(() => {
   const { authState, kind, provider } = props.account
   if (authState === 'ok') return { icon: CircleCheckIcon, tone: 'text-success', text: usesSecret(kind) ? 'Secret hinterlegt' : 'Angemeldet' }
   if (authState === 'expired') {
+    // With „Logins frisch halten“ Nexa renews it within minutes, not the CLI at its next start.
+    if (settings.settings.chat.keepLoginsFresh && nexaRenewsLogin(props.account)) {
+      return { icon: ClockAlertIcon, tone: 'text-warning', text: 'Token abgelaufen – Nexa erneuert ihn gleich' }
+    }
     const cli = provider === 'codex' ? 'Codex' : 'Claude Code'
     return { icon: ClockAlertIcon, tone: 'text-warning', text: `Token abgelaufen – ${cli} erneuert ihn beim nächsten Start` }
   }
