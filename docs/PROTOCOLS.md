@@ -368,6 +368,8 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   aus (renderer `lib/chat-commands.ts`), die Skills kommen mit `skills/list` und gehen als `$name`.
 - **Anfragen vom Server** (Antwort nötig): `item/commandExecution/requestApproval`,
   `item/fileChange/requestApproval`, `item/permissions/requestApproval`, `item/tool/requestUserInput`.
+  Ihre JSON-RPC-`id` zählt jeder App-Server-Prozess ab 0, sie wiederholt sich also nach einem Neustart im
+  selben Thread. Nexa gibt der Rückfrage deshalb eine eigene ID statt einer aus `id` und Thread.
 - **Befehle**: `commandExecution.command` ist unter Windows die ganze Shell-Zeile
   (`"…\powershell.exe" -Command '…'`). Nexa zeigt stattdessen `commandActions[].command` an und
   erkennt Lesen (`read` mit `path`), Auflisten (`listFiles`) und Suchen (`search` mit `query`, `path`) als

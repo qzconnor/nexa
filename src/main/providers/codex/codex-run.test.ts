@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { ChatItem } from '@shared/chat'
 import type { RunOptions, RunSink } from '../provider'
 import type { CodexClient } from './codex-client'
 import { commandView, unwrapShell } from './codex-items'
@@ -92,6 +93,33 @@ describe('CodexRun.connect', () => {
     })
     expect(calls.map((c) => c.method)).toEqual(['thread/fork', 'thread/fork'])
     expect(calls[1]!.params.lastTurnId).toBeUndefined()
+  })
+})
+
+describe('CodexRun.request', () => {
+  const options: RunOptions = { sessionId: 's', cwd: 'F:\\app', permissionMode: 'ask', account: { accountId: 'codex', set: {}, unset: [] }, instructions: '', extraArgs: [], resumeId: 't1' }
+  /** One app-server process with its run on thread t1; the chat's items go to `items`. */
+  const server = async (items: ChatItem[]) => {
+    const request = vi.fn(async () => ({ thread: { id: 't1' } }))
+    const client = { alive: true, request, respond: vi.fn(), respondError: vi.fn() }
+    const run = new CodexRun(client as unknown as CodexClient, options, { ...sink, item: (item) => items.push(item) }, { add: () => {}, remove: () => {} })
+    await run.connect()
+    return { run, client }
+  }
+  const approval = { id: 0, method: 'item/commandExecution/requestApproval', params: { threadId: 't1', itemId: 'cmd-1', command: 'npm test' } }
+
+  it('asks anew after a restart, though the new app-server counts its request ids from 0 again', async () => {
+    const items: ChatItem[] = []
+    const before = await server(items)
+    before.run.request(approval)
+    await before.run.respond(items[0]!.id, { type: 'permission', decision: 'allow' })
+    const after = await server(items)
+    after.run.request({ ...approval, params: { ...approval.params, itemId: 'cmd-2' } })
+    const asked = items.filter((i) => i.kind === 'interaction' && i.state === 'pending')
+    expect(asked).toHaveLength(2)
+    expect(asked[1]!.id).not.toBe(asked[0]!.id)
+    await after.run.respond(asked[1]!.id, { type: 'permission', decision: 'deny' })
+    expect(after.client.respond).toHaveBeenCalledWith(0, { decision: 'decline' })
   })
 })
 
