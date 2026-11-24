@@ -100,6 +100,12 @@ export interface ChatSettings {
   autoSwitch: boolean
   /** What a chat says when it goes on after a limit, with another account or at the reset; `''`: „Mach weiter“. */
   continuePrompt: string
+  /**
+   * Nexa renews expired access tokens of Claude browser logins as Claude Code would at its next start,
+   * under its lock (main/accounts/login-renewal.ts): the limits of resting accounts stay current, and a
+   * chat switches to them at once.
+   */
+  keepLoginsFresh: boolean
 }
 
 export type UserShell = 'powershell' | 'gitbash' | 'cmd'

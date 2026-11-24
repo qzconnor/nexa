@@ -169,6 +169,22 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   als OSC-8-Terminal-Link (`ESC ] 8 ;; url BEL`) sowie `Paste code here if prompted >`. Ein Code aus dem
   Browser geht als Zeile über stdin. Exit-Code 0 heißt angemeldet, der Login steht dann in
   `.credentials.json`.
+- **Login erneuern** (wie Claude Code beim Start, übernommen aus dem Claude Manager):
+  `POST https://platform.claude.com/v1/oauth/token` mit JSON `{ grant_type: "refresh_token", refresh_token,
+  client_id, scope }`; `client_id` ist `claudeAiOauth.clientId`, sonst der von Claude Code
+  (`9d1c250a-e61b-44d9-88ed-5944d1962f5e`), `scope` die gespeicherten `scopes` mit Leerzeichen. Claude Code
+  erneuert nur mit `user:inference` in `scopes` und solange `refreshTokenExpiresAt` (Ende des Logins, ms)
+  nicht vorbei ist. Antwort: `access_token`, `expires_in` (s), meist ein neuer `refresh_token` (der alte
+  gilt dann nicht mehr), `refresh_token_expires_in` (s), `scope`. In `.credentials.json` werden daraus
+  `accessToken`, `refreshToken`, `expiresAt`, `refreshTokenExpiresAt`, `scopes`; alles andere der Datei
+  (z. B. `mcpOAuth`) bleibt. 400 oder 401 mit `error: "invalid_grant"`: Der Refresh-Token ist verbraucht,
+  widerrufen oder abgelaufen, nur neu anmelden hilft.
+- **Sperre beim Erneuern**: Ein Refresh-Token geht nur einmal, darum erneuert Claude Code unter
+  `<config>/.oauth_refresh.lock` und (ältere Versionen) `<config>.lock` neben dem Ordner (über `realpath`).
+  Beides sind Ordner von proper-lockfile: angelegt mit `mkdir`, alle 5 s berührt (mtime), nach 60 s ohne
+  Berührung verwaist und übernehmbar. Nexa nimmt beide (ohne Schreibrecht neben dem Ordner nur die erste,
+  wie Claude Code), liest die Datei darunter noch einmal und schreibt atomar (Temp-Datei und Umbenennen,
+  Modus 0600, kompaktes JSON), nur wenn sie noch den benutzten Refresh-Token hält.
 - **Limits**: `GET https://api.anthropic.com/api/oauth/usage` mit `Authorization: Bearer <accessToken>`
   und `anthropic-beta: oauth-2025-04-20`. Ältere Antworten: `five_hour` / `seven_day` mit `utilization`
   und `resets_at`; neuere zusätzlich `limits[]` mit `kind` (`session`, `weekly_all`, `weekly_<modell>`),
@@ -446,6 +462,11 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   oder `OPENAI_API_KEY`), `config.toml` und `sessions/<jjjj>/<mm>/<tt>/rollout-<zeit>-<thread-id>.jsonl`.
 - **Schlüsselbund**: Ohne `cli_auth_credentials_store = "file"` kann Codex den Login im Schlüsselbund
   des Systems ablegen, gemeinsam für alle Ordner. Nexa schreibt die Zeile in jeden neuen Account-Ordner.
+- **Erneuern**: `auth.json` hält dazu `tokens.refresh_token` und `last_refresh` (ISO, wann Codex die
+  Tokens zuletzt gespeichert hat; die Tabelle „Logins“ zeigt es). CLI und App-Server erneuern den
+  Access-Token selbst, sobald sie ihn brauchen, also auch der Server, den Nexa für die Limits startet. Nexa erneuert
+  Codex-Logins nicht: OpenAIs Refresh-Tokens gehen nur einmal, ein laufender Codex hält seinen im Speicher,
+  und Nexa kennt keine Sperre, unter der Codex erneuert. Eine Erneuerung daneben könnte ihn abmelden.
 - **`codex login`** ohne Terminal: startet einen lokalen Server auf `http://localhost:1455` (nennt ihn
   zuerst, dann den Link zu `auth.openai.com`) und öffnet den Browser. Exit-Code 0 heißt angemeldet. Weil
   der Port fest ist, läuft immer nur ein Codex-Login.

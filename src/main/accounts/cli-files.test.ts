@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { claudeProjectKey, readClaudeLogin, readCodexLogin, withCodexFileStore } from './cli-files'
+import { claudeProjectKey, claudeRenewable, readClaudeLogin, readCodexLogin, refuseRefreshToken, withCodexFileStore } from './cli-files'
 
 const NOW = Date.parse('2026-11-23T12:00:00Z')
 
@@ -23,8 +23,36 @@ describe('readClaudeLogin', () => {
   })
 
   it('tells an expired token that renews from one that needs a new login', () => {
-    expect(readClaudeLogin(credentials({ expiresAt: NOW - 1, refreshToken: 'r' }), config, NOW)).toMatchObject({ authState: 'expired', accessToken: null })
-    expect(readClaudeLogin(credentials({ expiresAt: NOW - 1 }), config, NOW).authState).toBe('dead')
+    const renewable = { refreshToken: 'r', scopes: ['user:inference', 'user:profile'] }
+    expect(readClaudeLogin(credentials({ expiresAt: NOW - 1, ...renewable }), config, NOW)).toMatchObject({
+      authState: 'expired',
+      renewable: true,
+      accessToken: null,
+    })
+    expect(readClaudeLogin(credentials({ expiresAt: NOW - 1 }), config, NOW)).toMatchObject({ authState: 'dead', renewable: false })
+    // Claude Code renews only a login that may ask for inference, with a refresh token that still holds.
+    expect(readClaudeLogin(credentials({ expiresAt: NOW - 1, ...renewable, scopes: ['user:profile'] }), config, NOW).authState).toBe('dead')
+    expect(readClaudeLogin(credentials({ expiresAt: NOW - 1, ...renewable, refreshTokenExpiresAt: NOW }), config, NOW).authState).toBe('dead')
+  })
+
+  it('counts a login whose refresh token Anthropic refused as dead', () => {
+    const oauth = { expiresAt: NOW - 1, refreshToken: 'refused-once', scopes: ['user:inference'] }
+    expect(claudeRenewable(oauth, NOW)).toBe(true)
+    refuseRefreshToken('refused-once')
+    expect(claudeRenewable(oauth, NOW)).toBe(false)
+    expect(readClaudeLogin(credentials(oauth), config, NOW).authState).toBe('dead')
+    expect(claudeRenewable({ ...oauth, refreshToken: 'another' }, NOW)).toBe(true)
+  })
+
+  it('tells when the login ends and when its tokens were saved', () => {
+    const login = readClaudeLogin(
+      credentials({ expiresAt: NOW + 60_000, refreshToken: 'r', scopes: ['user:inference'], refreshTokenExpiresAt: Date.parse('2026-12-23T12:00:00Z') }),
+      config,
+      NOW,
+      Date.parse('2026-11-23T11:00:00Z'),
+    )
+    expect(login).toMatchObject({ loginEndsAt: '2026-12-23T12:00:00.000Z', tokenSavedAt: '2026-11-23T11:00:00.000Z', renewable: true })
+    expect(readClaudeLogin(credentials({ refreshTokenExpiresAt: 'bald' }), config, NOW)).toMatchObject({ loginEndsAt: null, tokenSavedAt: null })
   })
 
   it('ignores a config that still names a login of another plan', () => {
@@ -49,6 +77,16 @@ describe('readCodexLogin', () => {
     const login = readCodexLogin(file, NOW)
     expect(login.authState).toBe('ok')
     expect(login.identity).toMatchObject({ email: 'c@d.de', subscriptionType: 'plus', organizationName: 'Team', organizationType: 'chatgpt_plus' })
+  })
+
+  it('tells when Codex saved the tokens last and whether it can renew them', () => {
+    const tokens = { access_token: jwt({ exp: (NOW + 60_000) / 1000 }) }
+    expect(readCodexLogin({ tokens: { ...tokens, refresh_token: 'r' }, last_refresh: '2026-11-20T08:30:00Z' }, NOW)).toMatchObject({
+      tokenSavedAt: '2026-11-20T08:30:00.000Z',
+      renewable: true,
+      loginEndsAt: null,
+    })
+    expect(readCodexLogin({ tokens, last_refresh: 'gestern' }, NOW)).toMatchObject({ tokenSavedAt: null, renewable: false })
   })
 
   it('counts an expired access token as expired, an API key as signed in', () => {

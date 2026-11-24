@@ -132,6 +132,19 @@ const TREE = [
           'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan ChatGPT Plus Pro OpenAI CODEX_HOME Konfigurationsordner hinzufügen entfernen Limits Usage Reihenfolge sortieren verschieben',
       },
       {
+        id: 'accounts.logins',
+        title: 'Logins',
+        keywords:
+          'Login Anmeldung Token Access-Token Refresh-Token abgelaufen Ablauf läuft ab erneuern Jetzt erneuern neu anmelden gültig OAuth Tabelle Übersicht',
+        fields: [
+          {
+            id: 'accounts.keepLoginsFresh',
+            label: 'Logins frisch halten',
+            keywords: 'automatisch erneuern Token abgelaufen ruhende Accounts Limits Usage Wechsel Refresh-Token Sperre',
+          },
+        ],
+      },
+      {
         id: 'accounts.limit',
         title: 'Bei erreichtem Limit',
         keywords: 'Limit Usage Rate Limit erschöpft aufgebraucht Reset Kontingent Abo',

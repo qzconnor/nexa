@@ -9,6 +9,7 @@ import {
   type AccountCreateInput,
   type AccountLoginState,
   type AccountUpdateInput,
+  type LoginRenewResult,
 } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
 import type { SessionMeta } from '@shared/types'
@@ -110,5 +111,10 @@ export const useAccountsStore = defineStore('accounts', () => {
     if (!logins.has(id)) logins.set(id, state)
   }
 
-  return { accounts, logins, loginId, formRequest, get, ofProvider, defaultId, sessionAccount, setDefault, load, refresh, create, update, remove, merge, reorder, login }
+  /** „Jetzt erneuern“: the main process reports the new expiry with its list. */
+  function renewLogin(id: string): Promise<LoginRenewResult> {
+    return window.api.accounts.renewLogin(id)
+  }
+
+  return { accounts, logins, loginId, formRequest, get, ofProvider, defaultId, sessionAccount, setDefault, load, refresh, create, update, remove, merge, reorder, login, renewLogin }
 })

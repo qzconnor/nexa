@@ -1,4 +1,4 @@
-import { canLogin, type AccountLoginState } from '@shared/accounts'
+import { canLogin, type AccountLoginState, type LoginRenewResult } from '@shared/accounts'
 import { PROVIDER_IDS, type ChatItem, type ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import type {
@@ -14,6 +14,7 @@ import type {
 } from '@shared/types'
 import { AccountLogins } from '../accounts/account-login'
 import type { AccountService } from '../accounts/account-service'
+import { LoginRenewal } from '../accounts/login-renewal'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ClaudeProvider } from '../providers/claude/claude-provider'
 import { CodexProvider } from '../providers/codex/codex-provider'
@@ -37,6 +38,7 @@ export class ProviderService extends TypedEmitter<Events> {
   readonly codex: CodexProvider
   private readonly providers: Record<ProviderId, AgentProvider>
   private readonly logins = new AccountLogins()
+  private readonly renewal: LoginRenewal
   private statuses = new Map<ProviderId, ProviderStatus>()
   /** By account id. */
   private readonly usages = new Map<string, ProviderUsage>()
@@ -54,6 +56,7 @@ export class ProviderService extends TypedEmitter<Events> {
     this.codex = new CodexProvider(() => settings().codex)
     this.codex.onUsage = (accountId, usage) => this.setUsage(accountId, usage)
     this.providers = { claude: this.claude, codex: this.codex }
+    this.renewal = new LoginRenewal({ accounts, enabled: () => settings().chat.keepLoginsFresh })
     this.logins.on('state', (state) => this.onLogin(state))
     let known = new Set(accounts.list().map((a) => a.id))
     accounts.on('changed', (list) => {
@@ -208,6 +211,8 @@ export class ProviderService extends TypedEmitter<Events> {
         // A CLI switched off isn't asked: its limits don't concern the user, and the asking costs.
         if (!this.isReady(account.provider) || !this.settings()[account.provider].enabled || account.authState === 'missing') return
         try {
+          // A resting Claude account's expired token first: its limits are asked for with the new one.
+          await this.renewal.renewExpired(account)
           const usage = await this.providers[account.provider].usage(this.context(account.id), wake)
           if (usage) this.setUsage(account.id, usage)
         } catch (error) {
@@ -243,6 +248,18 @@ export class ProviderService extends TypedEmitter<Events> {
 
   cancelLogin(accountId: string): void {
     this.logins.cancel(accountId)
+  }
+
+  /** „Jetzt erneuern“ for a Claude browser login; with the new token its limits are read right away. */
+  async renewLogin(accountId: string): Promise<LoginRenewResult> {
+    const result = await this.renewal.renewNow(accountId)
+    if (result === 'renewed') {
+      void (async () => {
+        const usage = await this.claude.usage(this.context(accountId))
+        if (usage) this.setUsage(accountId, usage)
+      })().catch(() => undefined)
+    }
+    return result
   }
 
   private onLogin(state: AccountLoginState): void {

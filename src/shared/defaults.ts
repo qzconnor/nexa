@@ -51,6 +51,7 @@ export function defaultSettings(): AppSettings {
       voiceAutoSend: false,
       autoSwitch: false,
       continuePrompt: DEFAULT_CONTINUE_PROMPT,
+      keepLoginsFresh: true,
     },
     tools: {
       renderTools: true,

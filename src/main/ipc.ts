@@ -284,6 +284,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.accountsLogin, (_e, id: unknown) => providers.login(str(id, 'Der Account')))
   handle(IpcInvoke.accountsLoginCode, (_e, id: unknown, code: unknown) => providers.loginCode(str(id, 'Der Account'), str(code, 'Der Code')))
   handle(IpcInvoke.accountsLoginCancel, (_e, id: unknown) => providers.cancelLogin(str(id, 'Der Account')))
+  handle(IpcInvoke.accountsRenewLogin, (_e, id: unknown) => providers.renewLogin(str(id, 'Der Account')))
   handle(IpcInvoke.usageStats, (_e, days: unknown) => sessions.stats(Math.min(365, Math.max(1, Number(days) || 30))))
 
   // Projects -----------------------------------------------------------------------------------

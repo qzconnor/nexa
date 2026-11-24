@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { copyFile, lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import {
@@ -278,7 +278,9 @@ export class AccountService extends TypedEmitter<Events> {
     const account = this.require(id)
     if (account.provider === 'codex') return readCodexLogin(readJsonSync<unknown>(this.codexPaths(id).authFile))
     const paths = this.claudePaths(id)
-    return readClaudeLogin(readJsonSync<unknown>(paths.credentialsFile), readJsonSync<unknown>(paths.globalConfigFile))
+    // Claude Code keeps no time of its own with the tokens; the file's tells when they were saved.
+    const savedAt = modifiedAt(paths.credentialsFile)
+    return readClaudeLogin(readJsonSync<unknown>(paths.credentialsFile), readJsonSync<unknown>(paths.globalConfigFile), Date.now(), savedAt)
   }
 
   /** Who is signed in in a config folder Nexa has no account for (yet), as the CLI would run with it. */
@@ -345,10 +347,19 @@ export class AccountService extends TypedEmitter<Events> {
     }
     if (usesSecret(stored.kind)) {
       // A secret that can't be decrypted is as good as none. A token names no person.
-      return { ...base, authState: this.secrets.has(stored.id) ? 'ok' : 'missing', identity: { ...NO_IDENTITY }, tokenExpiresAt: null }
+      const authState = this.secrets.has(stored.id) ? 'ok' : 'missing'
+      return { ...base, authState, identity: { ...NO_IDENTITY }, tokenExpiresAt: null, loginEndsAt: null, tokenSavedAt: null, renewable: false }
     }
     const info = this.login(stored.id)
-    return { ...base, authState: info.authState, identity: info.identity, tokenExpiresAt: info.tokenExpiresAt }
+    return {
+      ...base,
+      authState: info.authState,
+      identity: info.identity,
+      tokenExpiresAt: info.tokenExpiresAt,
+      loginEndsAt: info.loginEndsAt,
+      tokenSavedAt: info.tokenSavedAt,
+      renewable: info.renewable,
+    }
   }
 }
 
@@ -365,6 +376,14 @@ function validColor(color: string | undefined): string | null {
 
 function cleanArgs(args: string[] | undefined): string[] {
   return (args ?? []).map((a) => String(a).trim()).filter(Boolean)
+}
+
+function modifiedAt(file: string): number | null {
+  try {
+    return statSync(file).mtimeMs
+  } catch {
+    return null
+  }
 }
 
 function samePath(a: string, b: string): boolean {

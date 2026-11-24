@@ -44,6 +44,12 @@ export interface Account {
   identity: AccountIdentity
   /** When the access token runs out (ISO); the CLI renews it with its refresh token. */
   tokenExpiresAt: string | null
+  /** When the browser login itself ends (its refresh token runs out, Claude only): then only signing in again helps. */
+  loginEndsAt: string | null
+  /** When the CLI or Nexa last saved the tokens of the browser login (signed in or renewed). */
+  tokenSavedAt: string | null
+  /** The browser login has a refresh token that may still work (else `dead` once the access token runs out). */
+  renewable: boolean
   /** Appended to every start of the CLI with this account. */
   extraArgs: string[]
 }
@@ -71,6 +77,13 @@ export interface AccountUpdateInput {
   secret?: string
   extraArgs?: string[]
 }
+
+/**
+ * What renewing a Claude login did: `renewed` (a valid access token is saved now, by Nexa or by Claude
+ * Code meanwhile), `busy` (Claude Code renews it right now), `rejected` (only signing in again helps) or
+ * `failed` (network or server, worth another try).
+ */
+export type LoginRenewResult = 'renewed' | 'busy' | 'rejected' | 'failed'
 
 /** The browser login of an account, while it runs and how it ended. */
 export interface AccountLoginState {
@@ -173,6 +186,14 @@ export function usesSecret(kind: AccountKind): boolean {
 /** A browser login that the account itself can renew (`claude auth login`, `codex login`). */
 export function canLogin(kind: AccountKind): boolean {
   return kind === 'system' || kind === 'oauth'
+}
+
+/**
+ * A browser login Nexa renews itself (`main/accounts/login-renewal.ts`): Claude's, under Claude Code's
+ * lock. Codex renews its own when it starts; Nexa leaves its `auth.json` alone.
+ */
+export function nexaRenewsLogin(account: Pick<Account, 'provider' | 'kind'>): boolean {
+  return account.provider === 'claude' && canLogin(account.kind)
 }
 
 export function accountKindLabel(kind: AccountKind, provider: ProviderId): string {

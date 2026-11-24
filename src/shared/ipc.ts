@@ -1,4 +1,4 @@
-import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput } from './accounts'
+import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput, LoginRenewResult } from './accounts'
 import type { ArtifactsApi } from './artifacts'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
@@ -88,6 +88,7 @@ export const IpcInvoke = {
   accountsLogin: 'accounts:login',
   accountsLoginCode: 'accounts:login-code',
   accountsLoginCancel: 'accounts:login-cancel',
+  accountsRenewLogin: 'accounts:renew-login',
 
   usageGet: 'usage:get',
   usageRefresh: 'usage:refresh',
@@ -298,6 +299,8 @@ export interface NexaApi {
     /** A code the browser showed, for the CLI that waits for it. */
     loginCode(id: string, code: string): Promise<void>
     cancelLogin(id: string): Promise<void>
+    /** „Jetzt erneuern“: a new access token for a Claude browser login, also while the old one works. */
+    renewLogin(id: string): Promise<LoginRenewResult>
     onChanged(cb: (list: Account[]) => void): Unsubscribe
     onLogin(cb: (state: AccountLoginState) => void): Unsubscribe
   }
