@@ -75,6 +75,15 @@ export interface ChatSettings {
   voiceLanguage: string
   /** The Claude account whose login the speech recognition uses; `''`: the chat's, else the first signed in. */
   voiceAccount: string
+  /**
+   * The microphone to record with, by the name the system shows (renderer lib/microphones.ts); `''`:
+   * the system's. One that isn't connected: the system's too.
+   */
+  voiceMicrophone: string
+  /** A take ends by itself once the speaker stops talking (lib/voice-text.ts, `pauseOver`). */
+  voiceAutoStop: boolean
+  /** A take that ends with words heard sends the prompt right away; Esc ends one without sending. */
+  voiceAutoSend: boolean
 }
 
 export type UserShell = 'powershell' | 'gitbash' | 'cmd'

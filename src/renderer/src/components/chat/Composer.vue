@@ -135,6 +135,8 @@ const voice = useVoiceInput({
       input.value?.setSelectionRange(next.cursor, next.cursor)
     })
   },
+  // „Automatisch beenden“: done talking counts as a click on the microphone.
+  paused: () => void finishVoice(),
 })
 const { state: voiceState, levels: voiceLevels } = voice
 /** A take runs: the field only shows what is heard until it ends. */
@@ -155,24 +157,39 @@ async function startVoice(): Promise<void> {
   el?.focus()
   // The project's name is a word the recognition wouldn't guess.
   const project = projectRoot.value ? folderName(projectRoot.value) : null
-  await voice.start({ account: props.account, keyterms: project ? [project] : [] })
+  const { voiceMicrophone, voiceAutoStop } = settings.settings.chat
+  await voice.start({ account: props.account, keyterms: project ? [project] : [] }, { microphone: voiceMicrophone, pause: voiceAutoStop })
 }
 
-async function stopVoice(): Promise<void> {
-  await voice.stop()
-  voiceAt = null
-  input.value?.focus()
+/** The end under way: a second click, Enter or the pause waits for it instead of dropping its last words. */
+let stopping: Promise<boolean> | null = null
+
+/** Ends the take; `true` when it ended well and heard something. */
+function stopVoice(): Promise<boolean> {
+  stopping ??= (async () => {
+    const ended = await voice.stop()
+    const said = spokenText(heard, hearing) !== ''
+    voiceAt = null
+    input.value?.focus()
+    return ended && said
+  })().finally(() => (stopping = null))
+  return stopping
+}
+
+/** The take is done (microphone, Strg+M, a pause): with „Automatisch abschicken“ the prompt goes too. */
+async function finishVoice(): Promise<void> {
+  if ((await stopVoice()) && settings.settings.chat.voiceAutoSend) send()
 }
 
 function toggleVoice(): void {
-  if (dictating.value) void stopVoice()
+  if (dictating.value) void finishVoice()
   else void startVoice()
 }
 
 /** Sends; a take still running ends first, and its last words go along. */
 function submit(): void {
   if (!dictating.value) return send()
-  void stopVoice().then(send)
+  void stopVoice().then(() => send())
 }
 
 watch(
@@ -445,7 +462,7 @@ function onKeydown(event: KeyboardEvent): void {
     return
   }
   if (dictating.value && event.key === 'Escape') {
-    // Ends the take (its words stay), not the agent's turn.
+    // Ends the take (its words stay), not the agent's turn; never sends, also with „Automatisch abschicken“.
     event.preventDefault()
     event.stopPropagation()
     void stopVoice()

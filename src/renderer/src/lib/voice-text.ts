@@ -42,3 +42,23 @@ export function voiceLevel(rms: number): number {
   const db = 20 * Math.log10(rms)
   return Math.max(0, Math.min(1, (db + 60) / 45))
 }
+
+/** How long a pause after the last new words ends a take that ends by itself. */
+export const VOICE_PAUSE_MS = 2_000
+/** Before the first words the pause may be longer: time to think of them. */
+export const VOICE_FIRST_WORDS_MS = 8_000
+/** Speech on the meter's scale (about -37 dB): well above a quiet room after noise suppression. */
+const SPEAKING = 0.5
+/** The meter's last places looked at for speech: 8 pieces of 64 ms, half a second. */
+const RECENT = 8
+
+/**
+ * Whether the speaker has stopped talking. Counted from the last new words, which a quiet hum in the
+ * room doesn't make; the loudness only holds the take open while the microphone hears speech, so
+ * words the recognition is slow with don't cut a sentence off.
+ * `since`: when the recording began; `words`: when the last new words came, `null` before any.
+ */
+export function pauseOver(at: { since: number; words: number | null }, now: number, levels: readonly number[]): boolean {
+  if (levels.slice(-RECENT).some((level) => level >= SPEAKING)) return false
+  return at.words === null ? now - at.since >= VOICE_FIRST_WORDS_MS : now - at.words >= VOICE_PAUSE_MS
+}

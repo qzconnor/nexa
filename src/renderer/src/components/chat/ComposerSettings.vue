@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, ChevronDownIcon } from '@lucide/vue'
+import { CheckIcon, ChevronDownIcon, MicIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
@@ -9,9 +9,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useProvidersStore } from '@/stores/providers'
+import { useUiStore } from '@/stores/ui'
 import EffortSlider from './EffortSlider.vue'
 
-/** What opens under the composer's gear: model, thinking effort, Claude's Ultracode and the permission mode. */
+/**
+ * What opens under the composer's gear: model, thinking effort, Claude's Ultracode and the permission
+ * mode, and a way to the voice input's settings.
+ */
 const props = defineProps<{
   provider: ProviderId
   model: string
@@ -29,6 +33,7 @@ const emit = defineEmits<{
   'update:ultracode': [boolean]
 }>()
 const providers = useProvidersStore()
+const ui = useUiStore()
 
 const models = computed(() => providers.models[props.provider] ?? [])
 const current = computed(() => models.value.find((m) => m.id === props.model) ?? models.value.find((m) => m.isDefault))
@@ -55,10 +60,10 @@ function pickModel(id: string): void {
 <template>
   <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-5 gap-y-3 px-4 pt-1 pb-3.5 text-[0.82rem]">
     <span class="text-muted-foreground">Modell</span>
-    <div>
+    <div class="flex min-w-0 items-center gap-2">
       <DropdownMenu @update:open="openModels">
         <DropdownMenuTrigger as-child>
-          <Button variant="outline" size="sm" class="max-w-full gap-1.5 bg-transparent px-2.5 font-normal" :disabled="disabled">
+          <Button variant="outline" size="sm" class="max-w-full min-w-0 gap-1.5 bg-transparent px-2.5 font-normal" :disabled="disabled">
             <span class="truncate">{{ modelLabel }}</span>
             <ChevronDownIcon class="size-3 opacity-60" />
           </Button>
@@ -75,6 +80,17 @@ function pickModel(id: string): void {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <!-- The microphone sits by the send button; what it does is set in the settings, not per chat. -->
+      <Button
+        variant="ghost"
+        size="sm"
+        class="ml-auto shrink-0 gap-1.5 px-2 font-normal text-muted-foreground"
+        v-tooltip="'Mikrofon, Sprache, automatisch beenden und abschicken'"
+        @click="ui.openSettings('chat', 'chat.voice')"
+      >
+        <MicIcon class="size-3.5" />
+        Spracheingabe …
+      </Button>
     </div>
 
     <template v-if="efforts.length">

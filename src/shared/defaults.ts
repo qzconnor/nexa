@@ -39,6 +39,9 @@ export function defaultSettings(): AppSettings {
       shell: 'powershell',
       voiceLanguage: '',
       voiceAccount: '',
+      voiceMicrophone: '',
+      voiceAutoStop: false,
+      voiceAutoSend: false,
     },
     tools: {
       renderTools: true,

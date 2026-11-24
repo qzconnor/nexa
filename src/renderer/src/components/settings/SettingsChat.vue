@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AppSettings, DeepPartial, UserShell } from '@shared/types'
 import { voiceAvailable, VOICE_LANGUAGES, voiceLanguage as resolveVoiceLanguage, voiceLanguageLabel } from '@shared/voice'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { attempt } from '@/lib/errors'
+import { microphonesOf, systemMicrophone, type Microphone } from '@/lib/microphones'
 import { isWindows } from '@/lib/platform'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSettingsStore } from '@/stores/settings'
@@ -49,9 +50,39 @@ const voiceAccount = computed({
   get: () => (claudeAccounts.value.some((a) => a.id === s.value.chat.voiceAccount) ? s.value.chat.voiceAccount : AUTOMATIC),
   set: (value: string) => update({ chat: { voiceAccount: value === AUTOMATIC ? '' : value } }),
 })
+
+const microphones = ref<Microphone[]>([])
+const systemMic = ref<string | null>(null)
+async function loadMicrophones(): Promise<void> {
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => [])
+  microphones.value = microphonesOf(devices)
+  systemMic.value = systemMicrophone(devices)
+}
+// A headset plugged in while the settings are open shows up right away.
+onMounted(() => {
+  void loadMicrophones()
+  navigator.mediaDevices.addEventListener('devicechange', loadMicrophones)
+})
+onBeforeUnmount(() => navigator.mediaDevices.removeEventListener('devicechange', loadMicrophones))
+const voiceMicrophone = computed({
+  get: () => s.value.chat.voiceMicrophone || SYSTEM,
+  set: (value: string) => update({ chat: { voiceMicrophone: value === SYSTEM ? '' : value } }),
+})
+/** The one set but unplugged stays in the list, so the choice doesn't seem lost. */
+const missingMicrophone = computed(() => {
+  const name = s.value.chat.voiceMicrophone
+  return name && !microphones.value.some((m) => m.label === name) ? name : null
+})
+const systemMicrophoneText = computed(() => (systemMic.value ? `Wie das System (${systemMic.value})` : 'Wie das System'))
+// Written out: the select doesn't pick up the name of an item that only came with the device list.
+const microphoneText = computed(() => {
+  const name = s.value.chat.voiceMicrophone
+  if (!name) return systemMicrophoneText.value
+  return name === missingMicrophone.value ? `${name} (nicht angeschlossen)` : name
+})
+
 const voiceDescription = computed(() => {
-  const base =
-    'Das Mikrofon in der Eingabe (Strg+M) schreibt mit, während du sprichst, in Chats mit jeder CLI. Erkannt wird immer mit der Spracherkennung von Claude, wie bei „/voice“ in Claude Code, auch in Codex-Chats.'
+  const base = 'Das Mikrofon in der Eingabe (Strg+M) schreibt mit, während du sprichst, in Chats mit jeder CLI. Erkannt wird mit der Spracherkennung von Claude, auch in Codex-Chats.'
   if (!s.value.claude.enabled) return `${base} Claude Code ist ausgeschaltet, deshalb gibt es gerade kein Mikrofon.`
   if (!voiceAvailable(accounts.accounts, s.value.chat.voiceAccount, true)) return `${base} Dafür braucht es einen bei claude.ai angemeldeten Claude-Account; ohne ihn gibt es kein Mikrofon.`
   return base
@@ -107,6 +138,18 @@ function cleanUp(): void {
     </SettingsSection>
 
     <SettingsSection anchor="chat.voice" title="Spracheingabe" :description="voiceDescription">
+      <SettingField anchor="chat.voiceMicrophone" label="Mikrofon" description="Womit aufgenommen wird. Ist es nicht angeschlossen, nimmt die Spracheingabe das des Systems.">
+        <Select v-model="voiceMicrophone">
+          <SelectTrigger class="max-w-72 min-w-44 bg-background/60" aria-label="Mikrofon der Spracheingabe">
+            <SelectValue>{{ microphoneText }}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="SYSTEM">{{ systemMicrophoneText }}</SelectItem>
+            <SelectItem v-for="mic in microphones" :key="mic.id" :value="mic.label">{{ mic.label }}</SelectItem>
+            <SelectItem v-if="missingMicrophone" :value="missingMicrophone">{{ missingMicrophone }} (nicht angeschlossen)</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingField>
       <SettingField anchor="chat.voiceLanguage" label="Sprache" description="Die Sprache, in der du sprichst. Pro Aufnahme erkennt Claude eine Sprache.">
         <Select v-model="voiceLanguage">
           <SelectTrigger class="min-w-44 bg-background/60" aria-label="Sprache der Spracheingabe"><SelectValue /></SelectTrigger>
@@ -115,6 +158,20 @@ function cleanUp(): void {
             <SelectItem v-for="language in VOICE_LANGUAGES" :key="language.code" :value="language.code">{{ language.label }}</SelectItem>
           </SelectContent>
         </Select>
+      </SettingField>
+      <SettingField
+        anchor="chat.voiceAutoStop"
+        label="Automatisch beenden"
+        description="Hörst du auf zu sprechen, endet die Aufnahme nach zwei Sekunden Pause von selbst; sagst du gar nichts, nach acht Sekunden. Aus: Sie endet mit einem Klick aufs Mikrofon, Strg+M oder Esc."
+      >
+        <Switch :model-value="s.chat.voiceAutoStop" @update:model-value="(v: boolean) => update({ chat: { voiceAutoStop: v } })" />
+      </SettingField>
+      <SettingField
+        anchor="chat.voiceAutoSend"
+        label="Automatisch abschicken"
+        description="Endet die Aufnahme, geht die Nachricht gleich ab, ohne Enter. Esc beendet die Aufnahme, ohne abzuschicken."
+      >
+        <Switch :model-value="s.chat.voiceAutoSend" @update:model-value="(v: boolean) => update({ chat: { voiceAutoSend: v } })" />
       </SettingField>
       <SettingField
         anchor="chat.voiceAccount"

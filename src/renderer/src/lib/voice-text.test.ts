@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { spokenText, voiceAnchor, voiceLevel, withSpoken } from './voice-text'
+import { pauseOver, spokenText, voiceAnchor, voiceLevel, withSpoken, VOICE_FIRST_WORDS_MS, VOICE_PAUSE_MS } from './voice-text'
 
 describe('withSpoken', () => {
   it('fills an empty field', () => {
@@ -42,5 +42,27 @@ describe('voiceLevel', () => {
     expect(voiceLevel(1)).toBe(1)
     const middle = voiceLevel(10 ** (-37.5 / 20))
     expect(middle).toBeCloseTo(0.5, 5)
+  })
+})
+
+describe('pauseOver', () => {
+  const quiet = Array.from({ length: 32 }, () => 0.1)
+
+  it('ends after a pause from the last new words', () => {
+    const at = { since: 0, words: 5_000 }
+    expect(pauseOver(at, 5_000 + VOICE_PAUSE_MS - 1, quiet)).toBe(false)
+    expect(pauseOver(at, 5_000 + VOICE_PAUSE_MS, quiet)).toBe(true)
+  })
+
+  it('waits longer for the first words', () => {
+    const at = { since: 1_000, words: null }
+    expect(pauseOver(at, 1_000 + VOICE_PAUSE_MS, quiet)).toBe(false)
+    expect(pauseOver(at, 1_000 + VOICE_FIRST_WORDS_MS, quiet)).toBe(true)
+  })
+
+  it('goes on while the microphone hears speech in the last half second', () => {
+    const at = { since: 0, words: 0 }
+    expect(pauseOver(at, 10_000, [...quiet.slice(1), 0.7])).toBe(false)
+    expect(pauseOver(at, 10_000, [...quiet.slice(0, 20), 0.9, ...quiet.slice(21)])).toBe(true)
   })
 })

@@ -250,14 +250,21 @@ Das Mikrofon neben dem Senden-Knopf (oder Strg+M im Eingabefeld) diktiert in die
 erkannt wird immer mit Claudes Spracherkennung, der Text landet wie getippt im Feld (Protokoll in
 `PROTOCOLS.md`, „Spracheingabe“). Ohne angemeldeten Claude-Account oder mit ausgeschaltetem Claude Code
 gibt es kein Mikrofon (`voiceAvailable` in `shared/voice.ts`); Codex' eigenes `/voice` ist ein
-Sprachgespräch und taugt nicht zum Diktat (`PROTOCOLS.md`, Codex, „Sprache“). `useVoiceInput` öffnet das Mikrofon (`getUserMedia`; das Hauptfenster
-darf nur Audio, `main-window.ts`) in einem `AudioContext` mit 16 kHz; das Worklet `lib/voice-worklet.ts`
+Sprachgespräch und taugt nicht zum Diktat (`PROTOCOLS.md`, Codex, „Sprache“).
+
+`useVoiceInput` öffnet das Mikrofon (`getUserMedia`; das Hauptfenster darf nur Audio, `main-window.ts`),
+das unter `settings.chat.voiceMicrophone` steht, gemerkt mit seinem Namen statt der pro Profil gesalzenen
+Geräte-ID (`lib/microphones.ts`); ist es nicht angeschlossen, das des Systems. Aufgenommen wird in einem
+`AudioContext` mit 16 kHz; das Worklet `lib/voice-worklet.ts`
 macht daraus 16-Bit-PCM in Stücken von 64 ms samt Lautstärke für den Pegel (`VoiceMeter`). Die Stücke
 gehen über `voice:audio` an `VoiceService`, der sie bis zur stehenden Verbindung puffert. Die Wörter
 kommen als `voice:event` zurück; `Composer` schreibt sie an die Stelle des Cursors beim Start
 (`lib/voice-text.ts`), solange die Aufnahme läuft ist das Feld schreibgeschützt. Ein erneuter Klick, Esc
 oder Strg+M beendet die Aufnahme und wartet auf die letzten Wörter; Enter beendet sie und sendet danach.
-Der Account: `settings.chat.voiceAccount`, sonst der des Chats, wenn er ein Claude-Account ist, sonst der
+Mit `settings.chat.voiceAutoStop` endet sie auch von selbst: Jedes Stück prüft `pauseOver`
+(`lib/voice-text.ts`), gezählt ab den letzten neuen Wörtern (2 s, vor dem ersten 8 s), solange der Pegel
+keine Sprache zeigt. Mit `settings.chat.voiceAutoSend` geht die Nachricht ab, wenn eine Aufnahme mit
+Wörtern endet (Klick, Strg+M, Pause), nicht nach Esc oder einem Fehler. Der Account: `settings.chat.voiceAccount`, sonst der des Chats, wenn er ein Claude-Account ist, sonst der
 erste mit gültigem Login (`voiceCandidates`); die Sprache `settings.chat.voiceLanguage`, sonst die des
 Systems (`app.getLocale()`).
 
