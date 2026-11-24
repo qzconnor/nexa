@@ -503,7 +503,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             </template>
             <div v-if="working" class="flex items-center gap-2 py-2 text-[0.85rem] text-muted-foreground">
               <Spinner class="size-3.5 text-primary" />
-              <span class="text-shimmer">{{ working }}</span>
+              <span class="text-shimmer text-shimmer-accent">{{ working }}</span>
               <span v-if="elapsed" class="tabular-nums opacity-70">{{ elapsed }}</span>
             </div>
             <!-- Under what the agent does, as in the CLIs: into the chat once it takes them up. -->

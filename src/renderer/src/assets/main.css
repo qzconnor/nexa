@@ -218,25 +218,28 @@
     background: var(--surface);
     backdrop-filter: blur(24px) saturate(140%);
   }
-  /* Text a light runs across, while work is under way: in the theme's own colour, so activity stands
-     out from the grey of what is done. */
+  /* Text a light runs across, while work is under way. */
   .text-shimmer {
-    background: linear-gradient(
-        90deg,
-        var(--primary) 35%,
-        color-mix(in oklab, var(--primary) 35%, var(--foreground)) 50%,
-        var(--primary) 65%
-      )
-      0 0 / 250% 100%;
+    --shimmer: var(--muted-foreground);
+    --shimmer-light: var(--foreground);
+    background: linear-gradient(90deg, var(--shimmer) 35%, var(--shimmer-light) 50%, var(--shimmer) 65%) 0 0 / 250% 100%;
     background-clip: text;
     color: transparent;
     animation: text-shimmer 1.8s linear infinite;
+  }
+  /* In the theme's own colour: only for „Arbeitet …“, the one line that says the agent is at work. */
+  .text-shimmer-accent {
+    --shimmer: var(--primary);
+    --shimmer-light: color-mix(in oklab, var(--primary) 35%, var(--foreground));
   }
   @media (prefers-reduced-motion: reduce) {
     .text-shimmer {
       animation: none;
       background: none;
-      color: var(--primary);
+      color: var(--shimmer-light);
+    }
+    .text-shimmer-accent {
+      color: var(--shimmer);
     }
   }
   /* The highest effort, as the CLI shows it: a rainbow that runs (text with .effort-rainbow-text). */

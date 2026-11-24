@@ -68,7 +68,7 @@ function back(): void {
           <span v-if="agent.background" class="shrink-0 rounded bg-muted px-1.5 text-[0.7rem] text-muted-foreground">Hintergrund</span>
         </span>
         <span class="flex min-w-0 items-center gap-1.5 text-[0.78rem] text-muted-foreground">
-          <Spinner v-if="running" class="size-3 shrink-0 text-primary" />
+          <Spinner v-if="running" class="size-3 shrink-0" />
           <CheckIcon v-else-if="agent.status === 'done'" class="size-3.5 shrink-0 text-(--tool-run)" />
           <XIcon v-else-if="agent.status === 'error'" class="size-3.5 shrink-0 text-destructive" />
           <CircleStopIcon v-else class="size-3.5 shrink-0" />
