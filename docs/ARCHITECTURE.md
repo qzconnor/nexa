@@ -60,6 +60,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `lib/shell-env.ts` | Linux: übernimmt beim Start die Umgebung der Login-Shell (PATH mit nvm & Co.), damit die CLIs auch beim Start aus dem Anwendungsmenü gefunden werden |
 | `lib/linux.ts` | Wie die Linux-Version installiert ist (AppImage, deb, rpm); `cliEnv` nimmt mit `withoutAppImageEnv` die Pfade des AppImage-Mounts aus der Umgebung der CLIs |
 | `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts` |
+| `services/auto-switch.ts` | Am Limit eines Accounts (`attention` `limit`): den verlassenen Account bis zu seinem Reset sperren, mit `chat.autoSwitch` beim nächsten freien Account derselben CLI weitermachen, sonst bis zum ersten Reset warten (`SessionRuntime.resume`); gemerkt in `auto-switch.json`, siehe „Accounts“ |
 | `services/update-service.ts` | Updates aus den GitHub-Releases (electron-updater, Suche nach 10 s und alle 4 h), Versionshinweise über die GitHub-API bzw. den Atom-Feed; Kanäle `updates:*` in `updates-ipc.ts` |
 | `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*` und `browser_*` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen |
 | `browser/browser-tabs.ts` | Tabs der Browser je Chat (`browser-tabs.json`): welche Seiten, welche gezeigt, wer sie geöffnet hat |
@@ -327,6 +328,25 @@ Der jüngere zeigt in den Einstellungen „Gleicher Login wie …“ (`duplicate
 älteren zusammenführen (`account-merge.ts`). Seine Chats laufen mit dem anderen weiter
 (`SessionService.reassignAccount`, die Unterhaltung kopiert der nächste Prompt), die Vorgabe geht mit,
 der Ordner bleibt auf der Platte.
+
+### Am Limit
+
+Stoppt ein Turn am Limit seines Accounts (`TurnItem.limit`, Ereignis `attention` `limit`), sperrt
+`AutoSwitch` den Account bis zum Reset: dem spätesten der vollen Fenster aus `ProviderService.usage()`,
+ohne Angabe der CLI geschätzt 5 Stunden (`UNKNOWN_RESET_MS`), bis eine Messung den Reset nennt. Ein Turn,
+der mit dem Account durchgeht, hebt die Sperre auf. Mit `chat.autoSwitch` geht der Chat sofort mit dem
+nächsten freien Account derselben CLI weiter (`nextAccount` in `shared/account-choice.ts`): in der
+Reihenfolge der Accountliste, ohne gesperrte, volle, abgemeldete, denselben Login in anderem Ordner und
+API-Keys (die kosten pro Token). Der Wechsel ist der gewohnte (`SessionService.update` mit `account`,
+dann `send` mit `chat.continuePrompt`); die Unterhaltung kopiert `useAccount`.
+
+Ohne freien Account, oder auf „Am Reset fortsetzen“ (`sessions:resume-at-reset`, auch ohne Wechsel),
+wartet der Chat: `firstFree` sucht den Account, der zuerst frei wird (mit Wechsel jeder der CLI, sonst der
+eigene), eine Minute nach seinem Reset (`RESET_GRACE_MS`). `SessionRuntime.resume` sagt dem Renderer wann
+und mit wem (`LimitBanner.vue` über der Eingabe, mit Countdown und „Nicht fortsetzen“); `atRest` behält es,
+jeder Prompt beendet es. Vor dem Weitermachen prüft `SessionService.limitState`, dass seit dem Limit nichts
+geschah. Sperren und wartende Chats stehen in `auto-switch.json` und überdauern einen Neustart; ein Chat,
+den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet erneut.
 
 ## Renderer
 

@@ -66,7 +66,7 @@ class FakeWindow {
 const meta = (id: string, title: string) => ({ id, title }) as SessionMeta
 const account = (id: string, patch: Partial<Account> = {}) =>
   ({ id, name: `Konto ${id}`, provider: 'claude', authState: 'ok', tokenExpiresAt: null, ...patch }) as Account
-const done = (busyMs: number, answer: string | null = 'Alles erledigt.'): Attention => ({ kind: 'done', provider: 'claude', busyMs, answer })
+const done = (busyMs: number, answer: string | null = 'Alles erledigt.'): Attention => ({ kind: 'done', provider: 'claude', accountId: 'a', busyMs, answer })
 
 describe('NotificationService', () => {
   let dir: string

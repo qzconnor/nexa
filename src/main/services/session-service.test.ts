@@ -247,6 +247,44 @@ describe('SessionService.send while the agent works', () => {
   })
 })
 
+describe('SessionService at a limit', () => {
+  it('says so until something happens, and keeps when it goes on until the next prompt', async () => {
+    let sink: RunSink | null = null
+    const run = { alive: true, send: async () => {}, stop: async () => {} } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], {
+      start: async (_options, s) => {
+        sink = s
+        return run
+      },
+    })
+    let runtime: SessionRuntime | null = null
+    const attentions: string[] = []
+    sessions.on('event', (event) => {
+      if (event.type === 'runtime') runtime = event.runtime
+    })
+    sessions.on('attention', (_id, attention) => attentions.push(`${attention.kind} ${'accountId' in attention ? attention.accountId : ''}`))
+    await sessions.send('chat', { text: 'erste' })
+    sink!.runtime({ status: 'running' })
+    expect(await sessions.limitState('chat')).toBeNull()
+
+    sink!.item({ kind: 'turn', id: 'turn1', ts: 2, provider: 'claude', status: 'error', error: 'Limit erreicht', limit: true })
+    sink!.runtime({ status: 'idle' })
+    expect(attentions).toEqual(['limit claude-a'])
+    expect(await sessions.limitState('chat')).toEqual({ provider: 'claude', accountId: 'claude-a' })
+
+    const resume = { at: 5, accountId: 'claude-b', byUser: true }
+    sessions.setResume('chat', resume)
+    expect(runtime!.resume).toEqual(resume)
+    // The CLI ends: the chat still goes on later.
+    sink!.exited()
+    expect(runtime!).toMatchObject({ status: 'idle', resume })
+
+    await sessions.send('chat', { text: 'weiter' })
+    expect(runtime!).not.toHaveProperty('resume')
+    expect(await sessions.limitState('chat')).toBeNull()
+  })
+})
+
 describe('SessionService titles', () => {
   /** A CLI whose title for the first prompt comes when the test says so. */
   async function titled(patch: Partial<SessionMeta> = { titleSource: 'auto', title: 'Neuer Chat' }) {

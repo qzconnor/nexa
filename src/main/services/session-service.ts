@@ -12,6 +12,7 @@ import {
   type InteractionResponse,
   type ProviderId,
   type SessionEvent,
+  type SessionResume,
   type SessionRuntime,
   type ToolItem,
   type UserItem,
@@ -111,6 +112,8 @@ export type Attention =
   | {
       kind: 'done'
       provider: ProviderId
+      /** The account the turn ran with. */
+      accountId: string
       /** How long the agent worked on the turn (ms). */
       busyMs: number
       /** What it said last in the turn, if anything. */
@@ -201,10 +204,13 @@ export class SessionService extends TypedEmitter<Events> {
     return { meta, items: null, loading: null, index: new Map(), runtime, run: null, runProvider: null, runAccount: null, generation: 0, starting: null, mcpToken: null }
   }
 
-  /** The runtime of a chat whose CLI is gone: at rest, with the context as last counted and where else it is open. */
+  /**
+   * The runtime of a chat whose CLI is gone: at rest, with the context as last counted, where else it
+   * is open and when it goes on after a limit.
+   */
   private atRest(s: SessionState, patch: Partial<SessionRuntime> = {}): SessionRuntime {
-    const { context, openElsewhere } = s.runtime
-    return { ...IDLE, ...(context ? { context } : {}), ...(openElsewhere ? { openElsewhere } : {}), ...patch }
+    const { context, openElsewhere, resume } = s.runtime
+    return { ...IDLE, ...(context ? { context } : {}), ...(openElsewhere ? { openElsewhere } : {}), ...(resume ? { resume } : {}), ...patch }
   }
 
   /** The folder a session's agent works in: its own folder in the project, else the project's. */
@@ -895,6 +901,11 @@ export class SessionService extends TypedEmitter<Events> {
     if (!text && !input.images?.length) return
 
     const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
+    // A prompt ends the wait for a limit's reset: the chat goes on now.
+    if (s.runtime.resume) {
+      const { resume: _ended, ...runtime } = s.runtime
+      this.setRuntime(s, runtime)
+    }
     // The commands the user ran with `!` since their last prompt go with this one, as in Claude Code's bash mode.
     const since = Math.max(meta.contextFrom ?? 0, s.items.findLastIndex((i) => i.kind === 'user') + 1)
     const shells = s.items.slice(since).filter((i): i is ToolItem => i.kind === 'tool' && !!i.byUser)
@@ -1109,7 +1120,7 @@ export class SessionService extends TypedEmitter<Events> {
             if (item.limit) this.emit('attention', meta.id, { kind: 'limit', provider, accountId, message: item.error ?? null })
             // Prompts wait: the CLI goes on with them right away, it isn't done.
             else if (!s.runtime.queued?.length) {
-              this.emit('attention', meta.id, { kind: 'done', provider, busyMs, answer: turnAnswer(s.items ?? []), ...(item.error ? { error: item.error } : {}) })
+              this.emit('attention', meta.id, { kind: 'done', provider, accountId, busyMs, answer: turnAnswer(s.items ?? []), ...(item.error ? { error: item.error } : {}) })
             }
           }
           const link = meta.cli[provider]
@@ -1496,6 +1507,35 @@ export class SessionService extends TypedEmitter<Events> {
     }
     if (moved) this.saveSoon()
     return moved
+  }
+
+  /**
+   * The CLI and account of a chat that stopped at its account's limit, while nothing happened since:
+   * no prompt after the turn, no other CLI chosen, no run at work. Null otherwise.
+   */
+  async limitState(id: string): Promise<{ provider: ProviderId; accountId: string } | null> {
+    const s = await this.loaded(id)
+    const status = s.runtime.status
+    if (status === 'running' || status === 'waiting' || status === 'starting' || s.starting) return null
+    const last = s.items.findLast((i) => i.kind === 'user' || i.kind === 'turn')
+    if (last?.kind !== 'turn' || !last.limit || last.provider !== s.meta.provider) return null
+    return { provider: last.provider, accountId: this.accountFor(s.meta, last.provider) }
+  }
+
+  /** Shows when a chat at its limit goes on by itself (main/services/auto-switch.ts); null: it doesn't. */
+  setResume(id: string, resume: SessionResume | null): void {
+    const s = this.sessions.get(id)
+    if (!s) return
+    const { resume: before, ...runtime } = s.runtime
+    if (JSON.stringify(before ?? null) === JSON.stringify(resume)) return
+    this.setRuntime(s, resume ? { ...runtime, resume } : runtime)
+  }
+
+  /** A note in the chat from Nexa itself, e.g. why it couldn't go on after a limit. */
+  notice(id: string, text: string, detail?: string, level: 'info' | 'warning' = 'info'): void {
+    const s = this.sessions.get(id)
+    if (!s?.items) return
+    this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider: s.meta.provider, level, text, ...(detail ? { detail } : {}) })
   }
 
   async stop(id: string): Promise<void> {

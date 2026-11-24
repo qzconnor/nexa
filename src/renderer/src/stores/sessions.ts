@@ -123,6 +123,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     return chats.get(id)?.loaded ? window.api.sessions.sync(id) : 0
   }
 
+  /** „Am Reset fortsetzen“ for a chat at its limit, or not (any more): it goes on by itself then. */
+  async function resumeAtReset(id: string, on: boolean): Promise<void> {
+    await window.api.sessions.resumeAtReset(id, on)
+  }
+
   function close(): void {
     activeId.value = null
   }
@@ -226,6 +231,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     load,
     open,
     sync,
+    resumeAtReset,
     close,
     create,
     fork,

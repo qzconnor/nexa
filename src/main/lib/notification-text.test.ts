@@ -11,18 +11,18 @@ const input = (request: InteractionRequest) => ({ kind: 'input' as const, provid
 
 describe('attentionText', () => {
   it('tells a finished turn with the beginning of the answer', () => {
-    const done = { kind: 'done' as const, provider: 'claude' as const, busyMs: 60_000, answer: '## Fertig\n\nDie **Tests** laufen:\n```sh\nnpm test\n```' }
+    const done = { kind: 'done' as const, provider: 'claude' as const, accountId: 'a', busyMs: 60_000, answer: '## Fertig\n\nDie **Tests** laufen:\n```sh\nnpm test\n```' }
     expect(attentionText(done, 'Claude', true)).toEqual({ title: 'Claude ist fertig', detail: 'Fertig Die Tests laufen:' })
     expect(attentionText(done, 'Claude', false)).toEqual({ title: 'Claude ist fertig', detail: null })
   })
 
   it('tells a failed turn with its error', () => {
-    const failed = { kind: 'done' as const, provider: 'codex' as const, busyMs: 1, answer: null, error: 'Netzwerk weg' }
+    const failed = { kind: 'done' as const, provider: 'codex' as const, accountId: 'a', busyMs: 1, answer: null, error: 'Netzwerk weg' }
     expect(attentionText(failed, 'Codex', true)).toEqual({ title: 'Codex ist auf einen Fehler gestoßen', detail: 'Netzwerk weg' })
   })
 
   it('cuts long answers', () => {
-    const done = { kind: 'done' as const, provider: 'claude' as const, busyMs: 1, answer: 'x'.repeat(500) }
+    const done = { kind: 'done' as const, provider: 'claude' as const, accountId: 'a', busyMs: 1, answer: 'x'.repeat(500) }
     expect(attentionText(done, 'Claude', true).detail).toHaveLength(180)
   })
 
