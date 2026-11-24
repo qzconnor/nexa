@@ -127,7 +127,8 @@ async function pickFolder(): Promise<void> {
   if (created) ui.homeProjectId = created.id
 }
 
-async function start(input: { text: string; images: string[] }): Promise<void> {
+/** A new chat in the picked project (the folder asked for first when there is none), then `first` in it. */
+async function start(first: (id: string) => Promise<unknown>, failed: string): Promise<void> {
   let target = project.value
   if (!target) {
     await pickFolder()
@@ -151,11 +152,15 @@ async function start(input: { text: string; images: string[] }): Promise<void> {
     )
     if (!meta) return
     ui.view = 'chat'
-    await attempt(() => sessions.send(meta.id, input), 'Senden fehlgeschlagen')
+    await attempt(() => first(meta.id), failed)
   } finally {
     starting.value = false
   }
 }
+
+const send = (input: { text: string; images: string[] }) => start((id) => sessions.send(id, input), 'Senden fehlgeschlagen')
+// A command first (`!`): the chat begins with it, the first prompt then hands it to the CLI.
+const runShell = (command: string) => start((id) => window.api.sessions.runShell(id, command), 'Befehl ließ sich nicht ausführen')
 </script>
 
 <template>
@@ -187,7 +192,8 @@ async function start(input: { text: string; images: string[] }): Promise<void> {
           @update:ultracode="ultracode = $event"
           :disabled="!anyReady || starting"
           autofocus
-          @send="start"
+          @send="send"
+          @shell="runShell"
         />
         <p v-if="!project && anyReady" class="text-xs text-muted-foreground">Mit dem ersten Prompt fragt Nexa nach dem Ordner, in dem gearbeitet wird.</p>
         <!-- What the CLIs lack is in the settings; here only that something does. -->

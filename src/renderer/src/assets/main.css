@@ -693,7 +693,12 @@
   --tool-run: oklch(0.56 0.15 150);
   /* The user's own commands (`!` in the composer): pink, as Claude Code's bash mode. */
   --tool-shell: oklch(0.6 0.2 355);
-  --chat-width: 48rem;
+  /*
+   * How wide messages and the composer get at most. As on a 1080p screen (about 40 % and 54 % of the
+   * chat's column) on 4K and ultrawide ones too, where a fixed width would leave a narrow strip; never
+   * narrower than before. cqw: the chat's column (a container in ChatView), resolved where it is used.
+   */
+  --chat-width: max(48rem, 40cqw);
 }
 .dark {
   --tool-read: oklch(0.74 0.15 300);
@@ -703,7 +708,7 @@
   --tool-shell: oklch(0.74 0.16 355);
 }
 :root[data-chat-width='wide'] {
-  --chat-width: 64rem;
+  --chat-width: max(64rem, 54cqw);
 }
 :root[data-chat-width='full'] {
   --chat-width: 100%;
