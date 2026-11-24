@@ -48,7 +48,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/session-service.ts` | Sessions: Metadaten, Items, Runs starten/stoppen, Wechsel der CLI, Statistik |
 | `services/session-search.ts` | Suche in den Prompts und Antworten der Chats (für die Schnellsuche), Ausschnitt um den Treffer |
 | `services/transcript-store.ts` | Verlauf je Session als JSONL |
-| `services/instructions.ts` | Systemprompt-Zusatz und Übergabe-Kontext beim CLI-Wechsel |
+| `services/instructions.ts` | Systemprompt-Zusatz, Übergabe-Kontext beim CLI-Wechsel, `<nexa-shell>` mit den `!`-Befehlen des Nutzers |
+| `services/user-shells.ts` | Befehle aus dem Shell-Modus (`!`): welche Shell (`shellLaunch`: PowerShell 7/5.1 mit dem Befehl über stdin, weil `-EncodedCommand` Fehler als CLIXML schreibt; Git Bash, cmd; sonst `$SHELL`), Prozess je Befehl im Ordner des Chats, Ausgabe, Beenden samt Kindprozessen; Zeilen, die nicht UTF-8 sind (Windows-Konsolenprogramme ohne Konsole), liest es in der OEM-Codepage des Systems (`codePageDecoder` in `lib/text-encoding.ts`) |
 | `providers/provider.ts` | Schnittstellen `AgentProvider`, `AgentRun`, `RunSink` |
 | `providers/claude/*` | Claude Code: Prozess je Session, Stream-JSON, Werkzeug-Abbildung |
 | `providers/codex/*` | Codex: ein App-Server je Account für alle seine Sessions, JSON-RPC, Item-Abbildung |
@@ -226,6 +227,20 @@ gespeichert und durchsuchbar, geht aber auch beim Wechsel der CLI nicht mehr als
 öffnet es mit „Alle laden“). Hat der Chat einen Titel vom Modell (`titleSource: 'auto'`), benennt ihn
 der erste Prompt nach `contextFrom` neu; einen eigenen Namen (`'user'`) lässt das stehen. `/new` legt
 stattdessen einen neuen Chat mit denselben Einstellungen an.
+
+### Shell-Modus (`!`)
+
+`!` am Anfang des Eingabefelds schaltet in den Shell-Modus wie in Claude Code (pinker Rahmen,
+`--tool-shell`; Esc oder Rücktaste am Anfang schaltet zurück). Die Zeile führt nicht die CLI aus,
+sondern Nexa (`SessionService.runShell` → `UserShells`), im Ordner des Chats und in der Shell aus
+`settings.chat.shell`. Daraus wird ein `ToolItem` mit `byUser`, das `UserShellBlock` zeigt (Befehl nach
+einem pinken `!`, Ausgabe darunter, Beenden über `sessions.stopShell`). Befehl und Ausgabe laufen durch
+`redactSecrets` (`shared/redact.ts`: Token-Formate, `password=…`, `--token …`, Zugangsdaten in URLs,
+`Authorization`-Header, private Schlüssel, lange zufällige Zeichenfolgen) und stehen nur so im Chat und
+auf der Platte (die Agents können Nexas Dateien lesen); die Oberfläche sagt dazu nichts. Während der Befehl
+läuft, geht die Ausgabe nur an das Fenster; gespeichert wird sie (ihr Ende, 100 000 Zeichen), wenn er
+endet. Der nächste Prompt bekommt alle `!`-Befehle seit dem letzten Prompt als `<nexa-shell>`
+(`userShellContext`) vorangestellt; beim Wechsel der CLI stehen ältere als eine Zeile im `<nexa-context>`.
 
 ## Accounts
 

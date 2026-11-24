@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeText, decodeUtf16, isUtf16 } from './text-encoding'
+import { codePageDecoder, decodeText, decodeUtf16, isUtf16 } from './text-encoding'
 
 const latin1 = (text: string) => Buffer.from(text, 'latin1')
 
@@ -17,6 +17,24 @@ describe('decodeText', () => {
   it('reads each line by itself: a diff of a Latin-1 file has UTF-8 around it', () => {
     const patch = Buffer.concat([Buffer.from('@@ -1 +1 @@ Überschrift\n'), latin1('-Gr\xfc\xdfe\n'), Buffer.from('+Grüße\n')])
     expect(decodeText(patch)).toBe('@@ -1 +1 @@ Überschrift\n-Grüße\n+Grüße\n')
+  })
+
+  it("reads a console program's lines in the DOS code page it is given, UTF-8 ones as they are", () => {
+    // ping on a German Windows without a console: „ausgeführt“ with ü as 0x81 (code page 850).
+    const output = Buffer.concat([latin1('Ping wird ausgef\x81hrt f\x81r 127.0.0.1\r\n'), Buffer.from('Grüße von git\n')])
+    expect(decodeText(output, codePageDecoder(850))).toBe('Ping wird ausgeführt für 127.0.0.1\r\nGrüße von git\n')
+  })
+})
+
+describe('codePageDecoder', () => {
+  it('knows the DOS code pages of the console and the others of Windows', () => {
+    expect(codePageDecoder(437).decode(latin1('\x9a\xe1 \xc9\xcd\xbb'))).toBe('Üß ╔═╗')
+    expect(codePageDecoder(850).decode(latin1('\x8e\x99\x9a \xd5'))).toBe('ÄÖÜ ı')
+    expect(codePageDecoder(858).decode(latin1('\xd5'))).toBe('€')
+    expect(codePageDecoder(852).decode(latin1('\x88\xa5'))).toBe('łą')
+    expect(codePageDecoder(866).decode(latin1('\x8f\xe0\xa8\xa2\xa5\xe2'))).toBe('Привет')
+    expect(codePageDecoder(1250).decode(latin1('\x9a'))).toBe('š')
+    expect(codePageDecoder(99999).decode(latin1('\x80'))).toBe('€')
   })
 })
 

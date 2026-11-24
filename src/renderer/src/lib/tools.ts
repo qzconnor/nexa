@@ -180,7 +180,8 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
         continue
       }
       browser = null
-      if (item.render) {
+      // The user's own commands (`!`) aren't the agent's work: each stands alone, with its output.
+      if (item.render || item.byUser) {
         group = null
         blocks.push({ type: 'item', item })
         continue

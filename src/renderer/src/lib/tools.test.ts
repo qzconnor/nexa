@@ -60,4 +60,9 @@ describe('chatBlocks', () => {
     expect(shape([thought('t1', ' '), thought('t2')])).toEqual([['t2']])
     expect(chatBlocks([thought('t1')], null, false)).toEqual([])
   })
+
+  it('lets the user’s own commands stand alone, between the agent’s calls', () => {
+    const items = [tool({ id: 'a' }), tool({ id: 'mine', byUser: true }), tool({ id: 'b' })]
+    expect(shape(items)).toEqual([['a'], 'mine', ['b']])
+  })
 })

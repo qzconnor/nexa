@@ -16,6 +16,7 @@ import ToolGroup from './ToolGroup.vue'
 import ToolRow from './ToolRow.vue'
 import TurnFooter from './TurnFooter.vue'
 import UserMessage from './UserMessage.vue'
+import UserShellBlock from './UserShellBlock.vue'
 
 /** The timeline of one thread: the main chat, or (with `parentId`) a subagent's work. */
 const props = defineProps<{ items: ChatItem[]; sessionId: string; parentId?: string | null }>()
@@ -216,6 +217,7 @@ const providerChanges = computed(() => {
         </div>
         <template v-else-if="block.item.kind === 'tool'">
           <RenderBlock v-if="block.item.render" :spec="block.item.render" />
+          <UserShellBlock v-else-if="block.item.byUser" :tool="block.item" :session-id="sessionId" />
           <ToolRow v-else :tool="block.item" />
         </template>
         <AgentCard v-else-if="block.item.kind === 'agent'" :item="block.item" />

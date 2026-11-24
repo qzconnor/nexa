@@ -181,7 +181,10 @@ const TREE = [
         id: 'chat.input',
         title: 'Eingabe',
         keywords: 'Composer Nachricht schreiben',
-        fields: [{ id: 'chat.enterSends', label: 'Enter sendet', keywords: 'Strg+Enter Zeilenumbruch Tastatur senden Shortcut' }],
+        fields: [
+          { id: 'chat.enterSends', label: 'Enter sendet', keywords: 'Strg+Enter Zeilenumbruch Tastatur senden Shortcut' },
+          { id: 'chat.shell', label: 'Shell für „!“', keywords: 'Ausrufezeichen Befehl Terminal Konsole PowerShell pwsh Git Bash cmd Kommandozeile Shell-Modus', windowsOnly: true },
+        ],
       },
       {
         id: 'chat.removal',

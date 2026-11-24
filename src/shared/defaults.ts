@@ -34,6 +34,7 @@ export function defaultSettings(): AppSettings {
       enterSends: true,
       autoTitles: true,
       deleteCliConversations: true,
+      shell: 'powershell',
     },
     tools: {
       renderTools: true,

@@ -18,6 +18,8 @@ import {
 } from '@shared/chat'
 import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
+import { redactSecrets } from '@shared/redact'
+import { plainOutput } from '@shared/terminal'
 import type {
   AppSettings,
   CliLink,
@@ -56,11 +58,12 @@ import { claudeOpenElsewhere } from '../providers/claude/claude-presence'
 import { forkPoint } from '../providers/claude/claude-transcript'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { folderPromptText } from './folder-prompts'
-import { handoffContext, sessionInstructions } from './instructions'
+import { handoffContext, sessionInstructions, userShellContext } from './instructions'
 import type { ProjectService } from './project-service'
 import type { ProviderService } from './provider-service'
 import { chatTexts, findInChat, type ChatText } from './session-search'
 import { TranscriptStore } from './transcript-store'
+import { shellLaunch, UserShells, type ShellLaunch } from './user-shells'
 
 interface SessionState {
   meta: SessionMeta
@@ -136,6 +139,11 @@ function conversationLookup(search: boolean): ConversationLookup {
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
 /** Chats a search returns at most; with more, another word narrows it down better than scrolling. */
 const MAX_SEARCH_HITS = 200
+/** The tool name of the commands the user runs with `!`: Nexa's, no CLI's. */
+const USER_SHELL_TOOL = 'NexaShell'
+/** Output of a `!` command the chat keeps: its end (a server logging for hours would fill the transcript). */
+const MAX_USER_SHELL_OUTPUT = 100_000
+
 
 /**
  * The sessions of all projects: their chat (kept by TranscriptStore), the run of the CLI that
@@ -147,6 +155,8 @@ export class SessionService extends TypedEmitter<Events> {
   private readonly file: string
   private readonly store: TranscriptStore
   private readonly sessions = new Map<string, SessionState>()
+  /** The commands the user runs with `!` in the composer. */
+  private readonly userShells = new UserShells()
   /** The prompts and answers of every chat for the search, by session, while `stamp` says the chat is unchanged. */
   private readonly searchCache = new Map<string, { stamp: string; texts: Promise<ChatText[]> }>()
   /** The artifacts each saved chat names, by session, while `stamp` says it is unchanged. */
@@ -738,9 +748,15 @@ export class SessionService extends TypedEmitter<Events> {
     if (!text && !input.images?.length) return
 
     const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
+    // The commands the user ran with `!` since their last prompt go with this one, as in Claude Code's bash mode.
+    const since = Math.max(meta.contextFrom ?? 0, s.items.findLastIndex((i) => i.kind === 'user') + 1)
+    const shells = s.items.slice(since).filter((i): i is ToolItem => i.kind === 'tool' && !!i.byUser)
+    const shellContext = userShellContext(shells)
     // What this CLI hasn't seen of the chat yet (another CLI answered meanwhile); nothing from before a `/clear`.
     const link = meta.cli[provider]
-    const unseen = s.items.slice(Math.max(link?.seenItems ?? 0, meta.contextFrom ?? 0)).filter((i) => i.provider !== provider || !link)
+    const unseen = s.items
+      .slice(Math.max(link?.seenItems ?? 0, meta.contextFrom ?? 0))
+      .filter((i) => (i.provider !== provider || !link) && !shells.includes(i as ToolItem))
     const context = unseen.length && s.items.length ? handoffContext(unseen, provider) : null
 
     // Into a turn of the same CLI that still runs: it doesn't wait for the answer to end.
@@ -772,7 +788,7 @@ export class SessionService extends TypedEmitter<Events> {
       this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `${PROVIDERS[provider].name} übernimmt die Session`, detail: 'Mit dem bisherigen Verlauf als Kontext' })
     }
     try {
-      await run.send({ id: user.id, text: context ? `${context}\n\n${text}` : text, images: input.images })
+      await run.send({ id: user.id, text: [context, shellContext, text].filter(Boolean).join('\n\n'), images: input.images })
     } catch (error) {
       // It never reached the CLI: it stays in the chat as written, as any prompt that failed.
       this.takeQueued(s, user.id)
@@ -1053,9 +1069,81 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   async stopShell(id: string, itemId: string): Promise<void> {
+    if (this.userShells.has(itemId)) return this.userShells.stop(itemId)
     const { run, taskId } = this.shellOf(id, itemId)
     if (!run?.stopShell) throw new Error('Die Shell lässt sich nicht beenden: Die CLI dieses Chats läuft nicht mehr.')
     await run.stopShell(taskId)
+  }
+
+  /**
+   * Runs a command the user typed after `!`, in the chat's folder with the shell of the settings. Nexa
+   * runs it, not the CLI: the chat keeps it with its secrets masked, and the next prompt hands it on.
+   */
+  async runShell(id: string, command: string): Promise<void> {
+    const s = await this.loaded(id)
+    const meta = s.meta
+    const project = this.projects.get(meta.projectId)
+    if (!project) throw new Error('Das Projekt der Session gibt es nicht mehr.')
+    const typed = command.trim()
+    if (!typed) return
+    const shown = redactSecrets(typed)
+    const item: ToolItem = {
+      kind: 'tool',
+      id: randomUUID(),
+      ts: Date.now(),
+      provider: meta.provider,
+      parentId: null,
+      tool: 'bash',
+      name: USER_SHELL_TOOL,
+      title: 'Shell',
+      detail: shown.text,
+      input: { command: shown.text },
+      status: 'running',
+      byUser: true,
+      startedAt: Date.now(),
+    }
+    meta.updatedAt = Date.now()
+    this.saveSoon()
+    let launch: ShellLaunch
+    try {
+      launch = shellLaunch(this.settings().chat.shell, typed)
+    } catch (error) {
+      this.put(s, { ...item, status: 'error', output: error instanceof Error ? error.message : String(error), endedAt: Date.now() })
+      return
+    }
+    item.title = launch.name
+    this.put(s, item)
+
+    // What the chat shows of the output: its end, secrets masked. Live only on screen; on disk once it ended.
+    const view = (raw: string) => {
+      const text = plainOutput(raw)
+      if (text.length <= MAX_USER_SHELL_OUTPUT) return redactSecrets(text).text
+      // Cut at a line's start: half a key at the cut wouldn't look like one any more.
+      const from = text.length - MAX_USER_SHELL_OUTPUT
+      return redactSecrets(`…\n${text.slice(text.indexOf('\n', from) + 1 || from)}`).text
+    }
+    let last = ''
+    this.userShells.run(id, item.id, launch, this.cwdOf(meta, project), {
+      output: (raw) => {
+        last = raw
+        const at = s.index.get(item.id)
+        const current = at === undefined ? undefined : s.items?.[at]
+        if (current?.kind !== 'tool' || current.status !== 'running' || this.sessions.get(id) !== s) return
+        const live: ToolItem = { ...current, output: view(raw) }
+        s.items![at!] = live
+        this.emit('event', { type: 'item', sessionId: id, item: live })
+      },
+      exit: ({ code, stopped, error }) => {
+        if (this.sessions.get(id) !== s) return
+        this.put(s, {
+          ...item,
+          status: stopped ? 'denied' : code === 0 && !error ? 'done' : 'error',
+          output: view(error ? [last.trimEnd(), error].filter(Boolean).join('\n') : last),
+          exitCode: stopped ? undefined : code,
+          endedAt: Date.now(),
+        })
+      },
+    })
   }
 
   /**
@@ -1299,6 +1387,7 @@ export class SessionService extends TypedEmitter<Events> {
       const id = s.meta.id
       // The CLI ends first (stop waits for its process): it would write its conversation again.
       await this.stop(id).catch(() => undefined)
+      this.userShells.stopAll(id)
       let files: string[] = []
       if (withCli) {
         const found = await this.conversationFiles(s.meta, lookup, shared)
@@ -1434,6 +1523,7 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   async dispose(): Promise<void> {
+    this.userShells.stopAll()
     await Promise.all([...this.sessions.values()].map((s) => s.run?.stop().catch(() => undefined)))
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
