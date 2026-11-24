@@ -10,10 +10,15 @@ import type { AccountService } from '../accounts/account-service'
 import type { ProviderService } from '../services/provider-service'
 import type { SessionService } from '../services/session-service'
 import type { SettingsService } from '../services/settings-service'
+import { renderDocsPage } from './docs-page'
+import { buildOpenApi } from './openapi'
+import { matchRoute, type ApiRouteKey } from './routes'
 
 const HOST = '127.0.0.1'
 const MAX_BODY = 1024 * 1024
 const HEARTBEAT_MS = 25_000
+/** The docs page runs nothing and loads nothing from elsewhere. */
+const DOCS_CSP = "default-src 'none'; style-src 'unsafe-inline'"
 
 class HttpError extends Error {
   constructor(
@@ -27,30 +32,29 @@ class HttpError extends Error {
 export interface ApiDeps {
   userDataDir: string
   version: string
-  settings: SettingsService
-  accounts: AccountService
-  providers: ProviderService
-  projects: ProjectService
-  sessions: SessionService
+  settings: Pick<SettingsService, 'get' | 'on'>
+  accounts: Pick<AccountService, 'list'>
+  providers: Pick<ProviderService, 'list' | 'usage' | 'on'>
+  projects: Pick<ProjectService, 'list' | 'get' | 'create'>
+  sessions: Pick<SessionService, 'list' | 'create' | 'send' | 'interrupt' | 'on'>
   /** Brings the window to the front, with the session if one is given. */
   show(sessionId?: string): void
 }
 
+/** What a route's handler gets of the request. */
+interface RouteContext {
+  params: Record<string, string>
+  req: IncomingMessage
+  res: ServerResponse
+}
+
+/** Answers a route: a value as JSON (200), undefined as 204, `HANDLED` when it wrote the response itself. */
+type Handler = (ctx: RouteContext) => unknown
+
 /**
  * Local HTTP API on 127.0.0.1 with a bearer token, for Stream Deck buttons, scripts and the like.
- * Off until switched on in the settings. Routes:
- *
- *   GET  /api/status                       app, CLIs, usage, sessions that run or wait
- *   GET  /api/usage                        usage of every account's plan
- *   GET  /api/accounts                     accounts of every CLI with their login
- *   GET  /api/projects                     projects
- *   GET  /api/sessions                     sessions with their state
- *   POST /api/sessions                     { path | projectId, provider?, account?, prompt?, show? } new chat
- *   POST /api/sessions/:id/send            { text }
- *   POST /api/sessions/:id/interrupt
- *   POST /api/sessions/:id/show
- *   POST /api/window/show
- *   GET  /api/events                       Server-Sent Events: sessions, runtime, usage
+ * Off until switched on in the settings. Its routes and what they take and give are in `routes.ts`;
+ * `/openapi.json` and the page `/docs` describe them, without the token.
  */
 export class ApiServer {
   private server: Server | null = null
@@ -163,77 +167,105 @@ export class ApiServer {
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
-      // Pages in a browser must not reach the API (DNS rebinding, CSRF).
+      // Pages in a browser must not reach the API (DNS rebinding, CSRF), its description included.
       const host = (req.headers.host ?? '').replace(/:\d+$/, '')
       if (req.headers.origin || (host !== HOST && host !== 'localhost')) throw new HttpError(403, 'Nicht erlaubt.')
-      if (!this.authorized(req)) throw new HttpError(401, 'Token fehlt oder ist falsch.')
       const url = new URL(req.url ?? '/', `http://${HOST}`)
-      const parts = url.pathname.split('/').filter(Boolean)
-      if (parts[0] !== 'api') throw new HttpError(404, 'Gibt es nicht.')
-      const result = await this.route(req.method ?? 'GET', parts.slice(1), req, res)
-      if (result === STREAM) return
+      const found = matchRoute(req.method ?? 'GET', url.pathname)
+      if (!('route' in found)) {
+        if (!found.allowed.length) throw new HttpError(404, 'Gibt es nicht.')
+        res.setHeader('Allow', found.allowed.join(', '))
+        throw new HttpError(405, 'Diese Methode gibt es hier nicht.')
+      }
+      if (!found.route.public && !this.authorized(req)) {
+        res.setHeader('WWW-Authenticate', 'Bearer')
+        throw new HttpError(401, 'Token fehlt oder ist falsch.')
+      }
+      const result = await this.handlers[found.key]({ params: found.params, req, res })
+      if (result === HANDLED) return
       send(res, result === undefined ? 204 : 200, result)
     } catch (error) {
+      // A stream that broke off has its head sent already.
+      if (res.headersSent) return void res.end()
       const status = error instanceof HttpError ? error.status : 500
       send(res, status, { error: error instanceof Error ? error.message : String(error) })
     }
   }
 
-  private async route(method: string, parts: string[], req: IncomingMessage, res: ServerResponse): Promise<unknown> {
-    const { providers, projects, sessions } = this.deps
-    const [first, id, action] = parts
-    const key = `${method} ${first ?? ''}${id ? (action ? '/:id/' + action : '/:id') : ''}`
-    switch (key) {
-      case 'GET status':
-        return {
-          app: { name: 'Nexa', version: this.deps.version },
-          providers: providers.list(),
-          usage: providers.usage(),
-          sessions: this.sessionList().filter((s) => s.status !== 'idle'),
-        }
-      case 'GET usage':
-        return providers.usage()
-      case 'GET accounts':
-        return this.deps.accounts.list()
-      case 'GET projects':
-        return projects.list()
-      case 'GET sessions':
-        return this.sessionList()
-      case 'POST sessions': {
-        const body = await readBody(req)
-        let projectId = typeof body.projectId === 'string' ? body.projectId : null
-        if (!projectId) {
-          if (typeof body.path !== 'string') throw new HttpError(400, '„path“ oder „projectId“ fehlt.')
-          projectId = (await projects.create({ path: body.path })).id
-        }
-        const provider = PROVIDER_IDS.includes(body.provider as ProviderId) ? (body.provider as ProviderId) : undefined
-        const account = typeof body.account === 'string' ? body.account : undefined
-        const meta = await sessions.create({ projectId, provider, account })
-        if (typeof body.prompt === 'string' && body.prompt.trim()) await sessions.send(meta.id, { text: body.prompt })
-        if (body.show !== false) this.deps.show(meta.id)
-        return meta
+  /** The routes the server answers, as `GET /api/status` (for the test that the description names each). */
+  routes(): ApiRouteKey[] {
+    return Object.keys(this.handlers) as ApiRouteKey[]
+  }
+
+  /** What the server does for each route; keyed by `API_ROUTES`, so none goes without its description. */
+  private readonly handlers: Record<ApiRouteKey, Handler> = {
+    'GET /api/status': () => ({
+      app: { name: 'Nexa', version: this.deps.version },
+      providers: this.deps.providers.list(),
+      usage: this.deps.providers.usage(),
+      sessions: this.sessionList().filter((s) => s.status !== 'idle'),
+    }),
+    'GET /api/usage': () => this.deps.providers.usage(),
+    'GET /api/accounts': () => this.deps.accounts.list(),
+    'GET /api/projects': () => this.deps.projects.list(),
+    'GET /api/sessions': () => this.sessionList(),
+    'POST /api/sessions': ({ req }) => this.createSession(req),
+    'POST /api/sessions/{id}/send': async ({ req, params }) => {
+      const id = this.chatId(params.id)
+      const body = await readBody(req)
+      if (typeof body.text !== 'string' || !body.text.trim()) throw new HttpError(400, '„text“ fehlt.')
+      await this.deps.sessions.send(id, { text: body.text })
+    },
+    'POST /api/sessions/{id}/interrupt': async ({ params }) => {
+      await this.deps.sessions.interrupt(this.chatId(params.id))
+    },
+    'POST /api/sessions/{id}/show': ({ params }) => {
+      this.deps.show(this.chatId(params.id))
+    },
+    'POST /api/window/show': () => {
+      this.deps.show()
+    },
+    'GET /api/events': ({ res }) => {
+      this.openStream(res)
+      return HANDLED
+    },
+    'GET /openapi.json': () => buildOpenApi(this.baseUrl(), this.deps.version),
+    'GET /docs': ({ res }) => {
+      sendHtml(res, renderDocsPage(this.baseUrl(), this.deps.version))
+      return HANDLED
+    },
+  }
+
+  private baseUrl(): string {
+    return `http://${HOST}:${this.port}`
+  }
+
+  /** The id of a chat that exists, else 404 (instead of the session service's 500). */
+  private chatId(id: string | undefined): string {
+    if (!id || !this.deps.sessions.list().some((s) => s.id === id)) throw new HttpError(404, 'Den Chat gibt es nicht.')
+    return id
+  }
+
+  private async createSession(req: IncomingMessage): Promise<unknown> {
+    const { projects, sessions } = this.deps
+    const body = await readBody(req)
+    let projectId = typeof body.projectId === 'string' ? body.projectId : null
+    if (projectId && !projects.get(projectId)) throw new HttpError(404, 'Das Projekt gibt es nicht.')
+    if (!projectId) {
+      if (typeof body.path !== 'string') throw new HttpError(400, '„path“ oder „projectId“ fehlt.')
+      try {
+        projectId = (await projects.create({ path: body.path })).id
+      } catch (error) {
+        // A folder that isn't there (or no folder) is the caller's mistake.
+        throw new HttpError(400, error instanceof Error ? error.message : String(error))
       }
-      case 'POST sessions/:id/send': {
-        const body = await readBody(req)
-        if (typeof body.text !== 'string' || !body.text.trim()) throw new HttpError(400, '„text“ fehlt.')
-        await sessions.send(id, { text: body.text })
-        return undefined
-      }
-      case 'POST sessions/:id/interrupt':
-        await sessions.interrupt(id)
-        return undefined
-      case 'POST sessions/:id/show':
-        this.deps.show(id)
-        return undefined
-      case 'POST window/show':
-        this.deps.show()
-        return undefined
-      case 'GET events':
-        this.openStream(res)
-        return STREAM
-      default:
-        throw new HttpError(404, 'Gibt es nicht.')
     }
+    const provider = PROVIDER_IDS.includes(body.provider as ProviderId) ? (body.provider as ProviderId) : undefined
+    const account = typeof body.account === 'string' ? body.account : undefined
+    const meta = await sessions.create({ projectId, provider, account })
+    if (typeof body.prompt === 'string' && body.prompt.trim()) await sessions.send(meta.id, { text: body.prompt })
+    if (body.show !== false) this.deps.show(meta.id)
+    return meta
   }
 
   private sessionList() {
@@ -269,7 +301,18 @@ export class ApiServer {
   }
 }
 
-const STREAM = Symbol('stream')
+const HANDLED = Symbol('handled')
+
+function sendHtml(res: ServerResponse, html: string): void {
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': Buffer.byteLength(html),
+    'Content-Security-Policy': DOCS_CSP,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  res.end(html)
+}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   if (status === 204) {

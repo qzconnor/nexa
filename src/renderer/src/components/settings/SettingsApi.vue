@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, CopyIcon } from '@lucide/vue'
+import { BookOpenIcon, CheckIcon, CopyIcon, FileJsonIcon } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import type { ApiStatus, AppSettings, DeepPartial } from '@shared/types'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,13 @@ async function setApi(patch: DeepPartial<AppSettings['api']>): Promise<void> {
   await attempt(() => store.update({ api: patch }), 'Speichern fehlgeschlagen')
   // The server restarts with the new settings; its status follows shortly after.
   setTimeout(async () => (api.value = await window.api.api.status()), 300)
+}
+
+/** Where the running server answers; its pages need no token, so the browser can show them. */
+const base = computed(() => (api.value?.running ? `http://127.0.0.1:${api.value.port}` : null))
+
+function openPage(path: string): void {
+  if (base.value) void attempt(() => window.api.app.openExternal(base.value + path), 'Seite konnte nicht geöffnet werden')
 }
 
 function copyToken(): void {
@@ -62,17 +69,16 @@ function copyToken(): void {
       </div>
     </SettingsSection>
 
-    <SettingsSection anchor="api.endpoints" title="Endpunkte">
-      <pre class="selectable overflow-x-auto font-mono text-[0.75rem] text-muted-foreground">GET  /api/status                CLIs, Usage, laufende Chats
-GET  /api/usage                 Usage der CLIs
-GET  /api/projects              Projekte
-GET  /api/sessions              alle Chats mit Status
-POST /api/sessions              { path | projectId, provider?, prompt?, show? }
-POST /api/sessions/:id/send     { text }
-POST /api/sessions/:id/interrupt
-POST /api/sessions/:id/show
-POST /api/window/show
-GET  /api/events                Server-Sent Events</pre>
+    <SettingsSection
+      anchor="api.endpoints"
+      title="Endpunkte"
+      description="Die API beschreibt sich selbst: alle Routen mit Parametern, Antworten und Beispielen, dazu ein OpenAPI-Dokument für Postman, Insomnia oder Codegeneratoren."
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" :disabled="!base" @click="openPage('/docs')"><BookOpenIcon /> Dokumentation öffnen</Button>
+        <Button variant="outline" size="sm" :disabled="!base" @click="openPage('/openapi.json')"><FileJsonIcon /> openapi.json</Button>
+        <span v-if="!base" class="text-xs text-muted-foreground">Erreichbar, sobald die API läuft.</span>
+      </div>
     </SettingsSection>
   </div>
 </template>

@@ -61,6 +61,15 @@ App-Server für alle Chats eines Accounts und nimmt deshalb nur seine Konfigurat
 Benutzer-PATH. Die Deinstallation entfernt ihn wieder; unter *Einstellungen › Allgemein › Befehl „nx“* lässt
 er sich auch von Hand ab- und wieder anmelden. Einen `nx` eines anderen Programms übernimmt Nexa nicht.
 
+## Lokale API
+
+Für Stream Deck, Skripte und Automationen gibt es eine HTTP-API, nur auf `127.0.0.1` und mit Token
+(*Einstellungen › Lokale API*, Port 47615). Sie liest Status, Usage, Accounts, Projekte und Chats, legt
+Chats an, sendet Prompts, unterbricht und meldet Änderungen an Chats und Limits als Server-Sent Events. Was es gibt, beschreibt
+sie selbst: `http://127.0.0.1:47615/docs` zeigt alle Routen mit Parametern, Antworten und Beispielen,
+`/openapi.json` dasselbe als OpenAPI 3.1 für Postman, Insomnia oder Codegeneratoren. Beide brauchen kein
+Token und laden nichts aus dem Netz.
+
 ## Entwicklung
 
 ```powershell

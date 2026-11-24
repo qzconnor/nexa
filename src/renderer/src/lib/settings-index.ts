@@ -331,7 +331,7 @@ const TREE = [
           { id: 'api.port', label: 'Port', keywords: 'Netzwerk Adresse localhost 127.0.0.1' },
         ],
       },
-      { id: 'api.endpoints', title: 'Endpunkte', keywords: 'Routen Dokumentation SSE Events curl' },
+      { id: 'api.endpoints', title: 'Endpunkte', keywords: 'Routen Dokumentation Docs OpenAPI Swagger Postman Schema SSE Events curl' },
     ],
   },
   {

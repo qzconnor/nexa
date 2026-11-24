@@ -71,7 +71,9 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |
 | `browser/browser-ipc.ts` | Kanäle `browser:*` (Tabs, Seiten, Downloads, Logins, Übernehmen) |
 | `browser/browser-frames.ts` | Live-Bilder der Seiten für die Browser-Karten im Chat (`beginFrameSubscription`, JPEG, gedrosselt), solange ein Fenster zusieht |
-| `api/api-server.ts` | Lokale REST-API mit Token |
+| `api/api-server.ts` | Lokale REST-API mit Token (nur `127.0.0.1`, kein `Origin`, nur Host `127.0.0.1`/`localhost`); die Handler hängen am Schlüssel der Route (`Record<ApiRouteKey, Handler>`), eine Route ohne Handler oder ein Handler ohne Route fällt schon bei `tsc` auf |
+| `api/routes.ts` | Die Routen als Tabelle: Methode, Pfad, Parameter, Body mit Beispiel, Antwort, Fehler; `matchRoute` findet Route und Parameter (405 mit `Allow`) |
+| `api/openapi.ts`, `api/docs-page.ts` | Beschreibung der API aus der Tabelle: `GET /openapi.json` (OpenAPI 3.1, Schemas in `API_SCHEMAS`) und `GET /docs` (eigenständiges HTML ohne Skripte und ohne Netz, CSP `default-src 'none'`), beide ohne Token; `openapi.test.ts` prüft, dass jede Route des Servers beschrieben ist und umgekehrt |
 | `files/file-tree-service.ts` | Dateibaum aus dem Claude Manager: Ordner lesen und überwachen, Git-Status, Diffs, Suche, Vormerken/Verwerfen, angefasste Dateien (`touched`) |
 | `files/git-service.ts` | Branch, Checkouts, Web-Adresse und Hauptordner eines Repositorys |
 | `files/activity-tracker.ts` | Leitet aus den Werkzeug-Items der Sessions ab, was der Agent mit Dateien tut (live und aus dem Verlauf) |
