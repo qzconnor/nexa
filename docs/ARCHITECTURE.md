@@ -217,6 +217,16 @@ Jede Session merkt sich je CLI die Sitzungs-ID der CLI und welche Items diese sc
 nicht kennt, zusammengefasst als `<nexa-context>` vor der Nachricht. Danach läuft sie mit eigener
 Sitzung weiter (`--resume` bzw. `thread/resume`).
 
+`/clear` leert den Kontext im selben Chat (`SessionService.clear`), damit Name, Pin und Platz in der
+Sidebar bleiben: Die CLI endet, die Links aller CLIs wandern nach `SessionMeta.earlierCli`, eine Notiz
+`cleared` steht als Trenner im Verlauf, und `SessionMeta.contextFrom` zeigt auf das Item danach. Der
+nächste Prompt startet bei jeder CLI eine neue Unterhaltung; was vor `contextFrom` steht, bleibt
+gespeichert und durchsuchbar, geht aber auch beim Wechsel der CLI nicht mehr als `<nexa-context>` mit.
+`MessageList` klappt alles über dem letzten solchen Trenner ein, bis man es öffnet (die Suche im Chat
+öffnet es mit „Alle laden“). Hat der Chat einen Titel vom Modell (`titleSource: 'auto'`), benennt ihn
+der erste Prompt nach `contextFrom` neu; einen eigenen Namen (`'user'`) lässt das stehen. `/new` legt
+stattdessen einen neuen Chat mit denselben Einstellungen an.
+
 ## Accounts
 
 Ein Account ist ein Konfigurationsordner einer CLI (`src/shared/accounts.ts`):
@@ -242,7 +252,8 @@ der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`.
 Ein Chat nimmt beim Löschen (`SessionService.remove`, mehrere auf einmal) seine Unterhaltungen mit,
 solange `chat.deleteCliConversations` an ist: Die CLI endet zuerst, dann gehen ihre Dateien
 (`conversation-files.ts`) aus dem Ordner, in dem sie entstanden, und aus den Ordnern aller Accounts
-derselben CLI in den Papierkorb (`shell.trashItem`). Es bleiben die Unterhaltung eines Abzweigs, der
+derselben CLI in den Papierkorb (`shell.trashItem`), auch die von vor einem `/clear` (`earlierCli`;
+ein Abzweig übernimmt sie nicht). Es bleiben die Unterhaltung eines Abzweigs, der
 noch nicht lief (`CliLink.fork`: sie gehört dem anderen Chat), eine, mit der ein anderer Chat
 weitermacht, und eine Sitzung, die Claude Code außerhalb von Nexa offen hat. Der Renderer blendet die
 Chats sofort aus und löscht erst, wenn der Toast mit „Rückgängig“ nach 8 s geht (`useChatRemoval.ts`);

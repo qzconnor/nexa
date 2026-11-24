@@ -56,8 +56,8 @@ export function useChatCommands(options: {
     return attempt(() => sessions.update(meta.id, patch), failed)
   }
 
-  /** As the CLI's `/clear`: a fresh conversation, the old one kept (here: in the sidebar). */
-  async function clear(meta: SessionMeta): Promise<void> {
+  /** A new chat with the same folder and settings, this one kept as it is. */
+  async function newChat(meta: SessionMeta): Promise<void> {
     const created = await attempt(
       () =>
         sessions.create({
@@ -166,7 +166,11 @@ export function useChatCommands(options: {
     const composer = options.composer.value
     switch (command.id) {
       case 'clear':
-        return clear(meta)
+        // In the same chat, unlike the CLI's new session: its name, pin and place stay.
+        await attempt(() => sessions.clear(meta.id), 'Leeren ging nicht')
+        return
+      case 'new':
+        return newChat(meta)
       case 'fork':
         return fork(meta, args)
       case 'compact':

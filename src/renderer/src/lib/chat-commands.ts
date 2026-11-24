@@ -10,6 +10,7 @@ import { effortLabel } from './effort'
  */
 export type AppCommandId =
   | 'clear'
+  | 'new'
   | 'fork'
   | 'compact'
   | 'diff'
@@ -42,7 +43,8 @@ export interface AppCommand {
 }
 
 export const APP_COMMANDS: readonly AppCommand[] = [
-  { id: 'clear', aliases: ['new', 'reset'], description: 'Neuer Chat im selben Ordner mit denselben Einstellungen; dieser bleibt in der Seitenleiste' },
+  { id: 'clear', aliases: ['reset'], description: 'Kontext leeren: Der Chat bleibt mit Name und Pin, der Agent fängt neu an' },
+  { id: 'new', description: 'Neuer Chat im selben Ordner mit denselben Einstellungen; dieser bleibt in der Seitenleiste' },
   { id: 'fork', aliases: ['branch'], argumentHint: '[Name]', description: 'Chat abzweigen: ein neuer Chat geht von hier aus weiter, dieser bleibt, wie er ist' },
   { id: 'compact', description: 'Kontext zusammenfassen, damit wieder Platz ist', only: 'codex' },
   { id: 'diff', description: 'Änderungen im Ordner des Chats zeigen (Git)' },

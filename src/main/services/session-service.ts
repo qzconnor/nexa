@@ -301,7 +301,8 @@ export class SessionService extends TypedEmitter<Events> {
       cli[provider] = { ...link, fork: at ? { at } : {} }
     }
     const now = Date.now()
-    const { pinned: _pinned, archived: _archived, importedFrom: _imported, ...rest } = from
+    // The conversations from before a `/clear` stay the old chat's: deleting the new one leaves them.
+    const { pinned: _pinned, archived: _archived, importedFrom: _imported, earlierCli: _earlier, ...rest } = from
     const meta: SessionMeta = {
       ...structuredClone(rest),
       id: randomUUID(),
@@ -427,7 +428,7 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /** Whether the chat's CLI is at rest: no turn, question, shell or agent of it that still runs. */
-  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' = 'verschieben'): void {
+  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' | 'leeren' = 'verschieben'): void {
     const status = s.runtime.status
     if (status === 'running' || status === 'starting' || status === 'waiting') {
       throw new Error(`Der Chat arbeitet gerade. Sobald er fertig ist, lässt er sich ${action}.`)
@@ -517,6 +518,42 @@ export class SessionService extends TypedEmitter<Events> {
       return
     }
     await run.compact()
+  }
+
+  /**
+   * Empties the context and keeps the chat with its name, pin and place (Claude Code's `/clear`, which
+   * starts a new conversation, here in the same chat): the next prompt starts a new conversation with
+   * the CLI, and what was said so far stays readable above a notice but goes to no CLI any more. The
+   * old conversations stay the chat's (`earlierCli`), to go along when it is deleted.
+   */
+  async clear(id: string): Promise<SessionMeta> {
+    const s = await this.loaded(id)
+    this.requireAtRest(s, 'leeren')
+    const meta = s.meta
+    // Cleared just now and nothing said since: a second notice would say nothing new.
+    const said = s.items.slice(meta.contextFrom ?? 0).some((i) => i.kind === 'user' || i.kind === 'assistant')
+    if (!said && !Object.keys(meta.cli).length) return meta
+    // Its process holds the old conversation.
+    await this.stop(id)
+    if (Object.keys(meta.cli).length) meta.earlierCli = [...(meta.earlierCli ?? []), meta.cli]
+    meta.cli = {}
+    delete meta.context
+    this.put(s, {
+      kind: 'notice',
+      id: randomUUID(),
+      ts: Date.now(),
+      provider: meta.provider,
+      level: 'info',
+      text: 'Kontext geleert',
+      detail: 'Was darüber steht, kennt der Agent nicht mehr.',
+      cleared: true,
+    })
+    meta.contextFrom = s.items.length
+    meta.updatedAt = Date.now()
+    // A new conversation has no context yet, and isn't open anywhere else.
+    this.setRuntime(s, { ...IDLE })
+    this.saveSoon()
+    return meta
   }
 
   async open(id: string): Promise<SessionDetail> {
@@ -701,9 +738,9 @@ export class SessionService extends TypedEmitter<Events> {
     if (!text && !input.images?.length) return
 
     const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
-    // What this CLI hasn't seen of the chat yet (another CLI answered meanwhile).
+    // What this CLI hasn't seen of the chat yet (another CLI answered meanwhile); nothing from before a `/clear`.
     const link = meta.cli[provider]
-    const unseen = s.items.slice(link?.seenItems ?? 0).filter((i) => i.provider !== provider || !link)
+    const unseen = s.items.slice(Math.max(link?.seenItems ?? 0, meta.contextFrom ?? 0)).filter((i) => i.provider !== provider || !link)
     const context = unseen.length && s.items.length ? handoffContext(unseen, provider) : null
 
     // Into a turn of the same CLI that still runs: it doesn't wait for the answer to end.
@@ -722,7 +759,8 @@ export class SessionService extends TypedEmitter<Events> {
     if (steer) this.setRuntime(s, { ...s.runtime, queued: [...(s.runtime.queued ?? []), user] })
     else this.put(s, user)
     // The first line stands until the model's title comes (autoTitle), or for good when that's off.
-    const first = meta.titleSource === 'auto' && s.items.filter((i) => i.kind === 'user').length === 1
+    // After a `/clear` the chat is about something new: its first prompt names it again, unless the user did.
+    const first = meta.titleSource === 'auto' && s.items.slice(meta.contextFrom ?? 0).filter((i) => i.kind === 'user').length === 1
     if (first) meta.title = firstLine(text, 60) || 'Bild'
     meta.preview = firstLine(text, 100)
     meta.updatedAt = Date.now()
@@ -1320,8 +1358,9 @@ export class SessionService extends TypedEmitter<Events> {
     const cwd = meta.cwd ?? this.projects.get(meta.projectId)?.path ?? ''
     const files: string[] = []
     let openElsewhere = false
-    for (const provider of PROVIDER_IDS) {
-      const link = meta.cli[provider]
+    // The conversations from before a `/clear` are the chat's too.
+    const links = [meta.cli, ...(meta.earlierCli ?? [])].flatMap((cli) => PROVIDER_IDS.map((provider) => [provider, cli[provider]] as const))
+    for (const [provider, link] of links) {
       if (!link || link.fork || shared.has(`${provider}:${link.sessionId}`)) continue
       for (const dir of this.conversationDirs(provider, link)) {
         if (provider === 'codex') {

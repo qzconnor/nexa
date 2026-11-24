@@ -82,6 +82,10 @@
       zuerst, mit Projekt), zusätzlich weiter in ihrem Projekt
 - [x] Rückfragen: Optionen untereinander statt zweispaltig; beantwortet stehen Fragen und Antworten
       untereinander und vollständig statt abgeschnitten in einer Zeile
+- [x] `/clear` im selben Chat statt in einem neuen: Name, Pin und Platz bleiben, jede CLI fängt eine neue
+      Unterhaltung an, ein Trenner „Kontext geleert“ steht im Verlauf. Was darüber steht, ist für keine CLI
+      mehr Kontext und eingeklappt („Früheren Verlauf anzeigen“). Ein Titel vom Modell kommt mit dem ersten
+      Prompt danach neu, ein eigener Name bleibt; `/new` legt wie bisher einen neuen Chat an
 - [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
       Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
       Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste
@@ -106,7 +110,8 @@
       Codex (`thread/fork` bis zum letzten Turn) setzen eine Kopie ihrer Unterhaltung fort. Im Menü des
       Chats, im Kontextmenü der Seitenleiste, in der Befehlsliste und als `/fork [Name]` (`/branch`)
 - [x] Slash-Befehle, die die CLIs ohne Terminal nicht können, führt Nexa selbst aus, für Claude und Codex:
-      `/clear` (`/new`, `/reset`: neuer Chat im selben Ordner mit denselben Einstellungen), `/diff` (alle
+      `/clear` (`/reset`: Kontext im selben Chat leeren), `/new` (neuer Chat im selben Ordner mit denselben
+      Einstellungen), `/diff` (alle
       Änderungen), `/rename`, `/model` und `/effort` (mit Namen gleich gesetzt, ohne das Zahnrad), `/plan`,
       `/permissions`, `/mcp` (Konnektoren), `/add-dir`, `/copy`, `/export`, `/status`, `/resume`, `/tasks`,
       `/login`, `/settings`, `/theme`, `/help`, `/exit`; bei Codex auch `/compact` (`thread/compact/start`)
