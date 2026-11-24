@@ -26,6 +26,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { report } from '@/composables/useChatRemoval'
+import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import type { ProjectEntry } from '@/lib/session-tree'
@@ -46,6 +47,7 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
+const claudeManager = useClaudeManager()
 const drag = useSessionDrag()
 
 const LIMIT = 8
@@ -102,8 +104,7 @@ async function toSection(): Promise<void> {
   if (
     !(await ui.confirm({
       title: `„${project.value.name}“ zum Trenner machen?`,
-      description:
-        'Der Ordner wird ein Trenner wie die Workspaces im Claude Manager: Seine Unterordner mit Chats werden Projekte darunter, die Chats im Ordner selbst stehen direkt unter dem Trenner. Jeder Chat arbeitet weiter im selben Ordner.',
+      description: `Der Ordner wird ein Trenner${claudeManager.installed.value ? ' wie die Workspaces im Claude Manager' : ''}: Seine Unterordner mit Chats werden Projekte darunter, die Chats im Ordner selbst stehen direkt unter dem Trenner. Jeder Chat arbeitet weiter im selben Ordner.`,
       confirmText: 'Zum Trenner machen',
     }))
   )

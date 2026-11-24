@@ -31,6 +31,7 @@
 - [x] Übernahme aus dem Claude Manager vollständig und nachholbar: auch Workspace-Prompts (`cm_prompts.md` →
       `prompts.md`), eigene Themes sowie Namen und Pins schon übernommener Chats; erneut gelesen bietet sie
       einzeln an, was Nexa noch fehlt
+- [x] Claude Manager deinstalliert: Seine Hinweise verschwinden; der Import bleibt, solange seine Daten da sind
 - [x] Unterordner in Projekten: Chats arbeiten in einem Ordner des Projekts, die Sidebar zeigt ihn als Ebene
 - [x] Tabellen mit Abständen, festem Kopf und Sortierung per Klick auf die Spalte
 - [x] Standard-Account einer CLI ausgeblendet, sobald ein eigener Account da ist

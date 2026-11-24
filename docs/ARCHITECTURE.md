@@ -163,6 +163,12 @@ Die Übernahme steht in der Einrichtung beim ersten Start und unter Einstellunge
 gelesen bietet sie nur an, was Nexa noch fehlt: neue Sessions und Workspaces ebenso wie Weiteres, das im
 Claude Manager dazukam oder beim ersten Mal abgewählt war.
 
+Was Nexa vom Claude Manager zeigt, hängt an `useClaudeManager`: der Import (Einrichtung, Einstellungen ›
+Accounts, Suche, Hinweis bei den Themes) nur, solange seine Daten da sind (`detect`); Hinweise auf ihn
+(Terminal-Farben im Theme-Editor, „wie die Workspaces“ beim Trenner) nur, solange er installiert ist
+(`installed`: Windows sein Eintrag unter `…\CurrentVersion\Uninstall`, den sein Deinstallationsprogramm
+entfernt; Linux `claude-manager.desktop`). Die Einstellungen fragen bei jedem Öffnen neu.
+
 Die Profilordner der übernommenen Accounts bleiben in `%APPDATA%\Claude Manager\profiles`: Logins und
 Transkripte liegen dort. Den Claude Manager zu deinstallieren lässt sie stehen (der Installer löscht keine
 App-Daten), den Ordner von Hand zu löschen nimmt Nexa diese Accounts und die Verläufe ihrer Chats.

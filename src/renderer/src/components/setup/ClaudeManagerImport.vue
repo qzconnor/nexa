@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ArrowRightLeftIcon, CheckIcon, FolderIcon, FolderTreeIcon, MessageSquareTextIcon, PaletteIcon, PencilLineIcon, PinIcon } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { ClaudeManagerFound, ImportAccount, ImportExtra, ImportGroup, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
+import type { ImportAccount, ImportExtra, ImportGroup, ImportPreview, ImportProgress, ImportResult } from '@shared/import-ipc'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
+import { useClaudeManager } from '@/composables/useClaudeManager'
 import { attempt } from '@/lib/errors'
 import { formatAge } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -15,13 +16,10 @@ import { cn } from '@/lib/utils'
  * other folders as projects under the default separator, its accounts with the same config folders, and
  * the Claude Code sessions in them as chats that go on; besides, workspace prompts, themes and the names
  * and pins of sessions. Reads first, shows what would come, takes over what the user leaves ticked; run
- * again, it offers only what Nexa doesn't have yet. Shown only when the Claude Manager's data is there
- * (`always`: also say when it isn't, as in the settings).
+ * again, it offers only what Nexa doesn't have yet. Shown only while the Claude Manager's data is there,
+ * also after it was uninstalled (see useClaudeManager).
  */
-const props = defineProps<{ always?: boolean }>()
-
-const found = ref<ClaudeManagerFound | null>(null)
-const detected = ref(false)
+const { found } = useClaudeManager()
 const step = ref<'idle' | 'scanning' | 'preview' | 'running' | 'done'>('idle')
 const progress = ref<ImportProgress>({ done: 0, total: 0 })
 const preview = ref<ImportPreview | null>(null)
@@ -31,14 +29,10 @@ const result = ref<ImportResult | null>(null)
 const now = Date.now()
 
 let off: (() => void) | null = null
-onMounted(async () => {
+onMounted(() => {
   off = window.api.claudeManager.onProgress((next) => (progress.value = next))
-  found.value = await window.api.claudeManager.detect().catch(() => null)
-  detected.value = true
 })
 onBeforeUnmount(() => off?.())
-
-const visible = computed(() => detected.value && (found.value || props.always))
 const ofKind = (kind: ImportGroup['kind']) => (preview.value?.groups ?? []).filter((g) => g.kind === kind)
 const lists = computed(() =>
   [
@@ -150,15 +144,14 @@ const resultText = computed(() => {
 </script>
 
 <template>
-  <section v-if="visible" class="flex flex-col gap-3 rounded-xl border bg-card p-4">
+  <section v-if="found" class="flex flex-col gap-3 rounded-xl border bg-card p-4">
     <div class="flex items-start gap-3">
       <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <ArrowRightLeftIcon class="size-4.5" />
       </div>
       <div class="flex min-w-0 flex-1 flex-col gap-0.5">
         <h2 class="text-sm font-medium">Vom Claude Manager übernehmen</h2>
-        <p v-if="!found" class="text-xs text-muted-foreground">Auf diesem Rechner hat Nexa keine Daten des Claude Managers gefunden.</p>
-        <p v-else-if="step === 'done' && result" class="text-xs text-muted-foreground">
+        <p v-if="step === 'done' && result" class="text-xs text-muted-foreground">
           Übernommen: {{ resultText }}.<template v-if="result.sessions"> Die Chats gehen mit Claude Code dort weiter, wo sie aufgehört haben.</template>
         </p>
         <p v-else class="text-xs text-muted-foreground">
@@ -168,7 +161,7 @@ const resultText = computed(() => {
           ändert sich nichts.
         </p>
       </div>
-      <Button v-if="found && step === 'idle'" size="sm" variant="outline" @click="scan">Sessions lesen</Button>
+      <Button v-if="step === 'idle'" size="sm" variant="outline" @click="scan">Sessions lesen</Button>
       <CheckIcon v-else-if="step === 'done'" class="size-5 shrink-0 text-success" />
     </div>
 

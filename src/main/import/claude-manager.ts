@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, extname, join } from 'node:path'
 import { sameLogin, systemAccountId, type Account, type AccountIdentity, type AccountKind } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
@@ -69,6 +71,34 @@ export function claudeManagerDir(appData: string): string | null {
     if (existsSync(join(dir, 'accounts.json')) || existsSync(join(dir, 'workspaces.json'))) return dir
   }
   return null
+}
+
+const UNINSTALL_KEYS = ['HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', 'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall']
+
+/** Whether `reg query <Uninstall> /s /v DisplayName` lists the Claude Manager; its installer adds the version („Claude Manager 1.61.2“). */
+export function listsClaudeManager(output: string): boolean {
+  return /^\s*DisplayName\s+REG_SZ\s+(Claude Manager|Signalbox)(\s+\d[\w.-]*)?\s*$/im.test(output)
+}
+
+/**
+ * Whether the Claude Manager is installed, not only its data left behind (its uninstaller keeps the
+ * data folder): on Windows its entry under „Installierte Apps“, which the uninstaller removes; on Linux
+ * the desktop entry of its deb or rpm package.
+ */
+export async function claudeManagerInstalled(platform: NodeJS.Platform = process.platform, query: (key: string) => Promise<string> = regQuery): Promise<boolean> {
+  if (platform === 'win32') return (await Promise.all(UNINSTALL_KEYS.map(query))).some(listsClaudeManager)
+  if (platform === 'linux') {
+    return ['/usr/share/applications', join(homedir(), '.local', 'share', 'applications')].some((dir) => existsSync(join(dir, 'claude-manager.desktop')))
+  }
+  return false
+}
+
+function regQuery(key: string): Promise<string> {
+  return new Promise((resolve) => {
+    execFile('reg', ['query', key, '/s', '/v', 'DisplayName'], { windowsHide: true, timeout: 5000, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }, (error, stdout) =>
+      resolve(error ? '' : stdout),
+    )
+  })
 }
 
 async function readJson(file: string): Promise<unknown> {

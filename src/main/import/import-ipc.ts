@@ -1,7 +1,7 @@
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke, type ImportInput } from '@shared/import-ipc'
 import { isPlainObject } from '@shared/utils'
 import { broadcast, handle } from '../ipc'
-import type { ClaudeManagerImport } from './claude-manager'
+import { claudeManagerInstalled, type ClaudeManagerImport } from './claude-manager'
 import type { CliSessionImport } from './cli-import'
 
 function importInput(input: unknown): ImportInput {
@@ -14,6 +14,7 @@ function importInput(input: unknown): ImportInput {
 /** The window's side of taking over from the Claude Manager and from the CLIs' own folders. */
 export function registerImportIpc(importer: ClaudeManagerImport, cli: CliSessionImport): void {
   handle(ImportInvoke.detect, () => importer.detect())
+  handle(ImportInvoke.installed, () => claudeManagerInstalled())
   handle(ImportInvoke.scan, () => importer.scan())
   handle(ImportInvoke.run, (_e, input: unknown) => importer.run(importInput(input)))
   importer.on('progress', (progress) => broadcast(ImportEvent.progress, progress))

@@ -4,6 +4,7 @@ import type { AppearanceSettings, WindowMaterial } from '@shared/types'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import ThemeToolbar from '@/components/themes/ThemeToolbar.vue'
 import { Switch } from '@/components/ui/switch'
+import { useClaudeManager } from '@/composables/useClaudeManager'
 import { attempt } from '@/lib/errors'
 import { supportsMaterial } from '@/lib/platform'
 import { useSettingsStore } from '@/stores/settings'
@@ -14,6 +15,8 @@ import ThemePicker from './ThemePicker.vue'
 
 const store = useSettingsStore()
 const a = computed(() => store.settings.appearance)
+// The hint at the Claude Manager's themes only while its files are there to import.
+const claudeManager = useClaudeManager()
 
 function set(patch: Partial<AppearanceSettings>): void {
   void attempt(() => store.update({ appearance: patch }), 'Speichern fehlgeschlagen')
@@ -46,7 +49,11 @@ const CHAT_WIDTHS = [
 
 <template>
   <div class="flex flex-col gap-4">
-    <SettingsSection anchor="appearance.theme" title="Theme" description="Farben für App und Code. Themes des Claude Managers lassen sich importieren.">
+    <SettingsSection
+      anchor="appearance.theme"
+      title="Theme"
+      :description="claudeManager.found.value ? 'Farben für App und Code. Themes des Claude Managers lassen sich importieren.' : 'Farben für App und Code.'"
+    >
       <template #actions><ThemeToolbar /></template>
       <ThemePicker v-model="theme" />
     </SettingsSection>

@@ -20,6 +20,8 @@ interface SectionDef {
   readonly title: string
   readonly keywords?: string
   readonly fields?: readonly FieldDef[]
+  /** Only while the Claude Manager's data is on this computer (its import). */
+  readonly claudeManagerData?: boolean
 }
 
 interface TabDef {
@@ -69,7 +71,7 @@ const TREE = [
       {
         id: 'appearance.theme',
         title: 'Theme',
-        keywords: 'Farben Farbschema hell dunkel Design Aussehen Claude Manager',
+        keywords: 'Farben Farbschema hell dunkel Design Aussehen',
         fields: [
           {
             id: 'appearance.customThemes',
@@ -123,7 +125,8 @@ const TREE = [
       {
         id: 'accounts.import',
         title: 'Vom Claude Manager übernehmen',
-        keywords: 'Claude Manager Signalbox Import importieren übernehmen migrieren Umzug Sessions Workspaces Projekte Unterordner Verlauf',
+        keywords: 'Claude Manager Signalbox Import importieren übernehmen migrieren Umzug Sessions Workspaces Projekte Unterordner Verlauf Prompts Themes',
+        claudeManagerData: true,
       },
     ],
   },
@@ -298,12 +301,16 @@ export interface SettingsEntry {
   text: string
 }
 
-/** The cards and rows the settings show on this platform (`process.platform`), in their order. */
-export function settingsIndex(platform: string): SettingsEntry[] {
+/**
+ * The cards and rows the settings show on this platform (`process.platform`), in their order;
+ * `claudeManagerData`: whether the Claude Manager's data is there, for its import.
+ */
+export function settingsIndex(platform: string, claudeManagerData = true): SettingsEntry[] {
   const windows = platform === 'win32'
   const entries: SettingsEntry[] = []
   for (const tab of TREE as readonly TabDef[]) {
     for (const section of tab.sections) {
+      if (section.claudeManagerData && !claudeManagerData) continue
       entries.push({
         id: section.id as SettingsAnchor,
         kind: 'section',

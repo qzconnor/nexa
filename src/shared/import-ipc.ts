@@ -11,6 +11,7 @@ import type { Unsubscribe } from './ipc'
 
 export const ImportInvoke = {
   detect: 'import:cm-detect',
+  installed: 'import:cm-installed',
   scan: 'import:cm-scan',
   run: 'import:cm-run',
 } as const
@@ -116,7 +117,10 @@ export interface ImportProgress {
 }
 
 export interface ImportApi {
+  /** Its data folder; it stays when the Claude Manager is uninstalled. */
   detect(): Promise<ClaudeManagerFound | null>
+  /** Whether the Claude Manager itself is installed (its hints in Nexa show only then). */
+  installed(): Promise<boolean>
   /** Reads the Claude Manager's folders and the sessions in its accounts' folders. */
   scan(): Promise<ImportPreview>
   /** Takes over the groups of the last scan. */

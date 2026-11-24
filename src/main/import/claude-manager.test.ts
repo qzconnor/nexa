@@ -2,8 +2,36 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptSummary } from '../providers/claude/claude-transcript'
 import type { AccountIdentity } from '@shared/accounts'
-import { cmAccounts, planAccounts, type CmAccount, type FoundSession } from './claude-manager'
+import { claudeManagerInstalled, cmAccounts, listsClaudeManager, planAccounts, type CmAccount, type FoundSession } from './claude-manager'
 import { planGroups, projectFolder, sessionTitle } from './import-plan'
+
+describe('claudeManagerInstalled', () => {
+  const entry = (name: string) =>
+    `\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\b0f7d8a2-1c3e\r\n    DisplayName    REG_SZ    ${name}\r\n`
+
+  it('finds the Claude Manager under either name, with or without its version', () => {
+    expect(listsClaudeManager(entry('Claude Manager 1.61.2'))).toBe(true)
+    expect(listsClaudeManager(entry('Signalbox 2.0.0'))).toBe(true)
+    expect(listsClaudeManager(entry('Claude Manager'))).toBe(true)
+  })
+
+  it('takes no other app for it', () => {
+    expect(listsClaudeManager(entry('Claude 1.0.0'))).toBe(false)
+    expect(listsClaudeManager(entry('Claude Manager Helper 1.0'))).toBe(false)
+    expect(listsClaudeManager('')).toBe(false)
+  })
+
+  it('looks under the current user and the machine on Windows', async () => {
+    const asked: string[] = []
+    const query = async (key: string) => {
+      asked.push(key)
+      return key.startsWith('HKLM') ? entry('Claude Manager 1.61.2') : entry('Nexa 1.19.0')
+    }
+    expect(await claudeManagerInstalled('win32', query)).toBe(true)
+    expect(asked.map((k) => k.slice(0, 4))).toEqual(['HKCU', 'HKLM'])
+    expect(await claudeManagerInstalled('win32', async () => entry('Nexa 1.19.0'))).toBe(false)
+  })
+})
 
 const summary = (cwd: string | null, updatedAt: number, patch: Partial<TranscriptSummary> = {}): TranscriptSummary => ({
   cwd,

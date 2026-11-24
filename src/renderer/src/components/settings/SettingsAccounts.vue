@@ -9,6 +9,7 @@ import ClaudeManagerImport from '@/components/setup/ClaudeManagerImport.vue'
 import CliSessionsImport from '@/components/setup/CliSessionsImport.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useSettingsFilter } from '@/composables/useSettingsSearch'
 import { attempt } from '@/lib/errors'
 import { useAccountsStore } from '@/stores/accounts'
@@ -25,6 +26,7 @@ const removing = ref<Account | null>(null)
 const removeOpen = ref(false)
 const refreshing = ref(false)
 const filter = useSettingsFilter()
+const claudeManager = useClaudeManager()
 
 function add(provider: ProviderId): void {
   accounts.formRequest = { account: null, provider }
@@ -81,8 +83,8 @@ async function refresh(): Promise<void> {
       <CliSessionsImport />
     </div>
 
-    <div v-if="filter.shows('accounts.import')" data-setting="accounts.import">
-      <ClaudeManagerImport always />
+    <div v-if="claudeManager.found.value && filter.shows('accounts.import')" data-setting="accounts.import">
+      <ClaudeManagerImport />
     </div>
 
     <p v-if="!filter.terms.value.length" class="px-1 text-xs text-muted-foreground">
