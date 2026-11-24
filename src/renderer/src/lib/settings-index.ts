@@ -171,6 +171,7 @@ const TREE = [
         fields: [
           { id: 'chat.showThinking', label: 'Gedanken anzeigen', keywords: 'Thinking Reasoning Denken Überlegungen' },
           { id: 'chat.collapseDiffs', label: 'Änderungen eingeklappt', keywords: 'Diffs Dateien schreiben bearbeiten Werkzeuge Tools zuklappen ausklappen aufklappen' },
+          { id: 'chat.autoTitles', label: 'Titel vom Modell', keywords: 'Name Session benennen automatisch Überschrift Seitenleiste' },
         ],
       },
       {

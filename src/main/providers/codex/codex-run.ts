@@ -105,6 +105,8 @@ export class CodexRun implements AgentRun {
     private readonly routes: { add(threadId: string, run: CodexRun): void; remove(run: CodexRun): void },
     /** The skills of the thread's folder, for the ones a prompt names. */
     private readonly skills: () => Promise<CommandOption[]> = async () => [],
+    /** A title for a prompt, asked of the account's model apart from this thread. */
+    private readonly titleOf: (prompt: string) => Promise<string | null> = async () => null,
   ) {
     this.model = options.model || undefined
     this.effort = options.effort || undefined
@@ -236,6 +238,18 @@ export class CodexRun implements AgentRun {
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.mode = mode
     this.modeChanged = true
+  }
+
+  /**
+   * Codex names no thread itself: the title comes from a thread of its own, and goes to this one as its
+   * name, so Codex's own lists (`codex resume`, the IDE) show the same.
+   */
+  async title(prompt: string): Promise<string | null> {
+    const title = await this.titleOf(prompt)
+    if (title && this.threadId && !this.closed) {
+      await this.client.request('thread/name/set', { threadId: this.threadId, name: title }).catch(() => undefined)
+    }
+    return title
   }
 
   /** The app-server's servers (one server for all threads of the account). */

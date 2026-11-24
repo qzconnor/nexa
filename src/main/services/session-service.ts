@@ -721,7 +721,9 @@ export class SessionService extends TypedEmitter<Events> {
     // Into the chat where the CLI takes it up (`taken`), as in the CLIs: until then it waits below.
     if (steer) this.setRuntime(s, { ...s.runtime, queued: [...(s.runtime.queued ?? []), user] })
     else this.put(s, user)
-    if (meta.titleSource === 'auto' && s.items.filter((i) => i.kind === 'user').length === 1) meta.title = firstLine(text, 60) || 'Bild'
+    // The first line stands until the model's title comes (autoTitle), or for good when that's off.
+    const first = meta.titleSource === 'auto' && s.items.filter((i) => i.kind === 'user').length === 1
+    if (first) meta.title = firstLine(text, 60) || 'Bild'
     meta.preview = firstLine(text, 100)
     meta.updatedAt = Date.now()
     this.saveSoon()
@@ -738,6 +740,24 @@ export class SessionService extends TypedEmitter<Events> {
       this.takeQueued(s, user.id)
       throw error
     }
+    if (first && text && this.settings().chat.autoTitles) void this.autoTitle(s, run, text)
+  }
+
+  /**
+   * The title the CLI gives the chat by its first prompt, in place of the prompt's first line; it
+   * keeps it as the conversation's name too. Not when the chat was named meanwhile.
+   */
+  private async autoTitle(s: SessionState, run: AgentRun, prompt: string): Promise<void> {
+    if (!run.title) return
+    const placeholder = s.meta.title
+    const title = await run.title(prompt).catch((error: unknown) => {
+      console.warn('[sessions] no title from the model', error)
+      return null
+    })
+    const meta = s.meta
+    if (!title || meta.titleSource !== 'auto' || meta.title !== placeholder || this.sessions.get(meta.id) !== s) return
+    meta.title = title
+    this.saveSoon()
   }
 
   /** A prompt sent while the CLI worked joins the chat where the CLI took it up. */

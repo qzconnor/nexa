@@ -224,6 +224,80 @@ describe('SessionService.send while the agent works', () => {
   })
 })
 
+describe('SessionService titles', () => {
+  /** A CLI whose title for the first prompt comes when the test says so. */
+  async function titled(patch: Partial<SessionMeta> = { titleSource: 'auto', title: 'Neuer Chat' }) {
+    let give: (title: string | null) => void = () => {}
+    const asked: string[] = []
+    const run = {
+      alive: true,
+      send: async () => {},
+      stop: async () => {},
+      title: (prompt: string) => {
+        asked.push(prompt)
+        return new Promise<string | null>((resolve) => (give = resolve))
+      },
+    } as unknown as AgentRun
+    const sessions = await start([meta('chat', patch)], { start: async () => run })
+    const title = () => sessions.list()[0]!.title
+    /** The title arrives; the session service takes it up a tick later. */
+    const answer = async (value: string | null) => {
+      give(value)
+      await new Promise((r) => setTimeout(r, 0))
+    }
+    return { sessions, asked, title, answer }
+  }
+
+  it('shows the first line until the model names the chat', async () => {
+    const { sessions, asked, title, answer } = await titled()
+    await sessions.send('chat', { text: 'Wie plane ich eine Reise nach Kyoto?\nMit Kindern.' })
+
+    expect(title()).toBe('Wie plane ich eine Reise nach Kyoto?')
+    expect(asked).toEqual(['Wie plane ich eine Reise nach Kyoto?\nMit Kindern.'])
+    await answer('Familienreise nach Kyoto')
+    expect(title()).toBe('Familienreise nach Kyoto')
+    expect(sessions.list()[0]!.titleSource).toBe('auto')
+  })
+
+  it('asks only for the first prompt', async () => {
+    const { sessions, asked, answer } = await titled()
+    await sessions.send('chat', { text: 'erste' })
+    await answer('Titel')
+    await sessions.send('chat', { text: 'zweite' })
+    expect(asked).toEqual(['erste'])
+  })
+
+  it('keeps a name the user gave meanwhile', async () => {
+    const { sessions, title, answer } = await titled()
+    await sessions.send('chat', { text: 'erste' })
+    await sessions.update('chat', { title: 'Mein Name' })
+    await answer('Vom Modell')
+    expect(title()).toBe('Mein Name')
+  })
+
+  it('keeps the first line without a title', async () => {
+    const { sessions, title, answer } = await titled()
+    await sessions.send('chat', { text: 'erste' })
+    await answer(null)
+    expect(title()).toBe('erste')
+  })
+
+  it('asks nothing when the setting is off or the chat has a name', async () => {
+    settings.chat.autoTitles = false
+    const off = await titled()
+    await off.sessions.send('chat', { text: 'erste' })
+    expect(off.asked).toEqual([])
+    expect(off.title()).toBe('erste')
+    await off.sessions.dispose()
+
+    settings.chat.autoTitles = true
+    const named = await titled({ titleSource: 'user', title: 'Mein Name' })
+    await named.sessions.send('chat', { text: 'erste' })
+    expect(named.asked).toEqual([])
+    expect(named.title()).toBe('Mein Name')
+  })
+})
+
 describe('SessionService with a session taken over from Codex', () => {
   const imported = () => meta('chat', { provider: 'codex', cli: { codex: { sessionId: THREAD, seenItems: 0, accountId: 'codex-a' } }, importedFrom: THREAD })
 

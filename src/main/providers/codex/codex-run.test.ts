@@ -42,6 +42,28 @@ describe('CodexRun.send', () => {
   })
 })
 
+describe('CodexRun.title', () => {
+  const options: RunOptions = { sessionId: 's', cwd: 'F:\\app', permissionMode: 'ask', account: { accountId: 'codex', set: {}, unset: [] }, instructions: '', extraArgs: [] }
+  const titled = async (title: string | null) => {
+    const request = vi.fn(async (method: string, _params: Record<string, unknown>) => (method === 'thread/start' ? { thread: { id: 't1' } } : {}))
+    const run = new CodexRun({ alive: true, request } as unknown as CodexClient, options, sink, { add: () => {}, remove: () => {} }, async () => [], async () => title)
+    await run.connect()
+    return { run, calls: () => request.mock.calls.slice(1).map(([method, params]) => ({ method, params })) }
+  }
+
+  it('names the thread as the chat, so Codex lists it so too', async () => {
+    const { run, calls } = await titled('Reise nach Kyoto')
+    expect(await run.title('Plane eine Reise nach Kyoto')).toBe('Reise nach Kyoto')
+    expect(calls()).toEqual([{ method: 'thread/name/set', params: { threadId: 't1', name: 'Reise nach Kyoto' } }])
+  })
+
+  it('leaves the thread without a title', async () => {
+    const { run, calls } = await titled(null)
+    expect(await run.title('hallo')).toBeNull()
+    expect(calls()).toEqual([])
+  })
+})
+
 describe('CodexRun.connect', () => {
   const options = (more: Partial<RunOptions>): RunOptions => ({ sessionId: 's', cwd: 'F:\\app', permissionMode: 'ask', account: { accountId: 'codex', set: {}, unset: [] }, instructions: '', extraArgs: [], ...more })
   const connect = async (more: Partial<RunOptions>, answer: (method: string, params: Record<string, unknown>) => Promise<unknown>) => {

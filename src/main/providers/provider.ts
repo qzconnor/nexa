@@ -136,6 +136,11 @@ export interface AgentRun {
    * the others take `/compact` as a prompt.
    */
   compact?(): Promise<void>
+  /**
+   * A short title for the chat from its first prompt, which the CLI also keeps as the conversation's
+   * name; null when it has none to give.
+   */
+  title?(prompt: string): Promise<string | null>
   stop(): Promise<void>
   readonly alive: boolean
   /** The CLI's process, to tell it from others that have the same conversation open. */

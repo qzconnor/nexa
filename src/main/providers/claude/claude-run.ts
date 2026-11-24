@@ -17,7 +17,7 @@ import type {
 import { compactionNotice } from '@shared/chat'
 import type { McpAuthStart, ShellOutput, UsageWindow } from '@shared/types'
 import { renderSpecOf } from '@shared/render'
-import { isPlainObject } from '@shared/utils'
+import { isPlainObject, withTimeout } from '@shared/utils'
 import type { CliBinary } from '../cli-binary'
 import { cliEnv } from '../cli-binary'
 import { claudeToolNames } from '../../mcp/tool-grant'
@@ -25,6 +25,7 @@ import { JsonlProcess } from '../jsonl-process'
 import { claudeMcpServers } from '../mcp-servers'
 import { claudeAuthStart } from '../plugins'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
+import { TITLE_TIMEOUT_MS, cleanTitle, titleDescription } from '../titles'
 import { contextDetailOf } from './claude-context'
 import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 
@@ -292,6 +293,18 @@ export class ClaudeRun implements AgentRun {
     this.process.write({ type: 'control_response', response: { subtype: 'success', request_id: open.requestId, response: answer } })
     this.sink.item({ ...open.item, state: 'answered', response })
     if (this.interactions.size === 0 && this.turnStartedAt !== null) this.sink.runtime({ status: 'running' })
+  }
+
+  /**
+   * Claude Code's own title for the session (`/rename` without a name). `persist` saves it as the
+   * session's `ai-title`, the one its own title would have been: it gives back that one when it came
+   * first, so `claude --resume` shows the same.
+   */
+  async title(prompt: string): Promise<string | null> {
+    if (!this.process.alive) return null
+    const request = this.request({ subtype: 'generate_session_title', description: titleDescription(prompt), persist: true })
+    const answer = await withTimeout(request, TITLE_TIMEOUT_MS)
+    return cleanTitle(str(answer.title))
   }
 
   async setModel(model: string | undefined): Promise<void> {
@@ -1009,23 +1022,6 @@ function shellStatusOf(status: unknown): ShellStatus | undefined {
     default:
       return undefined
   }
-}
-
-/** Rejects when `promise` takes longer than `ms`. */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Zeitüberschreitung')), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error: unknown) => {
-        clearTimeout(timer)
-        reject(error instanceof Error ? error : new Error(String(error)))
-      },
-    )
-  })
 }
 
 /** The tokens of one API call in the context: everything sent (cached or not) and the answer. */
