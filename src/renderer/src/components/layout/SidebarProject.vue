@@ -4,6 +4,7 @@ import {
   BrushCleaningIcon,
   ChevronRightIcon,
   CircleStopIcon,
+  FolderGit2Icon,
   FolderIcon,
   FolderInputIcon,
   FolderOpenIcon,
@@ -33,6 +34,7 @@ import {
 import { report } from '@/composables/useChatRemoval'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useSessionDrag } from '@/composables/useSessionDrag'
+import { worktreeNote } from '@/lib/chat-cleanup'
 import { attempt } from '@/lib/errors'
 import { chatsIn, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
@@ -93,13 +95,15 @@ async function rename(): Promise<void> {
 
 async function remove(): Promise<void> {
   // Archived ones too: they go with the project.
-  const count = sessions.metas.filter((m) => m.projectId === project.value.id).length
+  const own = sessions.metas.filter((m) => m.projectId === project.value.id)
+  const count = own.length
   const chats = count === 1 ? 'Sein Chat wird' : `Seine ${count} Chats werden`
   const cli = settings.settings.chat.deleteCliConversations ? `, ${count === 1 ? 'seine Unterhaltung' : 'ihre Unterhaltungen'} der CLIs ${count === 1 ? 'kommt' : 'kommen'} in den Papierkorb` : ''
+  const worktrees = worktreeNote(own.filter((m) => m.worktree).length)
   if (
     !(await ui.confirm({
       title: `Projekt „${project.value.name}“ entfernen?`,
-      description: `${count ? `${chats} gelöscht${cli}. ` : ''}Der Ordner auf der Festplatte bleibt.`,
+      description: `${count ? `${chats} gelöscht${cli}. ` : ''}Der Ordner auf der Festplatte bleibt.${worktrees ? ` ${worktrees}` : ''}`,
       confirmText: 'Entfernen',
       destructive: true,
     }))
@@ -175,6 +179,9 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
       <ContextMenuContent class="w-60">
         <ContextMenuItem @select="newChat()"><PlusIcon /> Neuer Chat</ContextMenuItem>
         <ContextMenuItem @select="newChatInFolder"><FolderInputIcon /> Neuer Chat in Unterordner …</ContextMenuItem>
+        <ContextMenuItem @select="ui.worktreeRequest = { projectId: project.id, folder: project.path }">
+          <FolderGit2Icon /> Neuer Chat in Worktree …
+        </ContextMenuItem>
         <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
         <ContextMenuItem @select="rename"><PencilIcon /> Umbenennen</ContextMenuItem>
         <ContextMenuItem @select="ui.promptTarget = { kind: 'project', id: project.id }"><ScrollTextIcon /> Prompt …</ContextMenuItem>

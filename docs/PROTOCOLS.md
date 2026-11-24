@@ -330,6 +330,27 @@ Nexa legt diese Dateien und Ordner in den Papierkorb, nicht aber Einträge in ge
 (`history.jsonl` mit den Prompts aller Sitzungen). Hat ein Prozess außerhalb von Nexa die Sitzung offen
 (`sessions/<pid>.json`), bleiben ihre Dateien in diesem Ordner liegen, weil er sie weiterschreiben würde.
 
+### Worktrees (`--worktree`)
+
+Laut Doku (code.claude.com/docs/en/worktrees): `claude --worktree <name>` (`-w`) legt
+`.claude/worktrees/<name>` im Repository an, auf einem neuen Branch `worktree-<name>`, standardmäßig vom
+Standard-Branch des Remotes (`origin/HEAD`, nach einem `fetch`; `worktree.baseRef: "head"` nimmt den eigenen
+HEAD), und kopiert ignorierte Dateien, die `.worktreeinclude` nennt, hinein. Ohne Namen erfindet es einen
+(`bright-running-fox`), einen vorhandenen betritt es wieder. Filter aus der Konfiguration des Repositorys
+laufen dabei nicht. Die Sitzung ist dann „isoliert“: Claude Code verweigert Bearbeitungen, Befehle und
+git-Umleitungen in den Hauptordner. Beim Betreten und Verlassen zieht das Transkript wie bei `/cd` um. Am Ende
+einer interaktiven Sitzung entfernt es einen Worktree ohne Änderungen und neue Commits samt Branch und fragt
+sonst; mit `-p` räumt es nicht auf, und seine Sperre (`git worktree lock`) bleibt liegen, bis ein späterer
+Lauf sie löst.
+
+Nexa nutzt den Schalter nicht, sondern legt den Worktree an derselben Stelle mit git selbst an und startet
+die CLI darin (ARCHITECTURE, „Chats in Worktrees“): Codex kennt keine Worktrees, Nexa muss den Ordner des
+Chats vorher kennen (Dateibaum, Browser, Transkript), und mit `-p` bliebe jeder Worktree gesperrt. Für
+Claude Code ist das eine gewöhnliche Sitzung in diesem Ordner, ihr Transkript liegt unter dem
+Projektschlüssel des Worktrees; `claude --worktree <name>` im Terminal betritt denselben Worktree. Anders als
+Claude Code zweigt Nexa vom HEAD des gewählten Ordners ab (der Dialog nennt ihn) und holt vorher nichts vom
+Remote.
+
 ## Codex (`codex app-server`)
 
 Sites (Codex' Gegenstück zu den Artefakten) gibt der App-Server 0.169 nicht heraus: keine Methode

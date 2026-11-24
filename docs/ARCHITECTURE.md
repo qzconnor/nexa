@@ -126,6 +126,40 @@ dem Ordner daneben und hängt einen `relocated`-Eintrag an. Codex bekommt den Or
 `thread/resume`. Während die CLI arbeitet (Turn, Rückfrage, Shell oder Agent im Hintergrund), bleibt der
 Chat, wo er ist. Ein Ordner außerhalb aller Projekte bekommt ein eigenes Projekt.
 
+## Chats in Worktrees
+
+„Neuer Chat in Worktree …“ (Kontextmenü eines Projekts oder Ordners in der Sidebar, Befehlsliste) öffnet
+`WorktreeDialog`: Repository (ein Ordner darin, vorbelegt mit dem des Projekts, Ordners oder Chats), Name
+(geprüft für Branch und Ordner, auch Windows' Gerätenamen, `shared/worktree.ts`; vorbelegt mit einem
+erfundenen wie `bright-running-fox`, leer erfindet Nexa einen) und die vorhandenen Worktrees zum Anklicken.
+`GitService.worktreeCheck` (Kanal `git:worktree-check`) sagt, ob es geht (Repository mit einem Commit), wovon
+ein neuer abzweigt, welche Worktrees und übrig gebliebenen `worktree-*`-Branches es gibt und ob git
+`.claude/worktrees/` ignoriert (sonst ein Hinweis auf die `.gitignore`).
+
+Den Worktree legt Nexa selbst mit git an, wo und wie Claude Code es mit `claude --worktree <name>` täte
+(`GitService.addWorktree`): `.claude/worktrees/<name>` im Hauptordner des Repositorys, auch aus einem anderen
+Worktree heraus, auf einem neuen Branch `worktree-<name>` vom HEAD des gewählten Ordners. Den Schalter von
+Claude Code nimmt Nexa nicht (siehe `docs/PROTOCOLS.md`): So arbeitet Codex ebenso darin, und der Chat ist ein
+gewöhnlicher Chat in einem Ordner. `SessionService.create` mit `worktree` setzt `cwd` auf den Worktree und
+merkt ihn in `SessionMeta.worktree`; liegt er nicht im Projekt (das Projekt ist ein Unterordner des
+Repositorys), kommt der Chat ins innerste Projekt darüber, sonst in ein neues für den Hauptordner. Einen
+Worktree des Namens, den es schon gibt, betritt der Chat wieder; einen übrig gebliebenen Branch
+`worktree-<name>` setzt der neue Worktree fort. Filter aus der Konfiguration des Repositorys
+(`filter.<name>.smudge`/`clean`/`process`) laufen beim Auschecken nicht (`files/git-filters.ts`, wie im
+Dateibaum), denn auch ein Agent kann sie dort eintragen; mit `git lfs install --local` liegen dann Zeiger
+statt der Dateien im Worktree (`git lfs pull` darin holt sie). `.worktreeinclude` wertet Nexa nicht aus.
+
+Die Sidebar zeigt einen Worktree als eine Ebene mit seinem Namen und dem Worktree-Symbol
+(`lib/session-tree.ts`), auch für Chats, die Claude Code selbst in einem Worktree hatte.
+
+Gelöscht wird der Worktree mit dem letzten Chat, der ihn in `worktree` hat (`SessionService.remove`,
+`GitService.removeWorktree`), samt Branch, wie Claude Code es am Ende einer Sitzung im Worktree tut: nur,
+wenn kein anderer Chat darin arbeitet (auch als hinzugefügter Ordner), `git status` nichts zeigt und seine
+Commits auch auf einem anderen Branch oder Tag liegen (ein gemergter Branch geht also mit, ein
+Squash-Merge nicht). Was git ignoriert, geht mit. Sonst bleibt er, und das Fenster sagt warum, mit „Ordner
+öffnen“ (`SessionRemoveResult.worktreesKept`). Die Rückfrage vor dem Löschen erwähnt es. Ein Abzweig des
+Chats teilt sich den Worktree; zieht ein Chat aus seinem Worktree weg, nimmt er ihn nicht mehr mit.
+
 ## Trenner
 
 Projekte stehen unter Trennern (`ProjectSection`, `shared/sections.ts`), wie die Workspaces im Claude

@@ -65,6 +65,7 @@ export function registerFilesIpc(
   })
   handle(FilesInvoke.gitWebUrl, (_e, cwd: unknown) => git.webUrl(requireString(cwd, 'cwd')))
   handle(FilesInvoke.gitMainWorktree, (_e, cwd: unknown) => git.mainWorktree(requireString(cwd, 'cwd')))
+  handle(FilesInvoke.gitWorktreeCheck, (_e, cwd: unknown) => git.worktreeCheck(requirePath(cwd, 'cwd')))
   git.on('changed', (cwd, branch) => broadcast(FilesEvent.gitBranchChanged, cwd, branch))
 
   handle(FilesInvoke.list, (_e, dir: unknown) => files.list(requirePath(dir, 'dir')))

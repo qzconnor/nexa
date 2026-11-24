@@ -89,6 +89,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools, limitsTool))
   await mcp.start().catch((error) => console.error('[mcp] server could not start', error))
 
+  const git = new GitService()
   const sessions = new SessionService(
     userDataDir,
     projects,
@@ -98,6 +99,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     () => settings.get(),
     (tools) => grantFor(tools, browserTools),
     (path) => shell.trashItem(path),
+    git,
   )
   chatTools = new ChatTools({
     list: () => sessions.peerChats(),
@@ -166,7 +168,6 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   })
 
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
-  const git = new GitService()
   // The `nx` command on the user PATH, (un)registered on the settings page.
   const command = new CommandIntegration()
   registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications, autoSwitch, command })

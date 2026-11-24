@@ -6,8 +6,9 @@ import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
 import type { ChatItem, SessionEvent, SessionRuntime, ToolItem } from '@shared/chat'
 import { claudeProjectKey, codexPaths } from '../accounts/cli-files'
+import { inFolder } from '@shared/folders'
 import type { AgentProvider, AgentRun, RunInput, RunOptions, RunSink } from '../providers/provider'
-import { SessionService } from './session-service'
+import { SessionService, type WorktreeGit } from './session-service'
 
 const CWD = 'F:\\Projekte\\demo'
 const GONE = '2f2591e1-0000-4000-8000-000000000001'
@@ -28,6 +29,8 @@ let projectPath: string
 let readHistory: (accountId: string, sessionId: string, since?: number) => Promise<ChatItem[] | null>
 /** Where else the CLI says a conversation is open (`ProviderService.openElsewhere`). */
 let elsewhere: string | null
+/** Projects made by the service (a worktree outside every project). */
+let madeProjects: { id: string; path: string }[]
 
 async function put(path: string, text = 'x'): Promise<void> {
   await mkdir(join(path, '..'), { recursive: true })
@@ -61,7 +64,7 @@ async function claudeSession(configDir: string, sessionId: string): Promise<void
   await put(join(configDir, 'file-history', sessionId, 'abc@v1'), '1')
 }
 
-async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}): Promise<SessionService> {
+async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}, git: WorktreeGit | null = null): Promise<SessionService> {
   await put(join(dataDir, 'sessions.json'), JSON.stringify({ sessions: metas }))
   const accounts = {
     list: () => [
@@ -77,7 +80,17 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
     env: () => ({ accountId: 'claude-a', set: {}, unset: [] }),
     extraArgs: () => [],
   }
-  const projects = { get: (id: string) => (id === 'p1' ? { id, path: projectPath } : undefined), touch: async () => {}, promptsFor: async () => [] }
+  const projects = {
+    get: (id: string) => (id === 'p1' ? { id, path: projectPath } : (madeProjects.find((p) => p.id === id) ?? undefined)),
+    containing: (path: string) => (inFolder(path, projectPath) ? { id: 'p1', path: projectPath } : undefined),
+    create: async ({ path }: { path: string }) => {
+      const project = { id: `p${madeProjects.length + 2}`, path }
+      madeProjects.push(project)
+      return project
+    },
+    touch: async () => {},
+    promptsFor: async () => [],
+  }
   const providers = {
     isReady: () => true,
     defaultAccount: () => 'claude-a',
@@ -99,6 +112,7 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
       trashed.push(path)
       await rm(path, { recursive: true })
     },
+    git,
   )
   return service
 }
@@ -115,6 +129,7 @@ beforeEach(async () => {
   projectPath = CWD
   readHistory = async () => null
   elsewhere = null
+  madeProjects = []
 })
 
 afterEach(async () => {
@@ -860,5 +875,83 @@ describe('SessionService between chats', () => {
     expect(await users(created.id)).toMatchObject([{ text: 'Schau dir das an', from: { sessionId: 'a' } }])
     expect(sent[created.id]).toHaveLength(1)
     expect(sessions.peerChats().map((c) => c.title)).toContain('Codex-Review')
+  })
+})
+
+describe('SessionService with worktrees', () => {
+  /** Git as SessionService sees it: worktrees in `.claude/worktrees` of `repo`; `kept` stay for the reason given. */
+  function fakeGit(repo: string, kept: Record<string, string> = {}) {
+    const added: { cwd: string; name: string }[] = []
+    const removed: { path: string; branch: string }[] = []
+    const git: WorktreeGit = {
+      addWorktree: async (cwd, name) => {
+        added.push({ cwd, name })
+        const made = name || 'made-up'
+        return { path: join(repo, '.claude', 'worktrees', made), branch: `worktree-${made}`, root: repo }
+      },
+      removeWorktree: async (path, branch) => {
+        if (kept[path]) return kept[path]
+        removed.push({ path, branch })
+        return null
+      },
+    }
+    return { git, added, removed }
+  }
+
+  beforeEach(() => {
+    projectPath = join(root, 'project')
+  })
+
+  it('starts a chat in a worktree of the project’s repository', async () => {
+    const { git, added } = fakeGit(projectPath)
+    const sessions = await start([], {}, git)
+    const meta = await sessions.create({ projectId: 'p1', worktree: 'login' })
+    const path = join(projectPath, '.claude', 'worktrees', 'login')
+    expect(added).toEqual([{ cwd: projectPath, name: 'login' }])
+    expect(meta).toMatchObject({ projectId: 'p1', cwd: path, worktree: { path, branch: 'worktree-login' } })
+  })
+
+  it('puts the chat in a project for the repository when the worktree lies outside the project', async () => {
+    const repo = join(root, 'repo')
+    const { git, added } = fakeGit(repo)
+    const sessions = await start([], {}, git)
+    const meta = await sessions.create({ projectId: 'p1', cwd: join(repo, 'packages', 'app'), worktree: '' })
+    expect(added).toEqual([{ cwd: join(repo, 'packages', 'app'), name: '' }])
+    expect(madeProjects).toEqual([{ id: 'p2', path: repo }])
+    expect(meta).toMatchObject({ projectId: 'p2', cwd: join(repo, '.claude', 'worktrees', 'made-up') })
+  })
+
+  it('makes no worktree for a chat it refuses', async () => {
+    settings.codex.enabled = false
+    const { git, added } = fakeGit(projectPath)
+    const sessions = await start([], {}, git)
+    await expect(sessions.create({ projectId: 'p1', provider: 'codex', worktree: 'x' })).rejects.toThrow()
+    expect(added).toEqual([])
+  })
+
+  it('removes a worktree with the last chat in it, and tells why one stays', async () => {
+    const tree = (name: string) => join(projectPath, '.claude', 'worktrees', name)
+    const own = (name: string) => ({ cwd: tree(name), worktree: { path: tree(name), branch: `worktree-${name}` } })
+    const { git, removed } = fakeGit(projectPath, { [tree('wip')]: 'Darin sind Änderungen, die noch nicht committet sind.' })
+    const sessions = await start(
+      [meta('one', own('a')), meta('fork', own('a')), meta('wip', own('wip')), meta('added', own('c')), meta('beside', { dirs: [tree('c')] }), meta('plain', {})],
+      {},
+      git,
+    )
+
+    expect((await sessions.remove(['one'])).worktreesKept).toBeUndefined()
+    expect(removed).toEqual([])
+
+    const result = await sessions.remove(['fork', 'wip', 'added', 'plain'])
+    expect(removed).toEqual([{ path: tree('a'), branch: 'worktree-a' }])
+    expect(result.worktreesKept).toEqual([{ path: tree('wip'), reason: 'Darin sind Änderungen, die noch nicht committet sind.' }])
+  })
+
+  it('lets go of the worktree when the chat moves out of it', async () => {
+    const path = join(projectPath, '.claude', 'worktrees', 'a')
+    const sessions = await start([meta('chat', { cwd: path, worktree: { path, branch: 'worktree-a' } })], {}, fakeGit(projectPath).git)
+    const moved = await sessions.move('chat', { projectId: 'p1' })
+    expect(moved.worktree).toBeUndefined()
+    expect(moved.cwd).toBeUndefined()
   })
 })

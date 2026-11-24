@@ -515,6 +515,12 @@ export interface SessionMeta {
    */
   cwd?: string
   /**
+   * The worktree the chat was started in („Neuer Chat in Worktree“, `cwd` is its folder): deleting the
+   * chat removes it with its branch, unless another chat works in it or work in it would be lost. Gone
+   * when the chat moves out of it.
+   */
+  worktree?: { path: string; branch: string }
+  /**
    * More folders the agent may work in besides its own (the composer's „Ordner hinzufügen“): Claude
    * Code's `--add-dir`, Codex's writable roots.
    */
@@ -534,8 +540,14 @@ export interface SessionMeta {
 
 export interface SessionCreateInput {
   projectId: string
-  /** A folder in the project to work in; missing: the project's own. */
+  /** A folder in the project to work in; missing: the project's own. With `worktree`: a folder of the repository. */
   cwd?: string
+  /**
+   * The chat works in a worktree of the repository `cwd` (else the project's folder) lies in, of this
+   * name (empty: one made up), as `claude --worktree` makes them; one of that name is entered again.
+   * The chat goes to the project the worktree lies in (see `SessionService.create`).
+   */
+  worktree?: string
   provider?: ProviderId
   /** An account of the CLI; missing: its default account. */
   account?: string
@@ -586,6 +598,8 @@ export interface SessionRemoveResult {
   /** Files that could not go to the recycle bin, with the first reason. */
   failed: number
   error?: string
+  /** Worktrees of the chats (`SessionMeta.worktree`) that stay although no chat works in them any more, and why. */
+  worktreesKept?: { path: string; reason: string }[]
 }
 
 /** What a chat takes on disk: its history in Nexa, and the conversations of its CLIs that deleting it takes along. */

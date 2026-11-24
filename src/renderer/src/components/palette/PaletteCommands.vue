@@ -7,6 +7,7 @@ import {
   CircleStopIcon,
   CopyIcon,
   FileDownIcon,
+  FolderGit2Icon,
   FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
@@ -128,6 +129,12 @@ function toggleStart(command: StartCommand): void {
 function editStartCommands(): void {
   if (chatProject.value) ui.startCommandsProject = chatProject.value.id
 }
+/** A worktree of the repository the chat on screen works in, else of the project the start page shows. */
+const worktreeRequest = computed(() => {
+  const project = meta.value ? projects.get(meta.value.projectId) : (projects.get(ui.homeProjectId) ?? projects.projects[0])
+  if (!project) return null
+  return { projectId: project.id, folder: (meta.value && sessions.cwdOf(meta.value)) || project.path }
+})
 
 /** Every account of the CLIs that are on, but the one the chat runs with: the chat can go on with it. */
 const switchChoices = computed(() => {
@@ -152,6 +159,15 @@ const switchChoices = computed(() => {
         <CommandItem value="new-chat" filter-text="Neuer Chat Startseite" @select="run(() => chat.newChat())">
           <SquarePenIcon />
           Neuer Chat
+        </CommandItem>
+        <CommandItem
+          v-if="worktreeRequest"
+          value="new-chat-worktree"
+          filter-text="Neuer Chat in Worktree git branch parallel claude --worktree isoliert"
+          @select="run(() => (ui.worktreeRequest = worktreeRequest), true)"
+        >
+          <FolderGit2Icon />
+          Neuer Chat in Worktree …
         </CommandItem>
         <CommandItem value="artifacts" filter-text="Artefakte Seiten Dokumente claude.ai veröffentlicht Artifact" @select="run(() => (ui.view = 'artifacts'))">
           <ShapesIcon />

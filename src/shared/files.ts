@@ -10,16 +10,32 @@ export interface GitBranch {
   detached: boolean
 }
 
-/** Whether a session in `cwd` can get a worktree of its own (`claude --worktree`). */
+/** Whether a chat in `cwd` can get a worktree of its own (as `claude --worktree` makes them, shared/worktree.ts). */
 export type WorktreeCheck =
   | {
       ok: true
-      /** The repository's top folder; the worktrees lie in its `.claude\worktrees`. */
+      /** The repository's main checkout; the worktrees lie in its `.claude\worktrees`. */
       root: string
-      /** Names of the worktrees Claude Code made there before; one of them is entered again. */
+      /** What a new worktree starts from: the checkout `cwd` lies in (its HEAD); null when unreadable. */
+      base: GitBranch | null
+      /** Names of the worktrees made there before (by Claude Code or Nexa); one of them is entered again. */
       existing: string[]
+      /** Names whose branch `worktree-<name>` is there without a worktree: a new one goes on with it. */
+      branches: string[]
+      /** Whether git ignores `.claude/worktrees/`; otherwise the main checkout shows them as new files. */
+      ignored: boolean
     }
   | { ok: false; reason: string }
+
+/** The worktree a chat works in (`GitService.addWorktree`). */
+export interface AddedWorktree {
+  /** Its folder. */
+  path: string
+  /** Its branch. */
+  branch: string
+  /** The repository's main checkout. */
+  root: string
+}
 
 /** An entry of a folder in the file tree. */
 export interface FileEntry {

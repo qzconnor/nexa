@@ -88,6 +88,7 @@ const api: NexaApi = {
     watch: (cwds) => invoke(FilesInvoke.gitWatch, cwds),
     webUrl: (cwd) => invoke(FilesInvoke.gitWebUrl, cwd),
     mainWorktree: (cwd) => invoke(FilesInvoke.gitMainWorktree, cwd),
+    worktreeCheck: (cwd) => invoke(FilesInvoke.gitWorktreeCheck, cwd),
     onBranchChanged: (cb) => subscribe(FilesEvent.gitBranchChanged, cb),
   },
   browser: {

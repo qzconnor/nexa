@@ -2,8 +2,11 @@ import { execFile } from 'node:child_process'
 import { existsSync, watch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
-import type { GitBranch, WorktreeCheck } from '@shared/files'
+import type { AddedWorktree, GitBranch, WorktreeCheck } from '@shared/files'
+import { folderKey, inFolder } from '@shared/folders'
+import { randomWorktreeName, worktreeBranch, worktreeFolder, worktreeNameError } from '@shared/worktree'
 import { TypedEmitter } from '../lib/typed-emitter'
+import { filterGuard } from './git-filters'
 
 interface Watched {
   /** The working directories asked for that lie in this repository. */
@@ -89,21 +92,93 @@ export class GitService extends TypedEmitter<{ changed: [cwd: string, branch: Gi
   }
 
   /**
-   * Whether Claude Code can make a worktree for a session in `cwd` (`claude --worktree`): that
-   * takes a repository with at least one commit. Also names the worktrees it made there before.
+   * Whether a chat in `cwd` can get a worktree of its own (`addWorktree`): that takes a repository with
+   * at least one commit. Also names the worktrees made there before and what a new one starts from.
    */
   async worktreeCheck(cwd: string): Promise<WorktreeCheck> {
-    const root = await runGit(cwd, ['rev-parse', '--show-toplevel'])
-    if (!root.ok) {
-      return {
-        ok: false,
-        reason: root.missing ? 'Git ist nicht installiert oder nicht im PATH.' : 'Der Ordner liegt in keinem Git-Repository.',
-      }
+    const repo = await worktreeRepo(cwd)
+    if (!repo.ok) return repo
+    const [base, refs, ignored] = await Promise.all([
+      this.branch(cwd),
+      runGit(repo.root, ['for-each-ref', '--format=%(refname)', 'refs/heads/worktree-*']),
+      // A worktree's folder needn't be there for git to tell whether its patterns cover it.
+      runGit(repo.root, ['check-ignore', '-q', '--', worktreeFolder('x')]),
+    ])
+    const checkedOut = new Set(repo.worktrees.map((w) => w.branch))
+    const branches = (refs.ok ? refs.out.split('\n') : [])
+      .map((ref) => ref.trim().replace(/^refs\/heads\//, ''))
+      .filter((branch) => /^worktree-./.test(branch) && !checkedOut.has(branch))
+      .map((branch) => branch.slice('worktree-'.length))
+    return { ok: true, root: repo.root, base, existing: claudeWorktrees(repo.worktrees, repo.root).map((w) => w.name), branches, ignored: ignored.ok }
+  }
+
+  /**
+   * A worktree for a chat, as `claude --worktree <name>` makes it: `.claude/worktrees/<name>` in the main
+   * checkout of the repository `cwd` lies in, on a new branch `worktree-<name>` from the HEAD of `cwd`'s
+   * checkout (`worktree-<name>` there already: on that one). One of that name is entered again; without a
+   * name one is made up. The repository's own filters don't run on the files it checks out (`filterGuard`),
+   * as with Claude Code: anything that writes to the repository, an agent too, could have put them there.
+   */
+  async addWorktree(cwd: string, raw: string): Promise<AddedWorktree> {
+    const problem = worktreeNameError(raw)
+    if (problem) throw new Error(problem)
+    const repo = await worktreeRepo(cwd)
+    if (!repo.ok) throw new Error(repo.reason)
+    const { root, worktrees } = repo
+    const folder = (name: string) => join(root, '.claude', 'worktrees', name)
+    const registered = (path: string) => worktrees.find((w) => folderKey(resolve(w.path)) === folderKey(path))
+    const name =
+      raw.trim() || randomWorktreeName((n) => existsSync(folder(n)) || !!registered(folder(n)) || worktrees.some((w) => w.branch === worktreeBranch(n)))
+    const path = folder(name)
+    const known = registered(path)
+    if (known && !known.prunable && existsSync(path)) return { path: resolve(known.path), branch: known.branch ?? worktreeBranch(name), root }
+    if (existsSync(path)) {
+      throw new Error(`Den Ordner „${worktreeFolder(name)}“ gibt es schon, aber nicht als Worktree dieses Repositorys. Nimm einen anderen Namen.`)
     }
-    const head = await runGit(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD'])
-    if (!head.ok) return { ok: false, reason: 'Das Repository hat noch keinen Commit, von dem ein Worktree abzweigen kann.' }
-    const list = await runGit(cwd, ['worktree', 'list', '--porcelain'])
-    return { ok: true, root: root.out, existing: list.ok ? claudeWorktrees(list.out) : [] }
+    // Its folder is gone, git still knows it: `worktree add` refuses until git forgets it.
+    if (known) await runGit(root, ['worktree', 'prune'])
+    const branch = worktreeBranch(name)
+    const exists = await runGit(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+    const filters = await runGit(root, ['config', '--show-scope', '--name-only', '--includes', '--get-regexp', '^filter\\.'])
+    const env = filterGuard(filters.ok ? filters.out : null, process.env.GIT_CONFIG_COUNT, true)
+    const args = exists.ok ? ['worktree', 'add', path, branch] : ['worktree', 'add', '-b', branch, path, 'HEAD']
+    // A checkout of a big repository takes a while; HEAD is that of `cwd`'s checkout.
+    const made = await runGit(cwd, ['-c', 'core.fsmonitor=false', ...args], { timeout: 180_000, env })
+    if (!made.ok) throw new Error(`Git konnte den Worktree nicht anlegen: ${made.error}`)
+    return { path, branch, root }
+  }
+
+  /**
+   * Removes a worktree a chat worked in, with its branch, unless work would be lost, as Claude Code does
+   * when a session in its worktree ends: changed or untracked files, or commits on no other branch or tag.
+   * Null when it is gone (also when it was before); otherwise why it, or its branch, stays. Files git
+   * ignores (`node_modules`, a copied `.env`) go with it.
+   */
+  async removeWorktree(path: string, branch: string): Promise<string | null> {
+    if (!existsSync(path)) return null
+    const main = await this.mainWorktree(path)
+    // Only a linked worktree: never a main checkout or a folder that is no repository (any more).
+    if (!main) return null
+    const status = await runGit(path, ['status', '--porcelain', '--ignore-submodules=none'])
+    if (!status.ok) return `Git konnte ihn nicht prüfen: ${status.error}`
+    if (status.out) return 'Darin sind Änderungen, die noch nicht committet sind.'
+    const head = await runGit(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+    const own = await ownCommits(path, 'HEAD', branch)
+    if (own === null) return 'Git konnte seine Commits nicht prüfen.'
+    if (own > 0) {
+      return head.ok && head.out === branch
+        ? `Sein Branch „${branch}“ hat Commits, die auf keinem anderen Branch sind.`
+        : 'Er hat Commits, die auf keinem anderen Branch sind.'
+    }
+    const removed = await runGit(main, ['worktree', 'remove', path], { timeout: 60_000 })
+    if (!removed.ok) return `Git konnte ihn nicht entfernen: ${removed.error}`
+    for (const cwd of [...this.gitDirs.keys()]) if (inFolder(cwd, path)) this.gitDirs.delete(cwd)
+    const ref = `refs/heads/${branch}`
+    if (!(await runGit(main, ['rev-parse', '--verify', '--quiet', ref])).ok) return null
+    const onBranch = await ownCommits(main, ref, branch)
+    if (onBranch !== 0) return `Der Worktree ist weg, sein Branch „${branch}“ bleibt: Er hat Commits, die auf keinem anderen Branch sind.`
+    const deleted = await runGit(main, ['branch', '-D', branch])
+    return deleted.ok ? null : `Der Worktree ist weg, sein Branch „${branch}“ bleibt: ${deleted.error}`
   }
 
   /**
@@ -239,25 +314,84 @@ async function reftableBranch(gitDir: string): Promise<GitBranch | null> {
   return commit.ok && commit.out ? { name: commit.out, detached: true } : null
 }
 
-type GitResult = { ok: true; out: string } | { ok: false; missing: boolean }
+/** `error`: what git said went wrong. */
+type GitResult = { ok: true; out: string } | { ok: false; missing: boolean; error: string }
 
-function runGit(cwd: string, args: string[]): Promise<GitResult> {
+function runGit(cwd: string, args: string[], options: { timeout?: number; env?: Record<string, string> } = {}): Promise<GitResult> {
+  const env = options.env && Object.keys(options.env).length > 0 ? { ...process.env, ...options.env } : undefined
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, windowsHide: true, timeout: 5000, encoding: 'utf8' }, (error, stdout) => {
-      if (error) resolve({ ok: false, missing: (error as NodeJS.ErrnoException).code === 'ENOENT' && existsSync(cwd) })
+    execFile('git', args, { cwd, windowsHide: true, timeout: options.timeout ?? 5000, encoding: 'utf8', env }, (error, stdout, stderr) => {
+      if (error) resolve({ ok: false, missing: (error as NodeJS.ErrnoException).code === 'ENOENT' && existsSync(cwd), error: gitError(error, stderr) })
       else resolve({ ok: true, out: stdout.trim() })
     })
   })
 }
 
-/** Names of the worktrees in `git worktree list --porcelain` that Claude Code made (`.claude/worktrees/<name>`). */
-export function claudeWorktrees(porcelain: string): string[] {
-  const names: string[] = []
+/** git's complaint without `fatal:` and `error:`; the process's when git said nothing. */
+function gitError(error: Error & { killed?: boolean }, stderr: string): string {
+  if (error.killed) return 'Git brauchte zu lange und wurde abgebrochen.'
+  const lines = stderr.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const said = lines.filter((line) => /^(?:fatal|error):/i.test(line)).map((line) => line.replace(/^(?:fatal|error):\s*/i, ''))
+  return (said.length ? said : lines).join(' ') || error.message
+}
+
+/** How many commits `rev` has that no branch but `branch` and no tag has; null when git fails. */
+async function ownCommits(cwd: string, rev: string, branch: string): Promise<number | null> {
+  // `--exclude` takes the branch out of the next `--branches` only (a name there, without `refs/heads/`).
+  const count = await runGit(cwd, ['rev-list', '--count', rev, '--not', `--exclude=${branch}`, '--branches', '--tags'])
+  return count.ok ? Number(count.out) || 0 : null
+}
+
+/** A checkout of a repository, from `git worktree list --porcelain`. */
+export interface WorktreeEntry {
+  /** As git writes it (`F:/Code/app` on Windows). */
+  path: string
+  /** Its branch without `refs/heads/`; null when detached (or bare). */
+  branch: string | null
+  bare: boolean
+  /** Its folder is gone; git still knows it until `git worktree prune`. */
+  prunable: boolean
+}
+
+/** The checkouts in `git worktree list --porcelain`, the main one first. */
+export function parseWorktrees(porcelain: string): WorktreeEntry[] {
+  const entries: WorktreeEntry[] = []
+  let entry: WorktreeEntry | null = null
   for (const line of porcelain.split(/\r?\n/)) {
-    const match = /^worktree .*[\\/]\.claude[\\/]worktrees[\\/]([^\\/]+)[\\/]?$/.exec(line)
-    if (match) names.push(match[1]!)
+    if (line.startsWith('worktree ')) {
+      entry = { path: line.slice('worktree '.length), branch: null, bare: false, prunable: false }
+      entries.push(entry)
+    } else if (!entry) continue
+    else if (line.startsWith('branch ')) entry.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '')
+    else if (line === 'bare') entry.bare = true
+    else if (line === 'prunable' || line.startsWith('prunable ')) entry.prunable = true
   }
-  return names
+  return entries
+}
+
+/** The worktrees in `.claude/worktrees` of the main checkout `root` (Claude Code's and Nexa's), not those that are gone. */
+export function claudeWorktrees(worktrees: readonly WorktreeEntry[], root: string): (WorktreeEntry & { name: string })[] {
+  const folder = folderKey(join(root, '.claude', 'worktrees'))
+  return worktrees
+    .filter((w) => !w.prunable && folderKey(dirname(resolve(w.path))) === folder)
+    .map((w) => ({ ...w, name: basename(resolve(w.path)) }))
+}
+
+/** The repository `cwd` lies in, for its worktrees: its main checkout and its checkouts; or why there is none. */
+async function worktreeRepo(cwd: string): Promise<{ ok: true; root: string; worktrees: WorktreeEntry[] } | { ok: false; reason: string }> {
+  if (!existsSync(cwd)) return { ok: false, reason: 'Den Ordner gibt es nicht.' }
+  const top = await runGit(cwd, ['rev-parse', '--show-toplevel'])
+  if (!top.ok) {
+    return { ok: false, reason: top.missing ? 'Git ist nicht installiert oder nicht im PATH.' : 'Der Ordner liegt in keinem Git-Repository.' }
+  }
+  const head = await runGit(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD'])
+  if (!head.ok) return { ok: false, reason: 'Das Repository hat noch keinen Commit, von dem ein Worktree abzweigen kann.' }
+  const list = await runGit(cwd, ['worktree', 'list', '--porcelain'])
+  const worktrees = list.ok ? parseWorktrees(list.out) : []
+  // In a worktree, the new one lies beside it in the main checkout, not in it; a bare repository has no
+  // main checkout, the one of `cwd` stands in.
+  const main = worktrees[0]
+  return { ok: true, root: resolve(main && !main.bare ? main.path : top.out), worktrees }
 }
 
 /**

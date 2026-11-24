@@ -142,6 +142,8 @@ export const useUiStore = defineStore('ui', () => {
 
   /** The project whose start commands the dialog edits; null: closed. */
   const startCommandsProject = ref<string | null>(null)
+  /** The dialog for a new chat in a worktree: the project it is asked from, the repository's folder; null: closed. */
+  const worktreeRequest = ref<{ projectId: string; folder: string } | null>(null)
 
   const confirmState = ref<(ConfirmOptions & { open: boolean }) | null>(null)
   /** The question shown, and those that wait for it: one never answers another one with No. */
@@ -208,6 +210,7 @@ export const useUiStore = defineStore('ui', () => {
     promptTarget,
     cleanupProject,
     startCommandsProject,
+    worktreeRequest,
     confirmState,
     confirmInput,
     toggleSidebar,

@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { existsSync, realpathSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitBranch } from '@shared/files'
-import { claudeWorktrees, GitService, pullRequestUrl, repoWebUrl } from './git-service'
+import { claudeWorktrees, GitService, parseWorktrees, pullRequestUrl, repoWebUrl } from './git-service'
 
 const HASH = '0123456789abcdef0123456789abcdef01234567'
 
@@ -27,6 +27,19 @@ async function repo(name = 'repo'): Promise<string> {
   git(path, 'init', '-q')
   return path
 }
+
+/** A repository on `main` with `a.txt` and the empty folder `src` in its one commit's checkout. */
+async function committed(): Promise<string> {
+  const path = await repo()
+  await writeFile(join(path, 'a.txt'), 'a')
+  await mkdir(join(path, 'src'))
+  git(path, 'add', '.')
+  git(path, 'commit', '-qm', 'init')
+  return path
+}
+
+/** Git names the real path: on CI runners the temp folder comes as a short name (`RUNNER~1`). */
+const same = (p: string) => realpathSync.native(p).replaceAll('\\', '/').toLowerCase()
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'cm-test-'))
@@ -202,6 +215,7 @@ describe('worktreeCheck', () => {
     const plain = join(dir, 'plain')
     await mkdir(plain)
     expect(await service.worktreeCheck(plain)).toEqual({ ok: false, reason: 'Der Ordner liegt in keinem Git-Repository.' })
+    expect(await service.worktreeCheck(join(dir, 'missing'))).toEqual({ ok: false, reason: 'Den Ordner gibt es nicht.' })
   })
 
   it('needs a commit to branch from', async () => {
@@ -209,18 +223,174 @@ describe('worktreeCheck', () => {
     expect(await service.worktreeCheck(path)).toMatchObject({ ok: false, reason: expect.stringContaining('keinen Commit') })
   })
 
-  it("names the root and the worktrees Claude Code made there", async () => {
-    const path = await repo()
-    await writeFile(join(path, 'a.txt'), 'a')
-    git(path, 'add', '.')
-    git(path, 'commit', '-qm', 'init')
+  it("names the root, what a worktree starts from and the worktrees and branches made there", async () => {
+    const path = await committed()
     git(path, 'worktree', 'add', '-q', '-b', 'worktree-login', join(path, '.claude', 'worktrees', 'login'))
     git(path, 'worktree', 'add', '-q', '-b', 'elsewhere', join(dir, 'elsewhere'))
+    git(path, 'branch', 'worktree-kept')
     const check = await service.worktreeCheck(join(path, '.claude'))
-    expect(check).toMatchObject({ ok: true, existing: ['login'] })
-    // Git names the real path: on CI runners the temp folder comes as a short name (`RUNNER~1`).
-    const same = (p: string) => realpathSync.native(p).replaceAll('\\', '/').toLowerCase()
+    expect(check).toMatchObject({ ok: true, existing: ['login'], branches: ['kept'], base: { name: 'main', detached: false }, ignored: false })
     expect(check.ok && same(check.root)).toBe(same(path))
+  })
+
+  it('knows whether git ignores the worktrees', async () => {
+    const path = await committed()
+    await writeFile(join(path, '.gitignore'), '.claude/worktrees/\n')
+    expect(await service.worktreeCheck(path)).toMatchObject({ ok: true, ignored: true })
+  })
+
+  it('names the main checkout from a worktree too, and that worktree as what a new one starts from', async () => {
+    const path = await committed()
+    git(path, 'worktree', 'add', '-q', '-b', 'side', join(dir, 'side'))
+    const check = await service.worktreeCheck(join(dir, 'side'))
+    expect(check).toMatchObject({ ok: true, base: { name: 'side', detached: false } })
+    expect(check.ok && same(check.root)).toBe(same(path))
+  })
+})
+
+describe('GitService.addWorktree', () => {
+  it('makes it where Claude Code would, on a branch of its own from the HEAD of the folder', async () => {
+    const path = await committed()
+    const added = await service.addWorktree(join(path, 'src'), 'login')
+    expect(same(added.path)).toBe(same(join(path, '.claude', 'worktrees', 'login')))
+    expect(added.branch).toBe('worktree-login')
+    expect(same(added.root)).toBe(same(path))
+    expect(await service.branch(added.path)).toEqual({ name: 'worktree-login', detached: false })
+    expect(await readFile(join(added.path, 'a.txt'), 'utf8')).toBe('a')
+  })
+
+  it('enters one of the same name again, with what is in it', async () => {
+    const path = await committed()
+    const first = await service.addWorktree(path, 'login')
+    await writeFile(join(first.path, 'wip.txt'), 'work')
+    const again = await service.addWorktree(path, 'login')
+    expect(same(again.path)).toBe(same(first.path))
+    expect(again.branch).toBe('worktree-login')
+    expect(await readFile(join(again.path, 'wip.txt'), 'utf8')).toBe('work')
+  })
+
+  it('goes on with the branch of a worktree that is gone', async () => {
+    const path = await committed()
+    git(path, 'checkout', '-q', '-b', 'worktree-kept')
+    await writeFile(join(path, 'kept.txt'), 'kept')
+    git(path, 'add', '.')
+    git(path, 'commit', '-qm', 'kept')
+    git(path, 'checkout', '-q', 'main')
+    const added = await service.addWorktree(path, 'kept')
+    expect(await service.branch(added.path)).toEqual({ name: 'worktree-kept', detached: false })
+    expect(await readFile(join(added.path, 'kept.txt'), 'utf8')).toBe('kept')
+  })
+
+  it('makes up a name when there is none', async () => {
+    const path = await committed()
+    const added = await service.addWorktree(path, ' ')
+    expect(added.branch).toMatch(/^worktree-[a-z]+-[a-z]+-[a-z]+$/)
+    expect(existsSync(join(added.path, 'a.txt'))).toBe(true)
+  })
+
+  it('lies beside a worktree it is made from, from that worktree’s state', async () => {
+    const path = await committed()
+    const first = await service.addWorktree(path, 'one')
+    await writeFile(join(first.path, 'b.txt'), 'b')
+    git(first.path, 'add', '.')
+    git(first.path, 'commit', '-qm', 'b')
+    const second = await service.addWorktree(first.path, 'two')
+    expect(same(second.path)).toBe(same(join(path, '.claude', 'worktrees', 'two')))
+    expect(await readFile(join(second.path, 'b.txt'), 'utf8')).toBe('b')
+  })
+
+  it('refuses names git or the file system would not take, and folders that are no worktree', async () => {
+    const path = await committed()
+    await expect(service.addWorktree(path, '../x')).rejects.toThrow('Nur Buchstaben')
+    await mkdir(join(path, '.claude', 'worktrees', 'taken'), { recursive: true })
+    await expect(service.addWorktree(path, 'taken')).rejects.toThrow('nicht als Worktree')
+    await expect(service.addWorktree(await repo('empty'), 'x')).rejects.toThrow('keinen Commit')
+  })
+
+  it("doesn't run the repository's own filters on the files it checks out", async () => {
+    const path = await committed()
+    await writeFile(join(path, '.gitattributes'), '*.txt filter=evil\n')
+    git(path, 'add', '.')
+    git(path, 'commit', '-qm', 'attributes')
+    const marker = join(dir, 'smudged').replaceAll('\\', '/')
+    git(path, 'config', 'filter.evil.smudge', `echo x > "${marker}"; cat`)
+    await service.addWorktree(path, 'safe')
+    expect(existsSync(marker)).toBe(false)
+    // git itself would have run it.
+    git(path, 'worktree', 'add', '-q', '-b', 'plain', join(dir, 'plain'))
+    expect(existsSync(marker)).toBe(true)
+  })
+})
+
+describe('GitService.removeWorktree', () => {
+  const hasBranch = (path: string, name: string) => {
+    try {
+      git(path, 'rev-parse', '--verify', '--quiet', `refs/heads/${name}`)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  it('removes one without new work, with its branch and the files git ignores', async () => {
+    const path = await committed()
+    await writeFile(join(path, '.gitignore'), 'build/\n')
+    git(path, 'add', '.')
+    git(path, 'commit', '-qm', 'ignore')
+    const added = await service.addWorktree(path, 'done')
+    await mkdir(join(added.path, 'build'))
+    await writeFile(join(added.path, 'build', 'out.js'), 'x')
+    expect(await service.removeWorktree(added.path, added.branch)).toBeNull()
+    expect(existsSync(added.path)).toBe(false)
+    expect(hasBranch(path, 'worktree-done')).toBe(false)
+  })
+
+  it('keeps one with changed or new files', async () => {
+    const path = await committed()
+    const added = await service.addWorktree(path, 'wip')
+    await writeFile(join(added.path, 'a.txt'), 'changed')
+    expect(await service.removeWorktree(added.path, added.branch)).toBe('Darin sind Änderungen, die noch nicht committet sind.')
+    git(added.path, 'checkout', '-q', '--', 'a.txt')
+    await writeFile(join(added.path, 'new.txt'), 'new')
+    expect(await service.removeWorktree(added.path, added.branch)).toContain('Änderungen')
+    expect(existsSync(join(added.path, 'new.txt'))).toBe(true)
+  })
+
+  it('keeps one whose branch has commits of its own, until another branch has them', async () => {
+    const path = await committed()
+    const added = await service.addWorktree(path, 'feature')
+    await writeFile(join(added.path, 'f.txt'), 'f')
+    git(added.path, 'add', '.')
+    git(added.path, 'commit', '-qm', 'feature')
+    expect(await service.removeWorktree(added.path, added.branch)).toBe('Sein Branch „worktree-feature“ hat Commits, die auf keinem anderen Branch sind.')
+    expect(hasBranch(path, 'worktree-feature')).toBe(true)
+    git(path, 'merge', '-q', '--ff-only', 'worktree-feature')
+    expect(await service.removeWorktree(added.path, added.branch)).toBeNull()
+    expect(existsSync(added.path)).toBe(false)
+    expect(hasBranch(path, 'worktree-feature')).toBe(false)
+  })
+
+  it('removes the worktree but keeps its branch when another branch is checked out there', async () => {
+    const path = await committed()
+    const added = await service.addWorktree(path, 'moved')
+    await writeFile(join(added.path, 'm.txt'), 'm')
+    git(added.path, 'add', '.')
+    git(added.path, 'commit', '-qm', 'moved')
+    git(added.path, 'checkout', '-q', '-b', 'other', 'main')
+    expect(await service.removeWorktree(added.path, added.branch)).toContain('sein Branch „worktree-moved“ bleibt')
+    expect(existsSync(added.path)).toBe(false)
+    expect(hasBranch(path, 'worktree-moved')).toBe(true)
+    expect(hasBranch(path, 'other')).toBe(true)
+  })
+
+  it('leaves alone what is gone, a main checkout and a folder outside every repository', async () => {
+    const path = await committed()
+    expect(await service.removeWorktree(join(dir, 'gone'), 'worktree-gone')).toBeNull()
+    expect(await service.removeWorktree(path, 'main')).toBeNull()
+    expect(existsSync(join(path, 'a.txt'))).toBe(true)
+    await mkdir(join(dir, 'plain'))
+    expect(await service.removeWorktree(join(dir, 'plain'), 'x')).toBeNull()
+    expect(existsSync(join(dir, 'plain'))).toBe(true)
   })
 })
 
@@ -294,21 +464,45 @@ describe('repoWebUrl', () => {
   )
 })
 
-describe('claudeWorktrees', () => {
-  it('picks the worktrees under .claude/worktrees', () => {
-    const porcelain = [
-      'worktree F:/Code/app',
-      'HEAD 0123',
-      'branch refs/heads/main',
-      '',
-      'worktree F:/Code/app/.claude/worktrees/login-fix',
-      'HEAD 4567',
-      'branch refs/heads/worktree-login-fix',
-      'locked',
-      '',
-      'worktree F:/Code/other',
-    ].join('\n')
-    expect(claudeWorktrees(porcelain)).toEqual(['login-fix'])
+describe('parseWorktrees and claudeWorktrees', () => {
+  const porcelain = [
+    'worktree F:/Code/app',
+    'HEAD 0123',
+    'branch refs/heads/main',
+    '',
+    'worktree F:/Code/app/.claude/worktrees/login-fix',
+    'HEAD 4567',
+    'branch refs/heads/worktree-login-fix',
+    'locked',
+    '',
+    'worktree F:/Code/app/.claude/worktrees/gone',
+    'HEAD 89ab',
+    'detached',
+    'prunable gitdir file points to non-existent location',
+    '',
+    'worktree F:/Code/app/sub/.claude/worktrees/nested',
+    'HEAD cdef',
+    'branch refs/heads/worktree-nested',
+    '',
+    'worktree F:/Code/other',
+    'HEAD 0000',
+    'branch refs/heads/feature/x',
+    '',
+  ].join('\n')
+
+  it('reads every checkout with its branch', () => {
+    expect(parseWorktrees(porcelain)).toEqual([
+      { path: 'F:/Code/app', branch: 'main', bare: false, prunable: false },
+      { path: 'F:/Code/app/.claude/worktrees/login-fix', branch: 'worktree-login-fix', bare: false, prunable: false },
+      { path: 'F:/Code/app/.claude/worktrees/gone', branch: null, bare: false, prunable: true },
+      { path: 'F:/Code/app/sub/.claude/worktrees/nested', branch: 'worktree-nested', bare: false, prunable: false },
+      { path: 'F:/Code/other', branch: 'feature/x', bare: false, prunable: false },
+    ])
+    expect(parseWorktrees('worktree /srv/app.git\nbare\n')).toEqual([{ path: '/srv/app.git', branch: null, bare: true, prunable: false }])
+  })
+
+  it.runIf(process.platform === 'win32')('picks those in .claude/worktrees of the main checkout that are there', () => {
+    expect(claudeWorktrees(parseWorktrees(porcelain), 'F:\\Code\\app').map((w) => w.name)).toEqual(['login-fix'])
   })
 })
 

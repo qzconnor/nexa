@@ -25,6 +25,7 @@ import type {
 import type { FileActivity } from './file-activity'
 import { decodeText, decodeUtf16, isUtf16 } from '../lib/text-encoding'
 import { TypedEmitter } from '../lib/typed-emitter'
+import { filterGuard } from './git-filters'
 import { pullRequestUrl, repoWebUrl } from './git-service'
 import type { Trash } from '../services/theme-service'
 
@@ -1331,38 +1332,6 @@ function topPathspec(path: string): string {
  * command that reads the index; diff programs and textconv are switched off where the tree diffs.
  */
 const GUARD = ['-c', 'core.fsmonitor=false']
-
-/**
- * The filters (`filter.<name>.clean`/`process`) the repository's own config defines, from
- * `git config --show-scope --name-only --get-regexp ^filter\.`, switched off by environment
- * (`GIT_CONFIG_COUNT`, after the `existing` ones; a `-c` would break on a name with `=`): git runs
- * them on every changed file it compares. Those of the user's own config (global, system) stay.
- */
-export function filterGuard(out: string | null, existing?: string): Record<string, string> {
-  const names = new Set<string>()
-  for (const line of (out ?? '').split('\n')) {
-    const [scope, key] = line.replace(/\r$/, '').split('\t')
-    if ((scope !== 'local' && scope !== 'worktree') || !key) continue
-    const match = /^filter\.(.+)\.[^.]+$/s.exec(key)
-    if (match) names.add(match[1]!)
-  }
-  const env: Record<string, string> = {}
-  const first = Number(existing) || 0
-  let count = first
-  for (const name of names) {
-    for (const [key, value] of [
-      ['clean', ''],
-      ['process', ''],
-      ['required', 'false'],
-    ]) {
-      env[`GIT_CONFIG_KEY_${count}`] = `filter.${name}.${key}`
-      env[`GIT_CONFIG_VALUE_${count}`] = value!
-      count++
-    }
-  }
-  if (count > first) env.GIT_CONFIG_COUNT = String(count)
-  return env
-}
 
 /** git's output, untouched (with `-z` a trim could cut a name); null when it failed or is missing. */
 function runGit(cwd: string, args: string[], env?: Record<string, string>): Promise<string | null> {

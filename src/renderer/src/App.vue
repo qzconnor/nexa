@@ -11,6 +11,7 @@ import FolderPromptDialog from '@/components/layout/FolderPromptDialog.vue'
 import StartCommandsDialog from '@/components/layout/StartCommandsDialog.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
+import WorktreeDialog from '@/components/layout/WorktreeDialog.vue'
 import CommandPalette from '@/components/palette/CommandPalette.vue'
 import SettingsDialog from '@/components/settings/SettingsDialog.vue'
 import ThemeEditorDialog from '@/components/themes/ThemeEditorDialog.vue'
@@ -128,6 +129,7 @@ onMounted(async () => {
       <FolderPromptDialog />
       <StartCommandsDialog />
       <ChatCleanupDialog />
+      <WorktreeDialog />
     </template>
     <ConfirmDialog />
     <AppTooltip />
