@@ -93,6 +93,9 @@ const account = (id: string, provider: Account['provider'], name: string, more: 
   authState: 'ok',
   identity: { email: null, displayName: null, organizationName: null, organizationType: null, subscriptionType: null },
   tokenExpiresAt: null,
+  loginEndsAt: null,
+  tokenSavedAt: null,
+  renewable: false,
   extraArgs: [],
   ...more,
 })
