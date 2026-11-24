@@ -79,7 +79,7 @@ const CHAT_WIDTHS = [
     </SettingsSection>
 
     <SettingsSection anchor="appearance.chat" title="Chat" description="Wie der Verlauf dargestellt wird.">
-      <SettingField anchor="appearance.chatWidth" label="Breite" description="Wie breit Nachrichten und Eingabe höchstens werden.">
+      <SettingField anchor="appearance.chatWidth" label="Breite" description="Wie breit Nachrichten und Eingabe höchstens werden. Normal und Breit wachsen auf großen Bildschirmen (4K, Ultrawide) mit, im selben Verhältnis wie auf Full HD.">
         <SegmentedControl v-model="chatWidth" :options="CHAT_WIDTHS" aria-label="Breite des Chats" />
       </SettingField>
     </SettingsSection>

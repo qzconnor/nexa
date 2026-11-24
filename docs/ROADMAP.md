@@ -91,6 +91,8 @@
       im Chat, Beenden; Schlüssel, Passwörter und Tokens in Befehl und Ausgabe werden durch •••• ersetzt,
       bevor sie gespeichert werden, und so bekommt der Agent sie mit dem nächsten Prompt. Auf der
       Startseite beginnt der Befehl einen neuen Chat
+- [x] Chatbreite „Normal“ und „Breit“ wächst auf großen Bildschirmen (4K, Ultrawide) mit: rund 40 % bzw.
+      54 % der Chatspalte wie auf Full HD, nie schmaler als bisher (`--chat-width` mit `cqw`)
 - [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
       Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
       Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste

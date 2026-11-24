@@ -96,7 +96,7 @@ const TREE = [
         id: 'appearance.chat',
         title: 'Chat',
         keywords: 'Verlauf Darstellung',
-        fields: [{ id: 'appearance.chatWidth', label: 'Breite', keywords: 'schmal breit voll Spalte Nachrichten Layout' }],
+        fields: [{ id: 'appearance.chatWidth', label: 'Breite', keywords: 'schmal breit voll Spalte Nachrichten Layout Bildschirm Auflösung 4K Ultrawide' }],
       },
     ],
   },

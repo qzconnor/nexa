@@ -499,8 +499,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
 
-      <!-- Timeline, with the composer floating over its end -->
-      <div class="relative min-h-0 flex-1">
+      <!-- Timeline, with the composer floating over its end. A container: `--chat-width` grows with its width (cqw). -->
+      <div class="@container relative min-h-0 flex-1">
         <!-- Hidden, not removed, under a file's changes: it keeps its place in the chat. -->
         <!-- The scroll bar's gutter always, so the chat and what floats over it share one centre. -->
         <div ref="viewport" :class="cn('chat-fade h-full overflow-y-auto [scrollbar-gutter:stable]', diff && 'invisible')" :style="fadeStyle">
