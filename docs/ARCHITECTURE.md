@@ -233,7 +233,8 @@ stattdessen einen neuen Chat mit denselben Einstellungen an.
 `!` am Anfang des Eingabefelds schaltet in den Shell-Modus wie in Claude Code (pinker Rahmen,
 `--tool-shell`; Esc oder Rücktaste am Anfang schaltet zurück). Die Zeile führt nicht die CLI aus,
 sondern Nexa (`SessionService.runShell` → `UserShells`), im Ordner des Chats und in der Shell aus
-`settings.chat.shell`. Daraus wird ein `ToolItem` mit `byUser`, das `UserShellBlock` zeigt (Befehl nach
+`settings.chat.shell`; auf der Startseite (`HomeView`) legt der Befehl wie ein erster Prompt einen neuen
+Chat im gewählten Projekt an und läuft darin. Daraus wird ein `ToolItem` mit `byUser`, das `UserShellBlock` zeigt (Befehl nach
 einem pinken `!`, Ausgabe darunter, Beenden über `sessions.stopShell`). Befehl und Ausgabe laufen durch
 `redactSecrets` (`shared/redact.ts`: Token-Formate, `password=…`, `--token …`, Zugangsdaten in URLs,
 `Authorization`-Header, private Schlüssel, lange zufällige Zeichenfolgen) und stehen nur so im Chat und

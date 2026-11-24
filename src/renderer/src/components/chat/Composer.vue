@@ -29,8 +29,8 @@ import ComposerSuggest from './ComposerSuggest.vue'
  * skills and files completed as they are typed; below it the CLI and account, and by the send button
  * the gear with model, effort, Ultracode and permission mode. While the agent works a prompt is sent
  * as any other and waits in the chat until the agent takes it up; with the field empty, the button
- * stops the turn. `!` at the start turns it into the shell mode (in a chat), as in Claude Code: the
- * line runs as a command in the chat's folder.
+ * stops the turn. `!` at the start turns it into the shell mode, as in Claude Code: the line runs
+ * as a command in the chat's folder (on the start page in a new chat, as a first prompt would).
  */
 const props = defineProps<{
   provider: ProviderId
@@ -58,7 +58,7 @@ const emit = defineEmits<{
   send: [input: { text: string; images: string[] }]
   /** One of Nexa's own commands (lib/chat-commands.ts), in a chat only: the chat runs it, the CLI never sees it. */
   command: [input: { command: AppCommand; args: string }]
-  /** A command typed in the shell mode (`!`), in a chat only: Nexa runs it, the next prompt tells the CLI. */
+  /** A command typed in the shell mode (`!`): Nexa runs it, the next prompt tells the CLI. */
   shell: [command: string]
   /** Text put in from elsewhere (a file mentioned in the tree, review comments): it wants to be seen. */
   inserted: []
@@ -345,8 +345,8 @@ function send(): void {
 }
 
 function onInput(): void {
-  // `!` at the start of the line (typed or pasted) switches to the shell mode, in a chat.
-  if (!shellMode.value && props.sessionId && text.value.startsWith('!')) {
+  // `!` at the start of the line (typed or pasted) switches to the shell mode.
+  if (!shellMode.value && text.value.startsWith('!')) {
     shellMode.value = true
     text.value = text.value.slice(1)
     const el = input.value
@@ -562,7 +562,7 @@ defineExpose({
       <TerminalIcon class="size-3.5 shrink-0 text-(--tool-shell)" />
       <span class="shrink-0 font-medium text-(--tool-shell)">Shell-Modus</span>
       <span class="min-w-0 truncate" v-tooltip="`Nexa führt den Befehl aus; ${PROVIDERS[provider].name} bekommt ihn samt Ausgabe mit dem nächsten Prompt.`">
-        · {{ shellName }} im Ordner des Chats
+        · {{ shellName }} {{ sessionId ? 'im Ordner des Chats' : 'im Projektordner, in einem neuen Chat' }}
       </span>
       <span class="ml-auto shrink-0 text-[0.75rem] opacity-80">Esc beendet</span>
       <Button size="icon-sm" :disabled="!canSend" aria-label="Befehl ausführen" class="rounded-full bg-(--tool-shell) text-background hover:bg-(--tool-shell)/85" @click="send">

@@ -89,7 +89,8 @@
 - [x] Shell-Modus mit `!` wie in Claude Code, für Claude und Codex: Nexa führt den Befehl im Ordner des
       Chats aus (Windows: PowerShell, Git Bash oder cmd nach Einstellung, sonst die Login-Shell), Ausgabe
       im Chat, Beenden; Schlüssel, Passwörter und Tokens in Befehl und Ausgabe werden durch •••• ersetzt,
-      bevor sie gespeichert werden, und so bekommt der Agent sie mit dem nächsten Prompt
+      bevor sie gespeichert werden, und so bekommt der Agent sie mit dem nächsten Prompt. Auf der
+      Startseite beginnt der Befehl einen neuen Chat
 - [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
       Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
       Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste
