@@ -15,7 +15,7 @@ import {
   type SectionLayout,
 } from '@shared/sections'
 import type { ProviderId } from '@shared/chat'
-import type { FolderPromptInfo, Project, ProjectSection, PromptTarget } from '@shared/types'
+import type { FolderPromptInfo, Project, ProjectSection, PromptTarget, StartCommand } from '@shared/types'
 import { baseName } from '@shared/utils'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { TypedEmitter } from '../lib/typed-emitter'
@@ -133,6 +133,16 @@ export class ProjectService extends TypedEmitter<{ changed: [Project[]]; section
     if (!off.size) delete mcpOff[provider]
     if (Object.keys(mcpOff).length) project.mcpOff = mcpOff
     else delete project.mcpOff
+    await this.save()
+    return project
+  }
+
+  /** Replaces the project's start commands (checked by `parseStartCommands`). */
+  async setStartCommands(id: string, commands: StartCommand[]): Promise<Project> {
+    const project = this.get(id)
+    if (!project) throw new Error('Das Projekt gibt es nicht mehr.')
+    if (commands.length) project.startCommands = commands
+    else delete project.startCommands
     await this.save()
     return project
   }

@@ -354,6 +354,21 @@ export interface Project {
   sectionId?: string
   /** MCP servers switched off for the project's chats, by CLI (their names as the CLI reports them). */
   mcpOff?: Partial<Record<ProviderId, string[]>>
+  /** Shells Nexa runs beside its chats, e.g. the dev server (shared/start-commands.ts). */
+  startCommands?: StartCommand[]
+}
+
+/** A command a project starts beside its chats, like a shell of the Claude Manager's tab sets. */
+export interface StartCommand {
+  id: string
+  /** What the UI calls it; empty: the command itself. */
+  name: string
+  /** One line, run with the shell of the settings (`chat.shell`). */
+  command: string
+  /** A folder in the project, relative with `/` (`packages/web`); none: the project's own. */
+  dir?: string
+  /** Starts by itself when a chat of the project opens and it doesn't run yet, once per run of Nexa. */
+  autoStart?: boolean
 }
 
 /** Whose prompt (`prompts.md` in its folder): a project's or a separator's that stands for a folder. */

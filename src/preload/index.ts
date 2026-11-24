@@ -4,6 +4,7 @@ import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
+import { StartCommandsEvent, StartCommandsInvoke } from '@shared/start-commands'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
 import { VoiceEvent, VoiceInvoke } from '@shared/voice'
 
@@ -71,6 +72,16 @@ const api: NexaApi = {
     stop: (id) => invoke(VoiceInvoke.stop, id),
     cancel: (id) => invoke(VoiceInvoke.cancel, id),
     onUpdate: (cb) => subscribe(VoiceEvent.event, cb),
+  },
+  startCommands: {
+    runs: () => invoke(StartCommandsInvoke.runs),
+    save: (projectId, commands) => invoke(StartCommandsInvoke.save, projectId, commands),
+    start: (projectId, id) => invoke(StartCommandsInvoke.start, projectId, id),
+    stop: (projectId, id) => invoke(StartCommandsInvoke.stop, projectId, id),
+    restart: (projectId, id) => invoke(StartCommandsInvoke.restart, projectId, id),
+    output: (projectId, id) => invoke(StartCommandsInvoke.output, projectId, id),
+    chatOpened: (projectId) => invoke(StartCommandsInvoke.chatOpened, projectId),
+    onChanged: (cb) => subscribe(StartCommandsEvent.changed, cb),
   },
   git: {
     branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),

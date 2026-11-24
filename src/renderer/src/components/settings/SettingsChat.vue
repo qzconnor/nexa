@@ -131,7 +131,7 @@ function cleanUp(): void {
         v-if="isWindows"
         anchor="chat.shell"
         label="Shell für „!“"
-        description="„!“ am Anfang des Eingabefelds führt die Zeile als Befehl im Ordner des Chats aus. PowerShell 7, wenn installiert, sonst Windows PowerShell. Der Agent bekommt Befehl und Ausgabe mit dem nächsten Prompt, Schlüssel und Passwörter durch •••• ersetzt."
+        description="„!“ am Anfang des Eingabefelds führt die Zeile als Befehl im Ordner des Chats aus. PowerShell 7, wenn installiert, sonst Windows PowerShell. Der Agent bekommt Befehl und Ausgabe mit dem nächsten Prompt, Schlüssel und Passwörter durch •••• ersetzt. Auch die Startbefehle der Projekte laufen in dieser Shell."
       >
         <SegmentedControl v-model="shell" :options="SHELLS" aria-label="Shell für „!“" />
       </SettingField>

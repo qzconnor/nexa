@@ -275,6 +275,36 @@ läuft, geht die Ausgabe nur an das Fenster; gespeichert wird sie (ihr Ende, 100
 endet. Der nächste Prompt bekommt alle `!`-Befehle seit dem letzten Prompt als `<nexa-shell>`
 (`userShellContext`) vorangestellt; beim Wechsel der CLI stehen ältere als eine Zeile im `<nexa-context>`.
 
+### Startbefehle
+
+Ein Projekt hat Startbefehle (`Project.startCommands`, `shared/start-commands.ts`), wie die Shells mit
+Startbefehl in den Tab-Sets des Claude Managers: Befehl (eine Zeile), Name, ein Ordner im Projekt (relativ,
+mit `/`) und „Automatisch starten“. Bearbeitet werden sie in `StartCommandsDialog` (`ui.startCommandsProject`;
+„Startbefehle …“ im Kontextmenü des Projekts, am Trenner für das Projekt seines Ordners, im Menü des Chats und
+in der Befehlsliste). `StartCommands.save` prüft sie mit `parseStartCommands` (kein Ordner außerhalb des
+Projekts) und speichert sie über `ProjectService.setStartCommands` in `projects.json`.
+
+`services/start-commands.ts` (`StartCommands`, Kanäle `start-commands:*` in `start-commands-ipc.ts`) führt sie
+aus wie die `!`-Befehle: `shellLaunch` mit `settings.chat.shell`, ein Prozess je Befehl über eine eigene
+`UserShells` (Dekodierung, Ende der Ausgabe, Beenden samt Kindprozessen), im Ordner des Projekts oder dem
+Ordner darin. Die Ausgabe bleibt im Speicher von Main und geht weder auf die Platte noch an einen Agent
+(daher ohne `redactSecrets`); das Fenster holt ihr Ende (`output`, 100 000 Zeichen) jede Sekunde, solange
+der Befehl läuft und gezeigt wird. Die Läufe (`StartCommandRun`: Zustand, Shell, Zeiten, Exit-Code, Fehler
+wie ein fehlender Ordner) gehen als Ereignis an die Fenster; der letzte Lauf jedes Befehls bleibt, bis der
+Befehl oder sein Projekt geht (`projectsChanged` beendet ihn dann). „Neu starten“ beendet den Prozess und
+startet den Befehl so, wie er jetzt gespeichert ist. Beim Beenden von Nexa enden alle (`dispose` wartet bis
+zu 3 s, damit kein Dev-Server seinen Port behält). Für „Automatisch starten“ meldet `ChatView` das Projekt
+jedes Chats, den es zeigt (`chatOpened`): Beim ersten Chat eines Projekts mit solchen Befehlen starten sie,
+einmal je Lauf von Nexa; einer, den der Nutzer beendet hat, bleibt aus.
+
+Im Renderer hält `stores/start-commands.ts` die Läufe. `StartCommandsMenu` im Kopf des Chats (nur mit
+Startbefehlen; ein Punkt in `--tool-run`, solange einer läuft) startet einen Befehl und zeigt ihn im
+`ShellPanel`: Es listet die laufenden Startbefehle des Projekts vor den Shells des Chats (`ui.shellId` ist
+dann `startShellId(id)`, `start:<id>`), `StartCommandDetail` zeigt Ausgabe, Starten, Neu starten und
+Beenden. Ein Startbefehl, der endet, bleibt im Panel stehen, damit seine letzten Zeilen lesbar sind. Die
+Sidebar zeigt am Projekt, was läuft, und startet oder beendet im Kontextmenü; `/tasks` öffnet einen
+laufenden Startbefehl, wenn im Chat keine Shell läuft.
+
 ### Spracheingabe
 
 Das Mikrofon neben dem Senden-Knopf (oder Strg+M im Eingabefeld) diktiert in die Eingabe, für jede CLI:

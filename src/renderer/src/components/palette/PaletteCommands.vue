@@ -16,6 +16,7 @@ import {
   PencilIcon,
   PinIcon,
   PinOffIcon,
+  PlayIcon,
   PowerIcon,
   RefreshCwIcon,
   RotateCwIcon,
@@ -25,11 +26,13 @@ import {
   ShapesIcon,
   SparklesIcon,
   SquarePenIcon,
+  SquareTerminalIcon,
   Trash2Icon,
 } from '@lucide/vue'
 import { computed } from 'vue'
 import { PROVIDERS } from '@shared/providers'
-import type { SessionUpdateInput } from '@shared/types'
+import { startCommandLabel } from '@shared/start-commands'
+import type { SessionUpdateInput, StartCommand } from '@shared/types'
 import AccountDot from '@/components/accounts/AccountDot.vue'
 import { SETTINGS_ICONS } from '@/components/settings/settings-icons'
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/components/ui/command'
@@ -37,11 +40,13 @@ import { useChatActions } from '@/composables/useChatActions'
 import { SETTINGS } from '@/composables/useSettingsSearch'
 import { attempt } from '@/lib/errors'
 import type { SettingsEntry } from '@/lib/settings-index'
+import { startShellId } from '@/lib/shells'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
+import { useStartCommandsStore } from '@/stores/start-commands'
 import { useUiStore } from '@/stores/ui'
 import PaletteInput from './PaletteInput.vue'
 
@@ -56,6 +61,7 @@ const providers = useProvidersStore()
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
+const startCommands = useStartCommandsStore()
 const chat = useChatActions()
 
 /** Closes the quick open first, so the keyboard is back in the window before the action runs. */
@@ -102,6 +108,25 @@ function update(patch: SessionUpdateInput): void {
 function openFolder(): void {
   const cwd = sessions.cwdOf(meta.value)
   if (cwd) void attempt(() => window.api.app.openPath(cwd), 'Ordner ließ sich nicht öffnen')
+}
+
+/** The project of the chat on screen, for its start commands. */
+const chatProject = computed(() => projects.get(meta.value?.projectId))
+
+/** Ends it, or starts it and shows it beside the chat. */
+function toggleStart(command: StartCommand): void {
+  const projectId = chatProject.value?.id
+  if (!projectId) return
+  if (startCommands.isRunning(projectId, command.id)) {
+    void startCommands.stop(projectId, command.id)
+    return
+  }
+  ui.shellId = startShellId(command.id)
+  void startCommands.start(projectId, command.id)
+}
+
+function editStartCommands(): void {
+  if (chatProject.value) ui.startCommandsProject = chatProject.value.id
 }
 
 /** Every account of the CLIs that are on, but the one the chat runs with: the chat can go on with it. */
@@ -253,6 +278,33 @@ const switchChoices = computed(() => {
           <CommandItem value="chat-delete" filter-text="Chat löschen entfernen Verlauf Transkript Papierkorb" @select="run(() => chat.remove(meta!))">
             <Trash2Icon />
             Chat löschen
+          </CommandItem>
+        </CommandGroup>
+      </template>
+
+      <template v-if="chatProject">
+        <CommandSeparator />
+        <CommandGroup :heading="`Startbefehle von „${chatProject.name}“`">
+          <CommandItem
+            v-for="c in startCommands.commandsOf(chatProject.id)"
+            :key="c.id"
+            :value="`start-command-${c.id}`"
+            :filter-text="`Startbefehl ${startCommandLabel(c)} ${c.command} starten beenden Shell Dev-Server`"
+            @select="run(() => toggleStart(c))"
+          >
+            <CircleStopIcon v-if="startCommands.isRunning(chatProject.id, c.id)" />
+            <PlayIcon v-else />
+            <span class="min-w-0 truncate">
+              „{{ startCommandLabel(c) }}“ {{ startCommands.isRunning(chatProject.id, c.id) ? 'beenden' : 'starten' }}
+            </span>
+          </CommandItem>
+          <CommandItem
+            value="start-commands-edit"
+            filter-text="Startbefehle bearbeiten einrichten Dev-Server npm run dev Shell Projekt automatisch starten"
+            @select="run(editStartCommands, true)"
+          >
+            <SquareTerminalIcon />
+            Startbefehle bearbeiten…
           </CommandItem>
         </CommandGroup>
       </template>

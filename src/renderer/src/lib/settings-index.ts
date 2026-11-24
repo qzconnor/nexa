@@ -236,7 +236,7 @@ const TREE = [
         keywords: 'Composer Nachricht schreiben',
         fields: [
           { id: 'chat.enterSends', label: 'Enter sendet', keywords: 'Strg+Enter Zeilenumbruch Tastatur senden Shortcut' },
-          { id: 'chat.shell', label: 'Shell für „!“', keywords: 'Ausrufezeichen Befehl Terminal Konsole PowerShell pwsh Git Bash cmd Kommandozeile Shell-Modus', windowsOnly: true },
+          { id: 'chat.shell', label: 'Shell für „!“', keywords: 'Ausrufezeichen Befehl Terminal Konsole PowerShell pwsh Git Bash cmd Kommandozeile Shell-Modus Startbefehle Dev-Server', windowsOnly: true },
         ],
       },
       {

@@ -32,6 +32,18 @@ export function shellEnd(tool: ToolItem): number | undefined {
 
 export { plainOutput } from '@shared/terminal'
 
+const START_PREFIX = 'start:'
+
+/** The side panel's id for a start command of the chat's project; no tool item's id looks like it. */
+export function startShellId(commandId: string): string {
+  return `${START_PREFIX}${commandId}`
+}
+
+/** The start command a panel id stands for; null for a tool item's. */
+export function startCommandOf(shellId: string | null | undefined): string | null {
+  return shellId?.startsWith(START_PREFIX) ? shellId.slice(START_PREFIX.length) : null
+}
+
 /** The shells of a chat that run right now, oldest first: in the background or the foreground, subagents' too. */
 export function runningShells(items: readonly ChatItem[]): ToolItem[] {
   return items.filter((i): i is ToolItem => i.kind === 'tool' && isCommand(i) && shellStatus(i) === 'running')

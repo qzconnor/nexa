@@ -8,6 +8,7 @@ import AppTooltip from '@/components/common/AppTooltip.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import ChatCleanupDialog from '@/components/layout/ChatCleanupDialog.vue'
 import FolderPromptDialog from '@/components/layout/FolderPromptDialog.vue'
+import StartCommandsDialog from '@/components/layout/StartCommandsDialog.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
 import CommandPalette from '@/components/palette/CommandPalette.vue'
@@ -125,6 +126,7 @@ onMounted(async () => {
       <AccountFormDialog />
       <AccountLoginDialog />
       <FolderPromptDialog />
+      <StartCommandsDialog />
       <ChatCleanupDialog />
     </template>
     <ConfirmDialog />

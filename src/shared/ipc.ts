@@ -40,6 +40,7 @@ import type { BrowserApi } from './browser-ipc'
 import type { UpdatesApi } from './updates'
 import type { CliImportApi, ImportApi } from './import-ipc'
 import type { SectionLayout } from './sections'
+import type { StartCommandsApi } from './start-commands'
 import type { VoiceApi } from './voice'
 
 /** Request/response channels (ipcRenderer.invoke ↔ ipcMain.handle). */
@@ -215,6 +216,8 @@ export interface NexaApi {
   artifacts: ArtifactsApi
   /** The microphone in the composer, recognised by Claude (shared/voice.ts). */
   voice: VoiceApi
+  /** The projects' start commands, run as shells beside the chats (shared/start-commands.ts). */
+  startCommands: StartCommandsApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

@@ -14,6 +14,7 @@ import {
   PowerIcon,
   RefreshCwIcon,
   SearchIcon,
+  SquareTerminalIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from '@lucide/vue'
@@ -59,6 +60,7 @@ import { MAX_TREE_SHARE, useFileTreeStore } from '@/stores/file-tree'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
+import { useStartCommandsStore } from '@/stores/start-commands'
 import { useUiStore } from '@/stores/ui'
 import AgentDock from './AgentDock.vue'
 import AgentThread from './AgentThread.vue'
@@ -68,6 +70,7 @@ import LimitBanner from './LimitBanner.vue'
 import MessageList from './MessageList.vue'
 import ShellDock from './ShellDock.vue'
 import ShellPanel from './ShellPanel.vue'
+import StartCommandsMenu from './StartCommandsMenu.vue'
 import TodoCard from './TodoCard.vue'
 import UserMessage from './UserMessage.vue'
 
@@ -94,6 +97,17 @@ const project = computed(() => projects.get(meta.value?.projectId))
 /** Where the agent works: paths in it are shown relative to it. */
 const cwd = computed(() => (project.value ? (sessions.cwdOf(meta.value) ?? project.value.path) : null))
 provideProjectPath(cwd)
+
+// The first chat of a project on screen starts its start commands with „Automatisch starten“ (main
+// counts: once per run of Nexa).
+const startCommands = useStartCommandsStore()
+watch(
+  () => project.value?.id,
+  (id) => {
+    if (id) startCommands.chatOpened(id)
+  },
+  { immediate: true },
+)
 const busy = computed(() => runtime.value.status === 'running' || runtime.value.status === 'waiting' || runtime.value.status === 'starting')
 
 // ── The file panel on the left, and a file's changes over the timeline ──
@@ -482,6 +496,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </nav>
         <button v-else type="button" class="min-w-0 truncate text-sm font-medium" :title="meta.title" @dblclick="startRename">{{ meta.title }}</button>
         <div class="ml-auto flex shrink-0 items-center gap-1">
+          <StartCommandsMenu v-if="project" :project-id="project.id" />
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" size="icon-sm" aria-label="Mehr">
@@ -493,6 +508,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <DropdownMenuItem :disabled="!!diff" @select="openFind"><SearchIcon /> Im Chat suchen <DropdownMenuShortcut>Strg+F</DropdownMenuShortcut></DropdownMenuItem>
               <DropdownMenuItem :disabled="busy" @select="chatActions.fork(meta.id)"><GitForkIcon /> Chat abzweigen</DropdownMenuItem>
               <DropdownMenuItem v-if="project" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
+              <DropdownMenuItem v-if="project" @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</DropdownMenuItem>
               <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit {{ syncNames }} abgleichen</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
@@ -682,7 +698,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
     </div>
-    <ShellPanel v-if="ui.shellId" :items="items" :session-id="meta.id" />
+    <ShellPanel v-if="ui.shellId" :items="items" :session-id="meta.id" :project-id="project?.id" />
     <BrowserPanel :session-id="meta.id" />
     <ChatStatusDialog v-model:open="statusOpen" :meta="meta" :runtime="runtime" :cwd="cwd" />
   </div>

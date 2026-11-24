@@ -34,9 +34,12 @@ import { UsageSamples } from './services/usage-samples'
 import { NotificationService } from './services/notification-service'
 import { SessionService } from './services/session-service'
 import { SettingsService } from './services/settings-service'
+import { StartCommands } from './services/start-commands'
+import { registerStartCommandsIpc } from './services/start-commands-ipc'
 import { ThemeService } from './services/theme-service'
 import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
+import { shellLaunch } from './services/user-shells'
 import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { handleFileProtocol, registerFileScheme } from './window/file-protocol'
@@ -155,6 +158,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // The `nx` command on the user PATH, (un)registered on the settings page.
   const command = new CommandIntegration()
   registerIpc({ userDataDir, settings, themes, accounts, providers, projects, sessions, api, git, notifications, autoSwitch, command })
+  // The projects' start commands (dev servers & co.), as shells beside the chats; in the shell of the settings.
+  const startCommands = new StartCommands(projects, (command) => shellLaunch(settings.get().chat.shell, command))
+  projects.on('changed', (list) => startCommands.projectsChanged(list))
+  registerStartCommandsIpc(startCommands)
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
@@ -333,8 +340,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     updates.dispose()
     // Before the runs end: nothing goes on after a limit while Nexa quits.
     const switchSaved = autoSwitch.dispose()
-    // Ends the CLI processes (they would outlive the app) and writes what is pending.
-    void Promise.allSettled([sessions.dispose(), providers.dispose(), browserTabs.flush(), switchSaved])
+    // Ends the CLI processes and start commands (they would outlive the app) and writes what is pending.
+    void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), switchSaved])
       .then(() => {
         api.dispose()
         notifications.dispose()

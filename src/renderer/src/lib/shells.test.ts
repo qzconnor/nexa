@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem, ToolItem } from '@shared/chat'
-import { dockShells, plainOutput, runningShells, shellCommand, shellStatus } from './shells'
+import { dockShells, plainOutput, runningShells, shellCommand, shellStatus, startCommandOf, startShellId } from './shells'
 
 const tool = (over: Partial<ToolItem>): ToolItem => ({
   kind: 'tool',
@@ -62,5 +62,13 @@ describe('shellCommand', () => {
 describe('plainOutput', () => {
   it('drops colours, titles and carriage-return redraws', () => {
     expect(plainOutput('\x1b[32mok\x1b[0m\x1b]0;title\x07 done\r50%\r\n')).toBe('ok done\n50%\r\n')
+  })
+})
+
+describe('startShellId', () => {
+  it('tells a start command in the panel from a tool item', () => {
+    expect(startCommandOf(startShellId('dev'))).toBe('dev')
+    expect(startCommandOf('toolu_01abc')).toBeNull()
+    expect(startCommandOf(null)).toBeNull()
   })
 })
