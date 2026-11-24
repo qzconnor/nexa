@@ -5,6 +5,7 @@ import type { ChatItem } from '@shared/chat'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
 import { chatBlocks, type ChatBlock } from '@/lib/tools'
+import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import AgentCard from './AgentCard.vue'
 import InteractionCard from './InteractionCard.vue'
@@ -21,6 +22,7 @@ import UserShellBlock from './UserShellBlock.vue'
 /** The timeline of one thread: the main chat, or (with `parentId`) a subagent's work. */
 const props = defineProps<{ items: ChatItem[]; sessionId: string; parentId?: string | null }>()
 const settings = useSettingsStore()
+const sessions = useSessionsStore()
 
 const blocks = computed(() => chatBlocks(props.items, props.parentId ?? null, settings.settings.chat.showThinking))
 // A long chat renders its newest blocks only and older ones as the user scrolls up: hundreds of
@@ -160,6 +162,16 @@ const liveBrowser = computed(() => {
   return last?.type === 'browser' ? last.id : null
 })
 
+/**
+ * The prompts that can be changed and sent anew: the main thread's below the last `/clear` (above it
+ * no CLI knows the chat any more), while the chat rests.
+ */
+const editable = computed(() => {
+  const status = sessions.runtime(props.sessionId).status
+  if (props.parentId || status === 'running' || status === 'starting' || status === 'waiting') return new Set<string>()
+  return new Set(blocks.value.slice(clearedAt.value + 1).flatMap((b) => (b.type === 'item' && b.item.kind === 'user' ? [b.item.id] : [])))
+})
+
 /** The CLI a prompt went to shows when it differs from the one before. */
 const providerChanges = computed(() => {
   const ids = new Set<string>()
@@ -208,6 +220,8 @@ const providerChanges = computed(() => {
           v-if="block.item.kind === 'user'"
           :item="block.item"
           :show-provider="providerChanges.has(block.item.id)"
+          :session-id="sessionId"
+          :editable="editable.has(block.item.id)"
         />
         <div
           v-else-if="block.item.kind === 'assistant'"

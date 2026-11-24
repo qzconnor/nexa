@@ -204,6 +204,7 @@ const api: NexaApi = {
     create: (input) => invoke(IpcInvoke.sessionsCreate, input),
     open: (id) => invoke(IpcInvoke.sessionsOpen, id),
     send: (id, input) => invoke(IpcInvoke.sessionsSend, id, input),
+    edit: (id, itemId, input) => invoke(IpcInvoke.sessionsEdit, id, itemId, input),
     interrupt: (id) => invoke(IpcInvoke.sessionsInterrupt, id),
     respond: (id, itemId, response) => invoke(IpcInvoke.sessionsRespond, id, itemId, response),
     shellOutput: (id, itemId) => invoke(IpcInvoke.sessionsShellOutput, id, itemId),
