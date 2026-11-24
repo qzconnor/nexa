@@ -8,6 +8,7 @@ import {
   isSystemAccountId,
   maskSecret,
   pickAccount,
+  reorderAccounts,
   systemAccountId,
   usesSecret,
   type Account,
@@ -218,6 +219,15 @@ export class AccountService extends TypedEmitter<Events> {
     await this.persist()
     this.rebuild(true)
     return this.get(id)
+  }
+
+  /** The accounts in `ids` in that order (the user's order: lists, the fallback default, switching at a limit). */
+  async reorder(ids: readonly string[]): Promise<void> {
+    const next = reorderAccounts(this.stored, ids)
+    if (next.every((a, i) => a === this.stored[i])) return
+    this.stored = next
+    await this.persist()
+    this.rebuild(true)
   }
 
   /** Nexa deletes only folders it created itself, and only when asked. */

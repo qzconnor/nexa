@@ -1,5 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { duplicateOf, identityLabel, isSystemAccountId, maskSecret, pickAccount, planLabel, sameLogin, systemAccountId, visibleAccounts, type AccountIdentity } from './accounts'
+import {
+  duplicateOf,
+  identityLabel,
+  isSystemAccountId,
+  maskSecret,
+  pickAccount,
+  planLabel,
+  reorderAccounts,
+  sameLogin,
+  systemAccountId,
+  visibleAccounts,
+  type AccountIdentity,
+} from './accounts'
+
+describe('reorderAccounts', () => {
+  const list = [{ id: 'system' }, { id: 'system-codex' }, { id: 'c1' }, { id: 'x1' }, { id: 'c2' }, { id: 'c3' }, { id: 'x2' }]
+  const ids = (sorted: { id: string }[]) => sorted.map((a) => a.id)
+
+  it('sorts one CLI’s accounts in their places, the other’s stay', () => {
+    expect(ids(reorderAccounts(list, ['c3', 'c1', 'c2']))).toEqual(['system', 'system-codex', 'c3', 'x1', 'c1', 'c2', 'x2'])
+  })
+
+  it('leaves accounts that aren’t named where they are', () => {
+    expect(ids(reorderAccounts(list, ['x2', 'x1']))).toEqual(['system', 'system-codex', 'c1', 'x2', 'c2', 'c3', 'x1'])
+  })
+
+  it('ignores unknown and repeated ids', () => {
+    expect(ids(reorderAccounts(list, ['c2', 'gone', 'c2', 'c1']))).toEqual(['system', 'system-codex', 'c2', 'x1', 'c1', 'c3', 'x2'])
+  })
+})
 
 describe('accounts', () => {
   it('gives each CLI a fixed standard account', () => {

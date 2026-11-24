@@ -126,6 +126,17 @@ export function pickAccount(
   return shown[0]?.id ?? systemAccountId(provider)
 }
 
+/**
+ * `list` with the accounts named in `ids` in that order, in the places they took: one CLI's list is
+ * sorted without moving the other's, and unnamed accounts (a hidden standard one) stay where they are.
+ */
+export function reorderAccounts<T extends { id: string }>(list: readonly T[], ids: readonly string[]): T[] {
+  const named = new Set(ids)
+  const sorted = [...named].map((id) => list.find((a) => a.id === id)).filter((a): a is T => !!a)
+  let next = 0
+  return list.map((a) => (named.has(a.id) ? sorted[next++]! : a))
+}
+
 type LoginOf = Pick<Account, 'provider' | 'identity'>
 
 /**

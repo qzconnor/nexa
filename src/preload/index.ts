@@ -169,6 +169,7 @@ const api: NexaApi = {
     update: (id, patch) => invoke(IpcInvoke.accountsUpdate, id, patch),
     remove: (id, deleteFolder) => invoke(IpcInvoke.accountsRemove, id, deleteFolder),
     merge: (from, into) => invoke(IpcInvoke.accountsMerge, from, into),
+    reorder: (ids) => invoke(IpcInvoke.accountsReorder, ids),
     logins: () => invoke(IpcInvoke.accountsLogins),
     login: (id) => invoke(IpcInvoke.accountsLogin, id),
     loginCode: (id, code) => invoke(IpcInvoke.accountsLoginCode, id, code),

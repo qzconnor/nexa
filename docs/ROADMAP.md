@@ -172,6 +172,9 @@
       `generate_session_title`, Codex einen flüchtigen Thread. Der Titel gilt auch in der CLI, bei Codex
       über `thread/name/set`. Bis er da ist, steht die erste Zeile da. Ein eigener Name bleibt.
       Abschaltbar unter Einstellungen › Chat.
+- [x] Accounts sortieren: am Griff einer Karte unter Einstellungen › Accounts ziehen oder mit den
+      Pfeiltasten verschieben; in dieser Reihenfolge stehen sie überall. Hat eine CLI mehrere Accounts,
+      zeigt die Sidebar am Chat einen Punkt in der Farbe seines Accounts
 
 ## Als Nächstes
 
@@ -189,9 +192,10 @@
       weiter, alles, was danach kam (Antworten, Werkzeuge, spätere Prompts), fällt weg. Die CLIs setzen
       an der Stelle an wie beim Abzweigen (Claude Code `--resume-session-at` der Antwort davor, Codex
       `thread/fork` bis zum Turn davor; ein Zurücksetzen im selben Thread hat der App-Server 0.169 nicht).
-- [ ] **Accounts sortieren** per Drag & Drop und Account in der Sidebar am Chat anzeigen.
 - [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
       führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).
+- [ ] **Shell-Detailansicht überarbeiten**: die Ansicht einer Shell neben dem Chat mit Ausgabe, Status und
+      Beenden (`ShellPanel.vue`).
 
 ## Aus dem Claude Manager
 

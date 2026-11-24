@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CopyIcon, EllipsisIcon, FolderOpenIcon, KeyRoundIcon, LogInIcon, MergeIcon, PencilIcon, StarIcon, Trash2Icon } from '@lucide/vue'
+import { CopyIcon, EllipsisIcon, FolderOpenIcon, GripVerticalIcon, KeyRoundIcon, LogInIcon, MergeIcon, PencilIcon, StarIcon, Trash2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { accountKindLabel, canLogin, duplicateOf, identityLabel, isSystemAccountId, planLabel, usesSecret, type Account } from '@shared/accounts'
 import { PROVIDERS } from '@shared/providers'
@@ -24,9 +24,18 @@ import { useUiStore } from '@/stores/ui'
 import AccountAuthStatus from './AccountAuthStatus.vue'
 import AccountDot from './AccountDot.vue'
 
-/** One account in the settings: who is signed in, its limits, what can be done with it. */
-const props = defineProps<{ account: Account }>()
-const emit = defineEmits<{ remove: [] }>()
+/**
+ * One account in the settings: who is signed in, its limits, what can be done with it. `sortable`:
+ * a handle to drag it to another place (or move it with the arrow keys), see AccountList.
+ */
+const props = defineProps<{ account: Account; sortable?: boolean }>()
+const emit = defineEmits<{ remove: []; dragStart: [event: DragEvent]; dragEnd: []; step: [by: -1 | 1] }>()
+
+function onHandleKey(event: KeyboardEvent): void {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+  event.preventDefault()
+  emit('step', event.key === 'ArrowUp' ? -1 : 1)
+}
 
 const accounts = useAccountsStore()
 const providers = useProvidersStore()
@@ -71,9 +80,25 @@ async function mergeIntoTwin(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2.5 rounded-lg border bg-background/40 p-3">
+  <div data-account-row class="group/account flex flex-col gap-2.5 rounded-lg border bg-background/40 p-3">
     <div class="flex items-start gap-3">
-      <AccountDot :color="account.color" class="mt-1.5 size-2.5" />
+      <span class="relative mt-1.5 flex size-2.5 shrink-0 items-center justify-center">
+        <AccountDot :color="account.color" :class="cn('size-2.5', sortable && 'group-hover/account:opacity-0 group-focus-within/account:opacity-0')" />
+        <!-- Over the dot, which it takes the place of while the pointer is on the card. -->
+        <button
+          v-if="sortable"
+          type="button"
+          draggable="true"
+          class="absolute -inset-1.5 flex cursor-grab items-center justify-center rounded text-muted-foreground opacity-0 group-focus-within/account:opacity-100 group-hover/account:opacity-100 active:cursor-grabbing"
+          :aria-label="`${account.name} verschieben (Pfeiltasten)`"
+          v-tooltip="'Ziehen zum Sortieren'"
+          @dragstart="emit('dragStart', $event)"
+          @dragend="emit('dragEnd')"
+          @keydown="onHandleKey"
+        >
+          <GripVerticalIcon class="size-3.5" />
+        </button>
+      </span>
       <div class="flex min-w-0 flex-1 flex-col gap-0.5">
         <div class="flex min-w-0 items-center gap-1.5">
           <span class="truncate text-sm font-medium">{{ account.name }}</span>

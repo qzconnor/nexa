@@ -82,6 +82,7 @@ export const IpcInvoke = {
   accountsUpdate: 'accounts:update',
   accountsRemove: 'accounts:remove',
   accountsMerge: 'accounts:merge',
+  accountsReorder: 'accounts:reorder',
   accountsLogins: 'accounts:logins',
   accountsLogin: 'accounts:login',
   accountsLoginCode: 'accounts:login-code',
@@ -283,6 +284,8 @@ export interface NexaApi {
     remove(id: string, deleteFolder: boolean): Promise<void>
     /** Folds `from` into `into` (the same login): its chats go on with `into`, its folder stays. */
     merge(from: string, into: string): Promise<void>
+    /** The accounts in this order (those not named keep their places). */
+    reorder(ids: string[]): Promise<void>
     /** The browser logins that run. */
     logins(): Promise<AccountLoginState[]>
     /** Starts the CLI's browser login for the account. */

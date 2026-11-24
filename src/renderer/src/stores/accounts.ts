@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import {
   pickAccount,
+  reorderAccounts,
   systemAccountId,
   visibleAccounts,
   type Account,
@@ -88,6 +89,18 @@ export const useAccountsStore = defineStore('accounts', () => {
     accounts.value = accounts.value.filter((a) => a.id !== from)
   }
 
+  /** Puts the accounts in this order right away; the main process confirms it with its list. */
+  async function reorder(ids: string[]): Promise<void> {
+    const before = accounts.value
+    accounts.value = reorderAccounts(before, ids)
+    try {
+      await window.api.accounts.reorder(ids)
+    } catch (error) {
+      accounts.value = before
+      throw error
+    }
+  }
+
   /** Starts the browser login and shows its dialog. */
   async function login(id: string): Promise<void> {
     loginId.value = id
@@ -97,5 +110,5 @@ export const useAccountsStore = defineStore('accounts', () => {
     if (!logins.has(id)) logins.set(id, state)
   }
 
-  return { accounts, logins, loginId, formRequest, get, ofProvider, defaultId, sessionAccount, setDefault, load, refresh, create, update, remove, merge, login }
+  return { accounts, logins, loginId, formRequest, get, ofProvider, defaultId, sessionAccount, setDefault, load, refresh, create, update, remove, merge, reorder, login }
 })

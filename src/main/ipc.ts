@@ -275,6 +275,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.accountsMerge, (_e, from: unknown, into: unknown) =>
     mergeAccounts(accounts, sessions, settings, str(from, 'Der Account'), str(into, 'Der Account')),
   )
+  handle(IpcInvoke.accountsReorder, (_e, ids: unknown) => accounts.reorder(idList(ids, 'Die Accounts')))
   handle(IpcInvoke.accountsLogins, () => providers.loginStates())
   handle(IpcInvoke.accountsLogin, (_e, id: unknown) => providers.login(str(id, 'Der Account')))
   handle(IpcInvoke.accountsLoginCode, (_e, id: unknown, code: unknown) => providers.loginCode(str(id, 'Der Account'), str(code, 'Der Code')))

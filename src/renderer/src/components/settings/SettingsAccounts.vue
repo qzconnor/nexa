@@ -3,7 +3,7 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { ref } from 'vue'
 import type { Account } from '@shared/accounts'
 import type { ProviderId } from '@shared/chat'
-import AccountRow from '@/components/accounts/AccountRow.vue'
+import AccountList from '@/components/accounts/AccountList.vue'
 import RemoveAccountDialog from '@/components/accounts/RemoveAccountDialog.vue'
 import ClaudeManagerImport from '@/components/setup/ClaudeManagerImport.vue'
 import CliSessionsImport from '@/components/setup/CliSessionsImport.vue'
@@ -66,7 +66,7 @@ async function refresh(): Promise<void> {
           Hinzufügen
         </Button>
       </template>
-      <AccountRow v-for="account in accounts.ofProvider('claude')" :key="account.id" :account="account" @remove="remove(account)" />
+      <AccountList provider="claude" @remove="remove" />
     </SettingsSection>
 
     <SettingsSection anchor="accounts.codex" title="Codex" description="ChatGPT-Logins, jeder mit eigenem CODEX_HOME.">
@@ -76,7 +76,7 @@ async function refresh(): Promise<void> {
           Hinzufügen
         </Button>
       </template>
-      <AccountRow v-for="account in accounts.ofProvider('codex')" :key="account.id" :account="account" @remove="remove(account)" />
+      <AccountList provider="codex" @remove="remove" />
     </SettingsSection>
 
     <div v-if="filter.shows('accounts.cliImport')" data-setting="accounts.cliImport">
@@ -91,6 +91,7 @@ async function refresh(): Promise<void> {
       Neue Chats starten mit dem Vorgabe-Account ihrer CLI. Im Chat wechselt das Menü an der Eingabe den Account; die Unterhaltung
       geht mit allem, was die CLI wusste, beim anderen Account weiter. Sobald du für eine CLI einen eigenen Account hinzufügst,
       ist ihr Standard-Account (~/.claude, ~/.codex) ausgeblendet; Chats, die ihn nutzten, gehen mit dem Vorgabe-Account weiter.
+      Die Reihenfolge änderst du am Griff links an einer Karte (ziehen oder Pfeiltasten); so stehen die Accounts überall in Nexa.
     </p>
 
     <RemoveAccountDialog v-model:open="removeOpen" :account="removing" />
