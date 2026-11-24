@@ -9,6 +9,7 @@ import AppLogo from '@/components/common/AppLogo.vue'
 import { nexaToolView, TOOL_META } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 import { useProjectPath } from '@/composables/useProjectPath'
+import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import DiffView from './DiffView.vue'
@@ -19,10 +20,11 @@ import DiffView from './DiffView.vue'
  */
 const props = defineProps<{ tool: ToolItem }>()
 const settings = useSettingsStore()
+const sessions = useSessionsStore()
 const ui = useUiStore()
 const { shorten, relative } = useProjectPath()
 /** Nexa's own tools are the app, not a server like any other: its mark, and what they do in words. */
-const nexa = computed(() => nexaToolView(props.tool))
+const nexa = computed(() => nexaToolView(props.tool, (id) => sessions.get(id)?.title))
 const title = computed(() => nexa.value?.title ?? props.tool.title)
 const detail = computed(() => {
   const text = nexa.value ? nexa.value.detail : props.tool.detail

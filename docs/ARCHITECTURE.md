@@ -62,7 +62,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts` |
 | `services/auto-switch.ts` | Am Limit eines Accounts (`attention` `limit`): den verlassenen Account bis zu seinem Reset sperren, mit `chat.autoSwitch` beim nächsten freien Account derselben CLI weitermachen, sonst bis zum ersten Reset warten (`SessionRuntime.resume`); gemerkt in `auto-switch.json`, siehe „Accounts“ |
 | `services/update-service.ts` | Updates aus den GitHub-Releases (electron-updater, Suche nach 10 s und alle 4 h), Versionshinweise über die GitHub-API bzw. den Atom-Feed; Kanäle `updates:*` in `updates-ipc.ts` |
-| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*` und `browser_*` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen |
+| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*` und `chat_*` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen |
 | `browser/browser-tabs.ts` | Tabs der Browser je Chat (`browser-tabs.json`): welche Seiten, welche gezeigt, wer sie geöffnet hat |
 | `browser/browser-control.ts` | Aus dem Claude Manager: steuert die Seiten für die Agents über das DevTools-Protokoll (`page-driver.ts`, Frames, Netzwerk, Routen, Dialoge, Emulation), Protokoll, Übernehmen |
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |
@@ -83,7 +83,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 
 Alles, was im Chat steht, ist ein `ChatItem` (`src/shared/chat.ts`):
 
-- `user`, `assistant` (Text, streamt per Delta), `thinking`
+- `user`, `assistant` (Text, streamt per Delta), `thinking`. Ein `user` mit `from` hat der Agent eines
+  anderen Chats geschickt (`chat_send`); `UserMessage` zeigt ihn umrandet mit „Nachricht von …“.
 - `tool` (Art, Titel, Detail, Eingabe, Ausgabe, Diffs, Status). Aufrufe von Nexas eigenem MCP-Server
   (`mcp__nexa__*`, `nexa.*`) und Claudes `ToolSearch`, das sie lädt, zeigt `ToolRow` als Teil der App:
   mit dem Nexa-Logo und in Worten (`nexaToolView` in `lib/tools.ts`), ohne Server-Badge. Das Laden
@@ -249,8 +250,11 @@ Renderer), jede CLI zweigt ihre Unterhaltung wie beim Abzweigen an ihrer letzten
 Nachricht der letzten Antwort davor, deren `msg_…` in der ID des Items steht), und der neue Text geht
 mit `send` hinaus. Die alte Unterhaltung kommt nach `earlierCli` und geht so mit dem Chat in den
 Papierkorb. Hat eine CLI vor dem Prompt nicht geantwortet, beginnt sie neu, mit dem Chat davor als
-`<nexa-context>`. Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, solange
-der Chat ruht; was die Agents an Dateien geändert haben, bleibt.
+`<nexa-context>`. Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, auch
+während der Agent arbeitet: `edit` beendet dann die CLI samt ihrem Turn, Prompts in der Warteschlange
+landen hinter dem bearbeiteten und fallen mit weg. Nur eine Shell im Hintergrund oder ein Agent von vor
+dem Prompt hält es auf, sie stünden sonst als laufend im Chat. Was die Agents an Dateien geändert
+haben, bleibt.
 
 ### Shell-Modus (`!`)
 

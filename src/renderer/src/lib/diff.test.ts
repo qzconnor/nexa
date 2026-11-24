@@ -25,13 +25,18 @@ describe('diffTexts', () => {
 })
 
 describe('parseUnifiedDiff', () => {
-  it('numbers the lines of each hunk', () => {
-    const lines = parseUnifiedDiff(['--- a/x', '+++ b/x', '@@ -3,2 +3,2 @@', ' keep', '-old', '+new', '\\ No newline at end of file'].join('\n'))
+  it('numbers the lines of each hunk as in the file, with a gap between hunks', () => {
+    const lines = parseUnifiedDiff(
+      ['--- a/x', '+++ b/x', '@@ -3,2 +3,2 @@', ' keep', '-old', '+new', '@@ -40,1 +40,2 @@ function main()', ' tail', '+more', '\\ No newline at end of file'].join('\n'),
+    )
     expect(lines.map((l) => [l.kind, l.old, l.new])).toEqual([
-      ['hunk', null, null],
       ['ctx', 3, 3],
       ['del', 4, null],
       ['add', null, 4],
+      ['hunk', null, null],
+      ['ctx', 40, 40],
+      ['add', null, 41],
     ])
+    expect(lines[3]!.text).toBe('⋯ function main()')
   })
 })

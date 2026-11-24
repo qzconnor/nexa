@@ -31,6 +31,12 @@ claude -p --input-format stream-json --output-format stream-json --verbose
 - **Ausgabe**: `system/init` (Sitzungs-ID, Modell, Werkzeuge), `stream_event` (Teil-Deltas für Text und
   Thinking), `assistant`/`user` (fertige Blöcke, `tool_use`/`tool_result`), `result` (Turn-Ende mit
   Kosten und Tokens), `rate_limit_event` (Usage-Fenster mit Prozent und Reset).
+- **Ergebnis eines Werkzeugs** (geprüft mit 2.1.331): Die `user`-Nachricht mit dem `tool_result` trägt
+  daneben `tool_use_result`, das ganze Ergebnis-Objekt des Werkzeugs (im Transkript `toolUseResult`). Bei
+  `Edit`, `MultiEdit` und `Write` steht darin `structuredPatch` (`oldStart`, `oldLines`, `newStart`,
+  `newLines`, `lines` mit ` `/`-`/`+` davor), `filePath`, `originalFile` und bei `Write` `type` (`create`,
+  `update`). Nexa nimmt daraus den Diff mit den Zeilennummern der Datei (`changesFromResult`); `old_string`
+  und `new_string` der Eingabe zählen nur ab ihrer eigenen ersten Zeile.
 - **Control-Protokoll** (`control_request`/`control_response`):
   - an Claude: `initialize`, `interrupt`, `set_model`, `set_permission_mode`, `get_task_output`,
     `stop_task`
@@ -270,6 +276,30 @@ lebt, zeigt erst `process.kill(pid, 0)` (EPERM heißt: lebt, unter anderem Benut
 eigenen Prozess des Chats aus und zeigt sonst „Auch in … offen“ (`claude-presence.ts`). Zwei Prozesse auf
 einer Sitzung schreiben beide ins Transkript, und jeder macht mit dem weiter, was er kennt.
 
+### Nachrichten zwischen Sitzungen (`SendMessage`, Peer-Protokoll 1)
+
+Abgelesen an 2.1.331 (nicht dokumentiert, Nexa nutzt es noch nicht; Nexas eigene Nachrichten zwischen
+Chats laufen über den MCP-Server, siehe unten). Jede Sitzung, auch die von Nexa (`entrypoint: "sdk-ts"`),
+hat einen Posteingang:
+
+- `sessions/<pid>.json` nennt zusätzlich `messagingSocketPath` (unter Windows eine Named Pipe
+  `\\.\pipe\LOCAL\cc-msg-<hex>`), `peerProtocol: 1`, `peerFeatures` (z. B. `notify_idle`,
+  `artifact_yield`), `name` mit `nameSource` (`derived` aus dem Ordner, `user`, `peer` …) und `hostSessionId`.
+  `ListAgents` listet diese Sitzungen unter `name`, nicht unter Nexas Titeln.
+- Daneben `sessions/<pid>.<sha256(pipe)>.key` mit `{ peerToken (32 Hex), procStartFt, pidDomain }`.
+  Unter Windows schickt Claude Code nur an eine Pipe, zu der es so einen Schlüssel einer lebenden Sitzung
+  gibt („refusing to send to an unvouched pipe“).
+- Auf der Pipe: zuerst `{"type":"auth","token":"<peerToken>"}`, dann eine Zeile
+  `{"msgV":1,"msg_id":"<uuid>","type":"user","message":{"role":"user","content":"<cross-session-message from=\"<Antwortadresse>\">\n…\n</cross-session-message>"},"priority":"next","from":"<Antwortadresse>"}`,
+  danach schließt der Sender. Die Antwortadresse ist die Pipe des Absenders.
+- Der Empfänger rahmt die Nachricht ein („Another Claude session sent a message …“) und sagt dem Modell,
+  dass sie nicht vom Nutzer kommt, keine Freigaben ersetzt und dass Weiterreichen verweigerter Aktionen
+  „permission laundering“ ist. Ein Posteingang verwirft, was zu dicht hintereinander kommt; der Sender
+  hält deshalb selbst Abstand.
+- Für Programme, die Claude Code einbetten, gibt es eine Spur „host-injected“ über stdin (`origin`
+  `{ kind: "peer", hostInjected: true, from }`, `CLAUDE_CODE_HOST_SESSION_ID`): Das Modell soll dann über
+  das Nachrichten-Werkzeug des Hosts antworten. Sie hängt an internen Schaltern; Nexa nutzt sie nicht.
+
 ### Was zu einer Sitzung gehört (Löschen)
 
 Je Config-Ordner, in dem die Sitzung liegt (nach einem Account-Wechsel in mehreren,
@@ -332,6 +362,12 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   zurückkommt, bei `turn/steer` sofort: Codex nimmt die Nachricht gleich in den laufenden Turn auf.
   `turn/interrupt` bricht ab. Weitere Ordner zum Schreiben stehen in `sandboxPolicy.writableRoots`
   (`{ type: "workspaceWrite", writableRoots, networkAccess }`) von `turn/start`.
+- **Warteschlange** (nur mit `capabilities.experimentalApi`, abgelesen an 0.169, Nexa nutzt sie nicht):
+  `thread/queue/add { threadId, input, clientUserMessageId }` → `{ queuedSubmission: { id, input,
+  clientUserMessageId } }`, dazu `thread/queue/list`, `…/update`, `…/delete`, `…/reorder`, `…/start
+  { threadId, queuedSubmissionId? }` (→ `{ turn }`) und die Meldung `thread/queue/changed { threadId }`.
+  Ob ein anderer Prozess (die TUI, die den Thread hält) Einträge aufnimmt, ist ungeprüft. Nachrichten
+  zwischen Prozessen wie bei Claude Code gibt es nicht.
 - **Benachrichtigungen**: `turn/started`, `turn/completed`, `item/started`, `item/completed`,
   `item/agentMessage/delta`, `item/reasoning/textDelta`, `item/reasoning/summaryTextDelta`,
   `item/commandExecution/outputDelta`, `turn/plan/updated`, `thread/tokenUsage/updated`,
@@ -472,3 +508,28 @@ Systemprompt.
 Ein `tools/call` mit `Accept: text/event-stream` wird als SSE beantwortet: bis das Ergebnis kommt, hält
 alle 20 s ein Kommentar (`: keepalive`) die Verbindung offen, dann folgt `event: message` mit der
 JSON-RPC-Antwort. Browser-Aktionen können lange dauern (Warten auf die Seite, Übernahme durch den Nutzer).
+
+### Nachrichten zwischen Chats (`chat_*`)
+
+Mit der Einstellung „Nachrichten zwischen Chats“ (`tools.chatTools`, aus bis der Nutzer sie einschaltet)
+erreichen die Agents die anderen Chats, unabhängig von der CLI (`mcp/chat-tools.ts`). Den Absender kennt
+der Server am Token.
+
+- `chat_list { query?, archived?, limit? }`: die anderen Chats, die neuesten zuerst, mit Titel, CLI,
+  Projekt, Zustand und ID.
+- `chat_read { chat, last? }`: die letzten Prompts und Antworten des Hauptstrangs (ohne Zwischentexte von
+  Codex, ohne Subagents).
+- `chat_send { to, text }`: geht über `SessionService.sendFromChat` wie ein Prompt hinein (in den
+  laufenden Turn oder mit Start der CLI) und steht im Chat mit `UserItem.from`.
+- `chat_new { cli, text, title? }`: ein neuer Chat im Projekt und Ordner des Absenders, mit Account,
+  Modell und Freigaben der Vorgaben; die Nachricht ist sein erster Prompt.
+
+Ein Chat ist gemeint durch seine ID oder seinen Titel, wie er jetzt in der Sidebar steht (`resolveChat`:
+ganz, am Anfang, als Teil, alle Wörter; Groß-/Kleinschreibung, Akzente und Anführungszeichen egal;
+archivierte nur, wenn sonst keiner passt). Passen mehrere, gewinnt der im Projekt des Absenders, sonst
+bekommt der Agent die Kandidaten. Die CLI bekommt die Nachricht als
+`<nexa-message from-chat="…" chat-id="…" cli="…">…</nexa-message>` mit dem Hinweis, dass sie nicht vom
+Nutzer ist, keine Freigaben ersetzt und mit `chat_send` an `chat-id` beantwortet wird
+(`instructions.ts`, `chatMessage`). Grenzen: 20 Nachrichten und neue Chats je Chat in 10 Minuten
+(`RATE_LIMIT`), 10 Nachrichten zwischen Chats in Folge, ohne dass der Nutzer in einem davon schrieb
+(`MAX_CHAT_CHAIN`, `SessionState.chatChain`).

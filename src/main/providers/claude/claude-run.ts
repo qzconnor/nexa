@@ -27,7 +27,7 @@ import { claudeAuthStart } from '../plugins'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import { TITLE_TIMEOUT_MS, cleanTitle, titleDescription } from '../titles'
 import { contextDetailOf } from './claude-context'
-import { AGENT_TOOLS, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
+import { AGENT_TOOLS, changesFromResult, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 
 type Json = Record<string, unknown>
 
@@ -588,6 +588,8 @@ export class ClaudeRun implements AgentRun {
       } else {
         const denied = isError && /permission|denied|abgelehnt|rejected/i.test(text) && text.length < 400
         const next: ToolItem = { ...known, status: denied ? 'denied' : isError ? 'error' : 'done', output: text, endedAt: now }
+        const changes = isError ? null : changesFromResult(known.changes, m.tool_use_result)
+        if (changes) next.changes = changes
         // A shell in the foreground ends with its call; one in the background runs on.
         if (next.shell && !next.shell.background && next.shell.status === 'running') {
           next.shell = { ...next.shell, status: isError ? 'error' : 'done', endedAt: now }

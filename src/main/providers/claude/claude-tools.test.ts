@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compactionNotice } from '@shared/chat'
-import { compactionOf } from './claude-tools'
+import { changesFromResult, compactionOf, viewOfClaudeTool } from './claude-tools'
 
 describe('compactionOf', () => {
   it('reads the stream’s snake_case metadata', () => {
@@ -27,5 +27,34 @@ describe('compactionNotice', () => {
     })
     expect(compactionNotice(base, { trigger: 'auto', before: 150000 })).toMatchObject({ text: 'Kontext wurde automatisch zusammengefasst', detail: '150k Tokens vorher' })
     expect(compactionNotice(base, {}).detail).toBeUndefined()
+  })
+})
+
+describe('changesFromResult', () => {
+  const edit = viewOfClaudeTool('Edit', { file_path: 'F:\nexa\src\a.ts', old_string: 'steer?: boolean', new_string: 'steer?: boolean\nfrom?: ChatOrigin' }).changes
+
+  it('takes the file’s own line numbers from the result’s patch', () => {
+    // As Claude Code 2.1.331 reports an Edit in the stream (`tool_use_result`).
+    const result = {
+      filePath: 'F:\nexa\src\a.ts',
+      structuredPatch: [{ oldStart: 33, oldLines: 2, newStart: 33, newLines: 3, lines: ['   steer?: boolean', '+  from?: ChatOrigin', ' }'] }],
+    }
+    expect(changesFromResult(edit, result)).toEqual([
+      { path: 'F:\nexa\src\a.ts', type: 'update', diff: '@@ -33,2 +33,3 @@\n   steer?: boolean\n+  from?: ChatOrigin\n }' },
+    ])
+  })
+
+  it('makes one change of several hunks, and keeps a new file as added', () => {
+    const hunk = (start: number) => ({ oldStart: start, oldLines: 1, newStart: start, newLines: 1, lines: ['-a', '+b'] })
+    const several = changesFromResult(edit, { structuredPatch: [hunk(3), hunk(90)] })
+    expect(several).toHaveLength(1)
+    expect(several![0]!.diff).toBe('@@ -3,1 +3,1 @@\n-a\n+b\n@@ -90,1 +90,1 @@\n-a\n+b')
+    expect(changesFromResult(edit, { type: 'create', structuredPatch: [hunk(1)] })![0]!.type).toBe('add')
+  })
+
+  it('leaves the call’s own changes without a patch', () => {
+    expect(changesFromResult(edit, { type: 'create', structuredPatch: [] })).toBeNull()
+    expect(changesFromResult(edit, 'Error: file changed')).toBeNull()
+    expect(changesFromResult(undefined, { structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: [] }] })).toBeNull()
   })
 })

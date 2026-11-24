@@ -18,6 +18,28 @@ export const AGENT_TOOLS = new Set(['Task', 'Agent'])
 
 const s = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
 
+/**
+ * The changes of an Edit, MultiEdit or Write as its result reports them (`tool_use_result` in the stream,
+ * `toolUseResult` in the transcript): `structuredPatch` holds the hunks with the file's own line
+ * numbers, where the call's old and new text only count from their own first line. One change for the
+ * file, also for several edits in it. Null when the result has no patch (a failed call, or a new file,
+ * whose lines count from 1 anyway).
+ */
+export function changesFromResult(changes: readonly FileChange[] | undefined, result: unknown): FileChange[] | null {
+  if (!changes?.length || !isPlainObject(result) || !Array.isArray(result.structuredPatch)) return null
+  const hunks: string[] = []
+  for (const hunk of result.structuredPatch) {
+    if (!isPlainObject(hunk) || !Array.isArray(hunk.lines)) continue
+    const { oldStart, oldLines, newStart, newLines } = hunk
+    if (![oldStart, oldLines, newStart, newLines].every((n) => typeof n === 'number')) continue
+    const lines = hunk.lines.filter((line): line is string => typeof line === 'string')
+    hunks.push([`@@ -${oldStart},${oldLines} +${newStart},${newLines} @@`, ...lines].join('\n'))
+  }
+  if (hunks.length === 0) return null
+  const path = s(result.filePath) ?? changes[0]!.path
+  return [{ path, type: result.type === 'create' ? 'add' : 'update', diff: hunks.join('\n') }]
+}
+
 /** `mcp__server__tool` → server and tool. Server names may contain underscores, tools rarely two. */
 export function splitMcpName(name: string): { server: string; tool: string } | null {
   if (!name.startsWith('mcp__')) return null

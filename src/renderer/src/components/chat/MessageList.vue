@@ -164,12 +164,15 @@ const liveBrowser = computed(() => {
 
 /**
  * The prompts that can be changed and sent anew: the main thread's below the last `/clear` (above it
- * no CLI knows the chat any more), while the chat rests.
+ * no CLI knows the chat any more). Also while the agent works (`busy`): sending one ends its turn.
  */
 const editable = computed(() => {
-  const status = sessions.runtime(props.sessionId).status
-  if (props.parentId || status === 'running' || status === 'starting' || status === 'waiting') return new Set<string>()
+  if (props.parentId) return new Set<string>()
   return new Set(blocks.value.slice(clearedAt.value + 1).flatMap((b) => (b.type === 'item' && b.item.kind === 'user' ? [b.item.id] : [])))
+})
+const busy = computed(() => {
+  const status = sessions.runtime(props.sessionId).status
+  return status === 'running' || status === 'starting' || status === 'waiting'
 })
 
 /** The CLI a prompt went to shows when it differs from the one before. */
@@ -222,6 +225,7 @@ const providerChanges = computed(() => {
           :show-provider="providerChanges.has(block.item.id)"
           :session-id="sessionId"
           :editable="editable.has(block.item.id)"
+          :busy="busy"
         />
         <div
           v-else-if="block.item.kind === 'assistant'"

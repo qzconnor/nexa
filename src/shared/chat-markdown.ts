@@ -144,7 +144,8 @@ export function chatMarkdown(info: ChatMarkdownInfo, items: readonly ChatItem[],
       case 'user': {
         // The context Nexa sent along when the chat went to the other CLI isn't the user's.
         if (item.handoff) break
-        heading('Du', item.ts)
+        // A message another chat's agent sent isn't the user's either.
+        heading(item.from ? `Nachricht von „${item.from.title}“` : 'Du', item.ts)
         const images = item.images?.length ? `\n\n*${item.images.length === 1 ? 'Ein Bild' : `${item.images.length} Bilder`} angehängt*` : ''
         blocks.push(`${item.text.trim()}${images}`)
         break

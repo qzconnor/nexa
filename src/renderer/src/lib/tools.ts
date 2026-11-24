@@ -16,6 +16,7 @@ import {
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { ChatItem, ThinkingItem, ToolItem, ToolKind } from '@shared/chat'
+import { PROVIDERS } from '@shared/providers'
 import { isRenderTool, RENDER_SERVER, type RenderToolName } from '@shared/render'
 
 /** Icon and colour per kind of tool, as Claude Manager's file tree colours what Claude does. */
@@ -98,11 +99,37 @@ const RENDER_NAMES: Record<RenderToolName, string> = {
   render_code: 'Code',
 }
 
+/** What Nexa's tools for the other chats do, in words. */
+const CHAT_NAMES: Record<string, string> = {
+  chat_list: 'Chats auflisten',
+  chat_read: 'Chat lesen',
+  chat_send: 'Nachricht an Chat',
+  chat_new: 'Neuer Chat',
+}
+
 /** One of Nexa's tools in words (`render_chart` → „Chart“, `browser_click` → „Klicken“). */
 function nexaToolName(short: string): string {
   if (isRenderTool(short)) return RENDER_NAMES[short]
+  if (CHAT_NAMES[short]) return CHAT_NAMES[short]
   const action = /^browser_(.+)$/.exec(short)?.[1]
   return (action && BROWSER_STEPS[action]) || short.replace(/_/g, ' ')
+}
+
+/**
+ * The chat a call of the chat tools goes to, in words: the title for an id (`titleOf`), else the name
+ * the agent gave; for a new chat its CLI and name.
+ */
+function chatToolDetail(short: string, tool: ToolItem, titleOf?: (id: string) => string | undefined): string | undefined {
+  const input = (tool.input ?? {}) as Record<string, unknown>
+  const text = (key: string) => (typeof input[key] === 'string' && input[key] ? (input[key] as string).trim() : undefined)
+  if (short === 'chat_list') return text('query')
+  if (short === 'chat_new') {
+    const cli = text('cli')
+    const provider = cli === 'claude' || cli === 'codex' ? PROVIDERS[cli].name : cli
+    return [provider, text('title') && `„${text('title')}“`].filter(Boolean).join(' · ') || undefined
+  }
+  const ref = text(short === 'chat_send' ? 'to' : 'chat')
+  return ref ? `„${titleOf?.(ref) ?? ref}“` : undefined
 }
 
 /** The tools of Nexa a ToolSearch of Claude Code loads by name (`select:mcp__nexa__render_chart,…`); null when it loads others too or searches. */
@@ -118,15 +145,21 @@ function nexaToolsLoaded(tool: ToolItem): string[] | null {
 /**
  * A call of one of Nexa's own tools, or Claude loading them: they are the app itself, not a server the
  * user added, so they show with Nexa's mark and in words. `plumbing`: only the CLI getting the tools
- * ready, with nothing in it worth opening. Null for every other tool.
+ * ready, with nothing in it worth opening. Null for every other tool. `titleOf`: the title of a chat
+ * by its id, for the chat tools.
  */
-export function nexaToolView(tool: ToolItem): { title: string; detail?: string; plumbing: boolean } | null {
+export function nexaToolView(
+  tool: ToolItem,
+  titleOf?: (id: string) => string | undefined,
+): { title: string; detail?: string; plumbing: boolean } | null {
   const loaded = nexaToolsLoaded(tool)
   if (loaded) return { title: 'Nexa-Werkzeuge laden', detail: [...new Set(loaded.map(nexaToolName))].join(', '), plumbing: true }
   if (tool.server !== RENDER_SERVER) return null
   // Claude names them `mcp__nexa__render_chart`, Codex `nexa.render_chart`.
   const prefix = [`mcp__${RENDER_SERVER}__`, `${RENDER_SERVER}.`].find((p) => tool.name.startsWith(p)) ?? ''
-  return { title: nexaToolName(tool.name.slice(prefix.length)), detail: tool.detail, plumbing: false }
+  const short = tool.name.slice(prefix.length)
+  const detail = CHAT_NAMES[short] ? chatToolDetail(short, tool, titleOf) : tool.detail
+  return { title: nexaToolName(short), detail, plumbing: false }
 }
 
 /** Claude Code's ToolSearch for one of the browser tools (it loads them when it needs them). */

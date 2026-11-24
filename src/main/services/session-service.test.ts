@@ -522,8 +522,42 @@ describe('SessionService.edit', () => {
     const items = async () => (await sessions.history('chat'))!.items as ChatItem[]
     const prompt = async (text: string) => (await items()).find((i) => i.kind === 'user' && i.text === text)!.id
     const shown = async () => (await items()).map((i) => (i.kind === 'user' ? i.text : i.kind === 'notice' ? `notice:${i.text}` : i.id))
-    return { sessions, starts, sent, events, prompt, shown }
+    return { sessions, starts, sent, events, prompt, shown, run, sink: () => sink! }
   }
+
+  it('ends the turn the agent works on and goes on from the changed prompt', async () => {
+    const { sessions, starts, sent, prompt, shown, run, sink } = await talked('codex')
+    await sessions.send('chat', { text: 'dritte' })
+    sink().runtime({ status: 'running' })
+    sink().item({ kind: 'assistant', id: 'a3', ts: 31, provider: 'codex', text: 'Antwort 3, halb', streaming: true })
+    // The fake is the same for every start: what counts is that it was stopped before.
+    const stop = run.stop
+    let stopped = 0
+    run.stop = async () => {
+      stopped++
+      await stop()
+    }
+
+    await sessions.edit('chat', await prompt('dritte'), { text: 'dritte, anders' })
+
+    expect(stopped).toBe(1)
+    expect(await shown()).toEqual(['erste', 'a1', 'turn:t1', 'zweite', 'a2', 'turn:t2', 'dritte, anders'])
+    expect(starts.at(-1)).toMatchObject({ resumeId: THREAD, fork: { at: 't2' } })
+    expect(sent.at(-1)).toBe('dritte, anders')
+  })
+
+  it('waits for a shell in the background from before the prompt, not for one after it', async () => {
+    const { sessions, prompt, shown, sink } = await talked('codex')
+    const shell = { taskId: 'b1', background: true, status: 'running' as const }
+    sink().item({ kind: 'tool', id: 'sh', ts: 25, provider: 'codex', tool: 'bash', name: 'Bash', title: 'Befehl', status: 'done', shell, startedAt: 25 })
+    await sessions.send('chat', { text: 'dritte' })
+
+    await expect(sessions.edit('chat', await prompt('dritte'), { text: 'anders' })).rejects.toThrow('Hintergrund')
+    expect(await shown()).toContain('dritte')
+
+    await sessions.edit('chat', await prompt('zweite'), { text: 'zweite, anders' })
+    expect(await shown()).toEqual(['erste', 'a1', 'turn:t1', 'zweite, anders'])
+  })
 
   it('goes on from the Codex turn before the prompt, in a fork of the thread', async () => {
     const { sessions, starts, sent, events, prompt, shown } = await talked('codex')
@@ -747,4 +781,50 @@ describe('SessionService.runShell', () => {
 
     expect(await ended(sessions)).toMatchObject({ status: 'denied', exitCode: undefined })
   }, 20_000)
+})
+
+describe('SessionService between chats', () => {
+  /** Two chats whose CLIs take what they are sent; `sent` has it per chat. */
+  async function twoChats() {
+    const sent: Record<string, RunInput[]> = {}
+    const sessions = await start([meta('a', { title: 'Plan' }), meta('b', { title: 'Review', provider: 'codex' })], {
+      start: async (options: RunOptions) =>
+        ({ alive: true, send: async (input: RunInput) => void (sent[options.sessionId] ??= []).push(input), stop: async () => {} }) as unknown as AgentRun,
+    })
+    const users = async (id: string) => ((await sessions.history(id))!.items as ChatItem[]).filter((i) => i.kind === 'user')
+    return { sessions, sent, users }
+  }
+
+  it('delivers a message marked with the chat it came from', async () => {
+    const { sessions, sent, users } = await twoChats()
+    await sessions.sendFromChat('a', 'b', 'Bitte prüfen.')
+
+    expect(await users('b')).toMatchObject([{ text: 'Bitte prüfen.', from: { sessionId: 'a', title: 'Plan', provider: 'claude' } }])
+    expect(sent.b![0]!.text).toMatch(/^<nexa-message from-chat="Plan" chat-id="a" cli="Claude Code">\nBitte prüfen\.\n<\/nexa-message>/)
+    expect(sent.b![0]!.text).toContain('(to: "a")')
+  })
+
+  it('stops two chats that keep answering each other, until the user writes', async () => {
+    const { sessions } = await twoChats()
+    for (let i = 0; i < 10; i++) await sessions.sendFromChat(i % 2 ? 'b' : 'a', i % 2 ? 'a' : 'b', `#${i}`)
+    await expect(sessions.sendFromChat('a', 'b', 'noch eine')).rejects.toThrow(/10 messages between chats in a row/)
+
+    await sessions.send('a', { text: 'Weiter so' })
+    await expect(sessions.sendFromChat('a', 'b', 'noch eine')).resolves.toBeUndefined()
+  })
+
+  it('refuses a message to the chat itself', async () => {
+    const { sessions } = await twoChats()
+    await expect(sessions.sendFromChat('a', 'a', 'x')).rejects.toThrow(/cannot send to itself/)
+  })
+
+  it('starts a new chat beside the sender with its first message', async () => {
+    const { sessions, sent, users } = await twoChats()
+    const created = await sessions.newFromChat('a', { provider: 'codex', text: 'Schau dir das an', title: 'Codex-Review' })
+
+    expect(created).toMatchObject({ projectId: 'p1', provider: 'codex', title: 'Codex-Review', titleSource: 'user' })
+    expect(await users(created.id)).toMatchObject([{ text: 'Schau dir das an', from: { sessionId: 'a' } }])
+    expect(sent[created.id]).toHaveLength(1)
+    expect(sessions.peerChats().map((c) => c.title)).toContain('Codex-Review')
+  })
 })
