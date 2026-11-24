@@ -66,6 +66,8 @@
       Eingabe ein eigener Knopf dafür
 - [x] Gedanken offen im Verlauf statt eingeklappt; stehen sie untereinander (nur Werkzeuge dazwischen),
       zeigt ein Block den neuesten und blendet ihn beim Wechsel über
+- [x] Gedanken ohne Einklappen (ganz ausblenden weiter über „Gedanken anzeigen“); was gerade arbeitet,
+      schimmert in der Akzentfarbe des Themes statt grau, die Spinner daneben ebenso
 - [x] „+“-Menü an der Eingabe wie in Claude Desktop statt der Büroklammer: „Dateien oder Fotos
       hinzufügen“ (Strg+U; Bilder hängen an, andere Dateien als `@`-Erwähnung), „Ordner hinzufügen“ (Claude
       `--add-dir`, Codex schreibbare Ordner; als Chips über der Eingabe), „Slash-Befehle“, „Konnektoren ›“
@@ -131,8 +133,6 @@
       fehlgeschlagene Server neu verbinden (`mcp_reconnect`, Codex `config/mcpServer/reload`), abgemeldete
       anmelden (`mcp_authenticate`, Codex `mcpServer/oauth/login`) und „Konnektoren verwalten“ (claude.ai
       bzw. `config.toml`)
-- [x] Gedanken ohne Einklappen (ganz ausblenden weiter über „Gedanken anzeigen“); was gerade arbeitet,
-      schimmert in der Akzentfarbe des Themes statt grau, die Spinner daneben ebenso
 
 ## Als Nächstes
 
