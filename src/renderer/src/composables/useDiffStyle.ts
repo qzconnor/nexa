@@ -34,7 +34,11 @@ export function useDiffStyle() {
 
   const fontSize = computed(() => Math.max(10, Math.round(settings.settings.appearance.uiFontSize * 0.93)))
   const rowHeight = computed(() => Math.round(fontSize.value * 1.55))
-  const fontFamily = 'var(--code-font, var(--font-mono))'
+  /**
+   * The code font with its ligatures, as everywhere code shows. Fonts for code keep a ligature as
+   * wide as the characters it joins, so the columns (and the probe's count of them) stay as they are.
+   */
+  const font = { fontFamily: 'var(--code-font)', fontFeatureSettings: 'var(--code-font-features)' }
 
-  return { colors: computed(() => colors), fontSize, rowHeight, fontFamily: computed(() => fontFamily) }
+  return { colors: computed(() => colors), fontSize, rowHeight, font: computed(() => font) }
 }

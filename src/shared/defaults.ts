@@ -23,6 +23,10 @@ export function defaultSettings(): AppSettings {
       radius: 0.625,
       zoom: DEFAULT_ZOOM,
       uiFontSize: 14,
+      uiFont: '',
+      codeFont: '',
+      // As in the Claude Manager's terminal; Chromium draws them anyway, unless switched off.
+      ligatures: true,
       chatWidth: 'normal',
     },
     defaults: {

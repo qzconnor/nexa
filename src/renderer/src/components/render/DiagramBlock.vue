@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import type { RenderSpec } from '@shared/chat'
+import { fontStack, UI_FONT_FALLBACKS } from '@/lib/fonts'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemesStore } from '@/stores/themes'
 
@@ -23,7 +24,7 @@ async function draw(): Promise<void> {
       startOnLoad: false,
       securityLevel: 'strict',
       theme: 'base',
-      fontFamily: 'Geist Variable, Segoe UI, sans-serif',
+      fontFamily: fontStack(settings.settings.appearance.uiFont, UI_FONT_FALLBACKS),
       themeVariables: {
         darkMode: theme.mode === 'dark',
         background: 'transparent',
@@ -60,7 +61,8 @@ async function draw(): Promise<void> {
 }
 
 onMounted(draw)
-watch(() => [props.spec.mermaid, settings.settings.appearance.theme], draw)
+// Mermaid sizes its boxes by the text in its font, so a new font needs a new drawing.
+watch(() => [props.spec.mermaid, settings.settings.appearance.theme, settings.settings.appearance.uiFont], draw)
 </script>
 
 <template>

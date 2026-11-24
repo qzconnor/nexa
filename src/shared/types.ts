@@ -23,6 +23,15 @@ export interface AppearanceSettings {
   /** Scale of the whole window in percent, one of `ZOOM_STEPS` (src/shared/zoom.ts). */
   zoom: number
   uiFontSize: number
+  /**
+   * Font of the interface and the messages, or several, comma separated, tried in turn; Nexa's own
+   * (Geist) stands behind it for what it lacks. `''`: Nexa's own.
+   */
+  uiFont: string
+  /** Font of code wherever it shows: answers, diffs, files, the shell, tool rows. `''`: Nexa's own (Geist Mono). */
+  codeFont: string
+  /** Sequences like `=>` in code drawn as one sign, where the code font has such ligatures. */
+  ligatures: boolean
   /** Width of the chat column. */
   chatWidth: 'normal' | 'wide' | 'full'
 }

@@ -15,6 +15,7 @@ import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
 import type { ApiServer } from './api/api-server'
 import type { GitService } from './files/git-service'
+import { listFontFamilies } from './lib/fonts'
 import type { AutoSwitch } from './services/auto-switch'
 import type { NotificationService } from './services/notification-service'
 import type { ProjectService } from './services/project-service'
@@ -187,6 +188,7 @@ export function registerIpc(ctx: AppContext): void {
     await writeFile(file, data)
     return file
   })
+  handle(IpcInvoke.appListFonts, () => listFontFamilies())
 
   // Window -------------------------------------------------------------------------------------
   handle(IpcInvoke.windowMinimize, (event) => windowOf(event).minimize())

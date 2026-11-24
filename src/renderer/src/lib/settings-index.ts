@@ -89,8 +89,22 @@ const TREE = [
           { id: 'appearance.keepMaterial', label: 'Auch im Hintergrund', keywords: 'Material inaktiv Fokus Hintergrund', windowsOnly: true },
           { id: 'appearance.surfaceOpacity', label: 'Deckkraft der Flächen', keywords: 'Transparenz durchsichtig undurchsichtig Material', windowsOnly: true },
           { id: 'appearance.zoom', label: 'Skalierung', keywords: 'Zoom Größe vergrößern verkleinern Prozent Strg Plus Minus Oberfläche' },
-          { id: 'appearance.uiFontSize', label: 'Schriftgröße', keywords: 'Text Größe Schrift' },
           { id: 'appearance.radius', label: 'Ecken', keywords: 'Eckenradius abgerundet Rundung' },
+        ],
+      },
+      {
+        id: 'appearance.font',
+        title: 'Schrift',
+        keywords: 'Schriftarten Fonts Text',
+        fields: [
+          { id: 'appearance.uiFont', label: 'Schriftart', keywords: 'Font Schriftfamilie Oberfläche Nachrichten Text Geist Segoe Inter' },
+          { id: 'appearance.uiFontSize', label: 'Schriftgröße', keywords: 'Text Größe Schrift' },
+          {
+            id: 'appearance.codeFont',
+            label: 'Code-Schrift',
+            keywords: 'Font Monospace Festbreitenschrift Programmierschrift Diffs Dateien Shell Werkzeuge Geist Mono Cascadia JetBrains Mono Fira Code Consolas',
+          },
+          { id: 'appearance.ligatures', label: 'Ligaturen', keywords: 'Code Schrift Zeichen verbinden Pfeil Ungleich JetBrains Mono Fira Code Cascadia Code' },
         ],
       },
       {

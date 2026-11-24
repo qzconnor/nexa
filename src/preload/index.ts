@@ -122,6 +122,7 @@ const api: NexaApi = {
     pickImages: () => invoke(IpcInvoke.appPickImages),
     pickFiles: (defaultPath) => invoke(IpcInvoke.appPickFiles, defaultPath ?? null),
     saveImage: (data, mime) => invoke(IpcInvoke.appSaveImage, data, mime),
+    listFonts: () => invoke(IpcInvoke.appListFonts),
     pathForFile: (file) => webUtils.getPathForFile(file),
   },
   window: {

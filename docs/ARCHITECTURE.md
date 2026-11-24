@@ -76,6 +76,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `files/files-ipc.ts` | Kanäle `files:*` und `git:*` mit Prüfung der Pfade |
 | `window/*` | Hauptfenster, Fensterzustand, Material (Mica/Acryl), Datei-Protokoll |
 | `window/tray.ts` | Symbol im Infobereich (Einstellung `general.runInTray`): Schließen blendet das Fenster dann nur aus, das Menü öffnet und beendet |
+| `lib/fonts.ts` | Installierte Schriften für die Schriftwahl der Einstellungen (Windows über .NET in PowerShell, Linux `fc-list`), einmal pro Sitzung; Kanal `app:list-fonts` |
 | `lib/login-item.ts` | Start mit der Anmeldung (`general.launchAtLogin`, Schalter `--autostart`): Windows über den Run-Schlüssel (der Uninstaller in `build/installer.nsh` entfernt ihn), Linux über `~/.config/autostart/nexa.desktop`; mit Infobereich startet das Fenster versteckt |
 | `window/browser-*.ts` | Härtung der `<webview>`s (eigene Partition, keine Node-Integration, Berechtigungen, Popups, Navigation, Tastenkürzel), Downloads, HTTP-Logins |
 
@@ -385,6 +386,13 @@ den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet ern
 - Themes: eingebaute in `shared/themes/builtin.ts`, eigene als JSON-Dateien im Ordner `themes` der
   App-Daten (Format des Claude Managers, `ThemeService` überwacht den Ordner). `themes/apply.ts` setzt
   die Tokens, `themes/color-info.ts` beschreibt jede Farbe für den Editor.
+- **Schriften** (Einstellungen › Darstellung › Schrift, `appearance.uiFont`, `codeFont`, `ligatures`, wie
+  im Terminal des Claude Managers): `themes/apply.ts` setzt sie mit den Tokens als `--ui-font` und
+  `--code-font` (die gewählte Schrift, dahinter die von Nexa; leer nur die von Nexa, `lib/fonts.ts`) und
+  `--code-font-features` (Ligaturen über `calt`/`liga`). Tailwinds `font-sans`/`font-mono` lesen sie über
+  `@theme inline` in `main.css`, Markdown-Code und Diffs (`useDiffStyle`) direkt, Mermaid bekommt die
+  Schrift beim Zeichnen. Schriften für Code halten eine Ligatur so breit wie ihre Zeichen, die Spalten der
+  Diffs bleiben also stehen. Die Auswahl (`FontPicker`) listet die installierten Schriften aus Main.
 - `stores/sessions.ts`: Metadaten aller Sessions, geöffnete Chats (`chats`), Laufzustand. Events, die
   ankommen, während eine Session lädt, stecken schon im Snapshot und werden ignoriert.
 - `lib/tools.ts`: `chatBlocks()` gruppiert Items zu Blöcken (Werkzeuggruppen, Agents, Rückfragen).

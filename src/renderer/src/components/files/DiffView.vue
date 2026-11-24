@@ -59,7 +59,7 @@ const emit = defineEmits<{ close: [] }>()
 
 const fileTree = useFileTreeStore()
 const openPath = useOpenFile()
-const { colors, fontSize, rowHeight, fontFamily } = useDiffStyle()
+const { colors, fontSize, rowHeight, font } = useDiffStyle()
 // The tree of the folder: git's state for the file's mark, and the folders watched for changes.
 const model = useFileTreeModel(() => props.root)
 
@@ -615,7 +615,7 @@ const iconButton =
       <div
         ref="scroller"
         :class="cn('syntax relative min-h-0 flex-1 overflow-auto select-text', split && 'overflow-x-hidden')"
-        :style="{ fontFamily, fontSize: `${fontSize}px`, tabSize: DIFF_TAB_SIZE }"
+        :style="{ ...font, fontSize: `${fontSize}px`, tabSize: DIFF_TAB_SIZE }"
         @scroll.passive="onScroll"
       >
         <div aria-hidden="true" class="invisible absolute top-0 left-0 size-0 overflow-hidden">

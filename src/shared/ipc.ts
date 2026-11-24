@@ -51,6 +51,7 @@ export const IpcInvoke = {
   appPickImages: 'app:pick-images',
   appPickFiles: 'app:pick-files',
   appSaveImage: 'app:save-image',
+  appListFonts: 'app:list-fonts',
 
   windowMinimize: 'window:minimize',
   windowToggleMaximize: 'window:toggle-maximize',
@@ -218,6 +219,8 @@ export interface NexaApi {
     pickFiles(defaultPath?: string): Promise<string[]>
     /** Saves an image pasted into the composer, returns its path. */
     saveImage(data: Uint8Array, mime: string): Promise<string>
+    /** The installed font families, for the font pickers of the settings. */
+    listFonts(): Promise<string[]>
     pathForFile(file: File): string
   }
   window: {

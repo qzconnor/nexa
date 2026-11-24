@@ -107,7 +107,7 @@ const emit = defineEmits<{ close: [] }>()
 
 const fileTree = useFileTreeStore()
 const openPath = useOpenFile()
-const { colors, fontSize, rowHeight, fontFamily } = useDiffStyle()
+const { colors, fontSize, rowHeight, font } = useDiffStyle()
 // The tree of the folder: git's state, the list of its files, and its folders watched.
 const model = useFileTreeModel(() => props.root)
 const rootName = computed(() => folderName(props.root))
@@ -843,7 +843,7 @@ const iconButton =
       v-else
       ref="scroller"
       class="syntax relative min-h-0 flex-1 overflow-auto select-text"
-      :style="{ marginTop: `${PAD - RING}px`, fontFamily, fontSize: `${fontSize}px`, tabSize: DIFF_TAB_SIZE }"
+      :style="{ marginTop: `${PAD - RING}px`, ...font, fontSize: `${fontSize}px`, tabSize: DIFF_TAB_SIZE }"
       @scroll.passive="onScroll"
     >
       <!-- A row of characters in the code's font, for how many fit in a card. -->
