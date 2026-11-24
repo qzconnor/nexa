@@ -7,8 +7,12 @@ import { hasLanguage, highlightText, languageOf, loadLanguage } from '@/lib/synt
 import { cn } from '@/lib/utils'
 import { useProjectPath } from '@/composables/useProjectPath'
 
-/** The change of one file: its lines with numbers, coloured like the code of its language. */
-const props = defineProps<{ change: FileChange; maxHeight?: string; class?: string }>()
+/**
+ * The change of one file: its lines with numbers, coloured like the code of its language. `bare`: what
+ * is around it names the file and counts its lines already (a tool row), so it has no head of its own,
+ * except for where a moved file went.
+ */
+const props = defineProps<{ change: FileChange; maxHeight?: string; class?: string; bare?: boolean }>()
 
 const { relative } = useProjectPath()
 const shown = computed(() => relative(props.change.path))
@@ -47,7 +51,10 @@ const typeLabel = computed(() => ({ add: 'neu', update: '', delete: 'gelöscht' 
 
 <template>
   <div :class="cn('overflow-hidden rounded-md border bg-(--code-bg) text-(--code-fg)', props.class)">
-    <div class="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+    <div v-if="bare && change.movePath" class="truncate border-b px-3 py-1.5 font-mono text-xs text-muted-foreground" :title="change.movePath">
+      → {{ relative(change.movePath) }}
+    </div>
+    <div v-else-if="!bare" class="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
       <span class="shrink-0 font-mono" :title="change.path">{{ baseName(change.path) }}</span>
       <span class="min-w-0 truncate text-muted-foreground" :title="change.path">{{ change.movePath ? `→ ${relative(change.movePath)}` : shown }}</span>
       <span v-if="typeLabel" class="rounded bg-muted px-1.5 text-[0.7rem] text-muted-foreground">{{ typeLabel }}</span>
