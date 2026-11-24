@@ -13,11 +13,11 @@ import type {
 } from '@shared/chat'
 import { compactionNotice } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
-import type { CommandOption, SendInput } from '@shared/types'
+import type { CommandOption } from '@shared/types'
 import { firstLine, isPlainObject } from '@shared/utils'
 import { codexToolApprovals } from '../../mcp/tool-grant'
 import { codexMcpServers } from '../mcp-servers'
-import type { AgentRun, McpServerState, RunOptions, RunSink } from '../provider'
+import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import type { CodexClient, CodexServerRequest } from './codex-client'
 
 type Json = Record<string, unknown>
@@ -240,16 +240,22 @@ export class CodexRun implements AgentRun {
   // ------------------------------------------------------------------------------------------
   // Commands from Nexa
 
-  async send(input: SendInput): Promise<void> {
+  async send(input: RunInput): Promise<void> {
     const items: Json[] = [{ type: 'text', text: input.text, text_elements: [] }]
     for (const path of input.images ?? []) items.push({ type: 'localImage', path })
     if (/\$[\w.:-]/.test(input.text)) items.push(...skillInputs(input.text, await this.skills().catch(() => [])))
     if (this.turnId) {
-      // A prompt while Codex works joins the running turn.
-      await this.client.request('turn/steer', { threadId: this.threadId, input: items, expectedTurnId: this.turnId })
-      return
+      // A prompt while Codex works joins the running turn, at once (its `userMessage` item says so too).
+      try {
+        await this.client.request('turn/steer', { threadId: this.threadId, clientUserMessageId: input.id, input: items, expectedTurnId: this.turnId })
+        this.sink.taken(input.id)
+        return
+      } catch (error) {
+        // The turn ended meanwhile: the prompt starts the next one.
+        if (this.turnId) throw error
+      }
     }
-    const params: Json = { threadId: this.threadId, input: items }
+    const params: Json = { threadId: this.threadId, clientUserMessageId: input.id, input: items }
     if (this.model) params.model = this.model
     if (this.effort) params.effort = this.effort
     // The thread's start knows only the sandbox's mode; added folders need the whole policy, once.
@@ -265,6 +271,8 @@ export class CodexRun implements AgentRun {
       const response = await this.client.request('turn/start', params)
       const turn = isPlainObject(response.turn) ? response.turn : {}
       this.turnId ??= str(turn.id) ?? null
+      // A steer that came too late for its turn starts the next one: taken up all the same.
+      this.sink.taken(input.id)
     } catch (error) {
       this.turnStartedAt = null
       this.sink.runtime({ status: 'idle', turnStartedAt: undefined })
@@ -457,6 +465,12 @@ export class CodexRun implements AgentRun {
     const endedAt = completed ? (typeof item.completedAtMs === 'number' ? item.completedAtMs : now) : undefined
     const base = { id, ts: startedAt, provider: 'codex' as const, parentId }
     switch (item.type) {
+      case 'userMessage': {
+        // Nexa's prompts are in the chat already; `clientId` is the id of their item.
+        const prompt = str(item.clientId)
+        if (prompt) this.sink.taken(prompt)
+        return
+      }
       case 'agentMessage':
         this.sink.item({
           ...base,

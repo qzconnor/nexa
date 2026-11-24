@@ -27,8 +27,15 @@ export interface RunSink {
   /** The CLI's own id of the conversation, as soon as it is known. */
   cliSession(id: string): void
   usage(usage: RunUsage): void
+  /** The CLI took up a prompt (`RunInput.id`); one sent while it worked joins the chat here. */
+  taken(promptId: string): void
   /** The CLI process ended (crash, logout, killed); the next prompt starts it again. */
   exited(error?: string): void
+}
+
+/** A prompt for the CLI, with the id of its item in the chat: the CLI names it when it takes it up. */
+export interface RunInput extends SendInput {
+  id: string
 }
 
 export interface RunOptions {
@@ -70,7 +77,7 @@ export interface RunOptions {
 
 /** One conversation with a CLI, alive until `stop`. */
 export interface AgentRun {
-  send(input: SendInput): Promise<void>
+  send(input: RunInput): Promise<void>
   interrupt(): Promise<void>
   /** Answer to an interaction item the run created. */
   respond(itemId: string, response: InteractionResponse): Promise<void>

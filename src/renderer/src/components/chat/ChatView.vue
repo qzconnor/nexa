@@ -68,6 +68,7 @@ import MessageList from './MessageList.vue'
 import ShellDock from './ShellDock.vue'
 import ShellPanel from './ShellPanel.vue'
 import TodoCard from './TodoCard.vue'
+import UserMessage from './UserMessage.vue'
 
 /**
  * The open chat: header, timeline (the main thread or, in its place, a subagent's work), the agents
@@ -505,6 +506,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <span class="text-shimmer">{{ working }}</span>
               <span v-if="elapsed" class="tabular-nums opacity-70">{{ elapsed }}</span>
             </div>
+            <!-- Under what the agent does, as in the CLIs: into the chat once it takes them up. -->
+            <template v-if="!viewed">
+              <UserMessage v-for="prompt in runtime.queued" :key="prompt.id" :item="prompt" queued />
+            </template>
             <div v-if="runError && !viewed" class="selectable my-2 rounded-lg bg-destructive/10 px-3 py-2 text-[0.82rem] text-destructive">
               {{ runError }}
             </div>

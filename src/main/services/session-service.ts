@@ -509,7 +509,7 @@ export class SessionService extends TypedEmitter<Events> {
     const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
     const run = await this.ensureRun(s, accountId)
     if (!run.compact) {
-      await run.send({ text: '/compact' })
+      await run.send({ id: randomUUID(), text: '/compact' })
       return
     }
     await run.compact()
@@ -680,7 +680,9 @@ export class SessionService extends TypedEmitter<Events> {
       images: input.images?.length ? input.images : undefined,
       ...(steer ? { steer: true } : {}),
     }
-    this.put(s, user)
+    // Into the chat where the CLI takes it up (`taken`), as in the CLIs: until then it waits below.
+    if (steer) this.setRuntime(s, { ...s.runtime, queued: [...(s.runtime.queued ?? []), user] })
+    else this.put(s, user)
     if (meta.titleSource === 'auto' && s.items.filter((i) => i.kind === 'user').length === 1) meta.title = firstLine(text, 60) || 'Bild'
     meta.preview = firstLine(text, 100)
     meta.updatedAt = Date.now()
@@ -691,7 +693,33 @@ export class SessionService extends TypedEmitter<Events> {
     if (context) {
       this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `${PROVIDERS[provider].name} übernimmt die Session`, detail: 'Mit dem bisherigen Verlauf als Kontext' })
     }
-    await run.send({ text: context ? `${context}\n\n${text}` : text, images: input.images })
+    try {
+      await run.send({ id: user.id, text: context ? `${context}\n\n${text}` : text, images: input.images })
+    } catch (error) {
+      // It never reached the CLI: it stays in the chat as written, as any prompt that failed.
+      this.takeQueued(s, user.id)
+      throw error
+    }
+  }
+
+  /** A prompt sent while the CLI worked joins the chat where the CLI took it up. */
+  private takeQueued(s: SessionState, id: string): void {
+    const queued = s.runtime.queued
+    const user = queued?.find((u) => u.id === id)
+    if (!user) return
+    this.put(s, { ...user, ts: Date.now() })
+    const rest = queued!.filter((u) => u !== user)
+    const { queued: _, ...runtime } = s.runtime
+    this.setRuntime(s, rest.length ? { ...runtime, queued: rest } : runtime)
+  }
+
+  /** Prompts the CLI never took up (it ended): into the chat as written, the user's words aren't lost. */
+  private releaseQueued(s: SessionState): void {
+    const queued = s.runtime.queued
+    if (!queued?.length) return
+    const { queued: _, ...runtime } = s.runtime
+    s.runtime = runtime
+    for (const user of queued) this.put(s, user)
   }
 
   /** The account a CLI answers this chat with: the chosen one, else the one its conversation lies with, else the default. */
@@ -813,13 +841,11 @@ export class SessionService extends TypedEmitter<Events> {
         if (item.kind === 'turn') {
           this.emit('turnEnded', meta.id)
           if (current() && item.status !== 'interrupted') {
-            this.emit(
-              'attention',
-              meta.id,
-              item.limit
-                ? { kind: 'limit', provider, accountId, message: item.error ?? null }
-                : { kind: 'done', provider, busyMs, answer: turnAnswer(s.items ?? []), ...(item.error ? { error: item.error } : {}) },
-            )
+            if (item.limit) this.emit('attention', meta.id, { kind: 'limit', provider, accountId, message: item.error ?? null })
+            // Prompts wait: the CLI goes on with them right away, it isn't done.
+            else if (!s.runtime.queued?.length) {
+              this.emit('attention', meta.id, { kind: 'done', provider, busyMs, answer: turnAnswer(s.items ?? []), ...(item.error ? { error: item.error } : {}) })
+            }
           }
           const link = meta.cli[provider]
           if (link) {
@@ -829,7 +855,8 @@ export class SessionService extends TypedEmitter<Events> {
           }
           meta.updatedAt = Date.now()
           this.saveSoon()
-          if (s.restartAfterTurn && current()) {
+          // Not while prompts wait: the CLI starts on them right away, a restart would lose them.
+          if (s.restartAfterTurn && current() && !s.runtime.queued?.length) {
             s.restartAfterTurn = false
             // After the turn's own reports: the next prompt resumes with what changed.
             setTimeout(() => void this.stop(meta.id).catch(() => undefined), 0)
@@ -858,6 +885,9 @@ export class SessionService extends TypedEmitter<Events> {
         this.saveSoon()
       },
       usage: (usage) => this.providers.setUsage(accountId, usage),
+      taken: (promptId) => {
+        if (current()) this.takeQueued(s, promptId)
+      },
       exited: (error) => {
         if (!current()) return
         // A turn cut off by the end of the process: what it wrote is Nexa's own, not from outside.
@@ -867,6 +897,7 @@ export class SessionService extends TypedEmitter<Events> {
         s.run = null
         s.runProvider = null
         s.runAccount = null
+        this.releaseQueued(s)
         this.setRuntime(s, this.atRest(s, { status: error ? 'error' : 'idle', error }))
       },
     }
@@ -908,6 +939,7 @@ export class SessionService extends TypedEmitter<Events> {
       return run
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      this.releaseQueued(s)
       this.setRuntime(s, { status: 'error', connected: false, error: message })
       throw error
     }
@@ -1040,6 +1072,7 @@ export class SessionService extends TypedEmitter<Events> {
       }
       // The other CLI counts its own context: none until it has answered.
       delete meta.context
+      this.releaseQueued(s)
       this.setRuntime(s, { ...IDLE })
     } else if (patch.model !== undefined || patch.effort !== undefined || typeof patch.ultracode === 'boolean') {
       const effortChanged = patch.effort !== undefined && patch.effort !== meta.effort
@@ -1091,6 +1124,7 @@ export class SessionService extends TypedEmitter<Events> {
     s.runAccount = null
     s.generation++
     await run?.stop().catch(() => undefined)
+    this.releaseQueued(s)
     this.setRuntime(s, this.atRest(s))
   }
 
