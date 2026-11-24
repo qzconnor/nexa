@@ -57,7 +57,7 @@ function toggle(): void {
     <span class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground tabular-nums">
       <span v-if="item.toolCount">{{ item.toolCount }} {{ item.toolCount === 1 ? 'Werkzeug' : 'Werkzeuge' }}</span>
       <span>{{ formatDuration(Math.max(0, elapsed)) }}</span>
-      <Spinner v-if="running" class="size-3.5 text-primary" />
+      <Spinner v-if="running" class="size-3.5" />
       <CheckIcon v-else-if="item.status === 'done'" class="size-3.5 text-(--tool-run)" />
       <XIcon v-else-if="item.status === 'error'" class="size-3.5 text-destructive" />
       <CircleStopIcon v-else class="size-3.5" />
