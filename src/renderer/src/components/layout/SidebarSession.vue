@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ArchiveIcon, CopyIcon, FileDownIcon, GitForkIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from '@lucide/vue'
+import { computed } from 'vue'
 import type { SessionMeta } from '@shared/types'
+import AccountDot from '@/components/accounts/AccountDot.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Spinner } from '@/components/ui/spinner'
@@ -8,6 +10,7 @@ import { useChatActions } from '@/composables/useChatActions'
 import { useSessionDrag } from '@/composables/useSessionDrag'
 import { formatAge } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useAccountsStore } from '@/stores/accounts'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import SessionMoveMenu from './SessionMoveMenu.vue'
@@ -24,6 +27,10 @@ const props = defineProps<{
 }>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const accounts = useAccountsStore()
+
+/** Whose login the chat runs with; only worth a dot while its CLI has more than one account. */
+const account = computed(() => (accounts.ofProvider(props.meta.provider).length > 1 ? accounts.get(accounts.sessionAccount(props.meta)) : undefined))
 
 const chat = useChatActions()
 const state = () => chat.state(props.meta.id)
@@ -81,6 +88,7 @@ function endDrag(): void {
         <span v-if="place" class="max-w-[30%] shrink truncate text-[0.7rem] text-muted-foreground/80" :title="meta.cwd">{{ place }}</span>
         <!-- Up there under „Angeheftet“ the pin would say it twice. -->
         <PinIcon v-else-if="meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
+        <AccountDot v-if="account" v-tooltip="`Account: ${account.name}`" :color="account.color" class="size-1.5 ring-1" />
         <span class="shrink-0 text-[0.7rem] text-muted-foreground tabular-nums">{{ formatAge(meta.updatedAt, now) }}</span>
       </button>
     </ContextMenuTrigger>

@@ -109,13 +109,13 @@ const TREE = [
         id: 'accounts.claude',
         title: 'Claude Code',
         keywords:
-          'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan Max Pro Token setup-token API-Key Anthropic CLAUDE_CONFIG_DIR Konfigurationsordner hinzufügen entfernen Limits Usage',
+          'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan Max Pro Token setup-token API-Key Anthropic CLAUDE_CONFIG_DIR Konfigurationsordner hinzufügen entfernen Limits Usage Reihenfolge sortieren verschieben',
       },
       {
         id: 'accounts.codex',
         title: 'Codex',
         keywords:
-          'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan ChatGPT Plus Pro OpenAI CODEX_HOME Konfigurationsordner hinzufügen entfernen Limits Usage',
+          'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan ChatGPT Plus Pro OpenAI CODEX_HOME Konfigurationsordner hinzufügen entfernen Limits Usage Reihenfolge sortieren verschieben',
       },
       {
         id: 'accounts.cliImport',
