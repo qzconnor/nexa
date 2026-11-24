@@ -587,7 +587,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             v-if="!atBottom && !diff"
             variant="outline"
             size="icon-sm"
-            class="absolute left-[calc(50%-5px)] z-30 -translate-x-1/2 rounded-full bg-popover/80 shadow-md backdrop-blur-md"
+            class="absolute left-[calc(50%-5px)] -translate-x-1/2 rounded-full bg-popover/80 shadow-md backdrop-blur-md"
             :style="{ bottom: `${dockHeight + 10}px` }"
             aria-label="Nach unten"
             @click="scrollToBottom(true)"
@@ -603,14 +603,17 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
         <!--
           Composer: floats over the end of the timeline, frosted, so the chat scrolls on beneath it
-          instead of being cut off above it. Clicks around it reach the chat. No z-index: the
-          .frost-backing under each card has to get below the timeline's text. Leaves out the
-          scroll bar (10px, main.css) on the right, as the chat does. Hidden, not removed, under a
-          file's changes: its draft stays, and so does its height the timeline makes room for.
+          instead of being cut off above it. Clicks around it reach the chat. No z-index, here or on
+          what sits beside it (the button „Nach unten“): a z-index makes the dock a stacking context
+          of its own, and the .frost-backing under each card then covers the timeline's text instead
+          of getting below it, so nothing shows through the frost. Last in the DOM, it still lies
+          over the button and the hint of a fresh chat. Leaves out the scroll bar (10px, main.css)
+          on the right, as the chat does. Hidden, not removed, under a file's changes: its draft
+          stays, and so does its height the timeline makes room for.
         -->
         <div
           ref="dock"
-          :class="cn('pointer-events-none absolute right-[10px] bottom-0 left-0 z-30 mx-auto max-w-(--chat-width) px-6 pb-5', diff && 'invisible')"
+          :class="cn('pointer-events-none absolute right-[10px] bottom-0 left-0 mx-auto max-w-(--chat-width) px-6 pb-5', diff && 'invisible')"
         >
           <div v-if="showTodo && todo" class="frost-backing pointer-events-auto mb-2 rounded-xl">
             <TodoCard :item="todo" compact />

@@ -10,7 +10,8 @@ import { useProjectPath } from '@/composables/useProjectPath'
 /**
  * The change of one file: its lines with numbers, coloured like the code of its language. `bare`: what
  * is around it names the file and counts its lines already (a tool row), so it has no head of its own,
- * except for where a moved file went.
+ * except for where a moved file went. Half the code's background only: there are many of them in a
+ * chat, and on the full one they stood out of the window's material as dark blocks.
  */
 const props = defineProps<{ change: FileChange; maxHeight?: string; class?: string; bare?: boolean }>()
 
@@ -50,7 +51,7 @@ const typeLabel = computed(() => ({ add: 'neu', update: '', delete: 'gelöscht' 
 </script>
 
 <template>
-  <div :class="cn('overflow-hidden rounded-md border bg-(--code-bg) text-(--code-fg)', props.class)">
+  <div :class="cn('overflow-hidden rounded-md border bg-(--code-bg)/50 text-(--code-fg)', props.class)">
     <div v-if="bare && change.movePath" class="truncate border-b px-3 py-1.5 font-mono text-xs text-muted-foreground" :title="change.movePath">
       → {{ relative(change.movePath) }}
     </div>
