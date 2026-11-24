@@ -111,6 +111,7 @@ export const IpcInvoke = {
   sessionsRespond: 'sessions:respond',
   sessionsShellOutput: 'sessions:shell-output',
   sessionsStopShell: 'sessions:stop-shell',
+  sessionsRunShell: 'sessions:run-shell',
   sessionsContext: 'sessions:context',
   sessionsMcpServers: 'sessions:mcp-servers',
   sessionsSetMcp: 'sessions:set-mcp',
@@ -330,6 +331,8 @@ export interface NexaApi {
     /** The end of a shell's output (`itemId`: its tool item, see `ToolItem.shell`). */
     shellOutput(id: string, itemId: string): Promise<ShellOutput>
     stopShell(id: string, itemId: string): Promise<void>
+    /** Runs a command the user typed after `!` in the chat's folder; it shows in the chat, secrets masked. */
+    runShell(id: string, command: string): Promise<void>
     /** What fills the chat's context, by kind, if its CLI tells (Claude Code while it runs). */
     context(id: string): Promise<ContextDetail | null>
     /** The MCP servers of the chat's CLI, each on or off for its project. */

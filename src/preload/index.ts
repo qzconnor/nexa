@@ -199,6 +199,7 @@ const api: NexaApi = {
     respond: (id, itemId, response) => invoke(IpcInvoke.sessionsRespond, id, itemId, response),
     shellOutput: (id, itemId) => invoke(IpcInvoke.sessionsShellOutput, id, itemId),
     stopShell: (id, itemId) => invoke(IpcInvoke.sessionsStopShell, id, itemId),
+    runShell: (id, command) => invoke(IpcInvoke.sessionsRunShell, id, command),
     context: (id) => invoke(IpcInvoke.sessionsContext, id),
     mcpServers: (id) => invoke(IpcInvoke.sessionsMcpServers, id),
     setMcp: (id, name, enabled) => invoke(IpcInvoke.sessionsSetMcp, id, name, enabled),

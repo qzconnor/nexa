@@ -58,6 +58,15 @@ describe('chatMarkdown', () => {
     const md = chatMarkdown({ ...info, cli: {} }, items, { timeZone: 'UTC' })
     expect(md).toContain('## Sonntag, 22. November 2026\n\n### Du · 23:59\n\na\n\n## Montag, 23. November 2026\n\n### Du · 00:01\n\nb')
   })
+
+  it('shows the user’s own commands as a terminal would, under their name', () => {
+    const items: ChatItem[] = [
+      { ...base, kind: 'tool', id: 's1', ts: at('09:00'), tool: 'bash', name: 'NexaShell', title: 'PowerShell 7', detail: 'git status', output: 'clean\n', status: 'done', byUser: true, startedAt: at('09:00') },
+      { ...base, kind: 'user', id: 'u1', ts: at('09:01'), text: 'Und?' },
+    ]
+    const md = chatMarkdown({ ...info, cli: {} }, items, { timeZone: 'UTC' })
+    expect(md).toContain('### Du · 09:00\n\n```console\n$ git status\nclean\n```\n\nUnd?')
+  })
 })
 
 describe('lastAnswer', () => {

@@ -691,6 +691,8 @@
   --tool-search: oklch(0.56 0.14 235);
   --tool-write: oklch(0.63 0.17 50);
   --tool-run: oklch(0.56 0.15 150);
+  /* The user's own commands (`!` in the composer): pink, as Claude Code's bash mode. */
+  --tool-shell: oklch(0.6 0.2 355);
   --chat-width: 48rem;
 }
 .dark {
@@ -698,6 +700,7 @@
   --tool-search: oklch(0.76 0.12 230);
   --tool-write: oklch(0.77 0.15 60);
   --tool-run: oklch(0.76 0.16 150);
+  --tool-shell: oklch(0.74 0.16 355);
 }
 :root[data-chat-width='wide'] {
   --chat-width: 64rem;

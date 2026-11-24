@@ -1,10 +1,10 @@
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
-import type { ChatItem, SessionRuntime } from '@shared/chat'
+import type { ChatItem, SessionRuntime, ToolItem } from '@shared/chat'
 import { claudeProjectKey } from '../accounts/cli-files'
 import type { AgentProvider, AgentRun, RunInput, RunOptions, RunSink } from '../providers/provider'
 import { SessionService } from './session-service'
@@ -22,6 +22,8 @@ let codexA: string
 let settings: AppSettings
 let trashed: string[]
 let service: SessionService | null
+/** The folder of project p1, where the chats' commands run. */
+let projectPath: string
 /** What the CLI's server gives as a conversation's chat (`ProviderService.history`). */
 let readHistory: (accountId: string, sessionId: string) => Promise<ChatItem[] | null>
 
@@ -73,7 +75,7 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
     env: () => ({ accountId: 'claude-a', set: {}, unset: [] }),
     extraArgs: () => [],
   }
-  const projects = { get: (id: string) => (id === 'p1' ? { id, path: CWD } : undefined), touch: async () => {}, promptsFor: async () => [] }
+  const projects = { get: (id: string) => (id === 'p1' ? { id, path: projectPath } : undefined), touch: async () => {}, promptsFor: async () => [] }
   const providers = { isReady: () => true, defaultAccount: () => 'claude-a', get: () => provider, setUsage: () => {}, history: (_id: string, accountId: string, sessionId: string) => readHistory(accountId, sessionId) }
   const mcp = { revoke: vi.fn(), running: false }
   service = new SessionService(
@@ -101,6 +103,7 @@ beforeEach(async () => {
   settings = defaultSettings()
   trashed = []
   service = null
+  projectPath = CWD
   readHistory = async () => null
 })
 
@@ -444,4 +447,69 @@ describe('SessionService.clear', () => {
     expect(fork).not.toHaveProperty('earlierCli')
     expect(fork.contextFrom).toBe(4)
   })
+})
+
+describe('SessionService.runShell', () => {
+  const TOKEN = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+
+  async function chat() {
+    projectPath = root
+    const sent: string[] = []
+    let sink: RunSink | null = null
+    // The CLI names its conversation with the first prompt, as the real ones do.
+    const run = { alive: true, send: async (input: RunInput) => void (sent.push(input.text), sink!.cliSession(GONE)), stop: async () => {} } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], {
+      start: async (_options, s) => {
+        sink = s
+        return run
+      },
+    })
+    return { sessions, sent }
+  }
+
+  /** The user's command in the chat once it ended. */
+  async function ended(sessions: SessionService): Promise<ToolItem> {
+    for (let i = 0; i < 400; i++) {
+      const item = (await sessions.history('chat'))!.items.find((t): t is ToolItem => t.kind === 'tool' && !!t.byUser)
+      if (item && item.status !== 'running') return item
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    throw new Error('the command did not end')
+  }
+
+  it('runs a command in the chat’s folder and keeps it with its secrets masked', async () => {
+    const { sessions } = await chat()
+    await sessions.runShell('chat', `echo token=${TOKEN}`)
+    const item = await ended(sessions)
+
+    expect(item).toMatchObject({ byUser: true, status: 'done', exitCode: 0, detail: 'echo token=••••' })
+    expect(item.output).toContain('token=••••')
+    await service!.dispose()
+    const transcript = await readFile(join(dataDir, 'sessions', 'chat.jsonl'), 'utf8')
+    expect(transcript).toContain('echo token=••••')
+    expect(transcript).not.toContain(TOKEN)
+  }, 20_000)
+
+  it('hands the commands to the CLI with the next prompt, once', async () => {
+    const { sessions, sent } = await chat()
+    await sessions.runShell('chat', `echo ${TOKEN}`)
+    await ended(sessions)
+
+    await sessions.send('chat', { text: 'Was sagst du dazu?' })
+    await sessions.send('chat', { text: 'Und jetzt?' })
+
+    expect(sent[0]).toMatch(/^<nexa-shell>\n[^]*\n\$ echo ••••\n••••\n\[exit code 0\]\n<\/nexa-shell>\n\nWas sagst du dazu\?$/)
+    expect(sent[0]).not.toContain(TOKEN)
+    expect(sent[1]).toBe('Und jetzt?')
+  }, 20_000)
+
+  it('stops a command', async () => {
+    const { sessions } = await chat()
+    await sessions.runShell('chat', process.platform === 'win32' ? 'Start-Sleep -Seconds 30' : 'sleep 30')
+    await new Promise((r) => setTimeout(r, 500))
+    const running = (await sessions.history('chat'))!.items.find((t) => t.kind === 'tool')!
+    await sessions.stopShell('chat', running.id)
+
+    expect(await ended(sessions)).toMatchObject({ status: 'denied', exitCode: undefined })
+  }, 20_000)
 })

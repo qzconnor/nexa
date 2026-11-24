@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUpIcon, ChevronDownIcon, FolderIcon, SettingsIcon, SquareIcon, XIcon } from '@lucide/vue'
+import { ArrowUpIcon, ChevronDownIcon, FolderIcon, SettingsIcon, SquareIcon, TerminalIcon, XIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { ContextUsage, PermissionMode, ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
@@ -11,6 +11,7 @@ import { appCommandOf, appCommandOptions, mergeCommands, type AppCommand } from 
 import { applySuggestion, filterCommands, findPaths, triggerAt, type Suggestion, type SuggestTrigger } from '@/lib/composer-suggest'
 import { effortLabel, effortTone } from '@/lib/effort'
 import { attempt } from '@/lib/errors'
+import { isWindows } from '@/lib/platform'
 import { FILE_TREE_DRAG_TYPE, mentionOf } from '@/lib/file-tree'
 import { fileImageUrl } from '@/lib/tools'
 import { cn } from '@/lib/utils'
@@ -28,7 +29,8 @@ import ComposerSuggest from './ComposerSuggest.vue'
  * skills and files completed as they are typed; below it the CLI and account, and by the send button
  * the gear with model, effort, Ultracode and permission mode. While the agent works a prompt is sent
  * as any other and waits in the chat until the agent takes it up; with the field empty, the button
- * stops the turn.
+ * stops the turn. `!` at the start turns it into the shell mode (in a chat), as in Claude Code: the
+ * line runs as a command in the chat's folder.
  */
 const props = defineProps<{
   provider: ProviderId
@@ -56,6 +58,8 @@ const emit = defineEmits<{
   send: [input: { text: string; images: string[] }]
   /** One of Nexa's own commands (lib/chat-commands.ts), in a chat only: the chat runs it, the CLI never sees it. */
   command: [input: { command: AppCommand; args: string }]
+  /** A command typed in the shell mode (`!`), in a chat only: Nexa runs it, the next prompt tells the CLI. */
+  shell: [command: string]
   /** Text put in from elsewhere (a file mentioned in the tree, review comments): it wants to be seen. */
   inserted: []
   stop: []
@@ -79,8 +83,21 @@ const dragging = ref(false)
 /** The attached picture shown large; null while none is. */
 const viewing = ref<number | null>(null)
 
-const canSend = computed(() => !props.disabled && (text.value.trim().length > 0 || images.value.length > 0))
-const placeholder = computed(() => (props.busy ? 'Nachricht senden, während der Agent arbeitet …' : `Nachricht an ${PROVIDERS[props.provider].name} …`))
+/** `!` typed at the start: the line is a command for the shell, not a prompt (the `!` itself isn't kept). */
+const shellMode = ref(false)
+const SHELL_NAMES = { powershell: 'PowerShell', gitbash: 'Git Bash', cmd: 'cmd' } as const
+const shellName = computed(() => (isWindows ? SHELL_NAMES[settings.settings.chat.shell] : 'Shell'))
+
+const canSend = computed(() => !props.disabled && (text.value.trim().length > 0 || (!shellMode.value && images.value.length > 0)))
+const placeholder = computed(() => {
+  if (shellMode.value) return `Befehl in ${shellName.value} ausführen …`
+  return props.busy ? 'Nachricht senden, während der Agent arbeitet …' : `Nachricht an ${PROVIDERS[props.provider].name} …`
+})
+
+function leaveShellMode(): void {
+  shellMode.value = false
+  void nextTick(() => input.value?.focus())
+}
 
 watch(
   () => props.draftKey,
@@ -92,6 +109,7 @@ watch(
     const draft = next ? composer.draftOf(next) : undefined
     text.value = draft?.text ?? ''
     images.value = draft?.images ? [...draft.images] : []
+    shellMode.value = false
     if (next) composer.attach(next, insertText)
     // The first draft comes with the composer; focus waits for onMounted then.
     if (previous === undefined) return
@@ -170,7 +188,7 @@ function closeSuggest(): void {
 
 function updateSuggest(): void {
   const el = input.value
-  if (!el || props.disabled || el.selectionStart !== el.selectionEnd || document.activeElement !== el) return closeSuggest()
+  if (!el || props.disabled || shellMode.value || el.selectionStart !== el.selectionEnd || document.activeElement !== el) return closeSuggest()
   const next = triggerAt(text.value, el.selectionStart, props.provider)
   if (next && dismissed?.kind === next.kind && dismissed.from === next.from) return closeSuggest()
   dismissed = null
@@ -303,6 +321,16 @@ const chips = computed(() => {
 
 function send(): void {
   if (!canSend.value) return
+  if (shellMode.value) {
+    const command = text.value.trim()
+    text.value = ''
+    // Back to prompts, as Claude Code does: a second command starts with `!` again.
+    shellMode.value = false
+    if (props.draftKey) composer.saveDraft(props.draftKey, { text: '', images: [...images.value] })
+    void nextTick(resize)
+    emit('shell', command)
+    return
+  }
   const command = props.sessionId ? appCommandOf(text.value, props.provider) : null
   const input = { text: text.value.trim(), images: [...images.value] }
   text.value = ''
@@ -317,12 +345,31 @@ function send(): void {
 }
 
 function onInput(): void {
+  // `!` at the start of the line (typed or pasted) switches to the shell mode, in a chat.
+  if (!shellMode.value && props.sessionId && text.value.startsWith('!')) {
+    shellMode.value = true
+    text.value = text.value.slice(1)
+    const el = input.value
+    const cursor = Math.max(0, (el?.selectionStart ?? 1) - 1)
+    void nextTick(() => el?.setSelectionRange(cursor, cursor))
+  }
   resize()
   updateSuggest()
 }
 
 function onKeydown(event: KeyboardEvent): void {
   if (suggestKey(event)) return
+  if (shellMode.value) {
+    const el = input.value
+    const atStart = !!el && el.selectionStart === 0 && el.selectionEnd === 0
+    // Backspace before the first letter takes the `!` away, Esc the mode (not the agent's turn).
+    if ((event.key === 'Backspace' && atStart) || event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      leaveShellMode()
+      return
+    }
+  }
   if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'u') {
     event.preventDefault()
     void pickFiles()
@@ -427,6 +474,7 @@ defineExpose({
       cn(
         'relative flex flex-col rounded-2xl border transition-colors focus-within:border-ring/60',
         floating ? 'bg-card/40 shadow-lg shadow-black/15 backdrop-blur-lg' : 'bg-card shadow-lg shadow-black/5',
+        shellMode && 'border-(--tool-shell)/70 focus-within:border-(--tool-shell)',
         dragging && 'border-primary bg-primary/5',
       )
     "
@@ -474,23 +522,54 @@ defineExpose({
         </button>
       </div>
     </div>
-    <textarea
-      ref="input"
-      v-model="text"
-      data-composer-input
-      rows="1"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      class="max-h-[40vh] min-h-12 w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[0.95rem] leading-relaxed outline-none placeholder:text-muted-foreground/70"
-      @input="onInput"
-      @keydown="onKeydown"
-      @keyup="updateSuggest"
-      @click="updateSuggest"
-      @focus="onFocus"
-      @blur="closeSuggest"
-      @paste="onPaste"
-    />
-    <div class="flex items-center gap-1 px-2 pb-2">
+    <div class="flex">
+      <!-- The mode's mark where the `!` was typed; a click on it goes back to prompts. -->
+      <button
+        v-if="shellMode"
+        type="button"
+        class="shrink-0 self-start pt-3.5 pl-4 font-mono text-[0.95rem] leading-relaxed font-semibold text-(--tool-shell)"
+        aria-label="Shell-Modus beenden"
+        v-tooltip="'Shell-Modus beenden (Esc)'"
+        @click="leaveShellMode"
+      >
+        !
+      </button>
+      <textarea
+        ref="input"
+        v-model="text"
+        data-composer-input
+        rows="1"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        :spellcheck="!shellMode"
+        :class="
+          cn(
+            'max-h-[40vh] min-h-12 w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[0.95rem] leading-relaxed outline-none placeholder:text-muted-foreground/70',
+            shellMode && 'pl-2 font-mono text-[0.9rem]',
+          )
+        "
+        @input="onInput"
+        @keydown="onKeydown"
+        @keyup="updateSuggest"
+        @click="updateSuggest"
+        @focus="onFocus"
+        @blur="closeSuggest"
+        @paste="onPaste"
+      />
+    </div>
+    <!-- Shell mode: what happens with the line, instead of what only matters to prompts. -->
+    <div v-if="shellMode" class="flex min-h-9 items-center gap-2 px-4 pb-2 text-[0.8rem] text-muted-foreground">
+      <TerminalIcon class="size-3.5 shrink-0 text-(--tool-shell)" />
+      <span class="shrink-0 font-medium text-(--tool-shell)">Shell-Modus</span>
+      <span class="min-w-0 truncate" v-tooltip="`Nexa führt den Befehl aus; ${PROVIDERS[provider].name} bekommt ihn samt Ausgabe mit dem nächsten Prompt.`">
+        · {{ shellName }} im Ordner des Chats
+      </span>
+      <span class="ml-auto shrink-0 text-[0.75rem] opacity-80">Esc beendet</span>
+      <Button size="icon-sm" :disabled="!canSend" aria-label="Befehl ausführen" class="rounded-full bg-(--tool-shell) text-background hover:bg-(--tool-shell)/85" @click="send">
+        <ArrowUpIcon />
+      </Button>
+    </div>
+    <div v-else class="flex items-center gap-1 px-2 pb-2">
       <ComposerAddMenu ref="addMenu" :session-id="sessionId" :provider="provider" :disabled="disabled" @files="pickFiles" @folder="addFolder" @commands="startCommand" />
       <ComposerControls
         :provider="provider"

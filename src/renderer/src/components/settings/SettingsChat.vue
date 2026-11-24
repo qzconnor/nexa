@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { AppSettings, DeepPartial } from '@shared/types'
+import type { AppSettings, DeepPartial, UserShell } from '@shared/types'
+import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { attempt } from '@/lib/errors'
+import { isWindows } from '@/lib/platform'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import SettingField from './SettingField.vue'
@@ -16,6 +18,16 @@ const s = computed(() => store.settings)
 function update(patch: DeepPartial<AppSettings>): void {
   void attempt(() => store.update(patch), 'Speichern fehlgeschlagen')
 }
+
+const SHELLS: { value: UserShell; label: string }[] = [
+  { value: 'powershell', label: 'PowerShell' },
+  { value: 'gitbash', label: 'Git Bash' },
+  { value: 'cmd', label: 'cmd' },
+]
+const shell = computed({
+  get: () => s.value.chat.shell,
+  set: (value: UserShell) => update({ chat: { shell: value } }),
+})
 
 async function clearBrowserData(): Promise<void> {
   const confirmed = await ui.confirm({
@@ -55,6 +67,14 @@ function cleanUp(): void {
     <SettingsSection anchor="chat.input" title="Eingabe">
       <SettingField anchor="chat.enterSends" label="Enter sendet" description="Aus: Strg+Enter sendet, Enter macht eine neue Zeile.">
         <Switch :model-value="s.chat.enterSends" @update:model-value="(v: boolean) => update({ chat: { enterSends: v } })" />
+      </SettingField>
+      <SettingField
+        v-if="isWindows"
+        anchor="chat.shell"
+        label="Shell für „!“"
+        description="„!“ am Anfang des Eingabefelds führt die Zeile als Befehl im Ordner des Chats aus. PowerShell 7, wenn installiert, sonst Windows PowerShell. Der Agent bekommt Befehl und Ausgabe mit dem nächsten Prompt, Schlüssel und Passwörter durch •••• ersetzt."
+      >
+        <SegmentedControl v-model="shell" :options="SHELLS" aria-label="Shell für „!“" />
       </SettingField>
     </SettingsSection>
 

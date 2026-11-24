@@ -86,6 +86,10 @@
       Unterhaltung an, ein Trenner „Kontext geleert“ steht im Verlauf. Was darüber steht, ist für keine CLI
       mehr Kontext und eingeklappt („Früheren Verlauf anzeigen“). Ein Titel vom Modell kommt mit dem ersten
       Prompt danach neu, ein eigener Name bleibt; `/new` legt wie bisher einen neuen Chat an
+- [x] Shell-Modus mit `!` wie in Claude Code, für Claude und Codex: Nexa führt den Befehl im Ordner des
+      Chats aus (Windows: PowerShell, Git Bash oder cmd nach Einstellung, sonst die Login-Shell), Ausgabe
+      im Chat, Beenden; Schlüssel, Passwörter und Tokens in Befehl und Ausgabe werden durch •••• ersetzt,
+      bevor sie gespeichert werden, und so bekommt der Agent sie mit dem nächsten Prompt
 - [x] Bilder groß ansehen: Ein Klick auf ein angehängtes oder gesendetes Bild öffnet es über dem Fenster;
       Mausrad zoomt zum Zeiger, Ziehen verschiebt, Doppelklick wechselt zwischen eingepasst und vergrößert,
       Pfeiltasten blättern, „Mit dem Standardprogramm öffnen“ in der Leiste

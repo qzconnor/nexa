@@ -306,6 +306,16 @@ async function send(input: { text: string; images: string[] }): Promise<void> {
   await attempt(() => sessions.send(id, input), 'Senden fehlgeschlagen')
 }
 
+/** A command from the shell mode (`!`): it shows in the main chat with its output. */
+async function runShell(command: string): Promise<void> {
+  const id = meta.value?.id
+  if (!id) return
+  mainScroll = null
+  ui.agentId = null
+  scrollToBottom()
+  await attempt(() => window.api.sessions.runShell(id, command), 'Befehl ließ sich nicht ausführen')
+}
+
 function update(patch: SessionUpdateInput): void {
   const id = meta.value?.id
   if (id) void attempt(() => sessions.update(id, patch), 'Ändern fehlgeschlagen')
@@ -638,6 +648,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               autofocus
               @send="send"
               @command="runCommand"
+              @shell="runShell"
               @inserted="fileTree.closeDiff(meta.id)"
               @stop="sessions.interrupt(meta.id)"
               @update:provider="(provider) => update({ provider })"

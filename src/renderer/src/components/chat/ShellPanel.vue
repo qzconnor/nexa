@@ -126,7 +126,8 @@ watch(
 // ── Stop ──
 
 const stopping = ref<string | null>(null)
-const canStop = computed(() => !!shell.value?.shell && status.value === 'running')
+// The CLI's own shells, and the user's (`!`), which Nexa runs.
+const canStop = computed(() => (!!shell.value?.shell || !!shell.value?.byUser) && status.value === 'running')
 async function stop(): Promise<void> {
   const s = shell.value
   if (!s) return

@@ -61,7 +61,14 @@ export interface ChatSettings {
    * subagents and the snapshots of `/rewind`, in every account with a copy. Off: the CLIs keep them.
    */
   deleteCliConversations: boolean
+  /**
+   * The shell that runs what is typed after `!` in the composer, on Windows: PowerShell (7 where it is
+   * installed, else 5.1), Git Bash or cmd. Elsewhere the user's login shell.
+   */
+  shell: UserShell
 }
+
+export type UserShell = 'powershell' | 'gitbash' | 'cmd'
 
 export interface ToolSettings {
   /** Nexa's MCP server with the tools that draw charts, diagrams and tables in the chat. */

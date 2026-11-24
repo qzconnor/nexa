@@ -1,4 +1,4 @@
-import type { ChatItem, ProviderId } from '@shared/chat'
+import type { ChatItem, ProviderId, ToolItem } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import { firstLine } from '@shared/utils'
 
@@ -33,6 +33,41 @@ export function sessionInstructions(options: { renderTools: boolean; browserTool
 }
 
 const MAX_HANDOFF = 14_000
+/** Output of one `!` command the CLI gets: its end, where errors and summaries are. */
+const MAX_SHELL_OUTPUT = 8_000
+/** All `!` commands before one prompt: the latest win. */
+const MAX_SHELL_CONTEXT = 24_000
+
+/**
+ * The commands the user ran with `!` since their last prompt, for the CLI with the next one: so it
+ * knows what the user saw, as in Claude Code's bash mode. Their secrets are masked already.
+ */
+export function userShellContext(items: readonly ToolItem[]): string | null {
+  const parts: string[] = []
+  for (const item of items) {
+    let output = (item.output ?? '').trimEnd()
+    if (output.length > MAX_SHELL_OUTPUT) output = `…\n${output.slice(output.length - MAX_SHELL_OUTPUT)}`
+    const end =
+      item.status === 'running'
+        ? '[still running]'
+        : item.status === 'denied'
+          ? '[stopped by the user]'
+          : item.exitCode != null
+            ? `[exit code ${item.exitCode}]`
+            : `[${item.status}]`
+    parts.push([`$ ${item.detail ?? ''}`, output, end].filter(Boolean).join('\n'))
+  }
+  if (parts.length === 0) return null
+  let text = parts.join('\n\n')
+  if (text.length > MAX_SHELL_CONTEXT) text = `…\n${text.slice(text.length - MAX_SHELL_CONTEXT)}`
+  return [
+    '<nexa-shell>',
+    "The user ran these commands themselves in this chat's working directory (Nexa's shell mode) since their last message. You did not run them; Nexa replaced secrets in commands and output with ••••.",
+    '',
+    text,
+    '</nexa-shell>',
+  ].join('\n')
+}
 
 /**
  * The part of the chat a CLI hasn't seen, as context for it: when a session moves from Claude Code to
@@ -51,6 +86,10 @@ export function handoffContext(items: ChatItem[], to: ProviderId): string | null
         break
       case 'tool':
         if (item.tool === 'render' || item.tool === 'question' || item.tool === 'todo') break
+        if (item.byUser) {
+          parts.push(`[User ran in the shell: ${firstLine(item.detail ?? '', 160)} → ${item.exitCode != null ? `exit code ${item.exitCode}` : item.status}]`)
+          break
+        }
         parts.push(`[${PROVIDERS[item.provider].short} tool ${item.name}${item.detail ? `: ${firstLine(item.detail, 160)}` : ''} → ${item.status}]`)
         break
       case 'agent':

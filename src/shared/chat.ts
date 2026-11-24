@@ -98,6 +98,11 @@ export interface ToolItem extends ItemBase {
   exitCode?: number | null
   /** A command the CLI runs as a task of its own (Claude Code's shells): what became of the process. */
   shell?: ShellState
+  /**
+   * Run by the user with `!` in the composer, by Nexa in the chat's folder rather than by a CLI. Its
+   * command and output are kept with secrets masked; the next prompt hands them to the CLI.
+   */
+  byUser?: boolean
   startedAt: number
   endedAt?: number
 }

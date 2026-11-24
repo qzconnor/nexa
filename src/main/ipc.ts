@@ -313,6 +313,7 @@ export function registerIpc(ctx: AppContext): void {
   )
   handle(IpcInvoke.sessionsShellOutput, (_e, id: unknown, itemId: unknown) => sessions.shellOutput(str(id, 'Die Session'), str(itemId, 'Die Shell')))
   handle(IpcInvoke.sessionsStopShell, (_e, id: unknown, itemId: unknown) => sessions.stopShell(str(id, 'Die Session'), str(itemId, 'Die Shell')))
+  handle(IpcInvoke.sessionsRunShell, (_e, id: unknown, command: unknown) => sessions.runShell(str(id, 'Die Session'), str(command, 'Der Befehl').slice(0, 100_000)))
   handle(IpcInvoke.sessionsContext, (_e, id: unknown) => sessions.contextDetail(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsMcpServers, (_e, id: unknown) => sessions.mcpServers(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsSetMcp, (_e, id: unknown, name: unknown, enabled: unknown) =>

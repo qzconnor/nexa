@@ -156,6 +156,13 @@ export function chatMarkdown(info: ChatMarkdownInfo, items: readonly ChatItem[],
         blocks.push(item.text.trim())
         break
       case 'tool':
+        // The user's own command (`!`): theirs, with what it printed, as a terminal would show it.
+        if (item.byUser) {
+          heading('Du', item.ts)
+          flush()
+          blocks.push(fenced([`$ ${item.detail ?? ''}`, (item.output ?? '').trimEnd()].filter(Boolean).join('\n'), 'console'))
+          break
+        }
         heading(PROVIDERS[item.provider].short, item.ts)
         tools.push(toolLine(item))
         break
