@@ -175,6 +175,10 @@
 - [x] Accounts sortieren: am Griff einer Karte unter Einstellungen › Accounts ziehen oder mit den
       Pfeiltasten verschieben; in dieser Reihenfolge stehen sie überall. Hat eine CLI mehrere Accounts,
       zeigt die Sidebar am Chat einen Punkt in der Farbe seines Accounts
+- [x] Prognose der Limits wie im Claude Manager: Aus den Messpunkten der letzten Zeit (eine Stunde beim
+      5-Stunden-Fenster, ein Tag bei den Wochen) sagt jedes Fenster, wann das Limit beim jetzigen Tempo
+      erreicht ist („Limit ≈ 17:45“, auch in der Titelleiste) oder wie voll es zum Reset ist; die Messpunkte
+      überstehen einen Neustart (`usage-samples.json`)
 
 ## Als Nächstes
 
@@ -225,8 +229,8 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] Weitere CLIs (z. B. Gemini CLI) über das Provider-System.
 - [ ] Mehrere Fenster bzw. Session in eigenem Fenster; mehrere Chats nebeneinander (`GroupShell.vue` im
       Claude Manager).
-- [ ] Verbrauchs-Dashboard: Tokens je Tag, Modell und Ordner, Verlauf der Limits mit Prognose („Limit
-      ≈ 16:40“), ohne Dollar (`DashboardView.vue`, `usage-forecast.ts` im Claude Manager).
+- [ ] Verbrauchs-Dashboard: Tokens je Tag, Modell und Ordner, Verlauf der Limits als Diagramm, ohne
+      Dollar (`DashboardView.vue`, `usage-history.ts` im Claude Manager).
 - [ ] Änderungen je Prompt aus den Checkpoints von Claude Code, Zurückspulen mit Vorschau (Claude
       `rewind_files`, Codex `thread/revert`; `SessionChangesView.vue` im Claude Manager).
 - [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).

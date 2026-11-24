@@ -24,6 +24,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/settings-service.ts` | `settings.json`, Defaults aus `shared/defaults.ts` |
 | `services/theme-service.ts` | Themes (aus dem Claude Manager übernommen) |
 | `services/provider-service.ts` | Registriert Provider, Erkennung, Usage je Account (Abfrage, Polling), Browser-Logins |
+| `services/usage-samples.ts` | Messpunkte der Limit-Fenster je Account (`usage-samples.json`) und daraus die Prognose je Fenster (Rechnung in `shared/usage-forecast.ts`) |
 | `accounts/account-service.ts` | Accounts (`accounts.json`), Profilordner, Login-Stand aus den Dateien der CLIs |
 | `accounts/account-env.ts` | Umgebung, mit der die CLI eines Accounts startet |
 | `accounts/account-login.ts` | `claude auth login` / `codex login` ohne Terminal: Link, Code, Ergebnis |

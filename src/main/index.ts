@@ -27,6 +27,7 @@ import { NexaMcpServer } from './mcp/mcp-server'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { ProjectService } from './services/project-service'
 import { ProviderService } from './services/provider-service'
+import { UsageSamples } from './services/usage-samples'
 import { NotificationService } from './services/notification-service'
 import { SessionService } from './services/session-service'
 import { SettingsService } from './services/settings-service'
@@ -69,7 +70,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // The accounts first: every CLI starts with the folder and login of one.
   const accounts = new AccountService(userDataDir)
   await accounts.init()
-  const providers = new ProviderService(() => settings.get(), accounts)
+  const providers = new ProviderService(() => settings.get(), accounts, new UsageSamples(join(userDataDir, 'usage-samples.json')))
   const projects = new ProjectService(userDataDir)
 
   // Nexa's own MCP server: the tools that draw charts, diagrams and tables in the chat, and the browser

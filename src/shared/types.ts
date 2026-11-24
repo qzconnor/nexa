@@ -255,6 +255,20 @@ export interface UsageWindow {
   /** Milliseconds since the epoch. */
   resetsAt?: number
   windowMinutes?: number
+  /** Where the window heads at the current pace, from the readings Nexa noted (main process). */
+  forecast?: UsageForecast | null
+}
+
+/** Where a usage window heads at the current pace (see `src/shared/usage-forecast.ts`). */
+export interface UsageForecast {
+  /** When it reaches 100 % (ms), if before the reset. */
+  exhaustsAt: number | null
+  /** How full it is at the reset at this pace, may be above 100. */
+  atReset: number
+  /** Percentage points per hour. */
+  ratePerHour: number
+  /** `recent`: from the readings of the last while; `window`: the average since the window began. */
+  basis: 'recent' | 'window'
 }
 
 export interface ProviderUsage {
