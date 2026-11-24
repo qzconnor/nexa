@@ -87,6 +87,9 @@ export const useUiStore = defineStore('ui', () => {
     openFolders.value = next
     remember('nexa.openFolders', JSON.stringify([...next]))
   }
+  /** The pinned chats on top of the sidebar; they are there to be seen, so open until folded. */
+  const pinnedOpen = ref(stored<'open' | 'folded'>('nexa.pinned', 'open') === 'open')
+  watch(pinnedOpen, (open) => remember('nexa.pinned', open ? 'open' : 'folded'))
 
   /** The settings are a dialog over whatever the window shows. */
   const settingsOpen = ref(false)
@@ -189,6 +192,7 @@ export const useUiStore = defineStore('ui', () => {
     homeProjectId,
     openFolders,
     toggleFolder,
+    pinnedOpen,
     settingsOpen,
     settingsSection,
     settingsAnchor,

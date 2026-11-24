@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionMeta } from '@shared/types'
-import { foldersOf, projectTree } from './session-tree'
+import { foldersOf, pinnedChats, projectTree } from './session-tree'
 
 const meta = (id: string, updatedAt: number, cwd?: string, pinned?: boolean): SessionMeta => ({
   id,
@@ -38,5 +38,18 @@ describe('projectTree', () => {
     expect(nexa!.folders.map((f) => [f.name, f.sessions.map((s) => s.id)])).toEqual([['src', ['nexa-src']]])
     expect(foldersOf(tree, 'nexa-src')).toEqual([nexa!.id, nexa!.folders[0]!.id])
     expect(foldersOf(tree, 'own')).toEqual([])
+  })
+})
+
+describe('pinnedChats', () => {
+  it('lists the pinned chats of the shown projects, the latest first', () => {
+    const chats = [
+      meta('old', 1, undefined, true),
+      meta('loose', 50),
+      meta('new', 20, 'F:\Projekte\Apps\nexa', true),
+      { ...meta('archived', 30, undefined, true), archived: true },
+      { ...meta('elsewhere', 40, undefined, true), projectId: 'gone' },
+    ]
+    expect(pinnedChats(chats, new Set(['p'])).map((s) => s.id)).toEqual(['new', 'old'])
   })
 })
