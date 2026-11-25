@@ -15,14 +15,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { clampPercent, usageLevel, usageTextClass } from '@/lib/usage'
+import { chosenModel, clampPercent, usageLevel, usageTextClass, windowsOfModel } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProvidersStore } from '@/stores/providers'
 import { useUiStore } from '@/stores/ui'
 
 /** CLI and account of a chat, as small menus under the composer (the rest is behind its gear). */
-const props = defineProps<{ provider: ProviderId; account?: string; disabled?: boolean }>()
+const props = defineProps<{ provider: ProviderId; account?: string; model?: string; disabled?: boolean }>()
 const emit = defineEmits<{
   'update:provider': [ProviderId]
   'update:account': [string]
@@ -45,9 +45,10 @@ function accountDetail(a: Account): string {
   return identityLabel(a.identity) ?? (a.kind === 'apiKey' ? 'API-Key' : a.kind === 'token' ? 'Long-lived Token' : 'Angemeldet')
 }
 
-/** The fullest window of an account's limits, for the menu. */
+/** The fullest window of an account's limits for the chat's model (Antigravity: of its group), for the menu. */
 function busiest(a: Account): number | null {
-  const windows = providers.usageOf(a.id)?.windows ?? []
+  const model = chosenModel(providers.models[props.provider], props.model)
+  const windows = windowsOfModel(providers.usageOf(a.id)?.windows ?? [], model)
   return windows.length ? Math.max(...windows.slice(0, 2).map((w) => clampPercent(w.usedPercent))) : null
 }
 </script>

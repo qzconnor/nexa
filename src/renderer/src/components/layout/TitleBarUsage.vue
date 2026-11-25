@@ -16,21 +16,24 @@ import { Spinner } from '@/components/ui/spinner'
 import { useClock } from '@/composables/useClock'
 import { attempt } from '@/lib/errors'
 import { formatRelative } from '@/lib/format'
-import { clampPercent, forecastHint, shortWindowLabel, usageFillClass, usageLevel, usageTextClass } from '@/lib/usage'
+import { chosenModel, clampPercent, forecastHint, shortWindowLabels, usageFillClass, usageLevel, usageTextClass, windowsOfModel } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
+import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 
 /**
  * The plan limits of one CLI in the title bar: a ring per window for the account that counts now
- * (the open chat's, else the default one), every account of the CLI in the popover.
+ * (the open chat's, else the default one) and the model that counts now (where limits differ by
+ * model, as Antigravity's groups), every account and window of the CLI in the popover.
  */
 const props = defineProps<{ provider: ProviderId }>()
 const providers = useProvidersStore()
 const accounts = useAccountsStore()
 const sessions = useSessionsStore()
+const settings = useSettingsStore()
 const ui = useUiStore()
 const now = useClock(30_000)
 const open = ref(false)
@@ -42,7 +45,14 @@ const shownId = computed(() => {
   return meta && meta.provider === props.provider ? accounts.sessionAccount(meta) : accounts.defaultId(props.provider)
 })
 const shown = computed(() => accounts.get(shownId.value))
-const windows = computed(() => (providers.usageOf(shownId.value)?.windows ?? []).slice(0, 2))
+/** The open chat's model, else the one new chats start with; none chosen: the CLI's own default. */
+const model = computed(() => {
+  const meta = sessions.active
+  const id = meta && meta.provider === props.provider ? meta.model : settings.settings[props.provider].model
+  return chosenModel(providers.models[props.provider], id)
+})
+const windows = computed(() => windowsOfModel(providers.usageOf(shownId.value)?.windows ?? [], model.value).slice(0, 2))
+const labels = computed(() => shortWindowLabels(windows.value))
 const latest = computed(() => Math.max(0, ...list.value.map((a) => providers.usageOf(a.id)?.updatedAt ?? 0)) || undefined)
 
 /** When the window's limit comes at this pace, if before its reset. */
@@ -81,9 +91,9 @@ function openAccounts(): void {
           <AccountDot v-if="list.length > 1" :color="shown?.color" class="absolute -right-1 -bottom-1 size-1.5 ring-1" />
         </span>
         <span v-if="!windows.length" class="text-xs">–</span>
-        <span v-for="w in windows" :key="w.key" class="flex items-center gap-1">
+        <span v-for="(w, i) in windows" :key="w.key" class="flex items-center gap-1">
           <UsageRing :percent="w.usedPercent" :size="14" />
-          <span class="text-xs">{{ shortWindowLabel(w.label, w.windowMinutes) }}</span>
+          <span class="text-xs">{{ labels[i] }}</span>
           <span :class="cn('text-xs font-medium tabular-nums', clampPercent(w.usedPercent) >= 85 ? usageTextClass.high : 'text-foreground')">
             {{ clampPercent(w.usedPercent) }}&nbsp;%
           </span>
@@ -120,7 +130,7 @@ function openAccounts(): void {
           <span v-if="identityLabel(account.identity)" class="-mt-2 truncate pl-4 text-xs text-muted-foreground">{{ identityLabel(account.identity) }}</span>
           <div v-for="w in providers.usageOf(account.id)?.windows ?? []" :key="w.key" class="flex flex-col gap-1.5 pl-4">
             <div class="flex items-baseline justify-between gap-3 text-xs">
-              <span>{{ w.label }}</span>
+              <span v-tooltip="w.models ? `Gilt für ${w.models.join(', ')}` : null">{{ w.label }}</span>
               <span :class="cn('tabular-nums', usageTextClass[usageLevel(w.usedPercent)])">{{ clampPercent(w.usedPercent) }} %</span>
             </div>
             <Progress :model-value="clampPercent(w.usedPercent)" :class="cn('h-1.5', usageFillClass[usageLevel(w.usedPercent)])" />

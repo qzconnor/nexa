@@ -879,7 +879,12 @@ und den Zeichenketten der Binärdatei.
   `buckets[]` mit `id` (`gemini-weekly`, `3p-5h`, `3p-weekly`), `name`, `window` (`weekly`, `5h`),
   `remaining_fraction` (0–1) und `reset_time` (UTC; `1970-01-01T00:00:00Z`, solange niemand den Bucket
   angebrochen hat). Ein abgeschalteter Bucket trägt `disabled`. Nexa macht daraus Fenster „Gemini · Woche“,
-  „Claude/GPT · 5 Stunden“ … (`usageOfQuota`), die Titelleiste zeigt die Gruppe mit. Print-Mode kennt kein
+  „Claude/GPT · 5 Stunden“ … (`usageOfQuota`), die Titelleiste zeigt die Gruppe mit. Die Modelle einer
+  Gruppe nennt ihre `description` („Models within this group: Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS
+  120B“), Nexa hängt sie als `models` an ihre Fenster. Titelleiste und Account-Menü zeigen nur die Fenster
+  der Gruppe des Modells, das gerade gilt (`windowsOfModel`): das des offenen Chats, sonst das für neue
+  Chats. Verglichen wird ohne Klammerzusatz und unabhängig von der Schreibweise, „Claude Sonnet 4.6
+  (Thinking)“ und `claude-sonnet-4-6` passen beide zu „Claude Sonnet 4.6“. Print-Mode kennt kein
   `--gemini-dir` (nur `acp`; `agy -p … --gemini-dir` zeigt nur die Hilfe) und liest `<home>/.gemini`. Für
   einen Account mit eigenem Ordner setzt Nexa deshalb `USERPROFILE`/`HOME` auf einen eigenen Ordner
   (`<tmp>/nexa-agy-home/<account>`), dessen `.gemini` ein Link (Junction) auf den Ordner des Accounts ist,

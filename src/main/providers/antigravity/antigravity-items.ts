@@ -241,11 +241,23 @@ function groupLabel(name: string): string {
   return name.replace(/\s+models?$/i, '').replace(/\s+and\s+/gi, '/').trim() || name
 }
 
+/** „Models within this group: Claude Sonnet 4.6, GPT-OSS 120B“ → the names; none without the colon. */
+function groupModels(description: string | undefined): string[] | undefined {
+  const at = description?.indexOf(':') ?? -1
+  if (!description || at < 0) return undefined
+  const names = description
+    .slice(at + 1)
+    .split(',')
+    .map((name) => name.trim().replace(/\.$/, ''))
+    .filter(Boolean)
+  return names.length ? names : undefined
+}
+
 /**
  * The quota of the login, as `agy -p "/usage" --output-format json` tells it (`command.data`): groups
  * of models that share their limits, each with its buckets (`remaining_fraction`, `reset_time`; a
- * bucket nobody used yet resets at the epoch). As Nexa's windows `<group> · <window>`, the shorter
- * window of a group first. Null when the output names no bucket.
+ * bucket nobody used yet resets at the epoch) and its models in its description. As Nexa's windows
+ * `<group> · <window>`, the shorter window of a group first. Null when the output names no bucket.
  */
 export function usageOfQuota(output: unknown): { windows: UsageWindow[]; limited: boolean } | null {
   const command = isPlainObject(output) && isPlainObject(output.command) ? output.command : null
@@ -254,6 +266,7 @@ export function usageOfQuota(output: unknown): { windows: UsageWindow[]; limited
   const windows: UsageWindow[] = []
   for (const group of groups) {
     const name = groupLabel(str(group.name) ?? '')
+    const models = groupModels(str(group.description))
     const buckets = Array.isArray(group.buckets) ? group.buckets.filter(isPlainObject) : []
     const own: UsageWindow[] = []
     for (const bucket of buckets) {
@@ -267,6 +280,7 @@ export function usageOfQuota(output: unknown): { windows: UsageWindow[]; limited
         usedPercent: Math.min(100, Math.max(0, Math.round((1 - bucket.remaining_fraction) * 1000) / 10)),
         resetsAt: Number.isFinite(reset) && reset > 0 ? reset : undefined,
         windowMinutes: minutes,
+        ...(models ? { models } : {}),
       })
     }
     own.sort((a, b) => (a.windowMinutes ?? Infinity) - (b.windowMinutes ?? Infinity))

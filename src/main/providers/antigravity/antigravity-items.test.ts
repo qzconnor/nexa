@@ -212,13 +212,15 @@ const USAGE = {
 
 describe('usageOfQuota', () => {
   it('makes a window of each bucket, named by its group, the shorter one of a group first', () => {
+    const gemini = ['Gemini 4 Hydrogen', 'Gemini 3.8 Flash']
+    const thirdParty = ['Claude Sonnet 4.6', 'Claude Opus 4.6', 'GPT-OSS 120B']
     expect(usageOfQuota(USAGE)).toEqual({
       limited: false,
       windows: [
-        { key: 'gemini-weekly', label: 'Gemini · Woche', usedPercent: 9.7, resetsAt: Date.parse('2026-12-02T01:12:40Z'), windowMinutes: 10080 },
+        { key: 'gemini-weekly', label: 'Gemini · Woche', usedPercent: 9.7, resetsAt: Date.parse('2026-12-02T01:12:40Z'), windowMinutes: 10080, models: gemini },
         // A bucket nobody used yet resets at the epoch: no reset to tell.
-        { key: '3p-5h', label: 'Claude/GPT · 5 Stunden', usedPercent: 0, resetsAt: undefined, windowMinutes: 300 },
-        { key: '3p-weekly', label: 'Claude/GPT · Woche', usedPercent: 0, resetsAt: undefined, windowMinutes: 10080 },
+        { key: '3p-5h', label: 'Claude/GPT · 5 Stunden', usedPercent: 0, resetsAt: undefined, windowMinutes: 300, models: thirdParty },
+        { key: '3p-weekly', label: 'Claude/GPT · Woche', usedPercent: 0, resetsAt: undefined, windowMinutes: 10080, models: thirdParty },
       ],
     })
   })
