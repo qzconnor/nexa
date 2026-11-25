@@ -568,6 +568,67 @@ hörbar und gibt Aufgaben an Codex weiter. Nexa nutzt es nicht, die Spracheingab
 - Die Features `in_app_dictation` und `in_app_voice` sind Schalter für die Desktop-App von Codex, nicht
   für die CLI.
 
+## Einstellungen der CLIs
+
+Was Einstellungen › CLI-Konfiguration liest und schreibt (`providers/<id>/<id>-config.ts`). Geprüft mit
+Claude Code 2.1 und Codex 0.169.
+
+### Claude Code
+
+| Ebene | Berechtigungen und Hooks | MCP-Server |
+| --- | --- | --- |
+| Nutzer (`-s user`) | `<config>/settings.json` | `.claude.json` → `mcpServers` |
+| Projekt (`-s project`) | `<projekt>/.claude/settings.json` | `<projekt>/.mcp.json` → `mcpServers` |
+| Lokal (`-s local`) | `<projekt>/.claude/settings.local.json` | `.claude.json` → `projects["<ordner>"].mcpServers` |
+
+- `<config>` ist `CLAUDE_CONFIG_DIR` des Accounts, sonst `~/.claude`. `.claude.json` liegt im
+  `CLAUDE_CONFIG_DIR`, ohne ihn im Home (`claudePaths`).
+- Die Schlüssel unter `projects` schreibt Claude Code mit Schrägstrichen (`F:/Code/app`); ältere Einträge
+  können anders geschrieben sein, deshalb sucht `claudeProjectEntry` erst genau, dann über `folderKey`.
+- Berechtigungen: `permissions.{allow, ask, deny, defaultMode, additionalDirectories}`; `defaultMode` ist
+  `default`, `acceptEdits`, `plan`, `auto`, `dontAsk` oder `bypassPermissions`. Einen unbekannten Modus zeigt
+  Nexa, wie er ist.
+- Hooks: `hooks.<Ereignis>: [{ matcher?, hooks: [{ type: "command", command, timeout?, … }] }]`, `timeout`
+  in Sekunden. Andere Arten (`prompt`, `agent`, `http`, `mcp_tool`) zeigt Nexa nur.
+- Die Einstellungsdateien schreibt Nexa selbst (lesen, ändern, atomar schreiben). `.claude.json` schreibt
+  Claude Code dauernd selbst (Zähler, Caches); Nexa ändert sie nur über die CLI:
+  `claude mcp add-json <name> - -s <ebene>` mit dem JSON auf stdin (`-` als Wert) und `claude mcp remove
+  <name> -s <ebene>`, für Projekt und Lokal im Ordner des Projekts. Einen Namen, den es gibt, lehnt
+  `add-json` ab („already exists“): Bearbeiten ist Entfernen und neu Anlegen (der Server steht danach am
+  Ende), schlägt das Anlegen fehl, kommt der alte zurück.
+- `claude mcp add-json` verweigert innerhalb einer Claude-Code-Sitzung den Dienst, solange deren Variablen
+  (`CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT` …) gesetzt sind; `cliEnv` nimmt sie heraus.
+- Arten von Servern: `stdio` (Vorgabe ohne `type`), `http`, `sse`; andere (`ws`, `sdk`, `claudeai-proxy`)
+  zeigt Nexa nur und kann sie entfernen. Konnektoren von claude.ai stehen in keiner Datei.
+
+### Codex
+
+- Nexa geht über den App-Server des Accounts. `config/read { includeLayers: true, cwd }` liefert die
+  Ebenen: `user` (`{ file, profile }`) und je Projekt `project` (`{ dotCodexFolder }`); einem Projekt, dem
+  der Nutzer nicht vertraut hat, gibt Codex `disabledReason` mit und lädt es nicht.
+- `config/batchWrite { edits: [{ keyPath, value, mergeStrategy: "replace" | "upsert" }], reloadUserConfig }`
+  ändert die `config.toml` und behält Kommentare und Reihenfolge; `value: null` entfernt den Schlüssel. Es
+  schreibt nur die Nutzer-Ebene („Only writes to the user config are allowed“, `configLayerReadonly`),
+  deshalb zeigt Nexa die `.codex/config.toml` eines Projekts nur. Ersetzte Arrays schreibt Codex inline
+  (`Stop= [{ … }]` statt `[[hooks.Stop]]`).
+- MCP-Server: `mcp_servers.<name>` mit `command`, `args`, `env` oder `url`, `http_headers`,
+  `bearer_token_env_var`, dazu `enabled` und Zeitgrenzen. Einen Namen, der kein einfacher Schlüssel ist,
+  schreibt Nexa über die ganze Tabelle `mcp_servers`. Danach `config/mcpServer/reload`.
+- Berechtigungen: `approval_policy` (`untrusted`, `on-request`, `never`; die feine Form `{ granular: … }`
+  zeigt Nexa nur), `sandbox_mode` (`read-only`, `workspace-write`, `danger-full-access`),
+  `approvals_reviewer`, `sandbox_workspace_write.{network_access, writable_roots}`.
+- Hooks (seit 0.169) stehen unter `[hooks]` in der `config.toml` oder in `hooks.json` in `CODEX_HOME`, im
+  selben Format wie bei Claude Code. Nexa schreibt in die Datei, in der sie stehen (`hooks.json` nur, wenn
+  die `config.toml` keine hat). Einen Matcher kennen nur `PreToolUse`, `PermissionRequest`, `PostToolUse`,
+  `PreCompact`, `PostCompact`, `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`.
+- Codex führt einen Hook erst aus, wenn ihm vertraut ist: `hooks/list { cwds }` nennt je Hook `key`
+  (`<datei>:<ereignis_snake>:<gruppe>:<index>`), `currentHash` (`sha256:…`) und `trustStatus`;
+  vertraut wird über `hooks.state."<key>".trusted_hash`. Weil der Schlüssel den Platz enthält, verschiebt
+  jedes Einfügen die Schlüssel der folgenden Hooks. Nach dem Speichern vertraut Nexa deshalb jedem Hook
+  erneut, dessen Inhalt vorher vertraut war (nur verschoben) oder vorher nicht da war (in Nexa angelegt
+  oder geändert); was sich außerhalb von Nexa geändert hat, bleibt unvertraut. Veraltete Schlüssel des
+  Ereignisses entfernt es.
+
 ## Nexa-MCP-Server
 
 Streamable HTTP auf `127.0.0.1:<port>/mcp`, Bearer-Token. Jeder Run bekommt ein eigenes Token, das seinen

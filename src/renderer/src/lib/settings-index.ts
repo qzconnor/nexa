@@ -224,6 +224,40 @@ const TREE = [
     ],
   },
   {
+    tab: 'cliConfig',
+    label: 'CLI-Konfiguration',
+    sections: [
+      {
+        id: 'cliConfig.target',
+        title: 'Konfiguration',
+        keywords: 'Einstellungen settings.json config.toml .claude.json .mcp.json Datei Ordner Profil',
+        fields: [
+          { id: 'cliConfig.provider', label: 'CLI', keywords: 'Claude Code Codex' },
+          { id: 'cliConfig.account', label: 'Account', keywords: 'Konto Profil Konfigurationsordner CLAUDE_CONFIG_DIR CODEX_HOME' },
+          { id: 'cliConfig.scope', label: 'Ebene', keywords: 'Nutzer Projekt Lokal global Bereich Scope' },
+          { id: 'cliConfig.project', label: 'Projekt', keywords: 'Ordner Repository Arbeitsordner' },
+        ],
+      },
+      {
+        id: 'cliConfig.mcp',
+        title: 'MCP-Server',
+        keywords:
+          'MCP Server Konnektoren Connectors Werkzeuge Tools hinzufügen bearbeiten entfernen stdio HTTP SSE Befehl URL Umgebungsvariablen Header Token Secrets',
+      },
+      {
+        id: 'cliConfig.permissions',
+        title: 'Berechtigungen',
+        keywords:
+          'Freigaben Rechte erlauben nachfragen verbieten allow ask deny Regeln Modus defaultMode Ordner additionalDirectories Sandbox approval_policy sandbox_mode Netzwerk',
+      },
+      {
+        id: 'cliConfig.hooks',
+        title: 'Hooks',
+        keywords: 'Ereignisse Events Befehle Skripte automatisch PreToolUse PostToolUse Stop SessionStart Matcher vertrauen Trust',
+      },
+    ],
+  },
+  {
     tab: 'chat',
     label: 'Chat',
     sections: [

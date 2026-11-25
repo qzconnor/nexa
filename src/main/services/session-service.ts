@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import { artifactChatMap, artifactLinks, type ArtifactMentions } from '@shared/artifacts'
+import type { CliConfigTarget } from '@shared/cli-config'
 import { folderKey, inFolder } from '@shared/folders'
 import {
   PROVIDER_IDS,
@@ -26,7 +27,6 @@ import { plainOutput } from '@shared/terminal'
 import type {
   AppSettings,
   CliLink,
-  ConnectorSettings,
   McpAuthStart,
   McpServerInfo,
   PluginInfo,
@@ -1532,10 +1532,10 @@ export class SessionService extends TypedEmitter<Events> {
     return this.providers.authenticateMcp(provider, accountId, cwd, name)
   }
 
-  /** Where the connectors of the chat's CLI are set up. */
-  connectorSettings(id: string): ConnectorSettings {
-    const { provider, accountId } = this.cliTarget(id)
-    return this.providers.connectorSettings(provider, accountId)
+  /** Whose settings „Konnektoren verwalten“ opens for a chat: its CLI and account, for its folder. */
+  configTarget(id: string): CliConfigTarget {
+    const { provider, accountId, cwd } = this.cliTarget(id)
+    return { provider, accountId, scope: 'user', folder: cwd }
   }
 
   /** The plugins the chat's CLI has installed for its folder, each on or off. */

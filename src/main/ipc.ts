@@ -372,7 +372,7 @@ export function registerIpc(ctx: AppContext): void {
   )
   handle(IpcInvoke.sessionsReconnectMcp, (_e, id: unknown, name: unknown) => sessions.reconnectMcp(str(id, 'Die Session'), str(name, 'Der Server')))
   handle(IpcInvoke.sessionsAuthenticateMcp, (_e, id: unknown, name: unknown) => sessions.authenticateMcp(str(id, 'Die Session'), str(name, 'Der Server')))
-  handle(IpcInvoke.sessionsConnectorSettings, (_e, id: unknown) => sessions.connectorSettings(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsConfigTarget, (_e, id: unknown) => sessions.configTarget(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsPlugins, (_e, id: unknown) => sessions.plugins(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsSetPlugin, (_e, id: unknown, pluginId: unknown, enabled: unknown) =>
     sessions.setPluginEnabled(str(id, 'Die Session'), str(pluginId, 'Das Plugin'), enabled === true),

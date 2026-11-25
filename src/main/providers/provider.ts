@@ -1,7 +1,6 @@
 import type { ChatItem, ContextDetail, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
 import type {
   CommandOption,
-  ConnectorSettings,
   McpAuthStart,
   McpServerInfo,
   ModelDefaults,
@@ -17,6 +16,7 @@ import type {
 export type McpServerState = Omit<McpServerInfo, 'enabled'>
 import type { AccountEnv } from '../accounts/account-env'
 import type { ResolvedCommand } from './cli-binary'
+import type { CliConfigAdapter } from './cli-config'
 
 /** Plan limits as a CLI reports them; the session service adds the account. */
 export type RunUsage = Omit<ProviderUsage, 'accountId'>
@@ -166,8 +166,8 @@ export interface AgentProvider {
   reconnectMcp(account: AccountContext, cwd: string, name: string): Promise<void>
   /** Starts the sign-in of an MCP server without a chat running; null when it needs none. */
   authenticateMcp(account: AccountContext, cwd: string, name: string): Promise<McpAuthStart | null>
-  /** Where the user sets up the connectors of the CLI. */
-  connectorSettings(account: AccountContext): ConnectorSettings
+  /** The CLI's own settings (MCP servers, permissions, hooks) to read and change, for CLIs Nexa can edit them for. */
+  readonly config?: CliConfigAdapter
   /** The plugins installed for a folder, each on or off. */
   plugins(account: AccountContext, cwd: string): Promise<PluginInfo[]>
   /** Switches a plugin in the CLI's own settings (also outside Nexa); running chats load it anew. */

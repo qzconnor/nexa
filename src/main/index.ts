@@ -30,6 +30,8 @@ import { ChatTools } from './mcp/chat-tools'
 import { LimitsTool } from './mcp/limits-tool'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { AutoSwitch } from './services/auto-switch'
+import { CliConfigService } from './services/cli-config-service'
+import { registerCliConfigIpc } from './services/cli-config-ipc'
 import { ProjectService } from './services/project-service'
 import { ProviderService } from './services/provider-service'
 import { UsageSamples } from './services/usage-samples'
@@ -193,6 +195,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   }, () => terminalLaunch(settings.get().chat.shell))
   sessions.on('changed', (list) => terminals.keepSessions(new Set(list.map((meta) => meta.id))))
   registerTerminalsIpc(terminals)
+  // The CLIs' own settings (MCP servers, permissions, hooks), in their own files.
+  registerCliConfigIpc(new CliConfigService(providers, accounts, projects))
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)

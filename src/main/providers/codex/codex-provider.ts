@@ -1,16 +1,16 @@
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import type { ChatItem } from '@shared/chat'
-import type { CommandOption, ConnectorSettings, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
+import type { CommandOption, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus, UsageWindow } from '@shared/types'
 import { isPlainObject, withTimeout } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
-import { defaultCodexHome } from '../../accounts/cli-files'
 import { CliBinary, type ResolvedCommand } from '../cli-binary'
 import { codexMcpServers } from '../mcp-servers'
 import { byPluginName, codexAuthStart, codexPlugins } from '../plugins'
 import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { TITLE_INSTRUCTIONS, TITLE_TIMEOUT_MS, cleanTitle, titleRequest } from '../titles'
 import { CodexClient, type CodexServerRequest } from './codex-client'
+import { CodexConfig } from './codex-config'
 import { codexThreadItems } from './codex-items'
 import { codexThreadHeld } from './codex-presence'
 import { CodexRun } from './codex-run'
@@ -72,6 +72,8 @@ interface AccountServer {
 export class CodexProvider implements AgentProvider {
   readonly id = 'codex' as const
   readonly binary: CliBinary
+  /** Through the app-server of the account: it writes `config.toml` without losing its comments. */
+  readonly config = new CodexConfig((account, method, params) => this.server(account).client.request(method, params))
   private readonly servers = new Map<string, AccountServer>()
   private readonly routes = new Map<string, CodexRun>()
   /** The ephemeral threads that name chats (see `title`), with what takes their notifications. */
@@ -220,12 +222,6 @@ export class CodexProvider implements AgentProvider {
    */
   async authenticateMcp(account: AccountContext, _cwd: string, name: string): Promise<McpAuthStart | null> {
     return codexAuthStart(await this.server(account).client.request('mcpServer/oauth/login', { name }))
-  }
-
-  /** Codex keeps its MCP servers in the account's `config.toml`. */
-  connectorSettings(account: AccountContext): ConnectorSettings {
-    const home = account.set.CODEX_HOME ? resolve(account.set.CODEX_HOME) : defaultCodexHome()
-    return { path: join(home, 'config.toml') }
   }
 
   /** The installed plugins, from the marketplaces of the account and of the folder's repository. */

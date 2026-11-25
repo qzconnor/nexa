@@ -413,9 +413,6 @@ export interface McpAuthStart {
   waits: boolean
 }
 
-/** Where a CLI's connectors are set up: a page of its website, or its config file. */
-export type ConnectorSettings = { url: string } | { path: string }
-
 /** A plugin installed in a chat's CLI, for the switches in the composer's „+“ menu. */
 export interface PluginInfo {
   /** As the CLI names it: `<plugin>@<marketplace>`. */

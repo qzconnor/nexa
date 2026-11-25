@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { ArtifactsInvoke } from '@shared/artifacts'
 import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
+import { CliConfigEvent, CliConfigInvoke } from '@shared/cli-config'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
@@ -83,6 +84,16 @@ const api: NexaApi = {
     output: (projectId, id) => invoke(StartCommandsInvoke.output, projectId, id),
     chatOpened: (projectId) => invoke(StartCommandsInvoke.chatOpened, projectId),
     onChanged: (cb) => subscribe(StartCommandsEvent.changed, cb),
+  },
+  cliConfig: {
+    providers: () => invoke(CliConfigInvoke.providers),
+    read: (target) => invoke(CliConfigInvoke.read, target),
+    saveMcp: (target, server, previousName) => invoke(CliConfigInvoke.saveMcp, target, server, previousName),
+    removeMcp: (target, name) => invoke(CliConfigInvoke.removeMcp, target, name),
+    savePermissions: (target, values) => invoke(CliConfigInvoke.savePermissions, target, values),
+    saveHooks: (target, save) => invoke(CliConfigInvoke.saveHooks, target, save),
+    trustHook: (target, key, hash) => invoke(CliConfigInvoke.trustHook, target, key, hash),
+    onChanged: (cb) => subscribe(CliConfigEvent.changed, cb),
   },
   terminals: {
     list: () => invoke(TerminalsInvoke.list),
@@ -242,7 +253,7 @@ const api: NexaApi = {
     setMcp: (id, name, enabled) => invoke(IpcInvoke.sessionsSetMcp, id, name, enabled),
     reconnectMcp: (id, name) => invoke(IpcInvoke.sessionsReconnectMcp, id, name),
     authenticateMcp: (id, name) => invoke(IpcInvoke.sessionsAuthenticateMcp, id, name),
-    connectorSettings: (id) => invoke(IpcInvoke.sessionsConnectorSettings, id),
+    configTarget: (id) => invoke(IpcInvoke.sessionsConfigTarget, id),
     plugins: (id) => invoke(IpcInvoke.sessionsPlugins, id),
     setPlugin: (id, pluginId, enabled) => invoke(IpcInvoke.sessionsSetPlugin, id, pluginId, enabled),
     sync: (id) => invoke(IpcInvoke.sessionsSync, id),

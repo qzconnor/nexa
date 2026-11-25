@@ -4,7 +4,6 @@ import { PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
   CommandOption,
-  ConnectorSettings,
   McpAuthStart,
   ModelDefaults,
   ModelOption,
@@ -150,10 +149,6 @@ export class ProviderService extends TypedEmitter<Events> {
 
   authenticateMcp(id: ProviderId, accountId: string, cwd: string, name: string): Promise<McpAuthStart | null> {
     return this.providers[id].authenticateMcp(this.context(accountId), cwd, name)
-  }
-
-  connectorSettings(id: ProviderId, accountId: string): ConnectorSettings {
-    return this.providers[id].connectorSettings(this.context(accountId))
   }
 
   /** The plugins the CLI has installed for a folder with this account (`accountId` resolved already). */

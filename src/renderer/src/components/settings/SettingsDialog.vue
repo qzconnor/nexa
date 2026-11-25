@@ -20,6 +20,7 @@ import SettingsAccounts from './SettingsAccounts.vue'
 import SettingsApi from './SettingsApi.vue'
 import SettingsAppearance from './SettingsAppearance.vue'
 import SettingsChat from './SettingsChat.vue'
+import SettingsCliConfig from './SettingsCliConfig.vue'
 import SettingsGeneral from './SettingsGeneral.vue'
 import SettingsNotifications from './SettingsNotifications.vue'
 import SettingsProviders from './SettingsProviders.vue'
@@ -46,6 +47,13 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
   { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
   { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
   { id: 'providers', label: 'CLIs', description: 'Claude Code und Codex', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
+  {
+    id: 'cliConfig',
+    label: 'CLI-Konfiguration',
+    description: 'MCP-Server, Berechtigungen und Hooks in den Dateien der CLIs',
+    icon: SETTINGS_ICONS.cliConfig,
+    page: SettingsCliConfig,
+  },
   { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe, Spracheingabe, Löschen und Nexa-Werkzeuge', icon: SETTINGS_ICONS.chat, page: SettingsChat },
   {
     id: 'notifications',
