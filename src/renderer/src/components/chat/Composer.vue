@@ -7,6 +7,7 @@ import type { CommandOption, ModelDefaults } from '@shared/types'
 import { voiceAvailable } from '@shared/voice'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { Spinner } from '@/components/ui/spinner'
 import { useProjectPath } from '@/composables/useProjectPath'
 import { useVoiceInput } from '@/composables/useVoiceInput'
@@ -63,6 +64,8 @@ const props = defineProps<{
   disabled?: boolean
   /** Floats over the chat, frosted (in a `.frost-backing` wrapper). */
   floating?: boolean
+  /** What the user will likely write next (`SessionRuntime.suggestion`): grey in the empty field, Tab takes it. */
+  suggestion?: string
 }>()
 const emit = defineEmits<{
   send: [input: { text: string; images: string[] }]
@@ -100,11 +103,25 @@ const SHELL_NAMES = { powershell: 'PowerShell', gitbash: 'Git Bash', cmd: 'cmd' 
 const shellName = computed(() => (isWindows ? SHELL_NAMES[settings.settings.chat.shell] : 'Shell'))
 
 const canSend = computed(() => !props.disabled && (text.value.trim().length > 0 || (!shellMode.value && images.value.length > 0)))
+/** The guess at the next prompt stands in the field while nothing is written there. */
+const suggested = computed(() => (!props.busy && !shellMode.value && !dictating.value && !text.value && !images.value.length ? props.suggestion?.trim() || null : null))
 const placeholder = computed(() => {
   if (dictating.value) return 'Sprich jetzt …'
   if (shellMode.value) return `Befehl in ${shellName.value} ausführen …`
+  if (suggested.value) return suggested.value
   return props.busy ? 'Nachricht senden, während der Agent arbeitet …' : `Nachricht an ${PROVIDERS[props.provider].name} …`
 })
+
+/** Tab writes the guess into the field, to send as it is or change first. */
+function takeSuggestion(): void {
+  if (!suggested.value) return
+  text.value = suggested.value
+  void nextTick(() => {
+    const el = input.value
+    el?.setSelectionRange(text.value.length, text.value.length)
+    resize()
+  })
+}
 
 function leaveShellMode(): void {
   shellMode.value = false
@@ -474,6 +491,11 @@ function onKeydown(event: KeyboardEvent): void {
     return
   }
   if (suggestKey(event)) return
+  if (event.key === 'Tab' && suggested.value && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault()
+    takeSuggestion()
+    return
+  }
   if (shellMode.value) {
     const el = input.value
     const atStart = !!el && el.selectionStart === 0 && el.selectionEnd === 0
@@ -637,7 +659,7 @@ defineExpose({
         </button>
       </div>
     </div>
-    <div class="flex">
+    <div class="relative flex">
       <!-- The mode's mark where the `!` was typed; a click on it goes back to prompts. -->
       <button
         v-if="shellMode"
@@ -662,6 +684,7 @@ defineExpose({
           cn(
             'max-h-[40vh] min-h-12 w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[0.95rem] leading-relaxed outline-none placeholder:text-muted-foreground/70',
             shellMode && 'pl-2 font-mono text-[0.9rem]',
+            suggested && 'pr-24',
           )
         "
         @input="onInput"
@@ -672,6 +695,10 @@ defineExpose({
         @blur="closeSuggest"
         @paste="onPaste"
       />
+      <!-- The guess is the placeholder; this says how to take it. -->
+      <span v-if="suggested" class="pointer-events-none absolute top-3.5 right-4 flex h-[1.65em] items-center gap-1 text-[0.72rem] text-muted-foreground/80">
+        <Kbd>Tab</Kbd> übernimmt
+      </span>
     </div>
     <!-- Shell mode: what happens with the line, instead of what only matters to prompts. -->
     <div v-if="shellMode" class="flex min-h-9 items-center gap-2 px-4 pb-2 text-[0.8rem] text-muted-foreground">

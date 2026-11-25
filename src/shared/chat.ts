@@ -399,6 +399,11 @@ export interface SessionRuntime {
    * as its own queue): each joins the chat where the CLI takes it, until then it waits below it.
    */
   queued?: UserItem[]
+  /**
+   * What the user will likely write next, as the CLI guesses after its answer (Claude Code's prompt
+   * suggestions): grey in the empty composer, Tab takes it, until the next prompt or turn.
+   */
+  suggestion?: string
   /** The chat stopped at its account's limit and goes on by itself (main/services/auto-switch.ts). */
   resume?: SessionResume
 }

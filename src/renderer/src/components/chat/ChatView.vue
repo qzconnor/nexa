@@ -617,7 +617,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             </div>
             <!-- Under what the agent does, as in the CLIs: into the chat once it takes them up. -->
             <template v-if="!viewed">
-              <UserMessage v-for="prompt in runtime.queued" :key="prompt.id" :item="prompt" queued />
+              <UserMessage
+                v-for="(prompt, i) in runtime.queued"
+                :key="prompt.id"
+                :item="prompt"
+                :session-id="meta.id"
+                :send-now="i === 0"
+                queued
+              />
             </template>
             <div v-if="runError && !viewed" class="selectable my-2 rounded-lg bg-destructive/10 px-3 py-2 text-[0.82rem] text-destructive">
               {{ runError }}
@@ -763,6 +770,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               :compacting="!!runtime.compactingSince"
               :session-id="meta.id"
               :dirs="meta.dirs"
+              :suggestion="settings.settings.chat.promptSuggestions ? runtime.suggestion : undefined"
               autofocus
               @send="send"
               @command="runCommand"

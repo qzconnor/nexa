@@ -114,6 +114,12 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     (path) => shell.trashItem(path),
     git,
   )
+  let promptSuggestions = settings.get().chat.promptSuggestions
+  settings.on('changed', (next) => {
+    if (next.chat.promptSuggestions === promptSuggestions) return
+    promptSuggestions = next.chat.promptSuggestions
+    sessions.setPromptSuggestions(promptSuggestions)
+  })
   chatTools = new ChatTools({
     list: () => sessions.peerChats(),
     items: async (id) => (await sessions.history(id))?.items ?? null,

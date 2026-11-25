@@ -1032,9 +1032,9 @@ export class SessionService extends TypedEmitter<Events> {
     if (!text && !input.images?.length) return
 
     const accountId = await this.useAccount(s, provider, this.cwdOf(meta, project))
-    // A prompt ends the wait for a limit's reset: the chat goes on now.
-    if (s.runtime.resume) {
-      const { resume: _ended, ...runtime } = s.runtime
+    // A prompt ends the wait for a limit's reset: the chat goes on now. The guess at it is done with.
+    if (s.runtime.resume || s.runtime.suggestion) {
+      const { resume: _ended, suggestion: _guess, ...runtime } = s.runtime
       this.setRuntime(s, runtime)
     }
     // The commands the user ran with `!` since their last prompt go with this one, as in Claude Code's bash mode.
@@ -1453,6 +1453,7 @@ export class SessionService extends TypedEmitter<Events> {
           noChrome: !!mcp && tools.browserTools && tools.noClaudeInChrome,
           mcpOff: project.mcpOff?.[provider],
           dirs: meta.dirs,
+          promptSuggestions: this.settings().chat.promptSuggestions,
           extraArgs: [...this.accounts.extraArgs(accountId), ...(meta.cliArgs?.[provider] ?? [])],
         },
         sink,
@@ -1472,6 +1473,13 @@ export class SessionService extends TypedEmitter<Events> {
 
   async interrupt(id: string): Promise<void> {
     await this.get(id).run?.interrupt()
+  }
+
+  /** The setting changed: running CLIs that guess the next prompt start or stop doing so at once. */
+  setPromptSuggestions(on: boolean): void {
+    for (const s of this.sessions.values()) {
+      if (s.run?.alive) void s.run.setPromptSuggestions?.(on).catch(() => undefined)
+    }
   }
 
   /** The end of what a shell of the chat wrote, as its CLI still keeps it. */

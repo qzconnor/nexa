@@ -136,6 +136,13 @@ function cleanUp(): void {
         <Switch :model-value="s.chat.enterSends" @update:model-value="(v: boolean) => update({ chat: { enterSends: v } })" />
       </SettingField>
       <SettingField
+        anchor="chat.promptSuggestions"
+        label="Vorschlag für den nächsten Prompt"
+        description="Nur Claude Code: Nach einer Antwort steht grau im Eingabefeld, was du wahrscheinlich als Nächstes schreibst, etwa „ja, mach weiter“. Tab übernimmt es. Claude Code fragt dafür sein Modell noch einmal kurz; das zählt etwas zum Limit."
+      >
+        <Switch :model-value="s.chat.promptSuggestions" @update:model-value="(v: boolean) => update({ chat: { promptSuggestions: v } })" />
+      </SettingField>
+      <SettingField
         v-if="isWindows"
         anchor="chat.shell"
         label="Shell für „!“"

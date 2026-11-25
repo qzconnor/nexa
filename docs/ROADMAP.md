@@ -265,6 +265,10 @@
       (Symbol „Zurück ins Hauptfenster“ oder Schließen des Fensters). Die Seitenleiste markiert solche
       Chats, ein Klick holt ihr Fenster nach vorn. Größe und Lage merkt sich Nexa je Chat, offene Fenster
       kommen beim nächsten Start wieder. Meldungen, Blinken und `nx` gehen an das Fenster des Chats
+- [x] „Jetzt senden“ an einer Nachricht, die wartet, während der Agent arbeitet: bricht den Turn ab, und
+      die Nachricht geht sofort raus (Claude Code und Antigravity CLI; Codex nimmt sie ohnehin gleich auf)
+- [x] Vorschlag für den nächsten Prompt bei Claude Code (`prompt_suggestion`): grau im leeren
+      Eingabefeld, Tab übernimmt ihn; abschaltbar unter Einstellungen › Chat
 
 ## Als Nächstes
 
