@@ -147,7 +147,7 @@ function onOpen(event: Event): void {
 
 /** Escape clears the search first; while a dialog is open on top (theme editor, account, question), it belongs to it. */
 function onEscape(event: KeyboardEvent): void {
-  if (ui.themeEditorRequest || ui.confirmState?.open || accounts.formRequest || accounts.loginId) {
+  if (ui.themeEditorRequest || ui.confirmState?.open || ui.settingsImport || accounts.formRequest || accounts.loginId) {
     event.preventDefault()
     return
   }

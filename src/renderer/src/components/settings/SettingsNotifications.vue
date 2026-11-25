@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { BellRingIcon } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { SETTING_RANGES } from '@shared/defaults'
 import type { NotificationSettings, NotifyWhen } from '@shared/types'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
@@ -118,9 +119,7 @@ async function sendTest(): Promise<void> {
         <SliderControl
           id="notify-min-busy"
           v-model="minBusySeconds"
-          :min="0"
-          :max="300"
-          :step="5"
+          v-bind="SETTING_RANGES['notifications.minBusySeconds']"
           :format="(v) => (v === 0 ? 'immer' : `ab ${v} s`)"
           :disabled="off || !onDone"
         />
@@ -153,9 +152,7 @@ async function sendTest(): Promise<void> {
         <SliderControl
           id="notify-near-limit-percent"
           v-model="nearLimitPercent"
-          :min="50"
-          :max="95"
-          :step="5"
+          v-bind="SETTING_RANGES['notifications.nearLimitPercent']"
           :format="(v) => `${v} %`"
           :disabled="off || !onNearLimit"
         />

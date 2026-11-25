@@ -8,6 +8,18 @@ export const DEFAULT_CONTINUE_PROMPT = 'Mach weiter'
 
 const provider = (): ProviderSettings =>({ enabled: true, path: '', model: '', effort: '', extraArgs: [] })
 
+/**
+ * The range of each number setting with a slider, as the slider offers it. A settings file is held to
+ * it too (shared/settings-transfer.ts), so both always agree.
+ */
+export const SETTING_RANGES = {
+  'appearance.surfaceOpacity': { min: 20, max: 100, step: 2 },
+  'appearance.radius': { min: 0, max: 1.2, step: 0.05 },
+  'appearance.uiFontSize': { min: 12, max: 18, step: 1 },
+  'notifications.minBusySeconds': { min: 0, max: 300, step: 5 },
+  'notifications.nearLimitPercent': { min: 50, max: 95, step: 5 },
+} as const
+
 /** Settings of a fresh install; the folder for new projects is filled in by the main process. */
 export function defaultSettings(): AppSettings {
   return {

@@ -23,6 +23,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `launch.ts` | Liest `--nx=<base64>` und die `nx`-Argumente, entscheidet, welcher Chat sich öffnet (`resolveLaunch`) |
 | `command-integration.ts` | Befehl `nx` an- und abmelden und sein Zustand, über `nx.exe --nx-register`/`--nx-unregister`/`--nx-status` |
 | `services/settings-service.ts` | `settings.json`, Defaults aus `shared/defaults.ts` |
+| `services/settings-transfer.ts` | Einstellungen und eigene Themes in eine Datei exportieren und lesen, was eine solche Datei hier ändern würde (Kanäle `settings:export`, `settings:import-preview`), siehe „Einstellungen übertragen“ |
 | `services/theme-service.ts` | Themes (aus dem Claude Manager übernommen) |
 | `services/provider-service.ts` | Registriert Provider, Erkennung, Usage je Account (Abfrage, Polling), Browser-Logins |
 | `services/usage-samples.ts` | Messpunkte der Limit-Fenster je Account (`usage-samples.json`) und daraus die Prognose je Fenster (Rechnung in `shared/usage-forecast.ts`) |
@@ -618,6 +619,43 @@ den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet ern
   des Updaters, Herunterladen und Neustart (mit Rückfrage, wenn noch Antworten laufen), Versionshinweise der
   Releases mit den PR-Beschreibungen als „Details“. Ein Punkt am Einstellungen-Knopf der Sidebar zeigt ein
   wartendes Update oder ungelesene Neuerungen nach einem Update.
+
+## Einstellungen übertragen
+
+Einstellungen › Allgemein › „Einstellungen übertragen“ und die Befehlsliste („Einstellungen exportieren…“,
+„… importieren…“, `useSettingsTransfer`) nehmen die Einstellungen mit auf einen anderen Computer, wie im
+Claude Manager. Die Logik ohne Electron steht in `shared/settings-transfer.ts`, das Lesen der Datei und die
+Prüfungen gegen diesen Computer in `services/settings-transfer.ts`.
+
+- **Datei**: JSON mit `format: "nexa-settings"`, `version` (1; eine neuere lehnt der Import mit „Bitte
+  zuerst aktualisieren“ ab), `appVersion`, `platform`, `exportedAt`, `settings` (alle Einstellungen außer
+  denen dieser Installation, `LOCAL_SETTINGS`: `setup.done` und der Ordner für neue Projekte, der keine Zeile
+  in den Einstellungen hat) und `themes` (die eigenen Themes als `{ id, theme }`, `theme` im Format der
+  Theme-Dateien). Accounts, Logins und Schlüssel stehen nicht darin; die Einstellungen nennen Accounts nur
+  über ihre ID. Ein `settings.json` aus dem Datenordner liest der Import auch.
+- **Prüfen** (`validSettings`): Nur bekannte Einstellungen mit dem Typ ihres Standardwerts; Auswahlen nur
+  mit Werten, die die Einstellungen anbieten (Material, Breite, Zoomstufe, CLI, Freigaben, Shell, Sprache …),
+  Zahlen nur im Bereich ihres Schiebereglers (`SETTING_RANGES` in `shared/defaults.ts`, den auch die Regler
+  nehmen), Text mit Höchstlänge. Unbekannte Schlüssel (einer neueren Nexa) fallen still weg, falsche Werte
+  stehen unter „ungültig“. Die Einstellungen jeder CLI prüft es über `PROVIDER_IDS`, eine neue CLI kommt
+  so ohne Sonderfall mit.
+- **Was hier fehlt** (`missingHere`), nur wenn sich die Einstellung ändern würde: der Pfad zur CLI, Accounts
+  (Vorgabe je CLI, Account der Spracheingabe), Schriften, von denen keine installiert ist (CSS-Familien wie
+  `monospace` zählen als da; konnte Nexa die Liste nicht lesen, keine), Git Bash. Ein eigenes Theme der
+  Datei, das es hier mit demselben Namen gibt (wie beim Theme-Import), nimmt dessen ID; eines, das fehlt,
+  bietet die Vorschau zum Hinzufügen an. Das Mikrofon kann nur das Fenster prüfen
+  (`withoutMissingMicrophone`).
+- **Vorschau** (`SettingsImportPreview`, `SettingsImportDialog` über `ui.settingsImport`): jede Änderung mit
+  altem und neuem Wert, benannt und gruppiert wie in den Einstellungen (`lib/setting-changes.ts`: die Zeile
+  im Einstellungsindex, für die CLIs mit ihrem Namen; ein Test prüft, dass jede Einstellung einen Platz hat),
+  dazu die Themes, die dazukommen, und was nicht übernommen wird und warum. Ausgewählt ist alles außer dem,
+  was bestimmt, was startet oder was die Agents ohne Nachfrage dürfen (`sensitive`: Pfad und Argumente
+  einer CLI, Nachricht zum Weitermachen, mehr Freigaben für neue Chats, Nachrichten zwischen Chats, lokale
+  API an).
+- **Übernehmen**: erst die gewählten Themes (und das, welches die Theme-Einstellung wählt) über
+  `themes.create`, dann ein gewöhnliches Update mit den gewählten Änderungen (`settingsPatch`).
+  `consistentChanges` hält eine CLI an und die Vorgabe für neue Chats bei einer, die an ist. „Rückgängig“
+  im Toast setzt die alten Werte und legt die hinzugefügten Themes in den Papierkorb.
 
 ## Befehl `nx`
 

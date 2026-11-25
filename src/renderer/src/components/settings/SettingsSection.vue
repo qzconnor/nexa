@@ -22,7 +22,8 @@ const filter = useSettingsFilter()
         <slot name="actions" />
       </CardAction>
     </CardHeader>
-    <CardContent>
+    <!-- A card with only actions in its head (Einstellungen übertragen) has no rows below. -->
+    <CardContent v-if="$slots.default">
       <FieldGroup>
         <slot />
       </FieldGroup>

@@ -8,6 +8,7 @@ import { useSettingsStore } from '@/stores/settings'
 import SettingField from './SettingField.vue'
 import SettingsCommand from './SettingsCommand.vue'
 import SettingsSection from './SettingsSection.vue'
+import SettingsTransfer from './SettingsTransfer.vue'
 
 const store = useSettingsStore()
 const g = computed(() => store.settings.general)
@@ -50,5 +51,6 @@ const startDescription = computed(() => {
     </SettingsSection>
     <!-- nx.exe is Windows' only. -->
     <SettingsCommand v-if="isWindows" />
+    <SettingsTransfer />
   </div>
 </template>

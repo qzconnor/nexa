@@ -74,6 +74,12 @@ const TREE = [
           { id: 'general.nxReuseChat', label: 'Offenen Chat wiederverwenden', keywords: 'Ordner wechseln neuer Chat' },
         ],
       },
+      {
+        id: 'general.transfer',
+        title: 'Einstellungen übertragen',
+        keywords:
+          'exportieren importieren Export Import sichern Sicherung Backup wiederherstellen anderer Computer neuer PC Umzug umziehen mitnehmen Datei JSON Themes vergleichen übernehmen',
+      },
     ],
   },
   {

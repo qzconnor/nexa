@@ -231,6 +231,12 @@
       des Ordners, vorbelegt mit `worktree.baseRef` von Claude Code. Ignorierte Dateien, die `.worktreeinclude`
       nennt (`.env` & Co.), kommen mit, der Dialog zeigt welche; auf Windows auch `.claude/settings.local.json`.
       Ein vorhandener Worktree ohne eigene Arbeit kommt beim Wiederbetreten auf den neuen Stand
+- [x] Einstellungen exportieren und importieren wie im Claude Manager (Einstellungen › Allgemein,
+      Befehlsliste): eine Datei mit den Einstellungen und den eigenen Themes, ohne Accounts und Logins. Der
+      Import zeigt erst jede Änderung mit altem und neuem Wert und lässt einzeln wählen; was bestimmt, was
+      startet oder was die Agents ohne Nachfrage dürfen, ist nicht vorgewählt. Was es auf dem Computer nicht
+      gibt (Pfad zur CLI, Accounts, Schriften, Mikrofon, Git Bash) und ungültige Werte bleiben, wie sie sind,
+      und werden genannt; eigene Themes kommen dazu. „Rückgängig“ im Toast nimmt alles zurück
 
 ## Als Nächstes
 
@@ -263,7 +269,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] Änderungen je Prompt aus den Checkpoints von Claude Code, Zurückspulen mit Vorschau (Claude
       `rewind_files`, Codex `thread/revert`; `SessionChangesView.vue` im Claude Manager).
 - [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).
-- [ ] Einstellungen exportieren und importieren mit Vergleich (`SettingsTransfer.vue` im Claude Manager).
 - [ ] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager).
 - [ ] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude
       `mcp_read_resource`, Codex `mcpServer/resource/read`).
