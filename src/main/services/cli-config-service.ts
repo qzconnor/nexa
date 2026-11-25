@@ -15,10 +15,13 @@ import {
   type PermissionValue,
 } from '@shared/cli-config'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
+import { PROVIDERS } from '@shared/providers'
 import { isPlainObject } from '@shared/utils'
+import type { McpOverview, McpOverviewColumn, McpSyncResult } from '@shared/cli-config'
 import type { AccountService } from '../accounts/account-service'
 import { TypedEmitter } from '../lib/typed-emitter'
 import type { CliConfigAdapter, CliConfigContext } from '../providers/cli-config'
+import { GlobalMcp, GlobalMcpList, type McpPlace } from './global-mcp'
 import type { ProjectService } from './project-service'
 import type { ProviderService } from './provider-service'
 
@@ -34,12 +37,29 @@ const TRANSPORTS: readonly McpTransport[] = ['stdio', 'http', 'sse']
  * adapters (providers/<id>/<id>-config.ts) only get what passed.
  */
 export class CliConfigService extends TypedEmitter<Events> {
+  private readonly global: GlobalMcp
+  /** The accounts known so far: one that comes later gets the global servers. */
+  private readonly known: Set<string>
+
   constructor(
     private readonly providers: ProviderService,
     private readonly accounts: AccountService,
     private readonly projects: ProjectService,
+    /** Where Nexa notes which MCP servers are global (`global-mcp.json`). */
+    globalFile: string,
   ) {
     super()
+    this.global = new GlobalMcp(
+      () => this.places(),
+      new GlobalMcpList(globalFile),
+      (column) => this.emit('changed', { provider: column.provider, accountId: column.accountId, scope: 'user' }),
+    )
+    this.known = new Set(accounts.list().map((a) => a.id))
+    accounts.on('changed', (list) => {
+      const fresh = list.filter((a) => !this.known.has(a.id)).map((a) => a.id)
+      for (const id of fresh) this.known.add(id)
+      if (fresh.length) void this.global.added(fresh).then(({ failed }) => failed.length && console.warn('[cli-config] global MCP servers not written', failed))
+    })
   }
 
   /** The CLIs whose settings Nexa can edit, in their order. */
@@ -49,24 +69,89 @@ export class CliConfigService extends TypedEmitter<Events> {
 
   async read(raw: unknown): Promise<CliConfigSnapshot> {
     const { adapter, ctx, target } = this.resolve(raw)
-    return { ...(await adapter.read(ctx)), target, scopes: adapter.scopes }
+    const read = await adapter.read(ctx)
+    if (target.scope === 'user') {
+      const global = await this.global.names()
+      read.mcp.servers = read.mcp.servers.map((s) => (global.has(s.name) ? { ...s, global: true } : s))
+    }
+    return { ...read, target, scopes: adapter.scopes }
   }
 
-  async saveMcp(raw: unknown, server: unknown, previousName: unknown): Promise<void> {
+  async saveMcp(raw: unknown, server: unknown, previousName: unknown): Promise<McpSyncResult> {
     const { adapter, ctx, target } = this.resolve(raw)
     const parsed = parseServer(server)
     const problem = mcpServerProblem(parsed, adapter.transports)
     if (problem) throw new Error(problem)
     const previous = typeof previousName === 'string' && previousName ? previousName : null
+    if (target.scope === 'user') await this.global.check(previous ?? parsed.name, parsed)
     await adapter.saveMcpServer(ctx, parsed, previous)
     this.emit('changed', target)
+    // A global server goes on from here to every other CLI account.
+    return target.scope === 'user' ? this.global.savedAt(target, parsed.name, previous) : { failed: [] }
   }
 
-  async removeMcp(raw: unknown, name: unknown): Promise<void> {
+  async removeMcp(raw: unknown, name: unknown): Promise<McpSyncResult> {
     const { adapter, ctx, target } = this.resolve(raw)
     if (typeof name !== 'string' || !name) throw new Error('Der Name des Servers fehlt.')
+    // A global server goes from every CLI account at once.
+    if (target.scope === 'user' && (await this.global.isGlobal(name))) return this.global.remove(name)
     await adapter.removeMcpServer(ctx, name)
     this.emit('changed', target)
+    return { failed: [] }
+  }
+
+  // ── Global MCP servers (see global-mcp.ts) ──
+
+  overview(): Promise<McpOverview> {
+    return this.global.overview()
+  }
+
+  addGlobal(server: unknown): Promise<McpSyncResult> {
+    return this.global.add(parseServer(server))
+  }
+
+  saveGlobal(server: unknown, previousName: unknown): Promise<McpSyncResult> {
+    if (typeof previousName !== 'string' || !previousName) throw new Error('Der Name des Servers fehlt.')
+    return this.global.save(parseServer(server), previousName)
+  }
+
+  makeGlobal(name: unknown, source: unknown): Promise<McpSyncResult> {
+    if (typeof name !== 'string' || !name) throw new Error('Der Name des Servers fehlt.')
+    if (!isPlainObject(source) || typeof source.accountId !== 'string' || !PROVIDER_IDS.includes(source.provider as ProviderId)) {
+      throw new Error('Woher der Server kommt, fehlt.')
+    }
+    return this.global.make(name, { provider: source.provider as ProviderId, accountId: source.accountId })
+  }
+
+  unglobal(name: unknown): Promise<void> {
+    if (typeof name !== 'string' || !name) throw new Error('Der Name des Servers fehlt.')
+    return this.global.unglobal(name)
+  }
+
+  removeGlobal(name: unknown): Promise<McpSyncResult> {
+    if (typeof name !== 'string' || !name) throw new Error('Der Name des Servers fehlt.')
+    return this.global.remove(name)
+  }
+
+  syncGlobal(name: unknown): Promise<McpSyncResult> {
+    if (typeof name !== 'string' || !name) throw new Error('Der Name des Servers fehlt.')
+    return this.global.sync(name)
+  }
+
+  /** The user scope of every account of every installed CLI with an adapter: where global servers go. */
+  private places(): McpPlace[] {
+    return this.providerIds()
+      .filter((provider) => this.providers.isReady(provider))
+      .flatMap((provider) => {
+        const adapter = this.providers.get(provider).config!
+        return this.accounts
+          .list()
+          .filter((a) => a.provider === provider)
+          .map((a): McpPlace => {
+            const column: McpOverviewColumn = { provider, accountId: a.id }
+            return { column, label: `${PROVIDERS[provider].name} · ${a.name}`, adapter, ctx: { account: this.accounts.env(a.id), scope: 'user' } }
+          })
+      })
   }
 
   async savePermissions(raw: unknown, values: unknown): Promise<void> {

@@ -240,11 +240,16 @@ const TREE = [
     label: 'CLI-Konfiguration',
     sections: [
       {
+        id: 'cliConfig.global',
+        title: 'Globale MCP-Server',
+        keywords: 'Alle CLIs global MCP Server teilen synchronisieren abgleichen angleichen überall jeder Account gleich Übersicht',
+      },
+      {
         id: 'cliConfig.target',
         title: 'Konfiguration',
-        keywords: 'Einstellungen settings.json config.toml .claude.json .mcp.json Datei Ordner Profil',
+        keywords: 'Einstellungen settings.json config.toml .claude.json .mcp.json mcp_config.json Datei Dateien Ordner Profil',
         fields: [
-          { id: 'cliConfig.provider', label: 'CLI', keywords: 'Claude Code Codex' },
+          { id: 'cliConfig.provider', label: 'CLI', keywords: 'Claude Code Codex Antigravity Gemini' },
           { id: 'cliConfig.account', label: 'Account', keywords: 'Konto Profil Konfigurationsordner CLAUDE_CONFIG_DIR CODEX_HOME' },
           { id: 'cliConfig.scope', label: 'Ebene', keywords: 'Nutzer Projekt Lokal global Bereich Scope' },
           { id: 'cliConfig.project', label: 'Projekt', keywords: 'Ordner Repository Arbeitsordner' },

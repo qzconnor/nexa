@@ -48,6 +48,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/cli-config.ts` | Schnittstelle `CliConfigAdapter` für die Einstellungen einer CLI und was die Adapter teilen: JSON-Dateien lesen und atomar ändern, Secrets in Variablen und Headern zurückhalten, Hooks über ihre Herkunft zurückschreiben; siehe „Einstellungen der CLIs“ |
 | `providers/claude/claude-config.ts`, `providers/codex/codex-config.ts`, `providers/antigravity/antigravity-config.ts` | Adapter für Claude Code (Dateien, MCP über `claude mcp`), Codex (App-Server `config/*`, `hooks/list`) und Antigravity CLI (`mcp_config.json`, `hooks.json` und `antigravity-cli/settings.json` selbst geschrieben; Projekte ohne Berechtigungen) |
 | `services/cli-config-service.ts` | Prüft Ziel (CLI, Account, Ebene, Projektordner) und Eingaben, ruft den Adapter; Kanäle `cli-config:*` in `cli-config-ipc.ts` |
+| `services/global-mcp.ts` | Globale MCP-Server: Übersicht aller Accounts, Anlegen, Global machen, Ändern, Angleichen und Entfernen in jedem Account; `global-mcp.json` hält Namen und Quelle |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten, dazu Prompts, Themes, Namen und Pins (`cm-extras.ts`); Kanäle `import:*` in `import-ipc.ts` |
 | `import/cli-import.ts` | Übernahme der Sessions der CLIs selbst: Transkripte von Claude Code, Threads von Codex (`thread/list`) und Unterhaltungen von Antigravity CLI (`session/list`) aus allen Accounts, je Ordner ein Projekt; Kanäle `import:cli-*` |
@@ -536,6 +537,11 @@ Account (sein Konfigurationsordner), Ebene (`user`, `project`, `local`) und für
 dessen Ordner. „Konnektoren verwalten“ im „+“ der Eingabe öffnet die Seite mit CLI, Account und Ordner des
 Chats (`sessions:config-target`).
 
+Oben Tabs: „Alle CLIs“ und eine je CLI (`cliConfig.page`); unter der Leiste einer CLI (Account, Ebene,
+Projekt, Dateien) ein Tab je Bereich (`cliConfig.section`). Ein Anker aus der Schnellsuche holt seinen Tab
+nach vorn (`follow` in `SettingsCliConfig.vue`, synchron, bevor der Dialog das Element sucht); eine Suche
+zeigt alle Karten mit Treffern untereinander, ohne Tabs.
+
 - Jede CLI hat einen Adapter (`AgentProvider.config`, `CliConfigAdapter`); eine CLI ohne Adapter fehlt
   in der Auswahl. Der Adapter sagt, welche Ebenen und Arten von Servern es gibt, welche Felder die
   Berechtigungen haben (`PermissionField`: Auswahl, Liste, Schalter) und welche Hook-Ereignisse; das
@@ -553,6 +559,14 @@ Chats (`sessions:config-target`).
 - Nach jeder Änderung liest die Seite neu und `cli-config:changed` sagt es den anderen Fenstern. Claude
   leert danach seine Caches der MCP-Server und Befehle des Accounts, Codex lädt die MCP-Server neu
   (`config/mcpServer/reload`).
+- **Globale MCP-Server** (`services/global-mcp.ts`, „Alle CLIs“): einer auf der Ebene Nutzer jedes
+  Accounts jeder installierten CLI. Die Übersicht liest alle Accounts (`exportMcpServers`, mit Werten,
+  nur in Main) und zeigt je Server und Account gleich, abweichend, fehlt, kennt die Art nicht oder nicht
+  lesbar; ins Fenster gehen die Werte maskiert. Ändert der Nutzer einen globalen Server im Tab einer CLI,
+  trägt `CliConfigService.saveMcp` die Fassung in alle anderen Accounts; Entfernen dort entfernt ihn
+  überall. Neue Accounts bekommen alle globalen (`accounts` `changed`). Was ein Account nicht annimmt,
+  steht in `McpSyncResult.failed`, das Fenster nennt es; die anderen Accounts bekommen die Änderung trotzdem.
+  Änderungen laufen nacheinander (`serial`), denn jede liest und schreibt die Dateien mehrerer Accounts.
 - Dateien, Befehle und Eigenheiten je CLI: PROTOCOLS.md, „Einstellungen der CLIs“.
 
 ## Renderer

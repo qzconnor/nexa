@@ -196,7 +196,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   sessions.on('changed', (list) => terminals.keepSessions(new Set(list.map((meta) => meta.id))))
   registerTerminalsIpc(terminals)
   // The CLIs' own settings (MCP servers, permissions, hooks), in their own files.
-  registerCliConfigIpc(new CliConfigService(providers, accounts, projects))
+  registerCliConfigIpc(new CliConfigService(providers, accounts, projects, join(userDataDir, 'global-mcp.json')))
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)

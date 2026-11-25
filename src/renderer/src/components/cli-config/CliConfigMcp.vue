@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ExternalLinkIcon, LockIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from '@lucide/vue'
+import { ExternalLinkIcon, GlobeIcon, LockIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from '@lucide/vue'
 import { computed, ref } from 'vue'
-import { MCP_TRANSPORT_LABELS, type McpServerConfig } from '@shared/cli-config'
+import { GLOBAL_MCP_TRANSPORTS, MCP_TRANSPORT_LABELS, type McpServerConfig } from '@shared/cli-config'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -29,6 +29,9 @@ function edit(server: McpServerConfig): void {
   editing.value = server
   dialogOpen.value = true
 }
+/** A global server stays one every CLI knows: no SSE, no token variable only Codex has. */
+const editingGlobal = computed(() => !!editing.value?.global)
+const transports = computed(() => (editingGlobal.value ? mcp.value.transports.filter((t) => GLOBAL_MCP_TRANSPORTS.includes(t)) : mcp.value.transports))
 
 /** What the server runs or where it connects, in a line. */
 function target(server: McpServerConfig): string {
@@ -53,8 +56,10 @@ async function toggle(server: McpServerConfig, on: boolean): Promise<void> {
 
 async function remove(server: McpServerConfig): Promise<void> {
   const ok = await ui.confirm({
-    title: `MCP-Server „${server.name}“ entfernen?`,
-    description: 'Die CLI startet ihn dann nicht mehr. Laufende Chats behalten ihn bis zum nächsten Start.',
+    title: server.global ? `Globalen MCP-Server „${server.name}“ entfernen?` : `MCP-Server „${server.name}“ entfernen?`,
+    description: server.global
+      ? 'Er ist global: Nexa entfernt ihn aus allen CLIs und Accounts. Soll er nur hier gehen, mach ihn vorher unter „Alle CLIs“ nicht mehr global.'
+      : 'Die CLI startet ihn dann nicht mehr. Laufende Chats behalten ihn bis zum nächsten Start.',
     code: target(server),
     confirmText: 'Entfernen',
     destructive: true,
@@ -85,6 +90,9 @@ const openManage = () => mcp.value.manageUrl && void window.api.app.openExternal
           <span class="truncate text-sm font-medium">{{ server.name }}</span>
           <!-- A locked one is of a kind Nexa doesn't know; its reason names the kind. -->
           <Badge v-if="!server.locked" variant="secondary">{{ MCP_TRANSPORT_LABELS[server.transport] }}</Badge>
+          <Badge v-if="server.global" variant="outline" v-tooltip="'Steht in jeder CLI und jedem Account. Was du hier änderst, gilt überall.'">
+            <GlobeIcon data-icon="inline-start" /> Global
+          </Badge>
           <Badge v-if="server.enabled === false" variant="outline">Aus</Badge>
           <Badge v-if="server.locked" variant="outline" v-tooltip="server.locked"><LockIcon data-icon="inline-start" /> Nur ansehen</Badge>
         </div>
@@ -123,6 +131,6 @@ const openManage = () => mcp.value.manageUrl && void window.api.app.openExternal
     </div>
     <p v-if="mcp.note" class="text-xs text-muted-foreground">{{ mcp.note }}</p>
 
-    <McpServerDialog v-model:open="dialogOpen" :server="editing" :transports="mcp.transports" :bearer-token-env-var="!!mcp.bearerTokenEnvVar" />
+    <McpServerDialog v-model:open="dialogOpen" :server="editing" :transports="transports" :bearer-token-env-var="!!mcp.bearerTokenEnvVar && !editingGlobal" />
   </div>
 </template>

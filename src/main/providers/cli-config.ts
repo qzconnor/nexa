@@ -43,6 +43,11 @@ export interface CliConfigAdapter {
   read(ctx: CliConfigContext): Promise<CliConfigRead>
   saveMcpServer(ctx: CliConfigContext, server: McpServerConfig, previousName: string | null): Promise<void>
   removeMcpServer(ctx: CliConfigContext, name: string): Promise<void>
+  /**
+   * The scope's servers with every value, secrets too: only for main, to write a server into another
+   * CLI or account (global servers). Never for the window.
+   */
+  exportMcpServers(ctx: CliConfigContext): Promise<McpServerConfig[]>
   savePermissions(ctx: CliConfigContext, values: Record<string, PermissionValue>): Promise<void>
   saveHooks(ctx: CliConfigContext, save: HooksSave): Promise<void>
   /** For CLIs that run a hook only once it is trusted (Codex). */
@@ -108,13 +113,22 @@ export function isSecretEntry(name: string, value: string): boolean {
   return redactSecrets(`${name}=${bare}`).count > 0 || redactSecrets(bare).count > 0
 }
 
-/** A record of variables or headers for the window, secrets without their value. */
-export function entriesOut(record: unknown): McpEntry[] | undefined {
+/**
+ * A record of variables or headers for the window, secrets without their value. `reveal`: every value,
+ * for main only (see `CliConfigAdapter.exportMcpServers`).
+ */
+export function entriesOut(record: unknown, reveal = false): McpEntry[] | undefined {
   if (!isPlainObject(record)) return undefined
   return Object.entries(record).map(([name, raw]) => {
     const value = typeof raw === 'string' ? raw : JSON.stringify(raw)
-    return isSecretEntry(name, value) ? { name, value: '', masked: true } : { name, value }
+    return !reveal && isSecretEntry(name, value) ? { name, value: '', masked: true } : { name, value }
   })
+}
+
+/** A server with every value as the window may see it: secrets masked, as `entriesOut` hands them out. */
+export function maskedServer(server: McpServerConfig): McpServerConfig {
+  const mask = (list: McpEntry[] | undefined) => list?.map((e) => (!e.masked && isSecretEntry(e.name, e.value) ? { name: e.name, value: '', masked: true } : e))
+  return { ...server, env: mask(server.env), headers: mask(server.headers) }
 }
 
 /** The record to save: a masked entry keeps the value it has in `current`. */

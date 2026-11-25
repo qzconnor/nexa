@@ -135,14 +135,14 @@ export function claudeProjectEntry(config: Json | null, folder: string): Json | 
   return found ? (found[1] as Json) : null
 }
 
-/** A server of Claude Code's files as Nexa shows it. */
-export function claudeServerOut(name: string, raw: unknown): McpServerConfig {
+/** A server of Claude Code's files as Nexa shows it; `reveal`: with its secrets, for main only. */
+export function claudeServerOut(name: string, raw: unknown, reveal = false): McpServerConfig {
   const entry = isPlainObject(raw) ? raw : {}
   const type = str(entry.type) ?? (str(entry.command) ? 'stdio' : 'http')
   if (type === 'stdio') {
-    return { name, transport: 'stdio', command: str(entry.command) ?? '', args: strings(entry.args), env: entriesOut(entry.env), other: otherKeys(entry, SERVER_KEYS) }
+    return { name, transport: 'stdio', command: str(entry.command) ?? '', args: strings(entry.args), env: entriesOut(entry.env, reveal), other: otherKeys(entry, SERVER_KEYS) }
   }
-  const server: McpServerConfig = { name, transport: type === 'sse' ? 'sse' : 'http', url: str(entry.url) ?? '', headers: entriesOut(entry.headers), other: otherKeys(entry, SERVER_KEYS) }
+  const server: McpServerConfig = { name, transport: type === 'sse' ? 'sse' : 'http', url: str(entry.url) ?? '', headers: entriesOut(entry.headers, reveal), other: otherKeys(entry, SERVER_KEYS) }
   if (type !== 'http' && type !== 'sse') server.locked = `Server der Art „${type}“ bearbeitet Nexa nicht.`
   return server
 }
@@ -283,6 +283,10 @@ export class ClaudeConfig implements CliConfigAdapter {
   async removeMcpServer(ctx: CliConfigContext, name: string): Promise<void> {
     await this.mcp(ctx, ['remove', name, '-s', ctx.scope])
     this.changed(ctx.account.accountId)
+  }
+
+  async exportMcpServers(ctx: CliConfigContext): Promise<McpServerConfig[]> {
+    return Object.entries(await this.rawServers(ctx)).map(([name, raw]) => claudeServerOut(name, raw, true))
   }
 
   async savePermissions(ctx: CliConfigContext, values: Record<string, PermissionValue>): Promise<void> {

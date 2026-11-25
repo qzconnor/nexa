@@ -93,6 +93,13 @@ const api: NexaApi = {
     savePermissions: (target, values) => invoke(CliConfigInvoke.savePermissions, target, values),
     saveHooks: (target, save) => invoke(CliConfigInvoke.saveHooks, target, save),
     trustHook: (target, key, hash) => invoke(CliConfigInvoke.trustHook, target, key, hash),
+    overview: () => invoke(CliConfigInvoke.overview),
+    addGlobal: (server) => invoke(CliConfigInvoke.addGlobal, server),
+    saveGlobal: (server, previousName) => invoke(CliConfigInvoke.saveGlobal, server, previousName),
+    makeGlobal: (name, source) => invoke(CliConfigInvoke.makeGlobal, name, source),
+    unglobal: (name) => invoke(CliConfigInvoke.unglobal, name),
+    removeGlobal: (name) => invoke(CliConfigInvoke.removeGlobal, name),
+    syncGlobal: (name) => invoke(CliConfigInvoke.syncGlobal, name),
     onChanged: (cb) => subscribe(CliConfigEvent.changed, cb),
   },
   terminals: {
