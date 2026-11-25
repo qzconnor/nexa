@@ -4,6 +4,7 @@ import { computed, onMounted } from 'vue'
 import { PROVIDER_IDS, type PermissionMode, type ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { AppSettings, DeepPartial } from '@shared/types'
+import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import ProviderCard from '@/components/providers/ProviderCard.vue'
 import { Button } from '@/components/ui/button'
@@ -77,7 +78,12 @@ async function pickCli(id: ProviderId): Promise<void> {
           "
           aria-label="CLI für neue Chats"
           @update:model-value="(provider) => update({ defaults: { provider } })"
-        />
+        >
+          <template #option="{ option }">
+            <ProviderIcon :provider="option.value" class="size-3.5" />
+            {{ option.label }}
+          </template>
+        </SegmentedControl>
       </SettingField>
       <SettingField anchor="providers.permissionMode" label="Freigaben" description="Was die CLI ohne Rückfrage darf.">
         <Select
@@ -93,6 +99,7 @@ async function pickCli(id: ProviderId): Promise<void> {
     </SettingsSection>
 
     <SettingsSection v-for="id in PROVIDER_IDS" :key="id" :anchor="id" :title="PROVIDERS[id].name">
+      <template #icon><ProviderIcon :provider="id" /></template>
       <SettingField
         :anchor="cliAnchor(id, 'enabled')"
         label="In Nexa nutzen"

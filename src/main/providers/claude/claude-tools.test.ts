@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { compactionNotice } from '@shared/chat'
-import { changesFromResult, compactionOf, viewOfClaudeTool } from './claude-tools'
+import { changesFromResult, compactionOf, resultText, viewOfClaudeTool } from './claude-tools'
+
+describe('resultText', () => {
+  it('joins the text blocks of a result', () => {
+    expect(resultText('fertig')).toBe('fertig')
+    expect(resultText([{ type: 'text', text: 'a' }, { type: 'image' }, { type: 'text', text: 'b' }])).toBe('a\nb')
+    expect(resultText(null)).toBe('')
+  })
+
+  it('shows the message inside Claude Code’s <tool_use_error>', () => {
+    // As Claude Code 2.1 answers a Write to a file it hasn't read.
+    const refused = '<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>'
+    expect(resultText(refused)).toBe('File has not been read yet. Read it first before writing to it.')
+    expect(resultText([{ type: 'text', text: refused }])).toBe('File has not been read yet. Read it first before writing to it.')
+  })
+
+  it('leaves the tag where it is only part of the text', () => {
+    const quoted = 'grep fand: <tool_use_error>x</tool_use_error> in log.txt'
+    expect(resultText(quoted)).toBe(quoted)
+  })
+})
 
 describe('compactionOf', () => {
   it('reads the stream’s snake_case metadata', () => {

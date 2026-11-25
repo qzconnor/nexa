@@ -49,7 +49,7 @@ function onUpdate(value: unknown) {
       :value="option.value"
       :class="
         cn(
-          'inline-flex h-full min-w-0 cursor-pointer items-center justify-center rounded-md border border-transparent font-medium whitespace-nowrap text-foreground/60 transition-[color,background-color,box-shadow] outline-none',
+          'inline-flex h-full min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-transparent font-medium whitespace-nowrap text-foreground/60 transition-[color,background-color,box-shadow] outline-none',
           size === 'sm' ? 'px-2 text-xs' : 'px-2.5 text-sm',
           'hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed dark:text-muted-foreground dark:hover:text-foreground',
           'data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm dark:data-[state=on]:border-input dark:data-[state=on]:bg-input/30 dark:data-[state=on]:text-foreground',
@@ -57,7 +57,8 @@ function onUpdate(value: unknown) {
         )
       "
     >
-      {{ option.label }}
+      <!-- `option`: a segment with more than its label, e.g. the CLI's mark in front of its name. -->
+      <slot name="option" :option="option">{{ option.label }}</slot>
     </ToggleGroupItem>
   </ToggleGroupRoot>
 </template>

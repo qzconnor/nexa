@@ -16,7 +16,7 @@ const filter = useSettingsFilter()
 <template>
   <Card v-if="filter.shows(anchor)" :data-setting="anchor">
     <CardHeader>
-      <CardTitle><HighlightText :text="title" :terms="filter.terms.value" /></CardTitle>
+      <CardTitle class="flex items-center gap-2"><slot name="icon" /><HighlightText :text="title" :terms="filter.terms.value" /></CardTitle>
       <CardDescription v-if="description"><HighlightText :text="description" :terms="filter.terms.value" /></CardDescription>
       <CardAction v-if="$slots.actions" class="flex items-center gap-1">
         <slot name="actions" />
