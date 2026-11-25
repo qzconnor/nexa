@@ -290,9 +290,16 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         `nx -r <id>`), Abgleich, wenn sie außerhalb von Nexa weiterlaufen, und Accountwechsel auf derselben
         Unterhaltung.
   - [ ] Abzweigen und Bearbeiten auf derselben Unterhaltung statt neu mit `<nexa-context>`.
-  - [ ] Berechtigungen eines Projekts unter Einstellungen › CLI-Konfiguration (Antigravity legt sie mit
-        `/permissions` selbst an; Datei und Format noch unbekannt).
-  - [ ] MCP-Server von Antigravity CLI im „+“-Menü (Liste mit Zustand, Schalter je Projekt).
+  - [x] Berechtigungen eines Projekts unter Einstellungen › CLI-Konfiguration: die Regeln des
+        Antigravity-Projekts (`config/projects/default-cli-project.json`), die `/permissions` „Project“
+        nennt. Antigravity CLI nimmt dieses Projekt in jedem Ordner, die Regeln gelten also in allen
+        Projekten; Nexa sagt das dazu.
+  - [x] MCP-Server von Antigravity CLI im „+“-Menü: aus den Dateien des Nutzers und des Ordners, mit
+        „Eingerichtet“ oder „Aus“ und einem Schalter, der `disabled` in der Datei des Servers setzt.
+  - [ ] Ob ein MCP-Server von Antigravity CLI verbunden ist, im „+“-Menü zeigen, und Server des Nutzers
+        je Projekt abschalten: Antigravity nennt keinem Client den Zustand, und weder `.agents/mcp_config.json`
+        noch `session/new` schalten einen Server des Nutzers für eine Sitzung ab (`PROTOCOLS.md`).
+  - [ ] Die Regeln von „Shared with Antigravity“ (`/permissions`) zeigen: wo sie liegen, ist offen.
   - [ ] Unter macOS und Linux prüfen: Installation, Schlüsselbund (Nexa sieht den Login dort nicht und
         nimmt ihn als vorhanden an), Pfade.
 - [ ] Weitere CLIs über das Provider-System.

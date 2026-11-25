@@ -6,7 +6,7 @@ import { antigravityLoggedIn, ensureApiKeySettings, refreshAntigravityLogin } fr
 import { AcpConnection } from '../acp/acp-connection'
 import { CliBinary, cliEnv } from '../cli-binary'
 import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
-import { AntigravityConfig } from './antigravity-config'
+import { AntigravityConfig, antigravityMcpServers, setAntigravityMcpEnabled } from './antigravity-config'
 import { commandsOf, modelsOf, tierOf, usageOfQuota } from './antigravity-items'
 import { AntigravityRun } from './antigravity-run'
 
@@ -129,9 +129,16 @@ export class AntigravityProvider implements AgentProvider {
     if (list.length) this.commands_ = list.map(asCommand)
   }
 
-  /** Antigravity tells no client how its MCP servers are; they are edited in its files (antigravity-config.ts). */
-  async mcpServers(): Promise<McpServerState[]> {
-    return []
+  /**
+   * Antigravity tells no client how its MCP servers are, nor can a run leave one out: the „+“ menu
+   * shows them from its files and switches them there (antigravity-config.ts).
+   */
+  async mcpServers(account: AccountContext, cwd: string): Promise<McpServerState[]> {
+    return antigravityMcpServers(account, cwd)
+  }
+
+  async setMcpEnabled(account: AccountContext, cwd: string, name: string, enabled: boolean): Promise<void> {
+    await setAntigravityMcpEnabled(account, cwd, name, enabled)
   }
 
   async reconnectMcp(): Promise<void> {}

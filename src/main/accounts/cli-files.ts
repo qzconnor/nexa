@@ -242,7 +242,15 @@ export interface AntigravityPaths {
   /** The MCP servers and hooks for every workspace. */
   mcpFile: string
   hooksFile: string
+  /**
+   * The Antigravity project every CLI and ACP session uses (`default-cli-project`, in any folder):
+   * its permission rules, which `/permissions` calls „Project“ and puts before all others.
+   */
+  projectFile: string
 }
+
+/** The project Antigravity CLI opens its sessions in when none is named (`--project`, not in `agy acp`). */
+export const ANTIGRAVITY_DEFAULT_PROJECT = { id: 'default-cli-project', name: 'CLI Project' }
 
 /** The folder Antigravity CLI keeps its data in without `--gemini-dir`. */
 export function defaultAntigravityDir(): string {
@@ -257,6 +265,7 @@ export function antigravityPaths(dir: string): AntigravityPaths {
     brainDir: join(dir, 'antigravity-cli', 'brain'),
     mcpFile: join(dir, 'config', 'mcp_config.json'),
     hooksFile: join(dir, 'config', 'hooks.json'),
+    projectFile: join(dir, 'config', 'projects', `${ANTIGRAVITY_DEFAULT_PROJECT.id}.json`),
   }
 }
 

@@ -146,6 +146,18 @@ export class ProviderService extends TypedEmitter<Events> {
     return this.providers[id].mcpServers(this.context(accountId), cwd)
   }
 
+  /** Whether the CLI keeps the switches of its MCP servers itself (see `AgentProvider.setMcpEnabled`). */
+  switchesMcpItself(id: ProviderId): boolean {
+    return !!this.providers[id].setMcpEnabled
+  }
+
+  /** Switches an MCP server in the CLI's own file; only for CLIs that keep the switch (`switchesMcpItself`). */
+  async setMcpEnabled(id: ProviderId, accountId: string, cwd: string, name: string, enabled: boolean): Promise<void> {
+    const provider = this.providers[id]
+    if (!provider.setMcpEnabled) throw new Error('Diese CLI schaltet ihre MCP-Server nicht selbst.')
+    await provider.setMcpEnabled(this.context(accountId), cwd, name, enabled)
+  }
+
   reconnectMcp(id: ProviderId, accountId: string, cwd: string, name: string): Promise<void> {
     return this.providers[id].reconnectMcp(this.context(accountId), cwd, name)
   }

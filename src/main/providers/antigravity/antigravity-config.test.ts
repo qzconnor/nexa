@@ -6,11 +6,16 @@ import type { AccountEnv } from '../../accounts/account-env'
 import {
   AntigravityConfig,
   antigravityHooksOut,
+  antigravityMcpList,
+  antigravityMcpServers,
   antigravityPermissionFields,
+  antigravityProjectRuleFields,
   antigravityServerIn,
   antigravityServerOut,
+  setAntigravityMcpEnabled,
   withAntigravityHooks,
   withAntigravityPermissions,
+  withAntigravityProjectRules,
 } from './antigravity-config'
 
 describe('antigravityServerOut / antigravityServerIn', () => {
@@ -62,6 +67,72 @@ describe('permissions', () => {
     withAntigravityPermissions(data, { agentMode: null, 'permissions.ask': [], allowNonWorkspaceAccess: null })
     expect(data).toEqual({ trustedWorkspaces: ['C:\\me'] })
     expect(() => withAntigravityPermissions(data, { toolPermission: 'yolo' })).toThrow(/yolo/)
+  })
+})
+
+describe('project rules', () => {
+  // The file as Antigravity CLI 1.5.16 wrote it after rules were added under /permissions › Project.
+  const written = {
+    id: 'default-cli-project',
+    name: 'CLI Project',
+    projectResources: {},
+    permissionGrants: { permissionGrants: { allow: ['command(git status)'], deny: ['read_file(secret.txt)'], ask: ['command(git push)'] } },
+  }
+
+  it('shows the three lists of the Antigravity project', () => {
+    expect(antigravityProjectRuleFields(written).map((f) => [f.key, f.value])).toEqual([
+      ['project.allow', ['command(git status)']],
+      ['project.deny', ['read_file(secret.txt)']],
+      ['project.ask', ['command(git push)']],
+    ])
+    expect(antigravityProjectRuleFields(null).every((f) => f.kind === 'list' && f.value.length === 0)).toBe(true)
+  })
+
+  it('writes a list over what the file has besides, and removes the rules once all are emptied', () => {
+    const data = structuredClone({ ...written, marker: 1 }) as Record<string, unknown>
+    withAntigravityProjectRules(data, { 'project.allow': ['command(npm test)', ' ', 'command(npm test)'] })
+    expect(data).toMatchObject({ marker: 1, permissionGrants: { permissionGrants: { allow: ['command(npm test)'], deny: ['read_file(secret.txt)'] } } })
+    withAntigravityProjectRules(data, { 'project.allow': [], 'project.deny': null, 'project.ask': [] })
+    expect(data).toEqual({ id: 'default-cli-project', name: 'CLI Project', projectResources: {}, marker: 1 })
+    expect(() => withAntigravityProjectRules(data, { agentMode: 'auto' })).toThrow(/kennt Nexa nicht/)
+  })
+})
+
+describe('MCP servers for the „+“ menu', () => {
+  it("lists the user's servers, then the folder's, each switched in its file", () => {
+    const user = { mcpServers: { docs: { command: 'node' }, web: { url: 'https://x', disabled: true } } }
+    const project = { mcpServers: { local: { command: 'py' }, docs: { command: 'other' } } }
+    expect(antigravityMcpList(user, project)).toEqual([
+      { name: 'docs', status: 'configured', scope: 'user', enabled: true, switchIn: 'cli' },
+      { name: 'web', status: 'disabled', scope: 'user', enabled: false, switchIn: 'cli' },
+      { name: 'local', status: 'configured', scope: 'project', enabled: true, switchIn: 'cli' },
+    ])
+    expect(antigravityMcpList(null, {})).toEqual([])
+  })
+
+  it('switches a server where it is set up, the user’s file before the folder’s', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'nexa-agy-'))
+    try {
+      const account: AccountEnv = { accountId: 'k', set: {}, unset: [], dir: join(dir, 'home') }
+      const folder = join(dir, 'proj')
+      await mkdir(join(dir, 'home', 'config'), { recursive: true })
+      await mkdir(join(folder, '.agents'), { recursive: true })
+      await writeFile(join(dir, 'home', 'config', 'mcp_config.json'), JSON.stringify({ mcpServers: { docs: { command: 'node', timeoutSeconds: 5 } } }))
+      await writeFile(join(folder, '.agents', 'mcp_config.json'), JSON.stringify({ mcpServers: { local: { command: 'py' }, docs: { command: 'other' } } }))
+      await setAntigravityMcpEnabled(account, folder, 'docs', false)
+      await setAntigravityMcpEnabled(account, folder, 'local', false)
+      expect(JSON.parse(await readFile(join(dir, 'home', 'config', 'mcp_config.json'), 'utf8'))).toEqual({ mcpServers: { docs: { command: 'node', timeoutSeconds: 5, disabled: true } } })
+      expect(JSON.parse(await readFile(join(folder, '.agents', 'mcp_config.json'), 'utf8')).mcpServers).toEqual({ local: { command: 'py', disabled: true }, docs: { command: 'other' } })
+      expect((await antigravityMcpServers(account, folder)).map((s) => [s.name, s.enabled])).toEqual([
+        ['docs', false],
+        ['local', false],
+      ])
+      await setAntigravityMcpEnabled(account, folder, 'docs', true)
+      expect(JSON.parse(await readFile(join(dir, 'home', 'config', 'mcp_config.json'), 'utf8'))).toEqual({ mcpServers: { docs: { command: 'node', timeoutSeconds: 5 } } })
+      await expect(setAntigravityMcpEnabled(account, folder, 'gone', true)).rejects.toThrow(/nicht mehr/)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -126,13 +197,24 @@ describe('AntigravityConfig', () => {
     expect((await config.read(ctx)).mcp.servers).toEqual([])
   })
 
-  it("keeps a project's servers and hooks in its .agents folder, its rules to the CLI", async () => {
+  it("keeps a project's servers and hooks in its .agents folder, its rules in the Antigravity project", async () => {
     const ctx = { account, scope: 'project' as const, folder: join(dir, 'proj') }
     await config.saveMcpServer(ctx, { name: 'web', transport: 'http', url: 'https://x/mcp' }, null)
     expect(JSON.parse(await readFile(join(dir, 'proj', '.agents', 'mcp_config.json'), 'utf8'))).toEqual({ mcpServers: { web: { url: 'https://x/mcp' } } })
     const read = await config.read(ctx)
-    expect(read.permissions.fields).toEqual([])
-    await expect(config.savePermissions(ctx, { 'permissions.allow': [] })).rejects.toThrow(/Projekt/)
+    expect(read.permissions.fields.map((f) => f.key)).toEqual(['project.allow', 'project.deny', 'project.ask'])
+    expect(read.permissions.note).toMatch(/allen Projekten/)
+    expect(read.files.at(-1)).toMatchObject({ label: 'Projektregeln', exists: false })
+    await config.savePermissions(ctx, { 'project.deny': ['read_file(secret.txt)'] })
+    const file = join(dir, 'home', 'config', 'projects', 'default-cli-project.json')
+    // As Antigravity writes a project it opened, with the rules nested twice.
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      id: 'default-cli-project',
+      name: 'CLI Project',
+      projectResources: {},
+      permissionGrants: { permissionGrants: { deny: ['read_file(secret.txt)'] } },
+    })
+    await expect(config.savePermissions(ctx, { 'permissions.allow': [] })).rejects.toThrow(/kennt Nexa nicht/)
   })
 
   it("refuses hooks that changed since they were read, and a file that isn't JSON", async () => {

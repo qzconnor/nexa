@@ -13,7 +13,8 @@ import type {
 } from '@shared/cli-config'
 import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
-import { antigravityPaths, defaultAntigravityDir } from '../../accounts/cli-files'
+import type { McpServerState } from '../provider'
+import { ANTIGRAVITY_DEFAULT_PROJECT, antigravityPaths, defaultAntigravityDir } from '../../accounts/cli-files'
 import {
   cleanList,
   entriesIn,
@@ -34,13 +35,14 @@ import {
 /**
  * Antigravity CLI's settings (docs/PROTOCOLS.md, „Einstellungen der CLIs“), each in its own file:
  * MCP servers in `mcp_config.json` and hooks in `hooks.json` (for the user in `<.gemini>/config`, for
- * a project in its `.agents` folder), permissions in the user's `antigravity-cli/settings.json`. Nexa
- * writes the files itself: `agy mcp add` would take secrets on its command line.
+ * a project in its `.agents` folder), permissions in the user's `antigravity-cli/settings.json` and the
+ * rules of the Antigravity project (`config/projects/default-cli-project.json`). Nexa writes the files
+ * itself: `agy mcp add` would take secrets on its command line.
  */
 
 const SCOPES: CliConfigScopeInfo[] = [
   { id: 'user', label: 'Nutzer', description: 'Für alle Projekte dieses Accounts (.gemini/config, antigravity-cli/settings.json)' },
-  { id: 'project', label: 'Projekt', description: 'Für alle, die im Projekt arbeiten (.agents/mcp_config.json, .agents/hooks.json)' },
+  { id: 'project', label: 'Projekt', description: 'MCP-Server und Hooks im Ordner (.agents), dazu die Projektregeln von Antigravity CLI' },
 ]
 
 /** Antigravity's hook events (1.5). Tool events match the tool by a regex; the others have no matcher. */
@@ -82,6 +84,17 @@ const LISTS: Record<string, { label: string; description: string; placeholder: s
   'permissions.deny': { label: 'Verbieten', description: 'Gilt in jedem Modus, auch mit vollen Rechten.', placeholder: 'z. B. write_file(.env)' },
 }
 
+/** The rules of the Antigravity project, in the order of `/permissions` › Project. */
+const PROJECT_LISTS: Record<string, { label: string; description: string; placeholder: string }> = {
+  'project.allow': { label: 'Ohne Rückfrage', description: 'Regeln wie command(git status), die ohne Rückfrage laufen, auch in Nexa.', placeholder: 'z. B. command(npm test)' },
+  'project.deny': { label: 'Verbieten', description: 'Gilt in jedem Modus, auch mit vollen Rechten.', placeholder: 'z. B. read_file(.env)' },
+  'project.ask': { label: 'Immer fragen', description: 'Fragt immer nach, auch wenn eine Regel des Nutzers es erlauben würde.', placeholder: 'z. B. command(git push)' },
+}
+
+const PROJECT_NOTE =
+  'Antigravity CLI öffnet jede Sitzung im selben Antigravity-Projekt („CLI Project“), in jedem Ordner. ' +
+  'Diese Regeln gelten deshalb in allen Projekten dieses Accounts und gehen denen des Nutzers vor. Im Terminal: /permissions › Project.'
+
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v : undefined)
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [])
 
@@ -90,15 +103,52 @@ function dirOf(account: AccountEnv): string {
   return account.dir ?? defaultAntigravityDir()
 }
 
-/** The files of a scope; a project has no settings file of its own Nexa knows. */
-export function antigravityConfigFiles(account: AccountEnv, scope: CliConfigContext['scope'], folder?: string): { mcp: string; hooks: string; settings: string | null } {
-  if (scope === 'user') {
-    const paths = antigravityPaths(dirOf(account))
-    return { mcp: paths.mcpFile, hooks: paths.hooksFile, settings: paths.settingsFile }
-  }
+/**
+ * The files of a scope. The user's permissions are in the CLI's `settings.json`; a folder has none of
+ * its own, the project level shows the rules of the Antigravity project instead (`rules`).
+ */
+export function antigravityConfigFiles(
+  account: AccountEnv,
+  scope: CliConfigContext['scope'],
+  folder?: string,
+): { mcp: string; hooks: string; settings: string | null; rules: string | null } {
+  const paths = antigravityPaths(dirOf(account))
+  if (scope === 'user') return { mcp: paths.mcpFile, hooks: paths.hooksFile, settings: paths.settingsFile, rules: null }
   if (scope !== 'project') throw new Error('Diese Ebene hat Antigravity CLI nicht.')
   if (!folder) throw new Error('Für diese Ebene fehlt das Projekt.')
-  return { mcp: join(folder, '.agents', 'mcp_config.json'), hooks: join(folder, '.agents', 'hooks.json'), settings: null }
+  return { mcp: join(folder, '.agents', 'mcp_config.json'), hooks: join(folder, '.agents', 'hooks.json'), settings: null, rules: paths.projectFile }
+}
+
+/** The rules of the Antigravity project's file: it nests them as `permissionGrants.permissionGrants`. */
+function projectGrants(project: Json | null): Json {
+  const outer = isPlainObject(project?.permissionGrants) ? project.permissionGrants : {}
+  return isPlainObject(outer.permissionGrants) ? outer.permissionGrants : {}
+}
+
+export function antigravityProjectRuleFields(project: Json | null): PermissionField[] {
+  const grants = projectGrants(project)
+  return Object.entries(PROJECT_LISTS).map(([key, field]): PermissionField => ({ kind: 'list', key, ...field, value: strings(grants[key.slice('project.'.length)]) }))
+}
+
+/**
+ * The project's file with its rules set; an empty list goes. A file Antigravity hasn't written yet
+ * (no session in the terminal) gets the project's name as Antigravity writes it.
+ */
+export function withAntigravityProjectRules(data: Json, values: Record<string, PermissionValue>): void {
+  const outer: Json = isPlainObject(data.permissionGrants) ? { ...data.permissionGrants } : {}
+  const grants: Json = isPlainObject(outer.permissionGrants) ? { ...outer.permissionGrants } : {}
+  for (const [key, value] of Object.entries(values)) {
+    if (!(key in PROJECT_LISTS)) throw new Error(`Die Einstellung „${key}“ kennt Nexa nicht.`)
+    const list = cleanList(value)
+    const sub = key.slice('project.'.length)
+    if (list.length) grants[sub] = list
+    else delete grants[sub]
+  }
+  if (data.id === undefined) Object.assign(data, { id: ANTIGRAVITY_DEFAULT_PROJECT.id, name: ANTIGRAVITY_DEFAULT_PROJECT.name, projectResources: {} })
+  if (Object.keys(grants).length) outer.permissionGrants = grants
+  else delete outer.permissionGrants
+  if (Object.keys(outer).length) data.permissionGrants = outer
+  else delete data.permissionGrants
 }
 
 /** A server of `mcp_config.json` as Nexa shows it: a remote one by `url` (or `serverUrl`), else a command. */
@@ -124,6 +174,57 @@ export function antigravityServerIn(server: McpServerConfig, current: unknown): 
   if (server.transport !== 'http') throw new Error('Antigravity CLI kennt nur Server mit Befehl oder Streamable-HTTP-Adresse.')
   const headers = entriesIn(server.headers, before.headers)
   return { url: server.url?.trim(), ...(headers ? { headers } : {}), ...base, ...off }
+}
+
+// ---------------------------------------------------------------------------------------------
+// MCP servers for the composer's „+“ menu. Antigravity tells no client which servers connected, and a
+// run can't leave one out: the list comes from the files, the switch is their `disabled`.
+
+/**
+ * The servers a session in a folder starts: the user's, then the folder's (`.agents`). Of two with
+ * one name the user's starts first and keeps it, so the folder's isn't listed.
+ */
+export function antigravityMcpList(user: Json | null, project: Json | null): McpServerState[] {
+  const out: McpServerState[] = []
+  const add = (file: Json | null, scope: 'user' | 'project') => {
+    const servers = file && isPlainObject(file.mcpServers) ? file.mcpServers : {}
+    for (const [name, raw] of Object.entries(servers)) {
+      if (out.some((s) => s.name === name)) continue
+      const off = isPlainObject(raw) && raw.disabled === true
+      out.push({ name, status: off ? 'disabled' : 'configured', scope, enabled: !off, switchIn: 'cli' })
+    }
+  }
+  add(user, 'user')
+  add(project, 'project')
+  return out
+}
+
+/** The user's and the folder's `mcp_config.json`. */
+function mcpFilesOf(account: AccountEnv, folder: string): { user: string; project: string } {
+  return { user: antigravityPaths(dirOf(account)).mcpFile, project: join(folder, '.agents', 'mcp_config.json') }
+}
+
+export async function antigravityMcpServers(account: AccountEnv, folder: string): Promise<McpServerState[]> {
+  const files = mcpFilesOf(account, folder)
+  const [user, project] = await Promise.all([readJsonFile(files.user), readJsonFile(files.project)])
+  return antigravityMcpList(user, project)
+}
+
+/** Sets a server's `disabled` in the file it is set up in (the user's first, as Antigravity starts them). */
+export async function setAntigravityMcpEnabled(account: AccountEnv, folder: string, name: string, enabled: boolean): Promise<void> {
+  const files = mcpFilesOf(account, folder)
+  const has = (file: Json | null) => !!file && isPlainObject(file.mcpServers) && isPlainObject(file.mcpServers[name])
+  const file = has(await readJsonFile(files.user)) ? files.user : has(await readJsonFile(files.project)) ? files.project : null
+  if (!file) throw new Error(`Den Server „${name}“ gibt es in den Dateien von Antigravity CLI nicht mehr.`)
+  await updateJsonFile(file, (data) => {
+    const servers = isPlainObject(data.mcpServers) ? data.mcpServers : {}
+    const entry = servers[name]
+    if (!isPlainObject(entry)) throw new Error(`Den Server „${name}“ gibt es in den Dateien von Antigravity CLI nicht mehr.`)
+    const next: Json = { ...entry }
+    if (enabled) delete next.disabled
+    else next.disabled = true
+    data.mcpServers = { ...servers, [name]: next }
+  })
 }
 
 export function antigravityPermissionFields(settings: Json | null): PermissionField[] {
@@ -264,7 +365,7 @@ export class AntigravityConfig implements CliConfigAdapter {
             return null
           })
         : Promise.resolve(null)
-    const [mcp, hooks, settings] = await Promise.all([safely(files.mcp), safely(files.hooks), safely(files.settings)])
+    const [mcp, hooks, settings, rules] = await Promise.all([safely(files.mcp), safely(files.hooks), safely(files.settings), safely(files.rules)])
     const servers = mcp && isPlainObject(mcp.mcpServers) ? mcp.mcpServers : {}
     const off = Object.entries(hooks ?? {})
       .filter(([, spec]) => isPlainObject(spec) && spec.enabled === false)
@@ -273,6 +374,7 @@ export class AntigravityConfig implements CliConfigAdapter {
       { label: 'MCP-Server', path: files.mcp, exists: mcp !== null },
       { label: 'Hooks', path: files.hooks, exists: hooks !== null },
       ...(files.settings ? [{ label: 'Berechtigungen', path: files.settings, exists: settings !== null }] : []),
+      ...(files.rules ? [{ label: 'Projektregeln', path: files.rules, exists: rules !== null }] : []),
     ]
     return {
       files: listed,
@@ -284,9 +386,7 @@ export class AntigravityConfig implements CliConfigAdapter {
           'Haben Nutzer und Projekt einen Server desselben Namens, behält ihn der zuerst gestartete. ' +
           'Neue Server gelten ab dem nächsten Start der CLI („Chat neu starten“).',
       },
-      permissions: files.settings
-        ? { fields: antigravityPermissionFields(settings) }
-        : { fields: [], note: 'Regeln für ein Projekt legt Antigravity CLI selbst an (/permissions im Terminal). Nexa bearbeitet die Regeln des Nutzers.' },
+      permissions: files.settings ? { fields: antigravityPermissionFields(settings) } : { fields: antigravityProjectRuleFields(rules), note: PROJECT_NOTE },
       hooks: {
         events: ANTIGRAVITY_HOOK_EVENTS,
         configs: antigravityHooksOut(hooks),
@@ -321,9 +421,9 @@ export class AntigravityConfig implements CliConfigAdapter {
   }
 
   async savePermissions(ctx: CliConfigContext, values: Record<string, PermissionValue>): Promise<void> {
-    const file = antigravityConfigFiles(ctx.account, ctx.scope, ctx.folder).settings
-    if (!file) throw new Error('Regeln für ein Projekt bearbeitet Nexa bei Antigravity CLI nicht.')
-    await updateJsonFile(file, (data) => withAntigravityPermissions(data, values))
+    const files = antigravityConfigFiles(ctx.account, ctx.scope, ctx.folder)
+    if (files.settings) await updateJsonFile(files.settings, (data) => withAntigravityPermissions(data, values))
+    else if (files.rules) await updateJsonFile(files.rules, (data) => withAntigravityProjectRules(data, values))
   }
 
   async saveHooks(ctx: CliConfigContext, save: HooksSave): Promise<void> {

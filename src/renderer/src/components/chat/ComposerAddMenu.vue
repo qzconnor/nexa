@@ -146,10 +146,14 @@ const STATUS: Record<McpServerInfo['status'], { dot: string; text: string }> = {
   failed: { dot: 'bg-destructive', text: 'Fehlgeschlagen' },
   'needs-auth': { dot: 'bg-warning', text: 'Anmeldung nötig' },
   disabled: { dot: 'bg-muted-foreground/40', text: 'Aus' },
+  configured: { dot: 'bg-success/50', text: 'Eingerichtet' },
 }
 
+/** A switch the CLI keeps in the file of a user's server reaches every project (and the terminal). */
+const switchesEverywhere = (server: McpServerInfo) => server.switchIn === 'cli' && server.scope === 'user'
+
 function statusText(server: McpServerInfo): string {
-  if (!server.enabled) return 'Aus in diesem Projekt'
+  if (!server.enabled) return switchesEverywhere(server) ? 'Aus in allen Projekten' : 'Aus in diesem Projekt'
   const parts = [STATUS[server.status].text]
   if (server.tools) parts.push(`${server.tools} Werkzeuge`)
   const scope = scopeText(server)
@@ -345,7 +349,7 @@ function onSearchKey(event: KeyboardEvent): void {
                 <DropdownMenuItem
                   v-else
                   class="gap-2.5"
-                  :title="statusText(row.server)"
+                  :title="switchesEverywhere(row.server) ? `${statusText(row.server)}. Der Schalter gilt in allen Projekten und im Terminal.` : statusText(row.server)"
                   @select="(event: Event) => { event.preventDefault(); void toggle(row.server) }"
                 >
                   <span :class="cn('size-2 shrink-0 rounded-full', row.server.enabled ? STATUS[row.server.status].dot : 'bg-muted-foreground/30')" />

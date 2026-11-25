@@ -1498,16 +1498,28 @@ export class SessionService extends TypedEmitter<Events> {
     const { provider, accountId, cwd, live, project } = this.cliTarget(id)
     const list = (live?.mcpServers ? await live.mcpServers().catch(() => null) : null) ?? (await this.providers.mcpServers(provider, accountId, cwd))
     const off = new Set(project.mcpOff?.[provider] ?? [])
-    return list.map((server) => ({ ...server, enabled: !off.has(server.name) }))
+    // A CLI that keeps the switch itself says whether a server is on; Nexa's own doesn't count there.
+    return list.map((server) => ({ ...server, enabled: server.enabled ?? !off.has(server.name) }))
   }
 
   /**
    * Switches an MCP server on or off for the chat's project: its chats that run take it at once where
-   * the CLI can (Claude Code), the others with their next prompt (Codex starts the thread anew).
+   * the CLI can (Claude Code), the others with their next prompt (Codex starts the thread anew). A CLI
+   * that keeps the switch itself (Antigravity CLI) gets it in its file; its chats with the account then
+   * start anew.
    */
   async setMcpEnabled(id: string, name: string, enabled: boolean): Promise<void> {
     const s = this.get(id)
     const provider = s.meta.provider
+    if (this.providers.switchesMcpItself(provider)) {
+      const { accountId, cwd } = this.cliTarget(id)
+      await this.providers.setMcpEnabled(provider, accountId, cwd, name, enabled)
+      for (const other of this.sessions.values()) {
+        if (other.runProvider !== provider || other.runAccount !== accountId || !other.run?.alive) continue
+        await this.restartForChange(other)
+      }
+      return
+    }
     const projectId = s.meta.projectId
     await this.projects.setMcpEnabled(projectId, provider, name, enabled)
     for (const other of this.sessions.values()) {
