@@ -347,8 +347,8 @@ Nexa legt diese Dateien und Ordner in den Papierkorb, nicht aber Einträge in ge
 
 Laut Doku (code.claude.com/docs/en/worktrees): `claude --worktree <name>` (`-w`) legt
 `.claude/worktrees/<name>` im Repository an, auf einem neuen Branch `worktree-<name>`, standardmäßig vom
-Standard-Branch des Remotes (`origin/HEAD`, nach einem `fetch`; `worktree.baseRef: "head"` nimmt den eigenen
-HEAD), und kopiert ignorierte Dateien, die `.worktreeinclude` nennt, hinein. Ohne Namen erfindet es einen
+Standard-Branch des Remotes (`origin/HEAD`; `worktree.baseRef: "head"` nimmt den eigenen HEAD), und kopiert
+ignorierte Dateien, die `.worktreeinclude` nennt, hinein. Ohne Namen erfindet es einen
 (`bright-running-fox`), einen vorhandenen betritt es wieder. Filter aus der Konfiguration des Repositorys
 laufen dabei nicht. Die Sitzung ist dann „isoliert“: Claude Code verweigert Bearbeitungen, Befehle und
 git-Umleitungen in den Hauptordner. Beim Betreten und Verlassen zieht das Transkript wie bei `/cd` um. Am Ende
@@ -356,13 +356,41 @@ einer interaktiven Sitzung entfernt es einen Worktree ohne Änderungen und neue 
 sonst; mit `-p` räumt es nicht auf, und seine Sperre (`git worktree lock`) bleibt liegen, bis ein späterer
 Lauf sie löst.
 
+Genauer (Doku und Claude Code 2.1.331 selbst):
+
+- **Basis** (`worktree.baseRef`, Vorgabe `"fresh"`): der Standard-Branch von `origin`. Den Namen nimmt es aus
+  `refs/remotes/origin/HEAD`, sofern dessen Branch da ist, sonst `main`, sonst `master` (je nachdem, welcher
+  `refs/remotes/origin/…` existiert), sonst `main`. Hat git den Branch, holt es ihn nur, wenn `FETCH_HEAD` älter
+  als 24 Stunden ist: `git fetch --upload-pack=git-upload-pack origin <branch>` ohne Eingabe (Passwort,
+  Passphrase, neuer SSH-Host zählen als Fehlschlag), höchstens 5 s, sonst bleibt der vorhandene. Hat git ihn
+  nicht, holt es ihn; scheitert das, nimmt es den HEAD. `"head"`: der HEAD des Ordners, in einem Worktree
+  dessen HEAD.
+- **Anlegen**: `git worktree add --no-track -B worktree-<name> <ordner> <commit>^{commit}`. `--no-track`, damit
+  der Branch nicht `origin/main` folgt; `-B` setzt einen übrig gebliebenen Branch `worktree-<name>` auf die Basis
+  zurück.
+- **`.worktreeinclude`** (im Hauptordner, Syntax der `.gitignore`, ohne Groß-/Kleinschreibung): kopiert werden
+  nur ignorierte Dateien. Liste aus `git ls-files --others --ignored --exclude-standard --directory`; Dateien
+  darin, die ein Muster trifft, kommen mit. Ein ganz ignorierter Ordner (`node_modules/`) wird nur durchsucht
+  (`git ls-files … -- <ordner>`), wenn ein Muster in ihn führt: es beginnt mit dem Ordner, sein Teil vor dem
+  ersten `*`, `?` oder `[` passt zum Ordner, der erste Name nach einem führenden `**/` steht im Pfad des
+  Ordners, oder das Muster trifft den Ordner selbst. `.env` sucht also nicht in `node_modules/`. Links
+  überspringt es, ebenso Ziele, deren Weg im Worktree über einen Link führt. Auf Windows kopiert es außerdem
+  `.claude/settings.local.json` (anderswo liest Claude Code sie in einem Worktree aus dem Hauptordner).
+- **Wiederbetreten**: Mit `"fresh"` setzt es einen vorhandenen Worktree auf den Standard-Branch zurück
+  (`git reset --hard`), wenn er noch auf seinem Branch ist, nichts geändert und nichts Neues darin ist und er
+  keine eigenen Commits hat (oder seine Commits gemergt sind und der Remote-Branch gelöscht), keine andere
+  Sitzung ihn sperrt und keine Sandbox schreibt. `.worktreeinclude` gilt nur beim Anlegen.
+
 Nexa nutzt den Schalter nicht, sondern legt den Worktree an derselben Stelle mit git selbst an und startet
 die CLI darin (ARCHITECTURE, „Chats in Worktrees“): Codex kennt keine Worktrees, Nexa muss den Ordner des
 Chats vorher kennen (Dateibaum, Browser, Transkript), und mit `-p` bliebe jeder Worktree gesperrt. Für
 Claude Code ist das eine gewöhnliche Sitzung in diesem Ordner, ihr Transkript liegt unter dem
-Projektschlüssel des Worktrees; `claude --worktree <name>` im Terminal betritt denselben Worktree. Anders als
-Claude Code zweigt Nexa vom HEAD des gewählten Ordners ab (der Dialog nennt ihn) und holt vorher nichts vom
-Remote.
+Projektschlüssel des Worktrees; `claude --worktree <name>` im Terminal betritt denselben Worktree. Basis,
+Holen, `.worktreeinclude`, `settings.local.json` und Wiederbetreten macht Nexa wie oben, mit drei Unterschieden:
+Den Standard-Branch holt Nexa, wenn git ihn noch nicht hat, höchstens 20 s lang. Einen übrig gebliebenen Branch
+`worktree-<name>` setzt Nexa fort statt ihn zurückzusetzen (Nexa lässt ihn nur mit eigenen Commits stehen).
+Beim Wiederbetreten zählt statt der Sitzung „ein anderer Chat arbeitet darin“, und „nichts Eigenes“ heißt: alle
+seine Commits sind schon auf dem Standard-Branch.
 
 ## Codex (`codex app-server`)
 

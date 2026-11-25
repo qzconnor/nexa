@@ -10,20 +10,47 @@ export interface GitBranch {
   detached: boolean
 }
 
+/**
+ * What a new worktree branches from, as Claude Code's `worktree.baseRef`: `fresh` the default branch of
+ * `origin` (`origin/main`), so it starts from what is pushed; `head` the HEAD of the folder it is made from,
+ * with commits not pushed yet.
+ */
+export type WorktreeBaseChoice = 'fresh' | 'head'
+
+/** The files `.worktreeinclude` copies into a new worktree (those git ignores, such as `.env`). */
+export interface WorktreeIncludePreview {
+  /** How many. */
+  files: number
+  /** The first few, relative to the main checkout. */
+  sample: string[]
+  /** Their size; null when there are too many to add up quickly. */
+  bytes: number | null
+}
+
 /** Whether a chat in `cwd` can get a worktree of its own (as `claude --worktree` makes them, shared/worktree.ts). */
 export type WorktreeCheck =
   | {
       ok: true
       /** The repository's main checkout; the worktrees lie in its `.claude\worktrees`. */
       root: string
-      /** What a new worktree starts from: the checkout `cwd` lies in (its HEAD); null when unreadable. */
-      base: GitBranch | null
+      /** The HEAD of the checkout `cwd` lies in, what a new worktree starts from with `head`; null when unreadable. */
+      head: GitBranch | null
+      /**
+       * The default branch of `origin` (`origin/main`), what a new worktree starts from with `fresh`; null
+       * without a remote `origin`. Not `cached`: git has no such branch yet and fetches it first; when
+       * that fails, the worktree starts from HEAD.
+       */
+      fresh: { ref: string; cached: boolean } | null
+      /** What Claude Code's settings choose (`worktree.baseRef`), `fresh` without one. */
+      baseRef: WorktreeBaseChoice
       /** Names of the worktrees made there before (by Claude Code or Nexa); one of them is entered again. */
       existing: string[]
       /** Names whose branch `worktree-<name>` is there without a worktree: a new one goes on with it. */
       branches: string[]
       /** Whether git ignores `.claude/worktrees/`; otherwise the main checkout shows them as new files. */
       ignored: boolean
+      /** What `.worktreeinclude` in the main checkout copies into a new worktree; null without one. */
+      include: WorktreeIncludePreview | null
     }
   | { ok: false; reason: string }
 
@@ -35,6 +62,24 @@ export interface AddedWorktree {
   branch: string
   /** The repository's main checkout. */
   root: string
+  /**
+   * What it starts from when made or brought up to date now (`origin/main`, a branch, a short commit);
+   * missing when one that was there is entered as it was, or a branch left over goes on.
+   */
+  base?: string
+  /** Files `.worktreeinclude` named, copied into a new one, and those that failed. */
+  included?: { copied: string[]; failed: string[] }
+}
+
+/** How a chat's worktree is made (`GitService.addWorktree`). */
+export interface WorktreeOptions {
+  /** What a new one branches from; `fresh` by default, as in Claude Code. */
+  base?: WorktreeBaseChoice
+  /**
+   * Whether a chat works in the folder already: one that is entered again is only brought up to date
+   * with `fresh` while none does.
+   */
+  inUse?: (path: string) => boolean
 }
 
 /** An entry of a folder in the file tree. */

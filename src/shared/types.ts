@@ -1,4 +1,5 @@
 import type { ChatItem, ContextUsage, PermissionMode, ProviderId, SessionRuntime } from './chat'
+import type { WorktreeBaseChoice } from './files'
 
 export type { DeepPartial } from './utils'
 
@@ -517,9 +518,10 @@ export interface SessionMeta {
   /**
    * The worktree the chat was started in („Neuer Chat in Worktree“, `cwd` is its folder): deleting the
    * chat removes it with its branch, unless another chat works in it or work in it would be lost. Gone
-   * when the chat moves out of it.
+   * when the chat moves out of it. `base`: what it branched from when the chat made it or brought it up
+   * to date (`origin/main`, a branch, a short commit).
    */
-  worktree?: { path: string; branch: string }
+  worktree?: { path: string; branch: string; base?: string }
   /**
    * More folders the agent may work in besides its own (the composer's „Ordner hinzufügen“): Claude
    * Code's `--add-dir`, Codex's writable roots.
@@ -548,6 +550,8 @@ export interface SessionCreateInput {
    * The chat goes to the project the worktree lies in (see `SessionService.create`).
    */
   worktree?: string
+  /** What a new worktree branches from (`worktree`); `fresh` by default, as in Claude Code. */
+  worktreeBase?: WorktreeBaseChoice
   provider?: ProviderId
   /** An account of the CLI; missing: its default account. */
   account?: string

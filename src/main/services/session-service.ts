@@ -19,6 +19,7 @@ import {
   type UserItem,
 } from '@shared/chat'
 import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
+import type { WorktreeBaseChoice } from '@shared/files'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { redactSecrets } from '@shared/redact'
 import { plainOutput } from '@shared/terminal'
@@ -324,7 +325,7 @@ export class SessionService extends TypedEmitter<Events> {
     // The folder last: a worktree is made only for a chat that comes about.
     const { project: target, cwd, worktree } =
       typeof input.worktree === 'string'
-        ? await this.worktreePlace(project, input.cwd || project.path, input.worktree)
+        ? await this.worktreePlace(project, input.cwd || project.path, input.worktree, input.worktreeBase === 'head' ? 'head' : 'fresh')
         : { project, cwd: input.cwd ? await this.subfolder(project, input.cwd) : undefined, worktree: undefined }
     const now = Date.now()
     const meta: SessionMeta = {
@@ -356,17 +357,20 @@ export class SessionService extends TypedEmitter<Events> {
    * Where a new chat in a worktree works (`SessionCreateInput.worktree`): in the worktree, made or entered
    * again, of the repository `folder` lies in. Git makes it, not `claude --worktree`, so Codex can work in
    * it as well (see docs/PROTOCOLS.md). The chat goes to `project` when the worktree lies in it, else to
-   * the innermost project it lies in, else to a new one for the repository's main checkout.
+   * the innermost project it lies in, else to a new one for the repository's main checkout. One entered
+   * again is brought up to date with `fresh` only while no other chat works in it.
    */
   private async worktreePlace(
     project: Project,
     folder: string,
     name: string,
+    base: WorktreeBaseChoice,
   ): Promise<{ project: Project; cwd: string | undefined; worktree: NonNullable<SessionMeta['worktree']> }> {
     if (!this.git) throw new Error('Worktrees gibt es hier nicht.')
-    const { path, branch, root } = await this.git.addWorktree(resolve(folder), name)
+    const added = await this.git.addWorktree(resolve(folder), name, { base, inUse: (path) => this.inUse(path) })
+    const { path, branch, root } = added
     const target = inFolder(path, project.path) ? project : (this.projects.containing(path) ?? (await this.projects.create({ path: root })))
-    return { project: target, cwd: folderKey(path) === folderKey(target.path) ? undefined : path, worktree: { path, branch } }
+    return { project: target, cwd: folderKey(path) === folderKey(target.path) ? undefined : path, worktree: { path, branch, ...(added.base ? { base: added.base } : {}) } }
   }
 
   /**

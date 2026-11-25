@@ -226,6 +226,11 @@
       seines Accounts (`claude`/`codex` dort mit dessen Login), mehrere Tabs, verstellbare Breite, Farben
       und Schrift aus dem Theme. Läuft weiter, wenn man den Chat verlässt, und endet mit dem Chat oder Nexa
 - [x] Beantwortete Rückfragen: die Antworten stehen unter ihren Fragen, nicht unter der Marke davor
+- [x] Worktree-Chats wie `claude --worktree`: Sie zweigen vom Standard-Branch von `origin` ab (`origin/main`,
+      vorher geholt, wenn das Repository seit einem Tag nicht geholt wurde) oder wahlweise vom aktuellen Stand
+      des Ordners, vorbelegt mit `worktree.baseRef` von Claude Code. Ignorierte Dateien, die `.worktreeinclude`
+      nennt (`.env` & Co.), kommen mit, der Dialog zeigt welche; auf Windows auch `.claude/settings.local.json`.
+      Ein vorhandener Worktree ohne eigene Arbeit kommt beim Wiederbetreten auf den neuen Stand
 
 ## Als Nächstes
 
@@ -247,8 +252,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] **Übersicht aller Chats nach Zustand** (wartet auf dich, arbeitet, fertig) mit der offenen Frage,
       dem laufenden Werkzeug, Kontext und Limit je Karte; Strg+Umschalt+J springt zum nächsten wartenden
       Chat (`OverviewView.vue`, `lib/overview.ts`, `lib/attention.ts`).
-- [ ] `.worktreeinclude` beim Worktree-Chat (Dateien wie `.env` mitkopieren) und Abzweigen von
-      `origin/HEAD` statt vom HEAD des Ordners, wie Claude Code.
 
 ## Später
 

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
 import type { ChatItem, SessionEvent, SessionRuntime, ToolItem } from '@shared/chat'
+import type { WorktreeOptions } from '@shared/files'
 import { claudeProjectKey, codexPaths } from '../accounts/cli-files'
 import { inFolder } from '@shared/folders'
 import type { AgentProvider, AgentRun, RunInput, RunOptions, RunSink } from '../providers/provider'
@@ -883,12 +884,14 @@ describe('SessionService with worktrees', () => {
   /** Git as SessionService sees it: worktrees in `.claude/worktrees` of `repo`; `kept` stay for the reason given. */
   function fakeGit(repo: string, kept: Record<string, string> = {}) {
     const added: { cwd: string; name: string }[] = []
+    const options: WorktreeOptions[] = []
     const removed: { path: string; branch: string }[] = []
     const git: WorktreeGit = {
-      addWorktree: async (cwd, name) => {
+      addWorktree: async (cwd, name, given = {}) => {
         added.push({ cwd, name })
+        options.push(given)
         const made = name || 'made-up'
-        return { path: join(repo, '.claude', 'worktrees', made), branch: `worktree-${made}`, root: repo }
+        return { path: join(repo, '.claude', 'worktrees', made), branch: `worktree-${made}`, root: repo, base: given.base === 'head' ? 'main' : 'origin/main' }
       },
       removeWorktree: async (path, branch) => {
         if (kept[path]) return kept[path]
@@ -896,7 +899,7 @@ describe('SessionService with worktrees', () => {
         return null
       },
     }
-    return { git, added, removed }
+    return { git, added, options, removed }
   }
 
   beforeEach(() => {
@@ -909,7 +912,25 @@ describe('SessionService with worktrees', () => {
     const meta = await sessions.create({ projectId: 'p1', worktree: 'login' })
     const path = join(projectPath, '.claude', 'worktrees', 'login')
     expect(added).toEqual([{ cwd: projectPath, name: 'login' }])
-    expect(meta).toMatchObject({ projectId: 'p1', cwd: path, worktree: { path, branch: 'worktree-login' } })
+    expect(meta).toMatchObject({ projectId: 'p1', cwd: path, worktree: { path, branch: 'worktree-login', base: 'origin/main' } })
+  })
+
+  it('branches from the default branch of origin unless the dialog chose the folder’s state', async () => {
+    const { git, options } = fakeGit(projectPath)
+    const sessions = await start([], {}, git)
+    await sessions.create({ projectId: 'p1', worktree: 'a' })
+    const head = await sessions.create({ projectId: 'p1', worktree: 'b', worktreeBase: 'head' })
+    await sessions.create({ projectId: 'p1', worktree: 'c', worktreeBase: 'nonsense' as never })
+    expect(options.map((o) => o.base)).toEqual(['fresh', 'head', 'fresh'])
+    expect(head.worktree?.base).toBe('main')
+  })
+
+  it('tells git which worktrees a chat works in, so one entered again isn’t reset under it', async () => {
+    const { git, options } = fakeGit(projectPath)
+    const sessions = await start([], {}, git)
+    const first = await sessions.create({ projectId: 'p1', worktree: 'login' })
+    expect(options[0]!.inUse!(first.worktree!.path)).toBe(true)
+    expect(options[0]!.inUse!(join(projectPath, '.claude', 'worktrees', 'other'))).toBe(false)
   })
 
   it('puts the chat in a project for the repository when the worktree lies outside the project', async () => {
