@@ -81,6 +81,25 @@ describe('ClaudeRun prompts', () => {
     expect(await title).toBe('Reise nach Kyoto')
   })
 
+  it('works on when Claude Code takes a permission request back (auto mode allowed it)', async () => {
+    await run.send({ id: 'p1', text: 'ändere die Datei' })
+    stream({ type: 'command_lifecycle', command_uuid: 'p1', state: 'started' })
+    const ask = (id: string) =>
+      stream({ type: 'control_request', request_id: id, request: { subtype: 'can_use_tool', tool_name: 'Edit', input: { file_path: 'F:\\app\\a.ts' }, tool_use_id: `t-${id}` } })
+    ask('r1')
+    ask('r2')
+    expect(runtime.status).toBe('waiting')
+    // One of two taken back: the other still waits for the user.
+    stream({ type: 'control_cancel_request', request_id: 'r1' })
+    expect(runtime.status).toBe('waiting')
+    stream({ type: 'control_cancel_request', request_id: 'r2' })
+    expect(runtime.status).toBe('running')
+    // A cancel for nothing open changes nothing.
+    runtime.status = 'idle'
+    stream({ type: 'control_cancel_request', request_id: 'r9' })
+    expect(runtime.status).toBe('idle')
+  })
+
   it('works on after an interrupt when a prompt waited', async () => {
     await run.send({ id: 'p1', text: 'lange Aufgabe' })
     // The order Claude Code reports it in: the interrupted turn ends, the waiting prompt starts one.

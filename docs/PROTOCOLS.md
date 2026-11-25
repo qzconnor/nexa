@@ -47,6 +47,9 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   - von Claude: `can_use_tool` (Freigabe, Antwort `allow` mit ggf. geänderter Eingabe oder `deny` mit
     Nachricht). `AskUserQuestion` und `ExitPlanMode` kommen ebenfalls hierüber und werden als Frage bzw.
     Plan angezeigt.
+  - `control_cancel_request` (`request_id`) zieht eine offene Anfrage zurück, etwa im Auto-Modus, wenn
+    der Klassifikator das Werkzeug doch selbst freigibt. Der Turn läuft dann weiter. Ist danach keine
+    Frage mehr offen, steht der Chat wieder auf „arbeitet“ statt auf „wartet“.
 - Der Denkaufwand (`--effort`) lässt sich nicht im laufenden Prozess ändern: Nexa beendet den Prozess,
   der nächste Turn startet mit `--resume`. Ebenso Ultracode: `--settings '{"ultracode":true}'` (bzw.
   `false`) gilt für den Prozess, ohne die Option gilt, was in den Einstellungen der CLI steht.
