@@ -937,6 +937,15 @@ und den Zeichenketten der Binärdatei.
   die Variable, wenn es keinen Schlüsselbund gibt (Linux ohne D-Bus-Sitzung); Nexa liest sie deshalb bei
   jedem Account zuerst. Felder `expiry` und `refresh_token` wie bei einem Go-`oauth2.Token` (angenommen,
   ein echter Token lag nicht vor); was Nexa nicht lesen kann, gilt als angemeldet.
+- **Eigenes Update**: Liegt die letzte Prüfung (`antigravity-cli/last_check.timestamp`) länger zurück,
+  startet jeder Aufruf von agy einen eigenen Update-Prozess (Log: „auto_updater.go … Spawned background
+  update process with PID …“, Ergebnis in `antigravity-cli/updater/update_status.json`). Unter Windows
+  bekommt dieser Prozess eine neue Konsole. Ist Windows Terminal das Standardterminal, geht dabei kurz
+  ein Terminalfenster auf, auch wenn Nexa agy versteckt startet; meist beim Start von Nexa, das
+  `agy -p /usage` aufruft. `AGY_CLI_DISABLE_AUTO_UPDATE=true` schaltet das ab (nur `true`, `1` wirkt
+  nicht; Log: „Auto-update disabled via environment variable AGY_CLI_DISABLE_AUTO_UPDATE“). Nexa setzt
+  die Variable für jede CLI, die es startet (`cliEnv`). Im Terminal und mit `agy update` aktualisiert
+  sich agy weiter selbst.
 - **Nicht dafür**: `AGY_ACCOUNT` wählt eines der verbundenen Konten (etwa GitHub) für Befehle in der
   Sandbox („AGY_ACCOUNT=account-2 gh api user“); `ANTIGRAVITY_CREDENTIAL_SCOPE` (sonst
   `%APPDATA%\antigravity\credential-user-scope`) trennt die Zugangsdaten von Plugins und MCP-Servern.
