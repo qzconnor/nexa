@@ -19,9 +19,19 @@ import Markdown from './Markdown.vue'
  * in the chat where it did, as any other. Its pictures open large in Nexa's viewer. An `editable` one
  * can be changed in place and sent anew: what came after it goes (`sessions.edit`), while the agent
  * works (`busy`) its answer too. A message from another chat's agent (`from`) is outlined instead of
- * filled and names that chat, which it opens.
+ * filled and names that chat, which it opens. The first one waiting can go now (`sendNow`): that stops
+ * the turn, and the CLI takes the waiting prompts up at once (Claude Code as a turn of their own,
+ * Antigravity CLI from Nexa's queue).
  */
-const props = defineProps<{ item: UserItem; showProvider?: boolean; queued?: boolean; sessionId?: string; editable?: boolean; busy?: boolean }>()
+const props = defineProps<{
+  item: UserItem
+  showProvider?: boolean
+  queued?: boolean
+  sendNow?: boolean
+  sessionId?: string
+  editable?: boolean
+  busy?: boolean
+}>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 /** The sending chat as it is called now (renamed since, perhaps); gone: as it was called then. */
@@ -62,6 +72,19 @@ async function submit(): Promise<void> {
   }, 'Senden fehlgeschlagen')
   sending.value = false
   if (sent) editing.value = false
+}
+
+const stopping = ref(false)
+
+/** The message leaves the queue once the CLI takes it up, and this with it; until then it says so. */
+async function sendNowClick(): Promise<void> {
+  if (!props.sessionId || stopping.value) return
+  stopping.value = true
+  const stopped = await attempt(async () => {
+    await sessions.interrupt(props.sessionId!)
+    return true
+  }, 'Abbrechen fehlgeschlagen')
+  if (!stopped) stopping.value = false
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -150,14 +173,24 @@ function onKey(event: KeyboardEvent): void {
         <PencilIcon />
       </Button>
     </div>
-    <span
-      v-if="queued"
-      class="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
-      v-tooltip="'Gesendet, während der Agent arbeitet: Er nimmt sie bei seinem nächsten Schritt auf.'"
-    >
-      <ClockIcon class="size-3" />
-      Wartet
-    </span>
+    <div v-if="queued" class="flex items-center gap-1.5 text-[0.72rem] text-muted-foreground">
+      <span class="flex items-center gap-1" v-tooltip="'Gesendet, während der Agent arbeitet: Er nimmt sie bei seinem nächsten Schritt auf.'">
+        <ClockIcon class="size-3" />
+        Wartet
+      </span>
+      <template v-if="sendNow && sessionId">
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          :disabled="stopping"
+          class="rounded-sm font-medium text-foreground/80 outline-none enabled:hover:text-foreground enabled:hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-70"
+          v-tooltip="'Bricht ab, woran der Agent gerade arbeitet, und schickt die Nachricht sofort'"
+          @click="sendNowClick"
+        >
+          {{ stopping ? 'Wird gesendet …' : 'Jetzt senden' }}
+        </button>
+      </template>
+    </div>
     <span v-else-if="showProvider" class="flex items-center gap-1 text-[0.7rem] text-muted-foreground">
       an <ProviderIcon :provider="item.provider" class="size-3" />
     </span>

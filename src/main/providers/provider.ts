@@ -99,6 +99,8 @@ export interface RunOptions {
   mcpOff?: string[]
   /** More folders the agent may work in (Claude `--add-dir`, Codex writable roots). */
   dirs?: string[]
+  /** Claude: guess the user's next prompt after each answer (`SessionRuntime.suggestion`). */
+  promptSuggestions?: boolean
   extraArgs: string[]
 }
 
@@ -110,6 +112,8 @@ export interface AgentRun {
   respond(itemId: string, response: InteractionResponse): Promise<void>
   setModel(model: string | undefined, effort: string | undefined): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
+  /** Guesses of the next prompt on or off (`RunOptions.promptSuggestions`), for CLIs that make them. */
+  setPromptSuggestions?(on: boolean): Promise<void>
   /** The end of a shell task's output (`ShellState.taskId`), for CLIs that keep it. */
   shellOutput?(taskId: string): Promise<ShellOutput>
   /** Ends a shell task. */

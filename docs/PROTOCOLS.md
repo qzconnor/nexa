@@ -26,6 +26,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   nennt die Antwort `still_queued: [uuid…]`; dann kommt das `result` des abgebrochenen Turns, `cancelled`
   für den alten Befehl und `started` für den wartenden, der als eigener Turn läuft. Nexa zeigt eine
   solche Nachricht bis `started` unter dem Chat und setzt sie dann an dieser Stelle in den Verlauf.
+  „Jetzt senden“ an der ersten wartenden schickt genau dieses `interrupt` (wie Strg+X Strg+S in der TUI).
   `--replay-user-messages` würde die Nachricht beim Aufnehmen noch einmal ausgeben (`isReplay: true`),
   Nexa braucht das nicht.
 - **Turn ohne Prompt** (geprüft mit 2.1.331): Endet eine Shell oder ein Agent im Hintergrund, nachdem der
@@ -37,6 +38,24 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   Agents (mit `parent_tool_use_id`) beginnen keinen Turn. Fragt ein Agent im Hintergrund nach dem Turn,
   ist der Chat nach der Antwort wieder in Ruhe (`idle`) statt auf „wartet“. `generate_session_title` und
   `get_context_usage` nach einem Turn schicken nur ihre `control_response`.
+- **Vorschlag für den nächsten Prompt** (abgelesen an 2.1.331, nicht an einem echten Turn geprüft):
+  `promptSuggestions: true` im `initialize` (oder `--prompt-suggestions`) schaltet ihn ein. Nach jedem
+  Turn kommt dann, etwas nach dem `result`, `{"type":"prompt_suggestion","suggestion":"…","uuid",
+  "session_id"}`.
+  - **Erzeugung**: Claude Code fragt dafür dasselbe Modell noch einmal, mit dem Gespräch aus dem Cache
+    (kein Cache-Schreiben), ohne Werkzeuge und mit festem Auftrag: vorhersagen, was der Nutzer tippen
+    würde, 2–12 Wörter, sonst nichts. Antworten im Ton von Claude, Fragen und Lob verwirft es.
+  - **Kein Vorschlag**: in den ersten zwei Antworten, nach einer fehlgeschlagenen, bei offener Freigabe
+    oder Rückfrage, im Plan-Modus, kurz vor dem Limit, ohne Cache-Treffer und nach mehr als 8 Turns, in
+    denen der Nutzer nicht da war.
+  - **Freigabe**: Die Einstellung `promptSuggestionEnabled` von Claude Code (ab Werk an) gilt; bei
+    Abo-Accounts entscheidet zusätzlich ein Feature-Flag des Servers. `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION`
+    erzwingt ihn (`1`) oder schaltet ihn ab (`0`); Nexa setzt die Variable nicht.
+  - **Pause**: `set_prompt_suggestions_paused { paused }` hält ihn zur Laufzeit an, gedacht für Hosts ohne
+    sichtbare Eingabe. Abschalten ginge nur mit einem neuen `initialize`. Deshalb fragt Nexa immer danach
+    und pausiert, solange die Einstellung „Vorschlag für den nächsten Prompt“ aus ist.
+  - **Anzeige**: Nexa zeigt den Vorschlag grau im leeren Eingabefeld (Tab übernimmt), bis der nächste
+    Prompt oder Turn beginnt; einen, der erst während des nächsten Turns kommt, verwirft es.
 - **Ausgabe**: `system/init` (Sitzungs-ID, Modell, Werkzeuge), `stream_event` (Teil-Deltas für Text und
   Thinking), `assistant`/`user` (fertige Blöcke, `tool_use`/`tool_result`), `result` (Turn-Ende mit
   Kosten und Tokens), `rate_limit_event` (Usage-Fenster mit Prozent und Reset).
@@ -460,6 +479,8 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   (`{ threadId, input, expectedTurnId, clientUserMessageId? }`, Antwort `{ turnId }`; ist der Turn
   schon vorbei, ein Fehler). Beide nehmen `clientUserMessageId`, das als `clientId` am `userMessage`-Item
   zurückkommt, bei `turn/steer` sofort: Codex nimmt die Nachricht gleich in den laufenden Turn auf.
+  Darum wartet bei Codex keine Nachricht unter dem Chat, und „Jetzt senden“ gibt es nicht. Einen
+  Vorschlag für den nächsten Prompt wie Claude Code hat der App-Server nicht (0.169).
   `turn/interrupt` bricht ab. Weitere Ordner zum Schreiben stehen in `sandboxPolicy.writableRoots`
   (`{ type: "workspaceWrite", writableRoots, networkAccess }`) von `turn/start`.
 - **Warteschlange** (nur mit `capabilities.experimentalApi`, abgelesen an 0.169, Nexa nutzt sie nicht):
@@ -792,7 +813,12 @@ Verlauf ab), `session/prompt { sessionId, prompt: ContentBlock[] }`, `session/se
   Ein Wechsel zu „Volle Rechte“ oder davon weg startet den Prozess neu und setzt die Sitzung fort.
 - **Prompt**: Nexa hält Prompts in einer eigenen Warteschlange und schickt den nächsten, wenn der Turn
   endet. Die Antwort von `session/prompt` beendet ihn: `{ stopReason: end_turn | cancelled, usage {
-  inputTokens, outputTokens } }`.
+  inputTokens, outputTokens } }`. „Jetzt senden“ an einem wartenden Prompt schickt `session/cancel`;
+  nach `cancelled` geht der nächste aus der Warteschlange raus.
+- **Vorschläge für die Antwort**: ACP gibt keine weiter. Die Engine kennt einen Schritt
+  `CortexStepSuggestedResponses { suggestions[] }` (Werkzeug `suggested_response`, abschaltbar über
+  `SuggestedResponseConfig.force_disable`), in 1.5.17 nur in der Binärdatei gesehen; ob agy ihn nutzt
+  und der lokale Server ihn zeigt, ist ungeprüft.
 - **Fehler als Text**: Scheitert eine Anfrage an das Modell, endet der Turn mit `end_turn`, der Fehler steht
   als Antworttext da („⚠ agent executor error: …“). Nexa beendet den Turn dann als Fehler mit diesem Text.
   Nennt er das Kontingent („You have exhausted your quota on this model.“, „individual quota reached“,

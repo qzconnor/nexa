@@ -55,6 +55,7 @@ export function defaultSettings(): AppSettings {
       showThinking: true,
       collapseDiffs: false,
       enterSends: true,
+      promptSuggestions: true,
       autoTitles: true,
       deleteCliConversations: true,
       shell: 'powershell',

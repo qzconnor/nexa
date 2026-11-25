@@ -159,6 +159,63 @@ describe('ClaudeRun prompts', () => {
   })
 })
 
+describe('ClaudeRun prompt suggestions', () => {
+  let runtime: Partial<SessionRuntime>
+  const stream = (message: unknown) => fake.options!.onMessage(message)
+  const requests = (subtype: string) =>
+    fake.written
+      .map((m) => (m as { request?: Record<string, unknown> }).request)
+      .filter((request): request is Record<string, unknown> => request?.subtype === subtype)
+  const start = (promptSuggestions: boolean) => {
+    fake.written = []
+    runtime = {}
+    const sink: RunSink = {
+      item: () => {},
+      delta: () => {},
+      runtime: (patch) => Object.assign(runtime, patch),
+      cliSession: () => {},
+      usage: () => {},
+      taken: () => {},
+      exited: () => {},
+    }
+    return new ClaudeRun(binary, { ...options, promptSuggestions }, sink)
+  }
+  const guess = (suggestion: string) => stream({ type: 'prompt_suggestion', suggestion, uuid: 'u', session_id: 'c' })
+
+  it('asks Claude Code for them and shows its guess after the turn, until the next one starts', async () => {
+    const run = start(true)
+    expect(requests('initialize')).toEqual([expect.objectContaining({ promptSuggestions: true })])
+    expect(requests('set_prompt_suggestions_paused')).toEqual([])
+    await run.send({ id: 'p1', text: 'fix the bug' })
+    // A guess about the turn before comes too late once this one runs.
+    guess('run the tests')
+    expect(runtime.suggestion).toBeUndefined()
+    stream({ type: 'result', subtype: 'success', duration_ms: 10 })
+    guess('  run the tests ')
+    expect(runtime.suggestion).toBe('run the tests')
+    await run.send({ id: 'p2', text: 'run the tests' })
+    expect(runtime.suggestion).toBeUndefined()
+  })
+
+  it('pauses them while the setting is off, and takes the pause back', async () => {
+    const run = start(false)
+    // Asked for all the same: only `initialize` turns them on, a pause can be undone.
+    expect(requests('initialize')).toEqual([expect.objectContaining({ promptSuggestions: true })])
+    expect(requests('set_prompt_suggestions_paused')).toEqual([expect.objectContaining({ paused: true })])
+    guess('yes')
+    expect(runtime.suggestion).toBeUndefined()
+
+    await run.setPromptSuggestions(true)
+    expect(requests('set_prompt_suggestions_paused').at(-1)).toMatchObject({ paused: false })
+    guess('yes')
+    expect(runtime.suggestion).toBe('yes')
+
+    await run.setPromptSuggestions(false)
+    expect(runtime.suggestion).toBeUndefined()
+    expect(requests('set_prompt_suggestions_paused').at(-1)).toMatchObject({ paused: true })
+  })
+})
+
 describe('ClaudeRun MCP Apps', () => {
   let items: Map<string, ChatItem>
   let run: ClaudeRun

@@ -5,7 +5,7 @@ import type { UpdateService } from './update-service'
 /** The window's side of the updates: state, check, download, install and the release notes. */
 export function registerUpdatesIpc(updates: UpdateService): void {
   handle(UpdatesInvoke.state, () => updates.getState())
-  handle(UpdatesInvoke.check, () => updates.check())
+  handle(UpdatesInvoke.check, () => updates.check(true))
   handle(UpdatesInvoke.download, () => updates.download())
   handle(UpdatesInvoke.install, () => updates.install())
   handle(UpdatesInvoke.releases, () => updates.releases())

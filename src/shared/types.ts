@@ -64,6 +64,11 @@ export interface ChatSettings {
   /** Enter sends; with Shift+Enter a new line. Off: Ctrl+Enter sends. */
   enterSends: boolean
   /**
+   * Claude Code guesses after each answer what the user writes next, shown in the empty composer
+   * (`SessionRuntime.suggestion`). It asks its model once more for it, from the cached conversation.
+   */
+  promptSuggestions: boolean
+  /**
    * A new chat gets its title from the model after the first prompt; until then, and when off, the
    * prompt's first line. Codex asks its model in a short request of its own for it.
    */

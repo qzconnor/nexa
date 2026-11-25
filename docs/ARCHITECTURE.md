@@ -765,7 +765,9 @@ nur er, ohne Seitenleiste, Startseite und Schnellsuche.
 - **Updates** (`components/settings/SettingsUpdates.vue`, `components/updates/*`, `stores/updates.ts`): Zustand
   des Updaters, Herunterladen und Neustart (mit Rückfrage, wenn noch Antworten laufen), Versionshinweise der
   Releases mit den PR-Beschreibungen als „Details“. Ein Punkt am Einstellungen-Knopf der Sidebar zeigt ein
-  wartendes Update oder ungelesene Neuerungen nach einem Update.
+  wartendes Update oder ungelesene Neuerungen nach einem Update, aber nur für eines, das die automatische
+  Suche fand: Fand der Nutzer es selbst („Nach Updates suchen“, `UpdateState.foundByUser`), weiß er davon.
+  Das gilt auch nach dem Neustart, der es installiert (`nexa.quietVersion` im `localStorage`).
 
 ## Einstellungen übertragen
 

@@ -47,8 +47,9 @@ const updates = useUpdatesStore()
 const chat = useChatActions()
 
 /**
- * The updates are a section of the settings: a waiting update pulses on their button, release notes
- * still unread after an update get a dot. Either way the button then opens the updates.
+ * The updates are a section of the settings: an update the automatic check found pulses on their
+ * button, release notes still unread after an update get a dot. Either way the button then opens the
+ * updates. One the user looked for themselves gets neither (`foundByUser`): they know of it.
  */
 const settingsHint = computed(() =>
   updates.hasUpdate
@@ -434,7 +435,7 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
       >
         <SettingsIcon />
         <span class="flex-1 text-left">Einstellungen</span>
-        <span v-if="updates.hasUpdate" class="relative mr-1 flex size-2" aria-hidden="true">
+        <span v-if="updates.announced" class="relative mr-1 flex size-2" aria-hidden="true">
           <span class="absolute size-full animate-ping rounded-full bg-success opacity-75" />
           <span class="relative size-2 rounded-full bg-success" />
         </span>

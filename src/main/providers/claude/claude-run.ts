@@ -44,6 +44,8 @@ const CONTEXT_TIMEOUT_MS = 8000
 export const CLAUDE_MCP_APPS_ENV = { CLAUDE_CODE_MCP_APPS_HOST: '1' } as const
 /** An MCP tool the list doesn't know yet (a server connected since): the list is asked again after this long. */
 const TOOL_UIS_STALE_MS = 5000
+/** Claude Code asks for 2–12 words; more is not a guess at a prompt. */
+const MAX_SUGGESTION = 300
 
 const MODE_FLAG: Record<PermissionMode, string> = {
   ask: 'default',
@@ -168,6 +170,8 @@ export class ClaudeRun implements AgentRun {
   private readonly appResults = new Map<string, McpAppToolResult>()
   /** MCP tools whose page is being looked up, by tool id. */
   private readonly appLookups = new Set<string>()
+  /** Guesses of the next prompt are wanted (`setPromptSuggestions`). */
+  private suggestions: boolean
 
   constructor(
     binary: CliBinary,
@@ -175,6 +179,7 @@ export class ClaudeRun implements AgentRun {
     private readonly sink: RunSink,
   ) {
     this.model = options.model
+    this.suggestions = options.promptSuggestions ?? false
     this.process = new JsonlProcess(binary.command(claudeArgs(options)), {
       cwd: options.cwd,
       env: cliEnv({ CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', ...CLAUDE_MCP_APPS_ENV, ...options.account.set }, options.account.unset),
@@ -183,8 +188,9 @@ export class ClaudeRun implements AgentRun {
     })
     sink.runtime({ status: 'starting', connected: true })
     // Counted at once, not only after the first answer: a resumed conversation is as full as it was,
-    // a new one starts with the system prompt and the tools.
-    void this.request({ subtype: 'initialize' })
+    // a new one starts with the system prompt and the tools. Prompt suggestions are asked for always
+    // and paused while the setting is off: only `initialize` turns them on, a pause can be undone.
+    void this.request({ subtype: 'initialize', promptSuggestions: true })
       .then(() => {
         // Started without a prompt (a restart): ready now. Its `init` only comes with the first prompt.
         if (this.turnStartedAt === null) sink.runtime({ status: 'idle' })
@@ -195,6 +201,18 @@ export class ClaudeRun implements AgentRun {
     // written before the first prompt, they are through before it is read.
     for (const name of options.mcpOff ?? []) this.mcpOff.add(name)
     this.applyMcpOff()
+    if (!this.suggestions) this.pauseSuggestions(true)
+  }
+
+  private pauseSuggestions(paused: boolean): void {
+    void this.request({ subtype: 'set_prompt_suggestions_paused', paused }).catch(() => undefined)
+  }
+
+  async setPromptSuggestions(on: boolean): Promise<void> {
+    if (on === this.suggestions) return
+    this.suggestions = on
+    if (!on) this.sink.runtime({ suggestion: undefined })
+    if (this.process.alive) this.pauseSuggestions(!on)
   }
 
   private applyMcpOff(): void {
@@ -475,7 +493,19 @@ export class ClaudeRun implements AgentRun {
         return this.onControlResponse(m)
       case 'command_lifecycle':
         return this.onLifecycle(m)
+      case 'prompt_suggestion':
+        return this.onSuggestion(m)
     }
+  }
+
+  /**
+   * Claude Code's guess at what the user writes next, a while after a turn ended (`promptSuggestions`).
+   * Too late once the next turn runs: it was about the one before.
+   */
+  private onSuggestion(m: Json): void {
+    const text = str(m.suggestion)?.trim()
+    if (!text || !this.suggestions || this.turnStartedAt !== null) return
+    this.sink.runtime({ suggestion: text.slice(0, MAX_SUGGESTION) })
   }
 
   /**
@@ -1074,7 +1104,7 @@ export class ClaudeRun implements AgentRun {
 
   private turnStarted(): void {
     if (this.turnStartedAt === null) this.turnStartedAt = Date.now()
-    this.sink.runtime({ status: 'running', turnStartedAt: this.turnStartedAt, error: undefined })
+    this.sink.runtime({ status: 'running', turnStartedAt: this.turnStartedAt, error: undefined, suggestion: undefined })
   }
 
   /**
@@ -1088,7 +1118,7 @@ export class ClaudeRun implements AgentRun {
     if (this.interactions.size === 0) return this.turnStarted()
     // An agent in the background still asks: the chat waits for that answer while the turn runs.
     this.turnStartedAt = Date.now()
-    this.sink.runtime({ turnStartedAt: this.turnStartedAt, error: undefined })
+    this.sink.runtime({ turnStartedAt: this.turnStartedAt, error: undefined, suggestion: undefined })
   }
 
   /** Items still streaming when a turn ends are finished as they are. */

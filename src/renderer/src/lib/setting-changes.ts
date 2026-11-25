@@ -40,6 +40,7 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'chat.collapseDiffs': { anchor: 'chat.collapseDiffs' },
   'chat.autoTitles': { anchor: 'chat.autoTitles' },
   'chat.enterSends': { anchor: 'chat.enterSends' },
+  'chat.promptSuggestions': { anchor: 'chat.promptSuggestions' },
   'chat.shell': { anchor: 'chat.shell' },
   'chat.voiceMicrophone': { anchor: 'chat.voiceMicrophone', label: 'Mikrofon der Spracheingabe' },
   'chat.voiceLanguage': { anchor: 'chat.voiceLanguage', label: 'Sprache der Spracheingabe' },
