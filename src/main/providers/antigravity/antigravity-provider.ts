@@ -1,10 +1,12 @@
+import { mkdir, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, normalize } from 'node:path'
 import type { ChatItem } from '@shared/chat'
 import type { CommandOption, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus } from '@shared/types'
 import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
-import { antigravityLoggedIn, ensureApiKeySettings, refreshAntigravityLogin } from '../../accounts/antigravity-account'
+import type { LoginCommand } from '../../accounts/account-login'
+import { antigravitySignedIn, ensureApiKeySettings, refreshAntigravityKeyring } from '../../accounts/antigravity-account'
 import { defaultAntigravityDir } from '../../accounts/cli-files'
 import { AcpConnection } from '../acp/acp-connection'
 import { CliBinary, cliEnv } from '../cli-binary'
@@ -29,10 +31,27 @@ const FALLBACK_MODELS: ModelOption[] = [
 const asCommand = (c: { name: string; description?: string }): CommandOption => ({ name: c.name, description: c.description, kind: 'command', insert: `/${c.name}` })
 
 /**
- * Antigravity CLI through the Agent Client Protocol (`agy acp`): a process per chat. Its Google login
- * is one per user, in the keyring; an account with an API key gets its own data folder
- * (`--gemini-dir`). ACP tells the plan of the login; its quota comes from `agy -p "/usage"`
- * (docs/PROTOCOLS.md).
+ * A home folder for `agy -p` whose `.gemini` is a link to the account's folder (a junction on
+ * Windows: no rights needed). Made anew each time, in case the account's folder moved.
+ */
+async function homeFor(accountId: string, dir: string): Promise<string> {
+  const home = join(tmpdir(), 'nexa-agy-home', accountId)
+  const link = join(home, '.gemini')
+  await mkdir(home, { recursive: true })
+  // unlink removes only the link, never what it leads to.
+  await unlink(link).catch(() => undefined)
+  await symlink(dir, link, 'junction').catch((error: NodeJS.ErrnoException) => {
+    // Another reading of the same account made it meanwhile.
+    if (error.code !== 'EEXIST') throw error
+  })
+  return home
+}
+
+/**
+ * Antigravity CLI through the Agent Client Protocol (`agy acp`): a process per chat. The standard
+ * account's Google login is the keyring's (one per user); every other account has its own data folder
+ * (`--gemini-dir`) with its own Google login (file tokens) or an API key. ACP tells the plan of the
+ * login; its quota comes from `agy -p "/usage"` (docs/PROTOCOLS.md).
  */
 export class AntigravityProvider implements AgentProvider {
   readonly id = 'antigravity' as const
@@ -42,7 +61,8 @@ export class AntigravityProvider implements AgentProvider {
   private models_: ModelOption[] | null = null
   private modelsLoading: Promise<ModelOption[]> | null = null
   private commands_: CommandOption[] | null = null
-  private tier: string | undefined
+  /** The plan of each account's login, from its last session (by account id). */
+  private readonly tiers = new Map<string, string>()
   private readonly runs = new Map<string, Set<AntigravityRun>>()
   /** When the quota of an account was last read. */
   private readonly usageReadAt = new Map<string, number>()
@@ -68,13 +88,14 @@ export class AntigravityProvider implements AgentProvider {
     if (!path) return base
     const version = await this.binary.version()
     const apiKey = !!account.set.GEMINI_API_KEY
-    // A login Nexa can't see (another system's keyring) counts as there: Antigravity says so at the first prompt.
-    const loggedIn = apiKey || (await refreshAntigravityLogin()) !== false
+    await refreshAntigravityKeyring()
+    // A keyring Nexa can't look into counts as signed in: Antigravity says so at the first prompt.
+    const loggedIn = antigravitySignedIn(account)
     return {
       ...base,
       version: version ?? undefined,
       loggedIn,
-      account: loggedIn ? { authMode: apiKey ? 'gemini-api-key' : 'oauth-personal', plan: apiKey ? undefined : this.tier } : undefined,
+      account: loggedIn ? { authMode: apiKey ? 'gemini-api-key' : 'oauth-personal', plan: apiKey ? undefined : this.tiers.get(account.accountId) } : undefined,
     }
   }
 
@@ -93,7 +114,7 @@ export class AntigravityProvider implements AgentProvider {
    * Antigravity keeps no conversation that never had a prompt.
    */
   private async probe(account: AccountEnv): Promise<ModelOption[]> {
-    if (account.set.GEMINI_API_KEY === undefined && antigravityLoggedIn() === false) return []
+    if (!antigravitySignedIn(account)) return []
     const conn = new AcpConnection(
       this.binary.command(this.argsOf(account, [])),
       { cwd: tmpdir(), env: cliEnv(account.set, account.unset), name: NAME },
@@ -109,7 +130,7 @@ export class AntigravityProvider implements AgentProvider {
     try {
       await this.withTimeout(conn.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'nexa', version: '1' } }))
       const session = await this.withTimeout(conn.request('session/new', { cwd: tmpdir(), mcpServers: [] }))
-      this.tier = tierOf(session._meta) ?? this.tier
+      this.takeTier(account.accountId, tierOf(session._meta))
       return modelsOf(session.configOptions, session.models)
     } finally {
       await conn.stop(1000).catch(() => undefined)
@@ -130,6 +151,10 @@ export class AntigravityProvider implements AgentProvider {
 
   async commands(): Promise<CommandOption[]> {
     return this.commands_ ?? []
+  }
+
+  private takeTier(accountId: string, tier: string | undefined): void {
+    if (tier) this.tiers.set(accountId, tier)
   }
 
   private takeCommands(list: { name: string; description?: string }[]): void {
@@ -162,9 +187,9 @@ export class AntigravityProvider implements AgentProvider {
     throw new Error('Plugins von Antigravity CLI schaltet Nexa noch nicht.')
   }
 
-  /** The account's folder and the chat's other folders; `extra` after them. */
-  private argsOf(account: AccountEnv, extra: string[]): string[] {
-    return ['acp', ...(account.dir ? ['--gemini-dir', account.dir] : []), ...extra, ...this.settings().extraArgs]
+  /** The account's folder, then `extra`, then the arguments from Settings › CLIs (`settingsArgs`). */
+  private argsOf(account: AccountEnv, extra: string[], settingsArgs = true): string[] {
+    return ['acp', ...(account.dir ? ['--gemini-dir', account.dir] : []), ...extra, ...(settingsArgs ? this.settings().extraArgs : [])]
   }
 
   async start(options: RunOptions, sink: RunSink): Promise<AgentRun> {
@@ -198,7 +223,7 @@ export class AntigravityProvider implements AgentProvider {
     accountRuns.add(run)
     try {
       await run.connect()
-      this.tier = run.tier ?? this.tier
+      this.takeTier(account.accountId, run.tier)
     } catch (error) {
       accountRuns.delete(run)
       await conn.stop(1000).catch(() => undefined)
@@ -219,17 +244,25 @@ export class AntigravityProvider implements AgentProvider {
     return this.readUsage(account)
   }
 
+  /** Only a Google login has a quota. Without one, `agy -p` would wait for a sign-in in the browser. */
   private hasQuota(account: AccountEnv): boolean {
-    return account.set.GEMINI_API_KEY === undefined && antigravityLoggedIn() !== false && !!this.binary.resolve()
+    return account.set.GEMINI_API_KEY === undefined && antigravitySignedIn(account) && !!this.binary.resolve()
   }
 
   /**
    * `/usage` in print mode answers without a turn, without quota and without a conversation left
-   * behind. It knows no `--gemini-dir` (only `acp` does): the Google login is the user's anyway.
+   * behind. It knows no `--gemini-dir` (only `acp` does) and reads `<home>/.gemini`: an account with a
+   * folder of its own gets a home of its own whose `.gemini` leads there, or it would read the
+   * standard account's login.
    */
   private async readUsage(account: AccountEnv): Promise<RunUsage> {
     this.usageReadAt.set(account.accountId, Date.now())
-    const result = await this.binary.output(['-p', '/usage', '--output-format', 'json'], { cwd: tmpdir(), env: cliEnv(account.set, account.unset), timeout: 30_000 })
+    const env = cliEnv(account.set, account.unset)
+    if (account.dir) {
+      const home = await homeFor(account.accountId, account.dir)
+      Object.assign(env, { USERPROFILE: home, HOME: home })
+    }
+    const result = await this.binary.output(['-p', '/usage', '--output-format', 'json'], { cwd: tmpdir(), env, timeout: 30_000 })
     // The JSON is the output's last line; a notice of the updater may come before it.
     const line = result.stdout.trim().split(/\r?\n/).pop() ?? ''
     let parsed: unknown = null
@@ -239,7 +272,7 @@ export class AntigravityProvider implements AgentProvider {
       // Below as no quota.
     }
     const quota = usageOfQuota(parsed)
-    const base = { provider: 'antigravity' as const, plan: this.tier, updatedAt: Date.now(), source: 'api' as const }
+    const base = { provider: 'antigravity' as const, plan: this.tiers.get(account.accountId), updatedAt: Date.now(), source: 'api' as const }
     if (quota) return { ...base, ...quota }
     const reason = result.stderr.trim().split(/\r?\n/).pop() || 'keine Angaben'
     return { ...base, windows: [], message: `Antigravity CLI nennt keine Kontingente (${reason}).` }
@@ -341,11 +374,30 @@ export class AntigravityProvider implements AgentProvider {
   }
 
   /**
-   * Antigravity CLI signs in to Google in its terminal interface only; its ACP server's `authenticate`
-   * can't be followed without a terminal. Nexa names the way (provider-service.ts).
+   * `agy acp --login`: prints the Google sign-in link (and opens it), then reads the code the page
+   * shows after the login from stdin, saves the login and ends. ACP's `authenticate` would open the
+   * browser too but name no link, and couldn't take a code.
    */
-  loginCommand(): null {
-    return null
+  loginCommand(account: AccountEnv): LoginCommand {
+    // The account's variables come with the start (AccountLogins), file tokens among them.
+    return this.binary.command(this.argsOf(account, ['--login'], false))
+  }
+
+  /** ACP's `logout`: Antigravity removes the login from where the account keeps it (keyring or token file). */
+  async logout(account: AccountEnv): Promise<void> {
+    const conn = new AcpConnection(
+      this.binary.command(this.argsOf(account, [])),
+      { cwd: tmpdir(), env: cliEnv(account.set, account.unset), name: NAME },
+      { notification: () => undefined, request: (id) => conn.respondError(id, 'Nicht unterstützt.'), exited: () => undefined },
+    )
+    try {
+      await this.withTimeout(conn.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'nexa', version: '1' } }))
+      await this.withTimeout(conn.request('logout', {}))
+    } finally {
+      await conn.stop(1000).catch(() => undefined)
+    }
+    this.tiers.delete(account.accountId)
+    await refreshAntigravityKeyring()
   }
 
   async forget(accountId: string): Promise<void> {

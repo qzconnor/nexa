@@ -771,7 +771,7 @@ Rückfrage brauchen (`tool-grant.ts`), erlaubt `AntigravityRun` selbst.
   schickt „Der Plan ist freigegeben. Setze ihn jetzt um.“, Wünsche gehen als „Überarbeite den Plan: …“.
   Ein anderer Prompt statt einer Antwort beantwortet den Plan mit.
 
-**Fehler**: `-32000` heißt „Authentication required“ (Nexa: mit `agy` im Terminal anmelden); andere mit
+**Fehler**: `-32000` heißt „Authentication required“ (Nexa: den Account in den Einstellungen anmelden); andere mit
 `message`, die Nexa über `errorText` zeigt.
 
 ### Sitzungen und Dateien
@@ -826,11 +826,50 @@ Rückfrage brauchen (`tool-grant.ts`), erlaubt `AntigravityRun` selbst.
 
 ### Accounts und Login
 
-- **Google-Login**: einer je Benutzer des Rechners, im Schlüsselbund des Systems (unter Windows der Eintrag
-  `gemini:antigravity`, sichtbar mit `cmdkey /list:gemini:antigravity`; Nexa liest nur, ob es ihn gibt).
-  `--gemini-dir` trennt ihn nicht. Nexa zeigt ihn als System-Account mit dem Plan aus `session/new`; eine
-  Person nennt der Eintrag nicht. Anmelden geht nur im Terminal (`agy` öffnet den Browser); Nexa startet
-  keine Anmeldung und sagt das in den Einstellungen.
+Abgelesen an 1.5.17 (Antigravity aktualisiert sich selbst) unter Windows, aus dem Verhalten, den Logs
+und den Zeichenketten der Binärdatei.
+
+- **Google-Login im Schlüsselbund**: Ohne weitere Angabe einer je Benutzer des Rechners, über
+  go-keyring mit Dienst `gemini` und Benutzer `antigravity`. Unter Windows der Eintrag `gemini:antigravity`
+  (`cmdkey /list:gemini:antigravity`), unter macOS `security find-generic-password -s gemini -a antigravity`
+  (ohne `-w`, die Schlüsselbundverwaltung fragt dann nicht), unter Linux der Secret Service (Suche per
+  `gdbus … org.freedesktop.Secret.Service.SearchItems {'service': 'gemini', 'username': 'antigravity'}`;
+  `secret-tool search` würde das Geheimnis ausgeben). Nexa liest nur, ob es ihn gibt. `--gemini-dir`
+  trennt ihn nicht. Das ist der System-Account. Die Abfragen für macOS und Linux folgen den Konventionen
+  von go-keyring und sind dort nicht ausprobiert.
+- **Google-Login in einem Ordner**: Mit `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=true` (getrimmt, Groß- und
+  Kleinschreibung egal) lässt Antigravity den Schlüsselbund aus und hält den Token als JSON in
+  `<gemini-dir>/antigravity-cli/antigravity-oauth-token` (Log: „Using file-based token storage because
+  AGY_CLI_FORCE_FILE_TOKEN_STORAGE is set“). Damit trennt `--gemini-dir` die Logins: Jeder weitere
+  Google-Account in Nexa (Art `oauth`) hat so seinen eigenen. Dieselbe Datei nimmt Antigravity auch ohne
+  die Variable, wenn es keinen Schlüsselbund gibt (Linux ohne D-Bus-Sitzung); Nexa liest sie deshalb bei
+  jedem Account zuerst. Felder `expiry` und `refresh_token` wie bei einem Go-`oauth2.Token` (angenommen,
+  ein echter Token lag nicht vor); was Nexa nicht lesen kann, gilt als angemeldet.
+- **Nicht dafür**: `AGY_ACCOUNT` wählt eines der verbundenen Konten (etwa GitHub) für Befehle in der
+  Sandbox („AGY_ACCOUNT=account-2 gh api user“); `ANTIGRAVITY_CREDENTIAL_SCOPE` (sonst
+  `%APPDATA%\antigravity\credential-user-scope`) trennt die Zugangsdaten von Plugins und MCP-Servern.
+- **Anmelden**: `agy acp --login` (mit `--gemini-dir` und der Umgebung des Accounts) schreibt „Open this
+  link in a browser to log in with Google:“, die Adresse (`accounts.google.com/o/oauth2/auth?…`,
+  `redirect_uri=https://antigravity.google/oauth-callback`) und „Then paste the authorization code, or the
+  full URL of the page you land on, and press Enter:“, öffnet den Browser selbst (Windows: `rundll32
+  url.dll,FileProtocolHandler <url>`) und liest dann den Code von stdin. Danach speichert es den Token und
+  endet. Nexa startet das als Login wie bei Claude Code: Der Dialog zeigt die Adresse und nimmt den Code
+  (oder die ganze Adresse der Seite) an. Ausprobiert bis zur Adresse und zur Frage nach dem Code, nicht
+  mit einer echten Anmeldung. `initialize` nennt als `authMethods` `oauth-personal`, `oauth-business`,
+  `gemini-api-key` und `agent-platform` (`terminal-login` laut Doku nur für Clients mit Terminal); Nexa
+  nimmt `--login` statt `authenticate`, weil es die Adresse und die Frage nach dem Code verlässlich auf
+  stdout schreibt.
+- **Abmelden**: ACP-Methode `logout {}` (Antwort `{}`, angekündigt mit `agentCapabilities.auth.logout`)
+  löscht den Login dort, wo der Prozess ihn hält: mit der Variable die Token-Datei des Ordners (geprüft, der
+  Schlüsselbund blieb), sonst den Eintrag im Schlüsselbund (nicht ausprobiert, um den echten Login nicht zu
+  löschen). Das gilt dann auch für `agy` im Terminal; Nexa sagt das vor dem Abmelden des System-Accounts.
+- **Wer angemeldet ist**: Der Token nennt keine Person. Jeder Start von `agy acp` schreibt sie in sein Log
+  `<gemini-dir>/antigravity-cli/log/acp-server-*.log` („OAuth: authenticated successfully as <mail>“,
+  „applyAuthResult: email=<mail>, authMethod=consumer“). Nexa nimmt die Adresse aus den fünf neuesten
+  Logs, den Plan aus `session/new`.
+- **Installation unter macOS und Linux** (laut `install.sh`, nicht ausgeführt): `agy` nach
+  `~/.local/bin` (mit `--dir` woanders hin), Zwischenstand in `~/.cache/antigravity/staging`. Nexa sucht
+  dort und im `PATH`.
 - **API-Key**: aus Google AI Studio, als `GEMINI_API_KEY` in der Umgebung des Prozesses, mit eigenem Ordner
   (`--gemini-dir`). Ohne `modelProvider: "gemini"` in `antigravity-cli/settings.json` fragt Antigravity
   trotzdem nach dem Google-Login; Nexa schreibt den Schlüssel beim Anlegen und vor jedem Start.
@@ -841,8 +880,12 @@ Rückfrage brauchen (`tool-grant.ts`), erlaubt `AntigravityRun` selbst.
   `remaining_fraction` (0–1) und `reset_time` (UTC; `1970-01-01T00:00:00Z`, solange niemand den Bucket
   angebrochen hat). Ein abgeschalteter Bucket trägt `disabled`. Nexa macht daraus Fenster „Gemini · Woche“,
   „Claude/GPT · 5 Stunden“ … (`usageOfQuota`), die Titelleiste zeigt die Gruppe mit. Print-Mode kennt kein
-  `--gemini-dir` (nur `acp`), das schadet nicht: Der Google-Login ist ohnehin einer je Benutzer. Mit API-Key
-  gibt es kein Kontingent (agy endet mit Code 2), Nexa fragt dann nicht. Gelesen wird beim Start, auf
+  `--gemini-dir` (nur `acp`; `agy -p … --gemini-dir` zeigt nur die Hilfe) und liest `<home>/.gemini`. Für
+  einen Account mit eigenem Ordner setzt Nexa deshalb `USERPROFILE`/`HOME` auf einen eigenen Ordner
+  (`<tmp>/nexa-agy-home/<account>`), dessen `.gemini` ein Link (Junction) auf den Ordner des Accounts ist,
+  sonst läse es den Login des Standard-Accounts. Ohne Login fragt Nexa nicht: Print-Mode wartet dann auf
+  eine Anmeldung im Browser. Mit API-Key gibt es kein Kontingent (agy endet mit Code 2), Nexa fragt dann
+  auch nicht. Gelesen wird beim Start, auf
   „Aktualisieren“, alle 5 Minuten nur, solange ein Chat des Accounts läuft, nach einem Turn höchstens einmal
   je Minute und nach einem Limit sofort. Geprüft mit 1.5.17.
 - **Titel**: Antigravitys eigener (`session_info_update`, siehe oben); bis er kommt, die erste Zeile des
@@ -854,8 +897,8 @@ Rückfrage brauchen (`tool-grant.ts`), erlaubt `AntigravityRun` selbst.
   getrennten Dateien statt einer `settings.json`.
 - Systemprompt über `_meta`, Fortsetzen ohne Wiedergabe (`session/resume`), Modell und Denkstufe als
   `configOptions`, Werkzeugname und Argumente im Aufruf, Aufgabenliste über `update_steps`, Modus `auto`.
-- Der Google-Login liegt im Schlüsselbund und gilt für alle Ordner; mehrere Google-Logins kann Nexa nicht
-  mehr trennen.
+- Der Google-Login liegt im Schlüsselbund und gilt für alle Ordner; weitere Google-Logins trennt erst
+  `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=true` mit eigenem `--gemini-dir`.
 - Gemini-Daten aus Nexa 0.x: Accounts von Gemini CLI fallen weg, Chats mit Gemini CLI wechseln zur
   Standard-CLI (ihr Verlauf bleibt), eine Standard-CLI „Gemini“ wird zu Claude Code
   (`provider-migration.ts`).

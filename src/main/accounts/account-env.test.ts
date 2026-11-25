@@ -37,6 +37,16 @@ describe('accountEnv', () => {
     expect(() => accountEnv({ id: 'k', provider: 'antigravity', kind: 'apiKey', configDir: '/p/k' }, null)).toThrow(/Secret/)
   })
 
+  it('keeps the Google login of a further Antigravity account in its own folder, not the keyring', () => {
+    expect(accountEnv({ id: 'g', provider: 'antigravity', kind: 'oauth', configDir: '/p/g' }, null)).toEqual({
+      accountId: 'g',
+      set: { AGY_CLI_FORCE_FILE_TOKEN_STORAGE: 'true' },
+      // An inherited key would sign it in as someone else.
+      unset: ANTIGRAVITY_AUTH_ENV,
+      dir: '/p/g',
+    })
+  })
+
   it('refuses a token account without its secret', () => {
     expect(() => accountEnv({ id: 't', provider: 'claude', kind: 'token', configDir: '/p/t' }, null)).toThrow(/Secret/)
   })

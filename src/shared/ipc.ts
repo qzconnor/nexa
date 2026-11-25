@@ -95,6 +95,7 @@ export const IpcInvoke = {
   accountsLoginCode: 'accounts:login-code',
   accountsLoginCancel: 'accounts:login-cancel',
   accountsRenewLogin: 'accounts:renew-login',
+  accountsLogout: 'accounts:logout',
 
   usageGet: 'usage:get',
   usageRefresh: 'usage:refresh',
@@ -323,6 +324,8 @@ export interface NexaApi {
     cancelLogin(id: string): Promise<void>
     /** „Jetzt erneuern“: a new access token for a Claude browser login, also while the old one works. */
     renewLogin(id: string): Promise<LoginRenewResult>
+    /** Signs the account's browser login out (CLIs with `ProviderMeta.signOut`). */
+    logout(id: string): Promise<void>
     onChanged(cb: (list: Account[]) => void): Unsubscribe
     onLogin(cb: (state: AccountLoginState) => void): Unsubscribe
   }

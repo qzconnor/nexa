@@ -19,8 +19,10 @@ export interface ProviderMeta {
   installHint: string
   installHintPosix?: string
   loginCommand: string
-  /** Signs in only in its own terminal interface (`loginCommand`), not from Nexa. */
-  terminalLogin?: boolean
+  /** Its browser login always ends with a code the page shows, to paste into Nexa (no callback). */
+  loginCode?: boolean
+  /** Nexa can sign its accounts out (Settings › Accounts). */
+  signOut?: boolean
   permissionModes: PermissionMode[]
   /**
    * Offered for chats only once Nexa found it (Settings › CLIs shows it always, with how to install it).
@@ -60,9 +62,9 @@ export const PROVIDERS: Record<ProviderId, ProviderMeta> = {
     installUrl: 'https://antigravity.google/product/antigravity-cli',
     installHint: 'irm https://antigravity.google/cli/install.ps1 | iex',
     installHintPosix: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
-    // No login command of its own: its terminal interface asks for the Google login at the first start.
-    loginCommand: 'agy',
-    terminalLogin: true,
+    loginCommand: 'agy acp --login',
+    loginCode: true,
+    signOut: true,
     permissionModes: ['ask', 'edits', 'plan', 'auto', 'full'],
     untilInstalled: true,
     // It follows Gemini CLI and runs Google's Gemini models; in the settings both names help find it.

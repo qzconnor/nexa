@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   claudeProjectKey,
+  antigravityLogEmail,
   antigravityPaths,
   claudeRenewable,
   keyringListsLogin,
+  readAntigravityToken,
   readClaudeLogin,
   readCodexLogin,
   refuseRefreshToken,
+  secretServiceListsLogin,
   withCodexFileStore,
 } from './cli-files'
 
@@ -121,6 +124,53 @@ describe('keyringListsLogin', () => {
     expect(paths.mcpFile.replace(/\\/g, '/')).toBe('/p/k/config/mcp_config.json')
     expect(paths.conversationsDir.replace(/\\/g, '/')).toBe('/p/k/antigravity-cli/conversations')
     expect(paths.projectFile.replace(/\\/g, '/')).toBe('/p/k/config/projects/default-cli-project.json')
+    // Where Antigravity CLI 1.5.17 read a token with AGY_CLI_FORCE_FILE_TOKEN_STORAGE=true.
+    expect(paths.tokenFile.replace(/\\/g, '/')).toBe('/p/k/antigravity-cli/antigravity-oauth-token')
+  })
+})
+
+describe('secretServiceListsLogin', () => {
+  it('reads what gdbus answers to SearchItems', () => {
+    expect(secretServiceListsLogin("([objectpath '/org/freedesktop/secrets/collection/login/3'], @ao [])\n")).toBe(true)
+    // A locked keyring still holds the login.
+    expect(secretServiceListsLogin("(@ao [], [objectpath '/org/freedesktop/secrets/collection/login/3'])")).toBe(true)
+    expect(secretServiceListsLogin('(@ao [], @ao [])\n')).toBe(false)
+    expect(secretServiceListsLogin('')).toBeNull()
+  })
+})
+
+describe('readAntigravityToken', () => {
+  const now = Date.parse('2026-11-25T10:00:00Z')
+
+  it('takes an OAuth token with its expiry and refresh token', () => {
+    const token = { access_token: 'a', token_type: 'Bearer', refresh_token: 'r', expiry: '2026-11-25T11:00:00+01:00' }
+    expect(readAntigravityToken(token, now, now - 1000)).toMatchObject({
+      authState: 'expired',
+      tokenExpiresAt: '2026-11-25T10:00:00.000Z',
+      tokenSavedAt: new Date(now - 1000).toISOString(),
+      renewable: true,
+      accessToken: null,
+    })
+    expect(readAntigravityToken({ token: { ...token, expiry: '2026-11-25T12:00:00Z' } }, now).authState).toBe('ok')
+    expect(readAntigravityToken({ ...token, refresh_token: '' }, now).authState).toBe('dead')
+  })
+
+  it('counts a token it can not read as a login, and none as none', () => {
+    expect(readAntigravityToken({}, now).authState).toBe('ok')
+    expect(readAntigravityToken('?', now).authState).toBe('ok')
+    expect(readAntigravityToken(null, now).authState).toBe('missing')
+  })
+})
+
+describe('antigravityLogEmail', () => {
+  it('finds whom agy acp signed in as, the newest line first', () => {
+    const log = [
+      'I1125 02:38:34.814432      48 server_oauth.go:221] applyAuthResult: email=old@example.com, authMethod=consumer, quotaProject=',
+      'I1125 02:38:34.814432      48 server_oauth.go:226] OAuth: authenticated successfully as new@example.com',
+      'W1125 02:38:34.804669     102 rpcs_plugin_auth.go:110] Not reloading plugin MCP servers: cannot get the signed-in user',
+    ].join('\n')
+    expect(antigravityLogEmail(log)).toBe('new@example.com')
+    expect(antigravityLogEmail('error getting token source: You are not logged into Antigravity.')).toBeNull()
   })
 })
 

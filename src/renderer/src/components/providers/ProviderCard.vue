@@ -99,10 +99,7 @@ const openDocs = () => void window.api.app.openExternal(meta.value.installUrl)
       </Button>
     </div>
     <div v-if="!checking && status?.installed && status.loggedIn === false && on">
-      <p v-if="meta.terminalLogin" class="text-xs text-muted-foreground">
-        Im Terminal <code class="font-mono">{{ meta.loginCommand }}</code> starten und mit Google anmelden, dann „Erneut prüfen“.
-      </p>
-      <Button v-else size="sm" variant="outline" @click="login"><LogInIcon /> Anmelden</Button>
+      <Button size="sm" variant="outline" @click="login"><LogInIcon /> Anmelden</Button>
     </div>
     <p v-if="status?.error && !checking && on" class="text-xs text-destructive">{{ status.error }}</p>
   </div>

@@ -29,8 +29,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/usage-samples.ts` | Messpunkte der Limit-Fenster je Account (`usage-samples.json`) und daraus die Prognose je Fenster (Rechnung in `shared/usage-forecast.ts`) |
 | `accounts/account-service.ts` | Accounts (`accounts.json`), Profilordner, Login-Stand aus den Dateien der CLIs |
 | `accounts/account-env.ts` | Umgebung, mit der die CLI eines Accounts startet |
-| `accounts/account-login.ts` | `claude auth login` / `codex login` ohne Terminal: Link, Code, Ergebnis; ein Dialog über stdin für ACP-Agents (`LoginDialog`: `initialize`, `authenticate`). Antigravity CLI meldet sich nur im Terminal an (`loginCommand()` ist `null`, `ProviderMeta.terminalLogin`) |
-| `accounts/antigravity-account.ts` | Google-Login von Antigravity CLI im Schlüsselbund (`cmdkey`, zwischengespeichert), `modelProvider: "gemini"` für Accounts mit API-Key |
+| `accounts/account-login.ts` | `claude auth login` / `codex login` ohne Terminal: Link, Code, Ergebnis; ein Dialog über stdin für ACP-Agents (`LoginDialog`: `initialize`, `authenticate`). Antigravity CLI über `agy acp --login`, der Code aus dem Browser geht nach stdin (`ProviderMeta.loginCode`); Abmelden über `AgentProvider.logout` (ACP `logout`) |
+| `accounts/antigravity-account.ts` | Google-Login von Antigravity CLI: Token-Datei des Ordners, sonst der Schlüsselbund (`cmdkey`, `security`, Secret Service; zwischengespeichert), die E-Mail aus den Logs von `agy acp`, `modelProvider: "gemini"` für Accounts mit API-Key |
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `accounts/claude-renewal.ts` | Erneuert den Access-Token eines Claude-Browser-Logins mit dem Refresh-Token, unter der Sperre von Claude Code (aus dem Claude Manager) |
@@ -441,11 +441,12 @@ Ein Account ist ein Konfigurationsordner einer CLI (`src/shared/accounts.ts`):
 
 - `system` / `system-codex` / `system-antigravity`: der eigene Ordner der CLI (`~/.claude` bzw.
   `CLAUDE_CONFIG_DIR` der Umgebung, `~/.codex`, `~/.gemini`). Immer da, nicht entfernbar; Nexa ändert die
-  Umgebung dafür nicht. Den Google-Login von Antigravity CLI (einer je Benutzer, im Schlüsselbund) zeigt
+  Umgebung dafür nicht. Den Google-Login von Antigravity CLI im Schlüsselbund (einer je Benutzer) zeigt
   nur dieser Account, mit dem Plan aus `session/new`.
 - `oauth`: eigener Ordner `profiles/<id>` in den App-Daten, Browser-Login. Neue Codex-Ordner bekommen
   `cli_auth_credentials_store = "file"`, damit jeder Account sein eigenes `auth.json` hat statt eines
-  gemeinsamen Eintrags im Schlüsselbund. Antigravity CLI kennt keinen zweiten Google-Login.
+  gemeinsamen Eintrags im Schlüsselbund. Aus demselben Grund starten weitere Google-Accounts von
+  Antigravity CLI mit `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=true`: Ihr Token liegt im eigenen Ordner.
 - `token` / `apiKey`: Secret verschlüsselt in `accounts.json`, beim Start als `CLAUDE_CODE_OAUTH_TOKEN`
   bzw. `ANTHROPIC_API_KEY` (Claude) oder `GEMINI_API_KEY` (Antigravity CLI, nur `apiKey`, eigener Ordner
   über `--gemini-dir` mit `modelProvider: "gemini"`). Entschlüsselt nur im Speicher von Main.

@@ -202,8 +202,10 @@ export interface AgentProvider {
    * can tell; null when nowhere. Claude Code's are read from its folder (claude/claude-presence.ts).
    */
   openElsewhere?(account: AccountContext, sessionId: string, configDir: string): Promise<string | null>
-  /** The browser login, started without a terminal (accounts/account-login.ts); null: only in the CLI's own terminal interface. */
-  loginCommand(): LoginCommand | null
+  /** The browser login of an account, started without a terminal (accounts/account-login.ts); null: only in the CLI's own terminal interface. */
+  loginCommand(account: AccountEnv): LoginCommand | null
+  /** Signs an account out, for CLIs Nexa can ask to (`ProviderMeta.signOut`). */
+  logout?(account: AccountEnv): Promise<void>
   /** An account was removed: what runs for it ends. */
   forget(accountId: string): Promise<void>
   dispose(): Promise<void>

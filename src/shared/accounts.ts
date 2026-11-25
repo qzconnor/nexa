@@ -7,7 +7,8 @@ import type { ProviderId } from './chat'
  * `~/.codex`, `~/.gemini`).
  *
  * - `system`: the CLI's own folder, as without Nexa.
- * - `oauth`: a folder of its own, signed in through the browser (`claude auth login`, `codex login`).
+ * - `oauth`: a folder of its own, signed in through the browser (`claude auth login`, `codex login`,
+ *   `agy acp --login` with the login in the folder instead of the keyring).
  * - `token`: Claude Code with a long-lived token from `claude setup-token` (CLAUDE_CODE_OAUTH_TOKEN).
  * - `apiKey`: Claude Code with an Anthropic API key (ANTHROPIC_API_KEY), Antigravity CLI with a Gemini
  *   API key (GEMINI_API_KEY).
@@ -106,8 +107,8 @@ export const ACCOUNT_KINDS: Record<ProviderId, CreatableAccountKind[]> = {
   claude: ['oauth', 'token', 'apiKey'],
   // A ChatGPT login only: an API key bills by use and has no plan limits to switch between.
   codex: ['oauth'],
-  // Its Google login is one per user (in the keyring): further accounts sign in with a key from AI Studio.
-  antigravity: ['apiKey'],
+  // The keyring holds one Google login per user; further ones keep theirs in their folder.
+  antigravity: ['oauth', 'apiKey'],
 }
 
 /** The fixed id of a CLI's standard account. */

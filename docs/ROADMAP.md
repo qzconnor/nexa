@@ -278,10 +278,11 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 ## Später
 
 - [ ] **Antigravity CLI, was noch fehlt** (`PROTOCOLS.md`, „Antigravity CLI“):
-  - [ ] Mehrere Google-Logins: Der Login liegt einmal je Benutzer im Schlüsselbund, `--gemini-dir` trennt
-        ihn nicht. Zu prüfen: `AGY_CLI_FORCE_FILE_TOKEN_STORAGE`, `AGY_ACCOUNT`,
-        `ANTIGRAVITY_CREDENTIAL_SCOPE`.
-  - [ ] Anmelden und Abmelden aus Nexa statt im Terminal, mit dem Namen des Kontos.
+  - [x] Mehrere Google-Logins: weitere Google-Accounts mit eigenem `--gemini-dir` und
+        `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=true`, der Token liegt dann im Ordner statt im Schlüsselbund.
+        `AGY_ACCOUNT` und `ANTIGRAVITY_CREDENTIAL_SCOPE` gehören zu Sandbox-Konten und Plugins.
+  - [x] Anmelden (`agy acp --login`, Code aus dem Browser im Dialog) und Abmelden (ACP `logout`) aus Nexa,
+        mit der E-Mail des Kontos aus den Logs von `agy acp`. Noch mit einer echten Anmeldung prüfen.
   - [x] Limits und Kontingente: je Modellgruppe aus `agy -p "/usage"` in Titelleiste, Accounts und
         Verbrauch; ein Turn am Kontingent endet als Limit mit Reset (Texte aus den Strings von agy 1.5.17,
         ein echter Fehler dieser Art noch nicht gesehen).
@@ -301,8 +302,9 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         je Projekt abschalten: Antigravity nennt keinem Client den Zustand, und weder `.agents/mcp_config.json`
         noch `session/new` schalten einen Server des Nutzers für eine Sitzung ab (`PROTOCOLS.md`).
   - [ ] Die Regeln von „Shared with Antigravity“ (`/permissions`) zeigen: wo sie liegen, ist offen.
-  - [ ] Unter macOS und Linux prüfen: Installation, Schlüsselbund (Nexa sieht den Login dort nicht und
-        nimmt ihn als vorhanden an), Pfade.
+  - [ ] Unter macOS und Linux prüfen: Installation (`~/.local/bin` laut `install.sh`), Schlüsselbund
+        (`security` bzw. Secret Service über `gdbus`, nach den Konventionen von go-keyring geschrieben) und
+        Pfade sind umgesetzt, aber ohne Mac oder Linux nicht ausprobiert.
 - [ ] Weitere CLIs über das Provider-System.
 - [ ] Mehrere Fenster bzw. Session in eigenem Fenster; mehrere Chats nebeneinander (`GroupShell.vue` im
       Claude Manager).
