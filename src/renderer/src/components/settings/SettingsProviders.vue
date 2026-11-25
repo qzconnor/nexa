@@ -18,8 +18,8 @@ import { useSettingsStore } from '@/stores/settings'
 import SettingField from './SettingField.vue'
 import SettingsSection from './SettingsSection.vue'
 
-/** An example of the extra arguments; Gemini CLI has no `--add-dir` (its own is `--include-directories`). */
-const ARGS_EXAMPLE: Record<ProviderId, string> = { claude: 'z. B. --add-dir ../shared', codex: 'z. B. --add-dir ../shared', gemini: 'z. B. --sandbox' }
+/** An example of the extra arguments; Nexa passes Antigravity's `--add-dir` itself for a chat's folders. */
+const ARGS_EXAMPLE: Record<ProviderId, string> = { claude: 'z. B. --add-dir ../shared', codex: 'z. B. --add-dir ../shared', antigravity: 'z. B. --sandbox' }
 
 const store = useSettingsStore()
 const providers = useProvidersStore()

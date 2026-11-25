@@ -15,8 +15,12 @@ export interface ProviderMeta {
   command: string
   /** Where to get the CLI. */
   installUrl: string
+  /** The command that installs it; on Windows, unless `installHintPosix` names another for macOS and Linux. */
   installHint: string
+  installHintPosix?: string
   loginCommand: string
+  /** Signs in only in its own terminal interface (`loginCommand`), not from Nexa. */
+  terminalLogin?: boolean
   permissionModes: PermissionMode[]
   /**
    * Offered for chats only once Nexa found it (Settings › CLIs shows it always, with how to install it).
@@ -46,16 +50,18 @@ export const PROVIDERS: Record<ProviderId, ProviderMeta> = {
     loginCommand: 'codex login',
     permissionModes: ['ask', 'edits', 'plan', 'full'],
   },
-  gemini: {
-    id: 'gemini',
-    name: 'Gemini CLI',
-    short: 'Gemini',
-    command: 'gemini',
-    installUrl: 'https://github.com/google-gemini/gemini-cli',
-    installHint: 'npm install -g @google/gemini-cli',
-    // Gemini CLI has no login command of its own: its TUI signs in with `/auth`, Nexa through ACP.
-    loginCommand: 'gemini',
-    permissionModes: ['ask', 'edits', 'plan', 'full'],
+  antigravity: {
+    id: 'antigravity',
+    name: 'Antigravity CLI',
+    short: 'Antigravity',
+    command: 'agy',
+    installUrl: 'https://antigravity.google/product/antigravity-cli',
+    installHint: 'irm https://antigravity.google/cli/install.ps1 | iex',
+    installHintPosix: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
+    // No login command of its own: its terminal interface asks for the Google login at the first start.
+    loginCommand: 'agy',
+    terminalLogin: true,
+    permissionModes: ['ask', 'edits', 'plan', 'auto', 'full'],
     untilInstalled: true,
   },
 }

@@ -150,10 +150,10 @@ const TREE = [
           'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Abo Plan ChatGPT Plus Pro OpenAI CODEX_HOME Konfigurationsordner hinzufügen entfernen Limits Usage Reihenfolge sortieren verschieben',
       },
       {
-        id: 'accounts.gemini',
-        title: 'Gemini CLI',
+        id: 'accounts.antigravity',
+        title: 'Antigravity CLI',
         keywords:
-          'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Google AI Studio API-Key GEMINI_API_KEY GEMINI_CLI_HOME Konfigurationsordner hinzufügen entfernen Reihenfolge sortieren verschieben',
+          'Account Konto Konten Login anmelden neu anmelden Profil wechseln Vorgabe Standard Google AI Studio API-Key GEMINI_API_KEY gemini-dir Keyring Konfigurationsordner hinzufügen entfernen Reihenfolge sortieren verschieben',
       },
       {
         id: 'accounts.logins',
@@ -210,9 +210,9 @@ const TREE = [
         keywords: 'Verbrauch Usage Limits Auslastung Monat Reset Tokens Antworten Dashboard Statistik',
       },
       {
-        id: 'usage.gemini',
-        title: 'Gemini CLI',
-        keywords: 'Verbrauch Usage Tokens Antworten Dashboard Statistik Google',
+        id: 'usage.antigravity',
+        title: 'Antigravity CLI',
+        keywords: 'Verbrauch Usage Tokens Antworten Dashboard Statistik Google Antigravity agy',
       },
       { id: 'usage.days', title: 'Tokens pro Tag', keywords: 'Verbrauch Diagramm Chart Verlauf Tage Statistik Dashboard' },
     ],
@@ -226,13 +226,13 @@ const TREE = [
         title: 'Neue Chats',
         keywords: 'Standard Vorgabe erkennen prüfen installiert',
         fields: [
-          { id: 'providers.provider', label: 'CLI', keywords: 'Claude Code Codex Gemini Anbieter Standard' },
+          { id: 'providers.provider', label: 'CLI', keywords: 'Claude Code Codex Antigravity agy Anbieter Standard' },
           { id: 'providers.permissionMode', label: 'Freigaben', keywords: 'Berechtigungen Rechte nachfragen erlauben automatisch Modus Plan' },
         ],
       },
       { id: 'claude', title: 'Claude Code', keywords: 'Anthropic Claude Version Anmeldung Login Konto', fields: cliFields('claude') },
       { id: 'codex', title: 'Codex', keywords: 'OpenAI ChatGPT Version Anmeldung Login Konto', fields: cliFields('codex') },
-      { id: 'gemini', title: 'Gemini CLI', keywords: 'Google Gemini Version Anmeldung Login Konto ACP', fields: cliFields('gemini') },
+      { id: 'antigravity', title: 'Antigravity CLI', keywords: 'Google Antigravity agy Gemini Version Anmeldung Login Konto ACP', fields: cliFields('antigravity') },
     ],
   },
   {

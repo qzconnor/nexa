@@ -88,7 +88,7 @@ export interface RunOptions {
    * Nexa's MCP server for this session; absent when its tools are off. The token is the session's own
    * (its browser tools drive the session's browser); `allowed` tools run without asking, `ask` ones
    * only after the user agreed (names without the server's prefix, see mcp/nexa-tools.ts). `calls`:
-   * the arguments of the run's calls to the server, for CLIs that don't report them (Gemini CLI).
+   * the arguments of the run's calls to the server, for CLIs that may not report them (Antigravity CLI).
    */
   mcp?: { url: string; token: string; allowed: string[]; ask: string[]; calls?: McpCallLog }
   /** Claude: start without Claude in Chrome, so it takes Nexa's browser (`--no-chrome`). */
@@ -195,8 +195,8 @@ export interface AgentProvider {
    * can tell; null when nowhere. Claude Code's are read from its folder (claude/claude-presence.ts).
    */
   openElsewhere?(account: AccountContext, sessionId: string, configDir: string): Promise<string | null>
-  /** The browser login, started without a terminal (accounts/account-login.ts). */
-  loginCommand(): LoginCommand
+  /** The browser login, started without a terminal (accounts/account-login.ts); null: only in the CLI's own terminal interface. */
+  loginCommand(): LoginCommand | null
   /** An account was removed: what runs for it ends. */
   forget(accountId: string): Promise<void>
   dispose(): Promise<void>

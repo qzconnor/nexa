@@ -114,7 +114,7 @@ function retry(): void {
           <span v-if="!state?.url && state?.status !== 'waiting'">{{ cli }} startet die Anmeldung …</span>
           <span v-else>Warte auf die Anmeldung im Browser …</span>
         </div>
-        <!-- Gemini CLI opens the browser itself and doesn't tell its client the link. -->
+        <!-- A CLI with a login dialog over stdin opens the browser itself and doesn't tell its client the link. -->
         <p v-if="!state?.url && state?.status === 'waiting'" class="text-sm text-muted-foreground">
           {{ cli }} öffnet den Browser selbst. Melde dich dort mit dem Konto an, das zu „{{ account?.name }}“ gehört – Nexa merkt es von
           selbst. Geht kein Browser auf, starte „{{ account ? PROVIDERS[account.provider].command : '' }}“ im Terminal und melde dich dort an.

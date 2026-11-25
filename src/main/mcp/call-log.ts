@@ -9,8 +9,8 @@ interface Call {
 }
 
 /**
- * The arguments of the tool calls one caller sent to Nexa's MCP server, in order. Gemini CLI tells
- * its client which tool it runs but not with what (ACP's `tool_call` has no input): the chat takes
+ * The arguments of the tool calls one caller sent to Nexa's MCP server, in order. An ACP agent tells
+ * its client which tool it runs, but not always with what (ACP's `tool_call` needs no input): the chat takes
  * them from here to draw a chart or show where the browser went.
  */
 export class McpCallLog {

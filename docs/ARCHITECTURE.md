@@ -29,7 +29,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/usage-samples.ts` | Messpunkte der Limit-Fenster je Account (`usage-samples.json`) und daraus die Prognose je Fenster (Rechnung in `shared/usage-forecast.ts`) |
 | `accounts/account-service.ts` | Accounts (`accounts.json`), Profilordner, Login-Stand aus den Dateien der CLIs |
 | `accounts/account-env.ts` | Umgebung, mit der die CLI eines Accounts startet |
-| `accounts/account-login.ts` | `claude auth login` / `codex login` ohne Terminal: Link, Code, Ergebnis; für Gemini CLI ein Dialog über stdin (`LoginDialog`: `initialize`, `authenticate`) |
+| `accounts/account-login.ts` | `claude auth login` / `codex login` ohne Terminal: Link, Code, Ergebnis; ein Dialog über stdin für ACP-Agents (`LoginDialog`: `initialize`, `authenticate`). Antigravity CLI meldet sich nur im Terminal an (`loginCommand()` ist `null`, `ProviderMeta.terminalLogin`) |
+| `accounts/antigravity-account.ts` | Google-Login von Antigravity CLI im Schlüsselbund (`cmdkey`, zwischengespeichert), `modelProvider: "gemini"` für Accounts mit API-Key |
 | `accounts/cli-files.ts` | Wo die CLIs Login und Verläufe ablegen, Auslesen von Konto, Plan und Ablauf |
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `accounts/claude-renewal.ts` | Erneuert den Access-Token eines Claude-Browser-Logins mit dem Refresh-Token, unter der Sperre von Claude Code (aus dem Claude Manager) |
@@ -45,7 +46,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/titles.ts` | Titel eines Chats vom Modell (`AgentRun.title`): Anweisung für Codex, Prompt gekürzt, Antwort bereinigt (`cleanTitle`) |
 | `providers/plugins.ts` | Plugins der CLIs (`claude plugin list --json`, Codex `plugin/installed`) → `PluginInfo`, Antworten auf das Schalten und auf die Anmeldung an MCP-Servern (`McpAuthStart`) |
 | `providers/cli-config.ts` | Schnittstelle `CliConfigAdapter` für die Einstellungen einer CLI und was die Adapter teilen: JSON-Dateien lesen und atomar ändern, Secrets in Variablen und Headern zurückhalten, Hooks über ihre Herkunft zurückschreiben; siehe „Einstellungen der CLIs“ |
-| `providers/claude/claude-config.ts`, `providers/codex/codex-config.ts`, `providers/gemini/gemini-config.ts` | Adapter für Claude Code (Dateien, MCP über `claude mcp`), Codex (App-Server `config/*`, `hooks/list`) und Gemini CLI (`settings.json` selbst geschrieben, mit Kommentaren nur zum Ansehen; Schalter der Server in `mcp-server-enablement.json`) |
+| `providers/claude/claude-config.ts`, `providers/codex/codex-config.ts`, `providers/antigravity/antigravity-config.ts` | Adapter für Claude Code (Dateien, MCP über `claude mcp`), Codex (App-Server `config/*`, `hooks/list`) und Antigravity CLI (`mcp_config.json`, `hooks.json` und `antigravity-cli/settings.json` selbst geschrieben; Projekte ohne Berechtigungen) |
 | `services/cli-config-service.ts` | Prüft Ziel (CLI, Account, Ebene, Projektordner) und Eingaben, ruft den Adapter; Kanäle `cli-config:*` in `cli-config-ipc.ts` |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten, dazu Prompts, Themes, Namen und Pins (`cm-extras.ts`); Kanäle `import:*` in `import-ipc.ts` |
@@ -63,14 +64,15 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/provider.ts` | Schnittstellen `AgentProvider`, `AgentRun`, `RunSink` |
 | `providers/claude/*` | Claude Code: Prozess je Session, Stream-JSON, Werkzeug-Abbildung |
 | `providers/codex/*` | Codex: ein App-Server je Account für alle seine Sessions, JSON-RPC, Item-Abbildung |
-| `providers/gemini/*` | Gemini CLI: ein Prozess je Chat (`gemini --acp`), Agent Client Protocol über JSON-RPC (`acp-connection.ts`), Item-Abbildung (`gemini-items.ts`), Warteschlange der Prompts und Rückfragen (`gemini-run.ts`). In der CLI-Wahl der Chats, der Vorgabe für neue Chats und auf der Startseite steht Gemini erst, wenn Nexa es gefunden hat (`ProviderMeta.untilInstalled`, `offeredProviders`); Einstellungen › CLIs zeigt es immer |
+| `providers/acp/acp-connection.ts` | Agent Client Protocol über JSON-RPC (NDJSON auf stdio): Anfragen, Antworten, Benachrichtigungen, Fehlertext (`errorText`) |
+| `providers/antigravity/*` | Antigravity CLI: ein Prozess je Chat (`agy acp`), Item-Abbildung (`antigravity-items.ts`), Warteschlange der Prompts, Rückfragen und Plan (`antigravity-run.ts`). In der CLI-Wahl der Chats, der Vorgabe für neue Chats und auf der Startseite steht Antigravity erst, wenn Nexa es gefunden hat (`ProviderMeta.untilInstalled`, `offeredProviders`); Einstellungen › CLIs zeigt es immer |
 | `lib/secrets.ts` | Ver- und Entschlüsseln von Token und Keys (`safeStorage`) |
 | `lib/shell-env.ts` | Linux: übernimmt beim Start die Umgebung der Login-Shell (PATH mit nvm & Co.), damit die CLIs auch beim Start aus dem Anwendungsmenü gefunden werden |
 | `lib/linux.ts` | Wie die Linux-Version installiert ist (AppImage, deb, rpm); `cliEnv` nimmt mit `withoutAppImageEnv` die Pfade des AppImage-Mounts aus der Umgebung der CLIs |
 | `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts` |
 | `services/auto-switch.ts` | Am Limit eines Accounts (`attention` `limit`): den verlassenen Account bis zu seinem Reset sperren, mit `chat.autoSwitch` beim nächsten freien Account derselben CLI weitermachen, sonst bis zum ersten Reset warten (`SessionRuntime.resume`); gemerkt in `auto-switch.json`, siehe „Accounts“ |
 | `services/update-service.ts` | Updates aus den GitHub-Releases (electron-updater, Suche nach 10 s und alle 4 h), Versionshinweise über die GitHub-API bzw. den Atom-Feed; Kanäle `updates:*` in `updates-ipc.ts` |
-| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen; `call-log.ts` merkt sich die Argumente der Aufrufe eines Gemini-Chats, weil ACP sie nicht nennt |
+| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen; `call-log.ts` merkt sich die Argumente der Aufrufe eines ACP-Chats für Agents, die sie nicht nennen (Antigravity nennt sie, Nexa leert das Protokoll dort nur) |
 | `browser/browser-tabs.ts` | Tabs der Browser je Chat (`browser-tabs.json`): welche Seiten, welche gezeigt, wer sie geöffnet hat |
 | `browser/browser-control.ts` | Aus dem Claude Manager: steuert die Seiten für die Agents über das DevTools-Protokoll (`page-driver.ts`, Frames, Netzwerk, Routen, Dialoge, Emulation), Protokoll, Übernehmen |
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |
@@ -322,7 +324,7 @@ Renderer), jede CLI zweigt ihre Unterhaltung wie beim Abzweigen an ihrer letzten
 Nachricht der letzten Antwort davor, deren `msg_…` in der ID des Items steht), und der neue Text geht
 mit `send` hinaus. Die alte Unterhaltung kommt nach `earlierCli` und geht so mit dem Chat in den
 Papierkorb. Hat eine CLI vor dem Prompt nicht geantwortet, beginnt sie neu, mit dem Chat davor als
-`<nexa-context>`. Gemini CLI kann weder abzweigen noch kürzen (ACP kennt beides nicht): Beim Abzweigen und
+`<nexa-context>`. Antigravity CLI kann weder abzweigen noch kürzen (ACP kennt beides nicht): Beim Abzweigen und
 Bearbeiten beginnt sie immer neu, mit dem Chat davor als `<nexa-context>`. Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, auch
 während der Agent arbeitet: `edit` beendet dann die CLI samt ihrem Turn, Prompts in der Warteschlange
 landen hinter dem bearbeiteten und fallen mit weg. Nur eine Shell im Hintergrund oder ein Agent von vor
@@ -428,27 +430,31 @@ Systems (`app.getLocale()`).
 
 Ein Account ist ein Konfigurationsordner einer CLI (`src/shared/accounts.ts`):
 
-- `system` / `system-codex` / `system-gemini`: der eigene Ordner der CLI (`~/.claude` bzw.
-  `CLAUDE_CONFIG_DIR` der Umgebung, `~/.codex`, `~/.gemini` bzw. in `GEMINI_CLI_HOME` der Umgebung).
-  Immer da, nicht entfernbar; Nexa ändert die Umgebung dafür nicht.
+- `system` / `system-codex` / `system-antigravity`: der eigene Ordner der CLI (`~/.claude` bzw.
+  `CLAUDE_CONFIG_DIR` der Umgebung, `~/.codex`, `~/.gemini`). Immer da, nicht entfernbar; Nexa ändert die
+  Umgebung dafür nicht. Den Google-Login von Antigravity CLI (einer je Benutzer, im Schlüsselbund) zeigt
+  nur dieser Account, mit dem Plan aus `session/new`.
 - `oauth`: eigener Ordner `profiles/<id>` in den App-Daten, Browser-Login. Neue Codex-Ordner bekommen
   `cli_auth_credentials_store = "file"`, damit jeder Account sein eigenes `auth.json` hat statt eines
-  gemeinsamen Eintrags im Schlüsselbund. Für Gemini CLI ist der Ordner `GEMINI_CLI_HOME`, die Dateien
-  liegen in `.gemini` darin; `settings.json` bekommt die Anmeldeart (`security.auth.selectedType`), ohne
-  die Gemini CLI keine Sitzung lädt.
+  gemeinsamen Eintrags im Schlüsselbund. Antigravity CLI kennt keinen zweiten Google-Login.
 - `token` / `apiKey`: Secret verschlüsselt in `accounts.json`, beim Start als `CLAUDE_CODE_OAUTH_TOKEN`
-  bzw. `ANTHROPIC_API_KEY` (Claude) oder `GEMINI_API_KEY` (Gemini CLI, nur `apiKey`, eigener
-  `GEMINI_CLI_HOME`). Entschlüsselt nur im Speicher von Main.
+  bzw. `ANTHROPIC_API_KEY` (Claude) oder `GEMINI_API_KEY` (Antigravity CLI, nur `apiKey`, eigener Ordner
+  über `--gemini-dir` mit `modelProvider: "gemini"`). Entschlüsselt nur im Speicher von Main.
 
 `AccountService` liest alle 15 s die Login-Dateien (Konto, Plan, Ablauf) und meldet Änderungen.
-`accountEnv()` baut die Umgebung: `CLAUDE_CONFIG_DIR`, `CODEX_HOME` bzw. `GEMINI_CLI_HOME` setzen und die Anmelde-Variablen
+`accountEnv()` baut die Umgebung: `CLAUDE_CONFIG_DIR` bzw. `CODEX_HOME` setzen (für Antigravity CLI den
+Ordner als `AccountEnv.dir`, den der Provider als `--gemini-dir` übergibt) und die Anmelde-Variablen
 der Umgebung entfernen, damit kein fremder Login durchschlägt.
+
+Accounts, Chats und Einstellungen von Gemini CLI aus Nexa 0.x übernimmt `provider-migration.ts` beim Laden:
+Gemini-Accounts fallen weg, Chats wechseln zur Standard-CLI (Verlauf und Items bleiben, alte Items zeigen
+das Antigravity-Symbol), eine Standard-CLI „gemini“ wird zur ersten CLI. Nichts davon wirft.
 
 Die Session merkt sich je CLI den gewählten Account (`SessionMeta.accounts`) und je `CliLink`, mit
 welchem Account die Sitzung der CLI entstand. Weichen beide ab, kopiert `session-transfer.ts` die
 Unterhaltung (Claude: Transkript, Unterordner, `file-history`; Codex: Rollout unter `sessions/`) in den
 neuen Ordner und setzt sie dort fort (Codex mit `thread/resume { path }`). Klappt das nicht, verfällt
-der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`. Gemini-Sitzungen kopiert Nexa nicht:
+der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`. Antigravity-Sitzungen kopiert Nexa nicht:
 Der neue Account beginnt immer mit dem Verlauf als `<nexa-context>`.
 
 Ein Chat nimmt beim Löschen (`SessionService.remove`, mehrere auf einmal) seine Unterhaltungen mit,
@@ -702,7 +708,7 @@ den Ordner des Aufrufs und seine Argumente als einen Base64-Schalter `--nx=` an 
 Nexa schon, kommt die Anfrage über `requestSingleInstanceLock` als `additionalData` bei der laufenden Instanz
 an (`second-instance`, geprüft mit `isLaunchRequest`). Was sie bedeutet, entscheidet `launch.ts` ohne
 Seiteneffekte: `parseLaunchArgs` liest die Argumente (wie `cm` im Claude Manager: `-a`, `-c`, `-r [id]`,
-`-n`, `-m`, `--claude`/`--codex`/`--gemini`, `--` für die CLI) und lehnt Widersprüche ab, `resolveLaunch` macht daraus
+`-n`, `-m`, `--claude`/`--codex`/`--antigravity` (kurz `--agy`), `--` für die CLI) und lehnt Widersprüche ab, `resolveLaunch` macht daraus
 mit Einstellungen, Accounts, Projekten, Chats und `SessionService.running()` einen Plan: einen Chat öffnen,
 einen neuen anlegen, eine Unterhaltung der CLIs übernehmen (`CliSessionImport.takeOver`: Transkript per
 `findTranscript` in den Claude-Ordnern bzw. Thread aus `thread/list` der Codex-Accounts, eingeordnet wie beim
@@ -711,16 +717,16 @@ Plan aus; Fehler erscheinen als Dialog „„nx“ konnte keinen Chat öffnen“
 
 - **Offener Chat** (`general.nxReuseChat`): ein Chat im Ordner (`cwd`, sonst der des Projekts), dessen CLI
   verbunden ist oder arbeitet, oder der noch leer ist (kein Prompt, keine Unterhaltung einer CLI). `-a`,
-  `--claude`, `--codex`, `--gemini` grenzen ihn und den Chat von `-c` ein; ein Chat ohne eigenen Account zählt mit dem
+  `--claude`, `--codex`, `--antigravity` grenzen ihn und den Chat von `-c` ein; ein Chat ohne eigenen Account zählt mit dem
   Standard-Account seiner CLI.
 - **Account** (`findAccount`): ID, Name, E-Mail, sonst ein eindeutiger Teil des Namens, unter den sichtbaren
   Accounts der eingeschalteten CLIs (oder der genannten); passen Accounts beider CLIs, gewinnt die
-  Standard-CLI. Ohne `--claude`/`--codex`/`--gemini` bestimmt der Account die CLI des neuen Chats.
+  Standard-CLI. Ohne `--claude`/`--codex`/`--antigravity` bestimmt der Account die CLI des neuen Chats.
 - **Argumente für die CLI** stehen in `SessionMeta.cliArgs` je CLI und kommen bei jedem Start hinter die des
   Accounts (`RunOptions.extraArgs`). Claude Code nimmt sie unverändert. Der App-Server von Codex gehört allen
   Chats eines Accounts; `codexOverrides` macht aus `-c schlüssel=wert` die `config` des Threads (Nexas
-  MCP-Server geht vor), andere Argumente lehnt `resolveLaunch` für Codex ab. Gemini CLI startet je Chat
-  einen Prozess und nimmt sie hinter `--acp`.
+  MCP-Server geht vor), andere Argumente lehnt `resolveLaunch` für Codex ab. Antigravity CLI startet je Chat
+  einen Prozess und nimmt sie hinter `acp` (und `--gemini-dir`).
 - **An- und abmelden**: `CommandIntegration` (`command-integration.ts`, Kanäle `command:*`) ruft
   `nx.exe --nx-status`, `--nx-register` und `--nx-unregister`; nx.exe schreibt selbst Benutzer-PATH und App
   Path. Gehört der App Path einem anderen Programm, nennt der Status es als Hinweis (`reg query`). Nur in der

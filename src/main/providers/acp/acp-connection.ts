@@ -1,7 +1,6 @@
 import { isPlainObject } from '@shared/utils'
 import type { ResolvedCommand } from '../cli-binary'
 import { JsonlProcess } from '../jsonl-process'
-import { errorText } from './gemini-items'
 
 type Json = Record<string, unknown>
 
@@ -24,20 +23,24 @@ export interface AcpHandlers {
 
 /**
  * The client side of the Agent Client Protocol over a CLI's stdio: JSON-RPC 2.0, one message per
- * line (Gemini CLI `--acp`). One process per conversation.
+ * line (Antigravity CLI `agy acp`). One process per conversation.
  */
 export class AcpConnection {
   private readonly process: JsonlProcess
   private nextId = 1
   private readonly pending = new Map<number, { resolve: (value: Json) => void; reject: (error: Error) => void; method: string }>()
 
-  constructor(command: ResolvedCommand, options: { cwd: string; env: Record<string, string> }, private readonly handlers: AcpHandlers) {
+  constructor(
+    command: ResolvedCommand,
+    options: { cwd: string; env: Record<string, string>; name: string },
+    private readonly handlers: AcpHandlers,
+  ) {
     this.process = new JsonlProcess(command, {
       cwd: options.cwd,
       env: options.env,
       onMessage: (m) => this.onMessage(m),
       onExit: (code, stderr) => {
-        for (const [, waiter] of this.pending) waiter.reject(new AcpError('Gemini CLI wurde beendet.', null))
+        for (const [, waiter] of this.pending) waiter.reject(new AcpError(`${options.name} wurde beendet.`, null))
         this.pending.clear()
         handlers.exited(code, stderr)
       },
@@ -104,4 +107,27 @@ export function acpError(error: Json, method: string): AcpError {
   const data = isPlainObject(error.data) ? error.data : {}
   const message = typeof data.details === 'string' && data.details.trim() ? data.details : typeof error.message === 'string' ? error.message : `${method} ist fehlgeschlagen.`
   return new AcpError(errorText(message), typeof error.code === 'number' ? error.code : null)
+}
+
+/**
+ * What an agent's error says: messages often wrap the API's answer as JSON in JSON
+ * (`{"error":{"message":"{\n \"error\": …"}}`); the innermost message is the one to show.
+ */
+export function errorText(message: string): string {
+  let text = message.trim()
+  for (let depth = 0; depth < 5; depth++) {
+    if (!/^[[{]/.test(text)) break
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      break
+    }
+    const first = Array.isArray(parsed) ? parsed[0] : parsed
+    const error = isPlainObject(first) && isPlainObject(first.error) ? first.error : null
+    const next = typeof error?.message === 'string' ? error.message : isPlainObject(first) && typeof first.message === 'string' ? first.message : undefined
+    if (!next || next === text) break
+    text = next.trim()
+  }
+  return text
 }

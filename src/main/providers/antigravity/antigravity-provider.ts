@@ -1,0 +1,213 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { CommandOption, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus } from '@shared/types'
+import type { AccountEnv } from '../../accounts/account-env'
+import { antigravityLoggedIn, ensureApiKeySettings, refreshAntigravityLogin } from '../../accounts/antigravity-account'
+import { AcpConnection } from '../acp/acp-connection'
+import { CliBinary, cliEnv } from '../cli-binary'
+import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
+import { AntigravityConfig } from './antigravity-config'
+import { commandsOf, modelsOf, tierOf } from './antigravity-items'
+import { AntigravityRun } from './antigravity-run'
+
+const NAME = 'Antigravity CLI'
+
+/** Until Antigravity named them in a session (they depend on the login). */
+const FALLBACK_MODELS: ModelOption[] = [
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'], isDefault: true },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
+]
+
+const asCommand = (c: { name: string; description?: string }): CommandOption => ({ name: c.name, description: c.description, kind: 'command', insert: `/${c.name}` })
+
+/**
+ * Antigravity CLI through the Agent Client Protocol (`agy acp`): a process per chat. Its Google login
+ * is one per user, in the keyring; an account with an API key gets its own data folder
+ * (`--gemini-dir`). It tells the plan of the login, but no limits (docs/PROTOCOLS.md).
+ */
+export class AntigravityProvider implements AgentProvider {
+  readonly id = 'antigravity' as const
+  readonly binary: CliBinary
+  /** Its MCP servers, permissions and hooks, written by Nexa itself (see antigravity-config.ts). */
+  readonly config = new AntigravityConfig()
+  private models_: ModelOption[] | null = null
+  private modelsLoading: Promise<ModelOption[]> | null = null
+  private commands_: CommandOption[] | null = null
+  private tier: string | undefined
+  private readonly runs = new Map<string, Set<AntigravityRun>>()
+
+  constructor(private readonly settings: () => ProviderSettings) {
+    this.binary = new CliBinary(
+      {
+        names: { win32: ['agy.exe', 'agy.cmd'], posix: ['agy'] },
+        installDirs: (home, isWin) => [...(isWin && process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'agy', 'bin')] : []), join(home, '.local', 'bin')],
+        notFound:
+          process.platform === 'win32'
+            ? 'Antigravity CLI wurde nicht gefunden. Installiere es (PowerShell: irm https://antigravity.google/cli/install.ps1 | iex) oder trage den Pfad unter Einstellungen → CLIs ein.'
+            : 'Antigravity CLI wurde nicht gefunden. Installiere es (curl -fsSL https://antigravity.google/cli/install.sh | bash) oder trage den Pfad unter Einstellungen → CLIs ein.',
+      },
+      () => this.settings().path,
+    )
+  }
+
+  async detect(account: AccountContext): Promise<ProviderStatus> {
+    this.binary.invalidate()
+    const path = this.binary.resolve()
+    const base: ProviderStatus = { id: 'antigravity', name: NAME, installed: !!path, path: path ?? undefined, loggedIn: null, checkedAt: Date.now() }
+    if (!path) return base
+    const version = await this.binary.version()
+    const apiKey = !!account.set.GEMINI_API_KEY
+    // A login Nexa can't see (another system's keyring) counts as there: Antigravity says so at the first prompt.
+    const loggedIn = apiKey || (await refreshAntigravityLogin()) !== false
+    return {
+      ...base,
+      version: version ?? undefined,
+      loggedIn,
+      account: loggedIn ? { authMode: apiKey ? 'gemini-api-key' : 'oauth-personal', plan: apiKey ? undefined : this.tier } : undefined,
+    }
+  }
+
+  /** The models of the last session (they depend on the login); before one, a session started to ask. */
+  async models(account: AccountContext): Promise<ModelOption[]> {
+    if (this.models_) return this.models_
+    this.modelsLoading ??= this.probe(account)
+      .then((models) => (this.models_ ??= models.length ? models : null) ?? FALLBACK_MODELS)
+      .catch(() => FALLBACK_MODELS)
+      .finally(() => (this.modelsLoading = null))
+    return this.modelsLoading
+  }
+
+  /**
+   * Starts a session without a prompt to read its models and commands: it costs no quota, and
+   * Antigravity keeps no conversation that never had a prompt.
+   */
+  private async probe(account: AccountEnv): Promise<ModelOption[]> {
+    if (account.set.GEMINI_API_KEY === undefined && antigravityLoggedIn() === false) return []
+    const conn = new AcpConnection(
+      this.binary.command(this.argsOf(account, [])),
+      { cwd: tmpdir(), env: cliEnv(account.set, account.unset), name: NAME },
+      {
+        notification: (method, params) => {
+          const update = params.update as { sessionUpdate?: unknown; availableCommands?: unknown } | undefined
+          if (method === 'session/update' && update?.sessionUpdate === 'available_commands_update') this.takeCommands(commandsOf(update.availableCommands))
+        },
+        request: (id) => conn.respondError(id, 'Nicht unterstützt.'),
+        exited: () => undefined,
+      },
+    )
+    try {
+      await this.withTimeout(conn.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'nexa', version: '1' } }))
+      const session = await this.withTimeout(conn.request('session/new', { cwd: tmpdir(), mcpServers: [] }))
+      this.tier = tierOf(session._meta) ?? this.tier
+      return modelsOf(session.configOptions, session.models)
+    } finally {
+      await conn.stop(1000).catch(() => undefined)
+    }
+  }
+
+  private withTimeout<T>(promise: Promise<T>): Promise<T> {
+    return Promise.race([promise, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Antigravity CLI antwortet nicht.')), 30_000))])
+  }
+
+  /** A model's level of thought is named with its models. */
+  async modelDefaults(_account: AccountContext, model: string): Promise<ModelDefaults> {
+    const found = (this.models_ ?? []).find((m) => m.id === model)
+    return { effort: found?.defaultEffort ?? (found?.efforts?.includes('high') ? 'high' : undefined) }
+  }
+
+  async commands(): Promise<CommandOption[]> {
+    return this.commands_ ?? []
+  }
+
+  private takeCommands(list: { name: string; description?: string }[]): void {
+    if (list.length) this.commands_ = list.map(asCommand)
+  }
+
+  /** Antigravity tells no client how its MCP servers are; they are edited in its files (antigravity-config.ts). */
+  async mcpServers(): Promise<McpServerState[]> {
+    return []
+  }
+
+  async reconnectMcp(): Promise<void> {}
+
+  async authenticateMcp(): Promise<McpAuthStart | null> {
+    return null
+  }
+
+  async plugins(): Promise<PluginInfo[]> {
+    return []
+  }
+
+  async setPluginEnabled(): Promise<void> {
+    throw new Error('Plugins von Antigravity CLI schaltet Nexa noch nicht.')
+  }
+
+  /** The account's folder and the chat's other folders; `extra` after them. */
+  private argsOf(account: AccountEnv, extra: string[]): string[] {
+    return ['acp', ...(account.dir ? ['--gemini-dir', account.dir] : []), ...extra, ...this.settings().extraArgs]
+  }
+
+  async start(options: RunOptions, sink: RunSink): Promise<AgentRun> {
+    const account = options.account
+    if (account.dir && account.set.GEMINI_API_KEY) await ensureApiKeySettings(account.dir)
+    const extra = [
+      ...(options.dirs ?? []).flatMap((dir) => ['--add-dir', dir]),
+      // „Volle Rechte“ only at the start: a change to or from it restarts the process (session-service.ts).
+      ...(options.permissionMode === 'full' ? ['--dangerously-skip-permissions'] : []),
+    ]
+    let run: AntigravityRun | null = null
+    const conn = new AcpConnection(
+      this.binary.command([...this.argsOf(account, extra), ...options.extraArgs]),
+      { cwd: options.cwd, env: cliEnv(account.set, account.unset), name: NAME },
+      {
+        notification: (method, params) => run?.notification(method, params),
+        request: (id, method, params) => (run ? run.request(id, method, params) : conn.respondError(id, 'Noch nicht bereit.')),
+        exited: (code, stderr) => run?.exited(code, stderr),
+      },
+    )
+    run = new AntigravityRun(conn, options, sink, {
+      commands: (list) => this.takeCommands(list),
+      models: (list) => {
+        this.models_ = list
+      },
+    })
+    const accountRuns = this.runs.get(account.accountId) ?? new Set<AntigravityRun>()
+    this.runs.set(account.accountId, accountRuns)
+    for (const old of accountRuns) if (!old.alive) accountRuns.delete(old)
+    accountRuns.add(run)
+    try {
+      await run.connect()
+      this.tier = run.tier ?? this.tier
+    } catch (error) {
+      accountRuns.delete(run)
+      await conn.stop(1000).catch(() => undefined)
+      throw error
+    }
+    return run
+  }
+
+  async usage(): Promise<RunUsage | null> {
+    return null
+  }
+
+  /**
+   * Antigravity CLI signs in to Google in its terminal interface only; its ACP server's `authenticate`
+   * can't be followed without a terminal. Nexa names the way (provider-service.ts).
+   */
+  loginCommand(): null {
+    return null
+  }
+
+  async forget(accountId: string): Promise<void> {
+    const runs = this.runs.get(accountId)
+    this.runs.delete(accountId)
+    await Promise.all([...(runs ?? [])].map((r) => r.stop().catch(() => undefined)))
+  }
+
+  async dispose(): Promise<void> {
+    const all = [...this.runs.values()].flatMap((set) => [...set])
+    this.runs.clear()
+    await Promise.all(all.map((r) => r.stop().catch(() => undefined)))
+  }
+}
+

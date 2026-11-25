@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { attempt } from '@/lib/errors'
+import { isWindows } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProvidersStore } from '@/stores/providers'
@@ -29,8 +30,10 @@ const on = computed(() => providers.enabled.includes(props.provider))
 /** The last CLI that is on stays on (shared/providers.ts). */
 const lastOn = computed(() => on.value && providers.enabled.length === 1)
 
+const installHint = computed(() => (isWindows ? meta.value.installHint : (meta.value.installHintPosix ?? meta.value.installHint)))
+
 function copyInstall(): void {
-  void navigator.clipboard.writeText(meta.value.installHint)
+  void navigator.clipboard.writeText(installHint.value)
   copied.value = true
   setTimeout(() => (copied.value = false), 1500)
 }
@@ -79,13 +82,13 @@ const openDocs = () => void window.api.app.openExternal(meta.value.installUrl)
     </div>
     <div v-if="!checking && status?.installed" :class="cn('flex flex-col gap-0.5 text-xs text-muted-foreground', !on && 'opacity-70')">
       <span v-if="status.version">Version {{ status.version }}</span>
-      <span v-if="status.account?.email">{{ status.account.email }}<template v-if="status.account.plan"> · {{ status.account.plan }}</template></span>
+      <span v-if="status.account?.email || status.account?.plan">{{ [status.account.email, status.account.plan].filter(Boolean).join(' · ') }}</span>
       <span v-if="!compact && status.path" class="truncate font-mono" :title="status.path">{{ status.path }}</span>
     </div>
     <div v-if="!checking && !status?.installed && on" class="flex flex-col gap-2">
       <p class="text-xs text-muted-foreground">Installieren, dann „Erneut prüfen“:</p>
       <div class="flex items-center gap-1 rounded-md border bg-(--code-bg) py-1 pr-1 pl-2.5">
-        <code class="min-w-0 flex-1 truncate font-mono text-xs">{{ meta.installHint }}</code>
+        <code class="min-w-0 flex-1 truncate font-mono text-xs">{{ installHint }}</code>
         <Button variant="ghost" size="icon-xs" aria-label="Kopieren" @click="copyInstall">
           <CheckIcon v-if="copied" class="text-success" />
           <CopyIcon v-else />
@@ -96,7 +99,10 @@ const openDocs = () => void window.api.app.openExternal(meta.value.installUrl)
       </Button>
     </div>
     <div v-if="!checking && status?.installed && status.loggedIn === false && on">
-      <Button size="sm" variant="outline" @click="login"><LogInIcon /> Anmelden</Button>
+      <p v-if="meta.terminalLogin" class="text-xs text-muted-foreground">
+        Im Terminal <code class="font-mono">{{ meta.loginCommand }}</code> starten und mit Google anmelden, dann „Erneut prüfen“.
+      </p>
+      <Button v-else size="sm" variant="outline" @click="login"><LogInIcon /> Anmelden</Button>
     </div>
     <p v-if="status?.error && !checking && on" class="text-xs text-destructive">{{ status.error }}</p>
   </div>

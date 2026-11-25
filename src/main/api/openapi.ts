@@ -10,7 +10,7 @@ const ms = (what: string): JsonSchema => ({ type: 'integer', description: `${wha
 const str = (description: string): JsonSchema => ({ type: 'string', description })
 const nullable = (type: string, description: string): JsonSchema => ({ type: [type, 'null'], description })
 
-const PROVIDER_ID: JsonSchema = { type: 'string', enum: ['claude', 'codex', 'gemini'], description: 'Die CLI: `claude` (Claude Code), `codex` (Codex) oder `gemini` (Gemini CLI).' }
+const PROVIDER_ID: JsonSchema = { type: 'string', enum: ['claude', 'codex', 'antigravity'], description: 'Die CLI: `claude` (Claude Code), `codex` (Codex) oder `antigravity` (Antigravity CLI).' }
 const SESSION_STATUS: JsonSchema = {
   type: 'string',
   enum: ['idle', 'starting', 'running', 'waiting', 'error', 'stopped'],
@@ -122,7 +122,7 @@ export const API_SCHEMAS: Record<string, JsonSchema> = {
         description: '`system`: der eigene Ordner der CLI, `oauth`: Browser-Login in eigenem Ordner, `token`: Long-lived Token, `apiKey`: API-Key.',
       },
       color: str('Farbe des Punkts neben dem Namen (`#rrggbb`).'),
-      configDir: str('Der Ordner, mit dem die CLI startet (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`).'),
+      configDir: str('Der Ordner, mit dem die CLI startet (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, Antigravitys `--gemini-dir`).'),
       customConfigDir: { type: 'boolean', description: 'Der Ordner gehört dem Nutzer; Nexa löscht ihn nie.' },
       createdAt: ms('Angelegt'),
       secretHint: nullable('string', 'Anfang und Ende von Token oder API-Key.'),

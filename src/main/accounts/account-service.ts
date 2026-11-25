@@ -23,24 +23,21 @@ import { readJsonGuarded, readJsonSync, writeJsonAtomic } from '../lib/json-file
 import { decryptSecret, encryptSecret } from '../lib/secrets'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { accountEnv, type AccountEnv } from './account-env'
+import { antigravityLogin, ensureApiKeySettings } from './antigravity-account'
 import {
+  antigravityPaths,
   claudePaths,
   codexPaths,
+  defaultAntigravityDir,
   defaultClaudeConfigDir,
   defaultCodexHome,
-  defaultGeminiHome,
-  geminiAuthTypeOf,
-  geminiDirOf,
-  geminiPaths,
   NO_IDENTITY,
   readClaudeLogin,
   readCodexLogin,
-  readGeminiLogin,
   withCodexFileStore,
-  withGeminiAuthType,
+  type AntigravityPaths,
   type ClaudePaths,
   type CodexPaths,
-  type GeminiPaths,
   type LoginInfo,
 } from './cli-files'
 
@@ -68,11 +65,12 @@ interface AccountsFile {
 const SHAREABLE_ITEMS: Record<ProviderId, string[]> = {
   claude: ['settings.json', 'keybindings.json', 'CLAUDE.md', 'skills', 'commands', 'agents', 'rules'],
   codex: ['config.toml', 'AGENTS.md', 'prompts', 'skills', 'rules'],
-  gemini: ['settings.json', 'GEMINI.md', 'commands', 'skills', 'agents', 'policies'],
+  // `config`: MCP servers, hooks, plugins and skills; the login is in the keyring anyway.
+  antigravity: ['GEMINI.md', 'config'],
 }
 
 /** The standard account's color: one per CLI, the others pick from the rest. */
-const SYSTEM_COLOR: Record<ProviderId, string> = { claude: ACCOUNT_COLORS[0], codex: ACCOUNT_COLORS[1], gemini: ACCOUNT_COLORS[2] }
+const SYSTEM_COLOR: Record<ProviderId, string> = { claude: ACCOUNT_COLORS[0], codex: ACCOUNT_COLORS[1], antigravity: ACCOUNT_COLORS[2] }
 
 const POLL_MS = 15_000
 
@@ -102,8 +100,9 @@ export class AccountService extends TypedEmitter<Events> {
   async init(): Promise<void> {
     const data = await readJsonGuarded<AccountsFile>(this.file)
     this.stored = Array.isArray(data?.accounts) ? data.accounts.filter(isStoredAccount) : []
+    // Accounts of a CLI Nexa no longer has (Gemini CLI in Nexa 0.x) leave the file; their folders stay.
+    let added = Array.isArray(data?.accounts) && data.accounts.length !== this.stored.length
     // Every CLI has its standard account, first in its list.
-    let added = false
     for (const provider of [...PROVIDER_IDS].reverse()) {
       const id = systemAccountId(provider)
       if (this.stored.some((a) => a.id === id)) continue
@@ -181,16 +180,7 @@ export class AccountService extends TypedEmitter<Events> {
         const next = withCodexFileStore(config)
         if (next !== null) await writeFile(join(dir, 'config.toml'), next)
       }
-      if (provider === 'gemini') {
-        // After the import: settings taken from the standard account may name its way of signing in.
-        const { settingsFile } = geminiPaths(geminiDirOf(dir))
-        const settings = await readFile(settingsFile, 'utf8').catch(() => '')
-        const next = withGeminiAuthType(settings, input.kind === 'apiKey' ? 'gemini-api-key' : 'oauth-personal')
-        if (next !== null) {
-          await mkdir(dirname(settingsFile), { recursive: true })
-          await writeFile(settingsFile, next)
-        }
-      }
+      if (provider === 'antigravity' && input.kind === 'apiKey') await ensureApiKeySettings(dir)
     } catch (error) {
       // The account isn't created, so its folder doesn't stay behind either.
       if (!existed) await rm(dir, { recursive: true, force: true })
@@ -294,22 +284,19 @@ export class AccountService extends TypedEmitter<Events> {
     return codexPaths(this.configDir(this.require(id)))
   }
 
-  /** The standard account's `configDir` is the `.gemini` folder itself, every other one's its GEMINI_CLI_HOME. */
-  geminiPaths(id: string): GeminiPaths {
-    const account = this.require(id)
-    return geminiPaths(account.kind === 'system' ? this.configDir(account) : geminiDirOf(this.configDir(account)))
+  /** Every account's `configDir` is a `.gemini` folder: `~/.gemini`, or its own passed as `--gemini-dir`. */
+  antigravityPaths(id: string): AntigravityPaths {
+    return antigravityPaths(this.configDir(this.require(id)))
   }
 
   /** The login in the account's files (and its access token, never sent to the window). */
   login(id: string): LoginInfo {
     const account = this.require(id)
     if (account.provider === 'codex') return readCodexLogin(readJsonSync<unknown>(this.codexPaths(id).authFile))
-    if (account.provider === 'gemini') {
-      const paths = this.geminiPaths(id)
-      // The standard account may sign in with a key from the environment or its settings instead.
-      const type = geminiAuthTypeOf(readJsonSync<unknown>(paths.settingsFile))
-      const otherAuth = account.kind === 'system' && ((!!type && type !== 'oauth-personal') || !!process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true')
-      return readGeminiLogin(readJsonSync<unknown>(paths.oauthFile), readJsonSync<unknown>(paths.accountsFile), otherAuth)
+    if (account.provider === 'antigravity') {
+      // The standard account may sign in with a key from the environment instead of the keyring.
+      if (process.env.GEMINI_API_KEY) return { ...antigravityLogin(), authState: 'ok' }
+      return antigravityLogin()
     }
     const paths = this.claudePaths(id)
     // Claude Code keeps no time of its own with the tokens; the file's tells when they were saved.
@@ -320,10 +307,8 @@ export class AccountService extends TypedEmitter<Events> {
   /** Who is signed in in a config folder Nexa has no account for (yet), as the CLI would run with it. */
   identityAt(provider: ProviderId, configDir: string): AccountIdentity {
     if (provider === 'codex') return readCodexLogin(readJsonSync<unknown>(codexPaths(configDir).authFile)).identity
-    if (provider === 'gemini') {
-      const paths = geminiPaths(geminiDirOf(configDir))
-      return readGeminiLogin(readJsonSync<unknown>(paths.oauthFile), readJsonSync<unknown>(paths.accountsFile), false).identity
-    }
+    // Antigravity's login is in the keyring and names nobody.
+    if (provider === 'antigravity') return { ...NO_IDENTITY }
     const paths = claudePaths(configDir, true)
     return readClaudeLogin(readJsonSync<unknown>(paths.credentialsFile), readJsonSync<unknown>(paths.globalConfigFile)).identity
   }
@@ -404,13 +389,13 @@ export class AccountService extends TypedEmitter<Events> {
 /** The folder of a CLI's standard account, as the CLI finds it. */
 function systemConfigDir(provider: ProviderId): string {
   if (provider === 'codex') return defaultCodexHome()
-  if (provider === 'gemini') return geminiDirOf(defaultGeminiHome())
+  if (provider === 'antigravity') return defaultAntigravityDir()
   return defaultClaudeConfigDir()
 }
 
 function checkSecret(provider: ProviderId, kind: AccountKind, secret: string): void {
   if (!secret) throw new Error(kind === 'token' ? 'Bitte trage den Token ein.' : 'Bitte trage den API-Key ein.')
-  if (provider === 'gemini') {
+  if (provider === 'antigravity') {
     // AI Studio's keys have no fixed prefix Nexa could rely on; only obvious mix-ups are caught.
     if (/\s/.test(secret) || secret.length < 20) throw new Error('Das sieht nicht nach einem Gemini-API-Key aus (aus Google AI Studio).')
     if (secret.startsWith('sk-')) throw new Error('Das ist kein Gemini-API-Key: Er kommt aus Google AI Studio und beginnt meist mit „AIza“.')
@@ -445,8 +430,6 @@ function samePath(a: string, b: string): boolean {
 /** All or nothing: when an item fails, what was copied so far is removed again. */
 async function importShared(provider: ProviderId, target: string): Promise<void> {
   const source = systemConfigDir(provider)
-  // Gemini CLI looks in `<GEMINI_CLI_HOME>/.gemini`, the others in the account's folder itself.
-  if (provider === 'gemini') target = geminiDirOf(target)
   await mkdir(target, { recursive: true })
   const copied: string[] = []
   for (const item of SHAREABLE_ITEMS[provider]) {

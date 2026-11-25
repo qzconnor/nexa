@@ -46,7 +46,7 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
   { id: 'appearance', label: 'Darstellung', description: 'Theme, Skalierung, Fenster und Chat-Breite', icon: SETTINGS_ICONS.appearance, page: SettingsAppearance },
   { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
   { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
-  { id: 'providers', label: 'CLIs', description: 'Claude Code, Codex und Gemini CLI', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
+  { id: 'providers', label: 'CLIs', description: 'Claude Code, Codex und Antigravity CLI', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
   {
     id: 'cliConfig',
     label: 'CLI-Konfiguration',
