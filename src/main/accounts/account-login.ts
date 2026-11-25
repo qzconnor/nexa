@@ -36,7 +36,7 @@ function failureOf(output: string, code: number | null): string {
 export type LoginStep = { write: string } | { ok: true } | { failed: string } | null
 
 /**
- * A login a CLI runs over stdin instead of a login command of its own (Gemini CLI: ACP's
+ * A login a CLI runs over stdin instead of a login command of its own (an ACP agent's
  * `authenticate`). The CLI opens the browser itself and prints no link Nexa could show.
  */
 export interface LoginDialog {
@@ -68,7 +68,7 @@ type Events = {
 
 /**
  * Browser logins of accounts: `claude auth login` and `codex login`, started with the account's
- * config folder and without a terminal, and Gemini CLI's through a `LoginDialog`. The CLI opens the
+ * config folder and without a terminal, or an ACP agent's through a `LoginDialog`. The CLI opens the
  * browser and waits for its callback; Nexa shows the link from its output and, for Claude Code,
  * passes on a code pasted from the browser.
  */

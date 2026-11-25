@@ -6,6 +6,6 @@ describe('andList', () => {
     expect(andList([])).toBe('')
     expect(andList(['Codex'])).toBe('Codex')
     expect(andList(['Claude Code', 'Codex'])).toBe('Claude Code und Codex')
-    expect(andList(['Claude Code', 'Codex', 'Gemini CLI'])).toBe('Claude Code, Codex und Gemini CLI')
+    expect(andList(['Claude Code', 'Codex', 'Antigravity CLI'])).toBe('Claude Code, Codex und Antigravity CLI')
   })
 })

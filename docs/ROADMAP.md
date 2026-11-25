@@ -244,12 +244,17 @@
       Account und Ebene (Nutzer, Projekt, bei Claude auch Lokal), in den Dateien der CLIs selbst; Schlüssel
       in Variablen und Headern bleiben verborgen, was Nexa nicht kennt, bleibt erhalten. „Konnektoren
       verwalten“ führt dorthin, mit CLI, Account und Ordner des Chats
-- [x] Gemini CLI als dritte CLI über das Agent Client Protocol (`gemini --acp`, ein Prozess je Chat): Text,
-      Gedanken, Werkzeuge mit Diffs, Rückfragen zu Werkzeugen und Plänen, Modelle, Modi, Abbrechen,
-      Fortsetzen (`session/load`), Nexas MCP-Server mit Diagrammen und Browser, Anweisungen und
-      Ordner-Prompts vor dem ersten Prompt, Wechsel zwischen den drei CLIs mit Kontext. Accounts: der eigene
-      Ordner `~/.gemini`, Google-Logins mit eigenem `GEMINI_CLI_HOME` (Anmeldung im Browser aus Nexa) und
-      API-Keys aus Google AI Studio; `nx --gemini`
+- [x] Antigravity CLI als dritte CLI statt Gemini CLI: Google hat Gemini CLI für private Konten
+      eingestellt, Antigravity CLI (`agy`) ist der Nachfolger und spricht ebenfalls das Agent Client
+      Protocol (`agy acp`, ein Prozess je Chat). Text, Gedanken, Werkzeuge mit Diffs und Befehlsausgabe,
+      Aufgabenliste (`update_steps`), Rückfragen zu Werkzeugen, Pläne (`implementation_plan.md`) mit
+      Freigabe, Modelle mit Denkstufen, Modi samt `auto` und „Volle Rechte“ (Neustart mit
+      `--dangerously-skip-permissions`), Abbrechen, Fortsetzen ohne Wiedergabe (`session/resume`), Nexas
+      MCP-Server, Anweisungen und Ordner-Prompts im Systemprompt (`_meta.antigravity.systemPrompt`).
+      Accounts: der Google-Login des Systems (Schlüsselbund, mit Plan) und API-Keys mit eigenem Ordner
+      (`--gemini-dir`). CLI-Konfiguration für `mcp_config.json`, `hooks.json` und die Berechtigungen.
+      `nx --antigravity` bzw. `nx --agy`. Accounts und Chats von Gemini CLI aus Nexa 0.x übernimmt Nexa
+      beim Start (Chats wechseln zur Standard-CLI, Gemini-Accounts fallen weg)
 
 ## Als Nächstes
 
@@ -272,21 +277,23 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 
 ## Später
 
-- [ ] **Gemini CLI, was noch fehlt** (`PROTOCOLS.md`, „Gemini CLI“):
-  - [ ] Aufgabenliste: `write_todos` schickt in ACP keine Einträge (kein `plan`-Update); sobald Gemini CLI
-        sie meldet, als Todo-Karte zeigen.
-  - [ ] Limits und Kontingente (Gemini CLI nennt sie keinem Client) und 429 als Limit mit Reset markieren.
-  - [ ] Titel vom Modell (ACP kann das Modell nicht nebenher fragen).
-  - [ ] MCP-Server und Erweiterungen von Gemini CLI im „+“-Menü (Liste mit Zustand, Schalter je Projekt
-        über `mcpOff`, Erweiterungen als Plugins). Bearbeiten lassen sie sich schon unter Einstellungen ›
-        CLI-Konfiguration.
-  - [ ] Sitzungen von Gemini CLI übernehmen (Import, `nx -r <id>`) und Abgleich, wenn sie außerhalb von
-        Nexa weiterlaufen.
-  - [ ] Abzweigen, Bearbeiten und Accountwechsel auf derselben Sitzung statt neu mit `<nexa-context>`
-        (Sitzungsdatei kopieren bzw. kürzen).
-  - [ ] Link der Google-Anmeldung im Dialog zeigen (Gemini CLI gibt ihn nicht heraus) und Abmelden.
-  - [ ] Die leere Sitzung aufräumen, die jeder Start von `gemini --acp` anlegt.
-  - [ ] Nexas Anweisungen nicht als ersten Prompt in Gemini CLIs eigener Sitzungsliste.
+- [ ] **Antigravity CLI, was noch fehlt** (`PROTOCOLS.md`, „Antigravity CLI“):
+  - [ ] Mehrere Google-Logins: Der Login liegt einmal je Benutzer im Schlüsselbund, `--gemini-dir` trennt
+        ihn nicht. Zu prüfen: `AGY_CLI_FORCE_FILE_TOKEN_STORAGE`, `AGY_ACCOUNT`,
+        `ANTIGRAVITY_CREDENTIAL_SCOPE`.
+  - [ ] Anmelden und Abmelden aus Nexa statt im Terminal, mit dem Namen des Kontos.
+  - [ ] Limits und Kontingente (Antigravity nennt nur den Plan) und Fehler „zu viele Anfragen“ als Limit
+        mit Reset markieren.
+  - [ ] Titel aus `session_info_update` übernehmen.
+  - [ ] Unterhaltungen von Antigravity CLI lesen (`conversations/<id>.db`): übernehmen (Import,
+        `nx -r <id>`), Abgleich, wenn sie außerhalb von Nexa weiterlaufen, und Accountwechsel auf derselben
+        Unterhaltung.
+  - [ ] Abzweigen und Bearbeiten auf derselben Unterhaltung statt neu mit `<nexa-context>`.
+  - [ ] Berechtigungen eines Projekts unter Einstellungen › CLI-Konfiguration (Antigravity legt sie mit
+        `/permissions` selbst an; Datei und Format noch unbekannt).
+  - [ ] MCP-Server von Antigravity CLI im „+“-Menü (Liste mit Zustand, Schalter je Projekt).
+  - [ ] Unter macOS und Linux prüfen: Installation, Schlüsselbund (Nexa sieht den Login dort nicht und
+        nimmt ihn als vorhanden an), Pfade.
 - [ ] Weitere CLIs über das Provider-System.
 - [ ] Mehrere Fenster bzw. Session in eigenem Fenster; mehrere Chats nebeneinander (`GroupShell.vue` im
       Claude Manager).

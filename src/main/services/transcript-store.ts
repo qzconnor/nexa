@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ChatItem } from '@shared/chat'
+import { migrateItem } from './provider-migration'
 
 /**
  * The chat of every session as JSON lines (`sessions/<id>.jsonl`): each line a state of an item, the
@@ -34,7 +35,7 @@ export class TranscriptStore {
       lines++
       try {
         const item = JSON.parse(line) as ChatItem
-        if (item && typeof item.id === 'string') items.set(item.id, item)
+        if (item && typeof item.id === 'string') items.set(item.id, migrateItem(item))
       } catch {
         // A line cut off by a crash.
       }

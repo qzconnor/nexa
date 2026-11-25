@@ -725,7 +725,7 @@
   /* The mark of each CLI (ProviderIcon): the vendors' brand hues, legible on both themes. */
   --provider-claude: #d97757;
   --provider-codex: #10a37f;
-  --provider-gemini: #4285f4;
+  --provider-antigravity: #6e64f0;
   /*
    * How wide messages and the composer get at most. As on a 1080p screen (about 40 % and 54 % of the
    * chat's column) on 4K and ultrawide ones too, where a fixed width would leave a narrow strip; never

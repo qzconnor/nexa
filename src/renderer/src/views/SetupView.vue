@@ -26,7 +26,7 @@ const checking = computed(() => !providers.checked || providers.detecting)
 /** What the button says: the start goes on without a usable CLI too, the start page then tells. */
 const ready = computed(() => providers.available.length > 0)
 const summary = computed(() => {
-  if (checking.value) return 'Nexa sucht nach Claude Code, Codex und Gemini CLI …'
+  if (checking.value) return 'Nexa sucht nach Claude Code, Codex und Antigravity CLI …'
   const found = PROVIDER_IDS.filter((id) => providers.status(id)?.installed)
   if (!found.length) return 'Nexa hat keine der CLIs gefunden. Installiere eine und prüfe dann erneut.'
   if (found.length === 1) return `Nexa hat ${PROVIDERS[found[0]].name} gefunden. Die anderen CLIs kannst du später dazunehmen.`

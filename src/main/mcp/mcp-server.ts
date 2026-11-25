@@ -15,7 +15,7 @@ const KEEPALIVE_MS = 20_000
  */
 export interface McpCaller {
   sessionId: string | null
-  /** Keeps the arguments of its tool calls, for a CLI that doesn't report them (Gemini CLI). */
+  /** Keeps the arguments of its tool calls, for a CLI that may not report them (Antigravity CLI). */
   calls?: McpCallLog
 }
 

@@ -40,8 +40,8 @@ onMounted(load)
 const CARDS = {
   claude: { anchor: 'usage.claude', description: 'Limits je Account und was Nexas Chats in 30 Tagen verbraucht haben.' },
   codex: { anchor: 'usage.codex', description: 'Limits je Account und was Nexas Chats in 30 Tagen verbraucht haben.' },
-  // Gemini CLI reports no limits to a client, only the tokens of each turn.
-  gemini: { anchor: 'usage.gemini', description: 'Gemini CLI meldet keine Limits; was Nexas Chats in 30 Tagen verbraucht haben.' },
+  // Antigravity CLI reports no limits to a client, only the plan of the login and the tokens of each turn.
+  antigravity: { anchor: 'usage.antigravity', description: 'Antigravity CLI meldet keine Limits; was Nexas Chats in 30 Tagen verbraucht haben.' },
 } as const satisfies Record<ProviderId, { anchor: string; description: string }>
 
 function describe(id: ProviderId): string {

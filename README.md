@@ -1,7 +1,7 @@
 # Nexa
 
-Ein Chat für Coding-Agenten: Claude Code, Codex und Gemini CLI mit derselben Oberfläche. Die CLIs laufen als
-Kindprozesse mit JSON-Streams (`claude -p --output-format stream-json`, `codex app-server`, `gemini --acp`), die Oberfläche
+Ein Chat für Coding-Agenten: Claude Code, Codex und Antigravity CLI mit derselben Oberfläche. Die CLIs laufen als
+Kindprozesse mit JSON-Streams (`claude -p --output-format stream-json`, `codex app-server`, `agy acp`), die Oberfläche
 zeichnet Nexa selbst: Chats nach Projekten, Freigaben und Rückfragen im Fenster, Agents, mehrere Accounts
 je CLI, Usage, ein Dateibaum mit Git und ein Browser neben dem Chat, den die Agents über Nexas MCP-Server
 steuern.
@@ -34,8 +34,8 @@ Explorers: `nx` eintippen, Enter, und Nexa öffnet einen Chat im angezeigten Ord
 |---|---|
 | `nx` | neuer Chat im aktuellen Ordner |
 | `nx <ordner>` | neuer Chat in `<ordner>` (auch `~`) |
-| `nx -a <account>` | mit Account: Name, E-Mail oder ID, auch ein Teil des Namens, von Claude Code, Codex oder Gemini CLI |
-| `nx --claude`, `nx --codex`, `nx --gemini` | mit Claude Code, Codex bzw. Gemini CLI |
+| `nx -a <account>` | mit Account: Name, E-Mail oder ID, auch ein Teil des Namens, von Claude Code, Codex oder Antigravity CLI |
+| `nx --claude`, `nx --codex`, `nx --antigravity` (`--agy`) | mit Claude Code, Codex bzw. Antigravity CLI |
 | `nx -c` | letzten Chat in diesem Ordner öffnen |
 | `nx -r <id>` | Chat fortsetzen: per ID des Chats, der Session von Claude Code oder des Threads von Codex |
 | `nx -r` | die Chats dieses Ordners zur Auswahl (Schnellsuche) |

@@ -33,9 +33,9 @@ const KIND_INFO: Record<ProviderId, Partial<Record<CreatableAccountKind, string>
   codex: {
     oauth: 'Eigener Codex-Ordner (CODEX_HOME), Anmeldung im Browser über „codex login“ mit einem ChatGPT-Konto. Codex erneuert den Token selbst.',
   },
-  gemini: {
-    oauth: 'Eigener Ordner (GEMINI_CLI_HOME), Anmeldung im Browser mit einem Google-Konto. Gemini CLI erneuert den Token selbst.',
-    apiKey: 'API-Key aus Google AI Studio (beginnt meist mit „AIza“), Gemini CLI bekommt ihn als GEMINI_API_KEY. Kostenlos mit Tageslimits oder nach Verbrauch.',
+  antigravity: {
+    apiKey:
+      'API-Key aus Google AI Studio (beginnt meist mit „AIza“), Antigravity CLI bekommt ihn als GEMINI_API_KEY, mit eigenem Datenordner. Den Google-Login gibt es nur einmal: den des Standard-Accounts.',
   },
 }
 /** What the advanced fields say for each CLI. */
@@ -52,12 +52,12 @@ const CLI_TEXT: Record<ProviderId, { args: string; dirEnv: string; system: strin
     system: '~/.codex',
     copies: 'Kopiert config.toml, AGENTS.md, Prompts, Skills und Rules – keine Anmeldedaten.',
   },
-  gemini: {
+  antigravity: {
     args: 'z. B. --sandbox',
-    // GEMINI_CLI_HOME stands for the home folder: Gemini CLI keeps its files in `.gemini` below it.
-    dirEnv: 'GEMINI_CLI_HOME, darin .gemini',
+    // No variable moves Antigravity's data: Nexa passes the folder as `--gemini-dir`.
+    dirEnv: '--gemini-dir',
     system: '~/.gemini',
-    copies: 'Kopiert settings.json, GEMINI.md, Commands, Skills, Agents und Policies – keine Anmeldedaten.',
+    copies: 'Kopiert GEMINI.md und den Ordner config (MCP-Server, Hooks, Plugins, Skills) – keine Anmeldedaten.',
   },
 }
 /** Where secrets go, in the words of the system. */

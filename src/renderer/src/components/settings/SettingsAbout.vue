@@ -11,7 +11,7 @@ const openUserData = () => app.info && void window.api.app.openPath(app.info.use
 
 <template>
   <div class="flex flex-col gap-4">
-    <SettingsSection anchor="about.app" title="Nexa" description="Claude Code, Codex und Gemini CLI in einer Oberfläche.">
+    <SettingsSection anchor="about.app" title="Nexa" description="Claude Code, Codex und Antigravity CLI in einer Oberfläche.">
       <div class="flex items-center gap-3">
         <AppLogo class="size-10" />
         <div class="flex flex-col">

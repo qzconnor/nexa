@@ -5,6 +5,7 @@ import type { AppSettings, DeepPartial } from '@shared/types'
 import { mergeKnown } from '@shared/utils'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { TypedEmitter } from '../lib/typed-emitter'
+import { migrateSettings } from './provider-migration'
 
 export class SettingsService extends TypedEmitter<{ changed: [AppSettings] }> {
   private readonly file: string
@@ -15,7 +16,8 @@ export class SettingsService extends TypedEmitter<{ changed: [AppSettings] }> {
     this.file = join(dataDir, 'settings.json')
     const base = defaultSettings()
     base.defaults.projectsFolder = join(homedir(), 'Projekte')
-    this.current = mergeKnown(base, readJsonGuardedSync<unknown>(this.file) ?? {})
+    // Settings of a CLI that is gone (Gemini CLI) fall away with mergeKnown; a default naming it goes too.
+    this.current = migrateSettings(mergeKnown(base, readJsonGuardedSync<unknown>(this.file) ?? {}))
   }
 
   get(): AppSettings {

@@ -5,24 +5,24 @@ import { enabledProviders, offeredProviders, providerTogglePatch } from './provi
 describe('enabledProviders', () => {
   it('lists the CLIs that are on, in their order', () => {
     const settings = defaultSettings()
-    expect(enabledProviders(settings)).toEqual(['claude', 'codex', 'gemini'])
+    expect(enabledProviders(settings)).toEqual(['claude', 'codex', 'antigravity'])
     settings.claude.enabled = false
-    expect(enabledProviders(settings)).toEqual(['codex', 'gemini'])
+    expect(enabledProviders(settings)).toEqual(['codex', 'antigravity'])
   })
 })
 
 describe('offeredProviders', () => {
-  it('offers Gemini CLI only once it is installed, Claude Code and Codex always', () => {
+  it('offers Antigravity CLI only once it is installed, Claude Code and Codex always', () => {
     const settings = defaultSettings()
     expect(offeredProviders(settings, [])).toEqual(['claude', 'codex'])
     expect(offeredProviders(settings, ['claude'])).toEqual(['claude', 'codex'])
-    expect(offeredProviders(settings, ['claude', 'gemini'])).toEqual(['claude', 'codex', 'gemini'])
+    expect(offeredProviders(settings, ['claude', 'antigravity'])).toEqual(['claude', 'codex', 'antigravity'])
   })
 
   it('leaves out a CLI that is off, installed or not', () => {
     const settings = defaultSettings()
-    settings.gemini.enabled = false
-    expect(offeredProviders(settings, ['gemini'])).toEqual(['claude', 'codex'])
+    settings.antigravity.enabled = false
+    expect(offeredProviders(settings, ['antigravity'])).toEqual(['claude', 'codex'])
   })
 })
 
@@ -36,7 +36,7 @@ describe('providerTogglePatch', () => {
   it('keeps the last CLI on and changes nothing that is so already', () => {
     const settings = defaultSettings()
     settings.codex.enabled = false
-    settings.gemini.enabled = false
+    settings.antigravity.enabled = false
     expect(providerTogglePatch(settings, 'claude', false)).toBeNull()
     expect(providerTogglePatch(settings, 'claude', true)).toBeNull()
     expect(providerTogglePatch(settings, 'codex', true)).toEqual({ codex: { enabled: true } })

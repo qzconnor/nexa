@@ -72,7 +72,7 @@ export const API_ROUTES = [
     tag: 'Accounts',
     summary: 'Accounts der CLIs',
     description:
-      'Alle Accounts von Claude Code, Codex und Gemini CLI in der Reihenfolge der Einstellungen, mit Login und Plan. Token und API-Keys sind nicht dabei, nur ihr Anfang und Ende (`secretHint`).',
+      'Alle Accounts von Claude Code, Codex und Antigravity CLI in der Reihenfolge der Einstellungen, mit Login und Plan. Token und API-Keys sind nicht dabei, nur ihr Anfang und Ende (`secretHint`).',
     response: { description: 'Die Accounts', schema: listOf('Account') },
   },
   {
@@ -108,7 +108,7 @@ export const API_ROUTES = [
         properties: {
           projectId: { type: 'string', description: 'Das Projekt (aus `GET /api/projects`).' },
           path: { type: 'string', description: 'Ein Ordner, wenn `projectId` fehlt.' },
-          provider: { type: 'string', enum: ['claude', 'codex', 'gemini'], description: 'Die CLI; fehlt sie (oder ist es eine andere), gilt die Vorgabe.' },
+          provider: { type: 'string', enum: ['claude', 'codex', 'antigravity'], description: 'Die CLI; fehlt sie (oder ist es eine andere), gilt die Vorgabe.' },
           account: { type: 'string', description: 'ID eines Accounts (aus `GET /api/accounts`); ein unbekannter gilt als keiner.' },
           prompt: { type: 'string', description: 'Der erste Prompt; ohne ihn bleibt der Chat leer.' },
           show: { type: 'boolean', default: true, description: '`false`: das Fenster bleibt, wo es ist.' },

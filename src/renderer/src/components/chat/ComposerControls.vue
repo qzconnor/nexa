@@ -31,7 +31,7 @@ const providers = useProvidersStore()
 const accounts = useAccountsStore()
 const ui = useUiStore()
 
-/** The CLIs that are on (Gemini once installed); one that is off only while this chat still has it. */
+/** The CLIs that are on (Antigravity once installed); one that is off only while this chat still has it. */
 const cliChoices = computed(() => PROVIDER_IDS.filter((id) => providers.offered.includes(id) || id === props.provider))
 
 /** The accounts of the CLI; the menu only shows when there is a choice. */

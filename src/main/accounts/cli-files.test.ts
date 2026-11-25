@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   claudeProjectKey,
+  antigravityPaths,
   claudeRenewable,
-  geminiAuthTypeOf,
+  keyringListsLogin,
   readClaudeLogin,
   readCodexLogin,
-  readGeminiLogin,
   refuseRefreshToken,
   withCodexFileStore,
-  withGeminiAuthType,
 } from './cli-files'
 
 const NOW = Date.parse('2026-11-23T12:00:00Z')
@@ -106,47 +105,21 @@ describe('readCodexLogin', () => {
   })
 })
 
-describe('readGeminiLogin', () => {
-  // oauth_creds.json as Gemini CLI writes it (google-auth-library's credentials).
-  const creds = (expiry: number, refresh = true) => ({
-    access_token: 'ya29.x',
-    ...(refresh ? { refresh_token: '1//r' } : {}),
-    expiry_date: expiry,
-    id_token: jwt({ email: 'e@gmail.com', name: 'Eva' }),
-    token_type: 'Bearer',
+describe('keyringListsLogin', () => {
+  it('finds the login of Antigravity CLI in what cmdkey prints, in any language', () => {
+    // `cmdkey /list:gemini:antigravity` on a German Windows 11, the user field left out.
+    const german = '\r\nAktuell gespeicherte Anmeldeinformationen:\r\n\r\n    Ziel: gemini:antigravity\r\n    Typ: Generisch \r\n    Lokaler Computer\r\n\r\n'
+    expect(keyringListsLogin(german)).toBe(true)
+    expect(keyringListsLogin('Currently stored credentials:\n\n    Target: LegacyGeneric:target=gemini:antigravity\n    Type: Generic\n')).toBe(true)
+    expect(keyringListsLogin('\r\nAktuell gespeicherte Anmeldeinformationen:\r\n\r\n* KEINE *\r\n')).toBe(false)
+    expect(keyringListsLogin('    Ziel: gemini:antigravity-other\r\n')).toBe(false)
   })
 
-  it('reads the person from google_accounts.json, else from the id token', () => {
-    expect(readGeminiLogin(creds(NOW + 60_000), { active: 'a@gmail.com', old: [] }, false, NOW)).toMatchObject({
-      authState: 'ok',
-      identity: { email: 'a@gmail.com', displayName: 'Eva' },
-      renewable: true,
-    })
-    expect(readGeminiLogin(creds(NOW + 60_000), null, false, NOW).identity.email).toBe('e@gmail.com')
-  })
-
-  it('counts an hour-old access token as expired while there is a refresh token', () => {
-    expect(readGeminiLogin(creds(NOW - 1000), null, false, NOW).authState).toBe('expired')
-    expect(readGeminiLogin(creds(NOW - 1000, false), null, false, NOW)).toMatchObject({ authState: 'dead', renewable: false })
-  })
-
-  it('takes another sign-in (API key, Vertex AI) as signed in without a Google login', () => {
-    expect(readGeminiLogin(null, null, false, NOW).authState).toBe('missing')
-    expect(readGeminiLogin(null, null, true, NOW).authState).toBe('ok')
-  })
-})
-
-describe('withGeminiAuthType', () => {
-  it('names the sign-in in settings.json and keeps what is there', () => {
-    const next = withGeminiAuthType('{"general":{"vimMode":true},"security":{"folderTrust":{"enabled":true}}}', 'gemini-api-key')!
-    expect(JSON.parse(next)).toEqual({ general: { vimMode: true }, security: { folderTrust: { enabled: true }, auth: { selectedType: 'gemini-api-key' } } })
-    expect(geminiAuthTypeOf(JSON.parse(next))).toBe('gemini-api-key')
-    expect(JSON.parse(withGeminiAuthType('', 'oauth-personal')!)).toEqual({ security: { auth: { selectedType: 'oauth-personal' } } })
-  })
-
-  it('leaves a file alone that says so already or has comments', () => {
-    expect(withGeminiAuthType('{"security":{"auth":{"selectedType":"oauth-personal"}}}', 'oauth-personal')).toBeNull()
-    expect(withGeminiAuthType('{\n  // mine\n  "general": {}\n}', 'oauth-personal')).toBeNull()
+  it('knows where a .gemini folder keeps what Nexa reads and writes', () => {
+    const paths = antigravityPaths('/p/k')
+    expect(paths.settingsFile.replace(/\\/g, '/')).toBe('/p/k/antigravity-cli/settings.json')
+    expect(paths.mcpFile.replace(/\\/g, '/')).toBe('/p/k/config/mcp_config.json')
+    expect(paths.conversationsDir.replace(/\\/g, '/')).toBe('/p/k/antigravity-cli/conversations')
   })
 })
 

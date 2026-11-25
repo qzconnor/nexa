@@ -92,20 +92,20 @@ async function refresh(): Promise<void> {
       <AccountList provider="codex" @remove="remove" />
     </SettingsSection>
 
-    <SettingsSection anchor="accounts.gemini" title="Gemini CLI" description="Google-Logins, jeder mit eigenem GEMINI_CLI_HOME, oder ein API-Key aus Google AI Studio.">
+    <SettingsSection anchor="accounts.antigravity" title="Antigravity CLI" description="Der Google-Login des Standard-Accounts (einer je Nutzer) und API-Keys aus Google AI Studio, jeder mit eigenem Datenordner.">
       <template #actions>
-        <Button variant="outline" size="sm" @click="add('gemini')">
+        <Button variant="outline" size="sm" @click="add('antigravity')">
           <PlusIcon data-icon="inline-start" />
           Hinzufügen
         </Button>
       </template>
-      <AccountList provider="gemini" @remove="remove" />
+      <AccountList provider="antigravity" @remove="remove" />
     </SettingsSection>
 
     <SettingsSection
       anchor="accounts.logins"
       title="Logins"
-      description="Claude Code, Codex und Gemini CLI erneuern den Access-Token eines Browser-Logins selbst. Erst wenn der Login endet, musst du dich neu anmelden."
+      description="Claude Code, Codex und Antigravity CLI erneuern den Access-Token eines Browser-Logins selbst. Erst wenn der Login endet, musst du dich neu anmelden."
     >
       <SettingField
         anchor="accounts.keepLoginsFresh"

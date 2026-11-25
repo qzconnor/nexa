@@ -34,7 +34,7 @@ onMounted(() => void attempt(() => store.show(), 'Einstellungen der CLI nicht le
 
 const target = computed(() => store.target)
 const snapshot = computed(() => store.snapshot)
-const providerOptions = computed(() => store.providers.map((id) => ({ value: id, label: PROVIDERS[id].short })))
+const providerOptions = computed(() => store.providers.map((id) => ({ value: id, label: PROVIDERS[id].settingsLabel ?? PROVIDERS[id].short })))
 
 /** The accounts of the CLI, and the one shown even when the list hides it (the standard one of a chat). */
 const accountOptions = computed(() => {

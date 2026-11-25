@@ -194,7 +194,7 @@ export interface AppSettings {
   }
   claude: ProviderSettings
   codex: ProviderSettings
-  gemini: ProviderSettings
+  antigravity: ProviderSettings
   chat: ChatSettings
   tools: ToolSettings
   notifications: NotificationSettings

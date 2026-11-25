@@ -99,7 +99,7 @@ export function parseLaunchArgs(args: readonly string[]): LaunchCommand {
     }
     const setProvider = (provider: ProviderId) => {
       noValue()
-      if (command.provider && command.provider !== provider) throw new Error('--claude, --codex und --gemini schließen sich aus.')
+      if (command.provider && command.provider !== provider) throw new Error('--claude, --codex und --antigravity schließen sich aus.')
       command.provider = provider
     }
     switch (flag) {
@@ -133,8 +133,9 @@ export function parseLaunchArgs(args: readonly string[]): LaunchCommand {
       case '--codex':
         setProvider('codex')
         break
-      case '--gemini':
-        setProvider('gemini')
+      case '--antigravity':
+      case '--agy':
+        setProvider('antigravity')
         break
       case '-m':
       case '--message': {
@@ -158,7 +159,7 @@ export function parseLaunchArgs(args: readonly string[]): LaunchCommand {
     throw new Error('Argumente für die CLI gelten für einen neuen Chat, nicht mit -c oder -r.')
   }
   if (command.resume && (command.account || command.provider)) {
-    throw new Error('-r öffnet einen Chat, wie er ist: -a, --claude, --codex und --gemini gehen damit nicht.')
+    throw new Error('-r öffnet einen Chat, wie er ist: -a, --claude, --codex und --antigravity gehen damit nicht.')
   }
   if (typeof command.resume === 'string' && command.dir !== null) throw new Error('Mit einer ID braucht -r keinen Ordner.')
   if (command.resume === true && command.prompt) throw new Error('-m geht mit -r nur zusammen mit einer ID.')
@@ -206,7 +207,7 @@ function launchDir(cwd: string, dir: string | null, home: string): string {
 /**
  * What a call of `nx` asks for. A chat that is open in the folder (its CLI runs, or it is still empty)
  * is shown instead of a new one, with the setting `general.nxReuseChat`; -n, -m and arguments for the
- * CLI ask for a new one. -a, --claude, --codex and --gemini narrow down the chat -c and the open one may be.
+ * CLI ask for a new one. -a, --claude, --codex and --antigravity narrow down the chat -c and the open one may be.
  */
 export function resolveLaunch(request: LaunchRequest, context: LaunchContext): LaunchPlan {
   const command = parseLaunchArgs(request.args)
