@@ -52,6 +52,7 @@ class Fake<E extends Record<string, unknown[]>> extends TypedEmitter<E> {
 }
 
 class FakeWindow {
+  constructor(readonly id = 1) {}
   focused = false
   visible = true
   minimized = false
@@ -76,6 +77,8 @@ describe('NotificationService', () => {
   let accounts: Fake<{ changed: [Account[]] }> & { list: () => Account[] }
   let settingsService: Fake<{ changed: [AppSettings] }> & { get: () => AppSettings }
   let win: FakeWindow
+  /** Chats in windows of their own, after the main window. */
+  let chatWindows: FakeWindow[]
   let usage: ProviderUsage[]
   let accountList: Account[]
   const open = { chat: vi.fn<(id: string) => void>(), settings: vi.fn<(section: 'usage' | 'accounts') => void>() }
@@ -88,7 +91,7 @@ describe('NotificationService', () => {
       accounts: accounts as never,
       settings: settingsService as never,
       userDataDir: dir,
-      window: () => win as never,
+      windows: () => [win, ...chatWindows] as never,
       open,
     })
     await service.init()
@@ -104,6 +107,7 @@ describe('NotificationService', () => {
     fakes.FakeNotification.supported = true
     settings = defaultSettings()
     win = new FakeWindow()
+    chatWindows = []
     usage = []
     accountList = [account('a')]
     sessions = Object.assign(new Fake<{ attention: [string, Attention]; changed: [SessionMeta[]] }>(), {
@@ -141,7 +145,7 @@ describe('NotificationService', () => {
   it('with "hidden" also tells chats the window in front does not show', async () => {
     const service = await start({ when: 'hidden', preview: false, flashTaskbar: true })
     win.focused = true
-    service.setViewing('s1')
+    service.setViewing(1, 's1')
     sessions.fire('attention', 's1', done(60_000))
     sessions.fire('attention', 's2', done(60_000))
     expect(texts()).toEqual(['Claude ist fertig | Chat'])
@@ -154,11 +158,34 @@ describe('NotificationService', () => {
     sessions.fire('attention', 's1', done(60_000))
     sessions.fire('attention', 's1', done(60_000, 'Zweite'))
     expect(created()[0]!.closed).toBe(true)
-    service.setViewing('s1')
+    service.setViewing(1, 's1')
     expect(created()[1]!.closed).toBe(false)
     win.focused = true
-    service.windowFocused()
+    service.windowFocused(1)
     expect(created()[1]!.closed).toBe(true)
+  })
+
+  it('knows a chat in a window of its own: quiet while that window is in front, which flashes for it', async () => {
+    const own = new FakeWindow(2)
+    chatWindows = [own]
+    const service = await start({ when: 'hidden', flashTaskbar: true })
+    service.setViewing(2, 's1')
+    own.focused = true
+    sessions.fire('attention', 's1', done(60_000))
+    expect(created()).toHaveLength(0)
+    // The main window in front shows another chat: the one in its own window is told.
+    own.focused = false
+    win.focused = true
+    sessions.fire('attention', 's1', done(60_000))
+    expect(created()).toHaveLength(1)
+    // Nothing in front: the chat's own window flashes, not the main window.
+    win.focused = false
+    sessions.fire('attention', 's1', done(60_000))
+    expect(own.flashed).toBe(true)
+    expect(win.flashed).toBe(false)
+    service.windowClosed(2)
+    sessions.fire('attention', 's1', done(60_000))
+    expect(win.flashed).toBe(true)
   })
 
   it('is silent without sound and does nothing when switched off', async () => {

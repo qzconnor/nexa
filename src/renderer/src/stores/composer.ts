@@ -6,6 +6,7 @@ export interface Draft {
 }
 
 type Inserter = (text: string) => void
+type Reader = () => Draft
 
 /**
  * What is written in the composers but not sent, by chat, and text that other parts of the window put
@@ -15,21 +16,34 @@ type Inserter = (text: string) => void
 export const useComposerStore = defineStore('composer', () => {
   const drafts = new Map<string, Draft>()
   const inserters = new Map<string, Inserter>()
+  const readers = new Map<string, Reader>()
 
   const draftOf = (key: string): Draft | undefined => drafts.get(key)
+
+  /** What is written for the chat right now: in the composer that shows it, else its saved draft. */
+  function liveDraft(key: string): Draft | undefined {
+    const read = readers.get(key)
+    if (!read) return drafts.get(key)
+    const draft = read()
+    return draft.text || draft.images.length ? { text: draft.text, images: [...draft.images] } : undefined
+  }
 
   function saveDraft(key: string, draft: Draft): void {
     if (draft.text || draft.images.length) drafts.set(key, { text: draft.text, images: [...draft.images] })
     else drafts.delete(key)
   }
 
-  /** The composer that shows the chat `key` takes the text inserted for it, until `detach`. */
-  function attach(key: string, insert: Inserter): void {
+  /** The composer that shows the chat `key` takes the text inserted for it and tells what it holds, until `detach`. */
+  function attach(key: string, insert: Inserter, read?: Reader): void {
     inserters.set(key, insert)
+    if (read) readers.set(key, read)
+    else readers.delete(key)
   }
 
   function detach(key: string, insert: Inserter): void {
-    if (inserters.get(key) === insert) inserters.delete(key)
+    if (inserters.get(key) !== insert) return
+    inserters.delete(key)
+    readers.delete(key)
   }
 
   function insert(key: string, text: string): void {
@@ -56,5 +70,5 @@ export const useComposerStore = defineStore('composer', () => {
     return list
   }
 
-  return { draftOf, saveDraft, attach, detach, insert, filesOf }
+  return { draftOf, liveDraft, saveDraft, attach, detach, insert, filesOf }
 })

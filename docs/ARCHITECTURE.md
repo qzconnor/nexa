@@ -88,7 +88,10 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `files/activity-tracker.ts` | Leitet aus den Werkzeug-Items der Sessions ab, was der Agent mit Dateien tut (live und aus dem Verlauf) |
 | `files/file-activity.ts`, `files/shell-files.ts` | Shell-Befehle: welche Dateien sie nennen, schreiben, ob sie committen |
 | `files/files-ipc.ts` | Kanäle `files:*` und `git:*` mit Prüfung der Pfade |
-| `window/*` | Hauptfenster, Fensterzustand, Material (Mica/Acryl), Datei-Protokoll |
+| `window/*` | Hauptfenster und Fenster der Chats (`createAppWindow`, Art je Fenster: `windowKind`), Fensterzustand, Material (Mica/Acryl), Datei-Protokoll |
+| `window/chat-windows.ts` | Chats in eigenen Fenstern: welches Fenster welchen Chat zeigt, Übergabe von Entwurf und Panels, Rückfrage beim Schließen, Lage je Chat und die beim Beenden offenen in `chat-windows.json`; Kanäle `chat-windows:*` in `chat-windows-ipc.ts`, siehe „Chats in eigenen Fenstern“ |
+| `window/window-place.ts` | Lage eines Fensters: gemerkte Bounds nur, wenn sie auf einem Bildschirm liegen, das Fenster eines Chats sonst versetzt neben dem Hauptfenster |
+| `lib/per-window.ts` | Listen, die jedes Fenster ganz schickt (überwachte Ordner, Git-Ordner): je Fenster gemerkt, zusammen angewandt, beim Schließen eines Fensters ohne dessen Liste |
 | `window/tray.ts` | Symbol im Infobereich (Einstellung `general.runInTray`): Schließen blendet das Fenster dann nur aus, das Menü öffnet und beendet |
 | `lib/fonts.ts` | Installierte Schriften für die Schriftwahl der Einstellungen (Windows über .NET in PowerShell, Linux `fc-list`), einmal pro Sitzung; Kanal `app:list-fonts` |
 | `lib/login-item.ts` | Start mit der Anmeldung (`general.launchAtLogin`, Schalter `--autostart`): Windows über den Run-Schlüssel (der Uninstaller in `build/installer.nsh` entfernt ihn), Linux über `~/.config/autostart/nexa.desktop`; mit Infobereich startet das Fenster versteckt |
@@ -568,6 +571,49 @@ zeigt alle Karten mit Treffern untereinander, ohne Tabs.
   steht in `McpSyncResult.failed`, das Fenster nennt es; die anderen Accounts bekommen die Änderung trotzdem.
   Änderungen laufen nacheinander (`serial`), denn jede liest und schreibt die Dateien mehrerer Accounts.
 - Dateien, Befehle und Eigenheiten je CLI: PROTOCOLS.md, „Einstellungen der CLIs“.
+
+## Chats in eigenen Fenstern
+
+Ein Chat lässt sich aus dem Hauptfenster lösen (Symbol im Chat-Kopf neben Terminal und Neustart, Menü
+„Mehr“, Kontextmenü der Seitenleiste, Schnellsuche). Er zeigt sich dann in einem eigenen Nexa-Fenster,
+nur er, ohne Seitenleiste, Startseite und Schnellsuche.
+
+- **Fenster**: dieselbe Seite wie das Hauptfenster, geladen mit `?chat=<id>` (`shared/chat-windows.ts`,
+  `chatWindowSession`). Der Renderer liest das einmal (`lib/chat-window.ts`: `ownChat`, `isChatWindow`)
+  und lässt weg, was nur das Hauptfenster hat. Main baut es mit `createChatWindow` (kleinere
+  Mindestgröße, Material, Zoom und Härtung der `<webview>`s wie beim Hauptfenster) und richtet es mit
+  `setUpWindow` in `index.ts` ein wie jedes Fenster der App.
+- **Übergabe** (`ChatHandoff`: Entwurf, Terminal und Browser offen oder nicht): beim Lösen schickt das
+  Hauptfenster sie mit `chat-windows:open`, Main hält sie, bis das neue Fenster sie holt
+  (`takeHandoff`, nur das Fenster des Chats). Das Hauptfenster leert vorher Entwurf und Terminal-Panel des
+  Chats und zeigt die Startseite, damit nichts doppelt steht. Zurück geht es mit „Zurück ins
+  Hauptfenster“ (`dock`, das Hauptfenster zeigt den Chat) oder mit dem Schließen des Fensters.
+- **Schließen**: Main verhindert `close`, fragt das Fenster (`event:chat-window-closing`), und es
+  antwortet mit seiner Übergabe (`chat-windows:closing`). Antwortet es nicht binnen
+  `CLOSING_WAIT_MS` (1,5 s), oder lädt die Seite noch bzw. ist abgestürzt, schließt es ohne. Nach
+  `closed` meldet `ChatWindows` erst `changed` (das Hauptfenster weiß, dass der Chat wieder ihm gehört),
+  dann `returned` mit der Übergabe. Eine Übergabe, die das Fenster nie geholt hat, geht zurück, wie sie kam.
+  Schließt sich das Fenster selbst (Chat beendet oder gelöscht, `chatWindows.closeOwn()`), schickt es
+  seine Übergabe ebenso über `chat-windows:closing`: `window.close()` in der Seite übergeht in Electron
+  das `close` des Fensters und damit die Frage, der Entwurf wäre weg.
+- **Beenden und Neustart**: Beim Beenden (auch für ein Update) schließen die Fenster ohne Frage und
+  bleiben in `chat-windows.json` (`open`); beim nächsten Start öffnen sie wieder, sobald das Hauptfenster
+  sichtbar ist (mit Infobereich erst, wenn es sich zeigt). Die Lage merkt sich Nexa je Chat (`bounds`,
+  höchstens 100), gelöschte Chats fallen heraus (`keepSessions`).
+- **Wer zeigt was**: `show` in `index.ts` (Meldungen, `nx`, lokale API) bringt das Fenster eines Chats nach
+  vorn, sonst das Hauptfenster. Im Renderer prüfen `sessions.open` und `useChatActions().open` zuerst
+  `chatWindows.elsewhere(id)`: ein Chat in eigenem Fenster holt dieses nach vorn; aus dem Fenster eines
+  Chats geht jeder andere Chat ans Hauptfenster. `BrowserLayer` legt nur die Seiten der Chats an, die das
+  eigene Fenster zeigt, ein Tab hat also nie zwei `<webview>`s.
+- **Anfragen ans Hauptfenster** (`MainWindowRequest` über `chat-windows:to-main`): einen anderen Chat
+  öffnen, neuer Chat, Löschen (damit „Rückgängig“ bleibt, auch wenn das Fenster dann schließt) und die
+  Schnellsuche. Löschen schließt die Fenster der Chats ohne Frage (`chat-windows:close`).
+- **Was alle Fenster teilen**: Main sendet Ereignisse an alle Fenster der App (`broadcast`). Die Listen
+  überwachter Ordner und Git-Ordner schickt jedes Fenster ganz; `lib/per-window.ts` hält sie je Fenster,
+  sonst nähme ein Fenster dem anderen seine. Meldungen merken sich je Fenster, welchen Chat es zeigt
+  (`NotificationService.setViewing(windowId, …)`); keine Meldung, wenn das Fenster vorn den Chat zeigt,
+  und blinken darf das Fenster des Chats, sonst das Hauptfenster. Schließt das Hauptfenster ohne
+  Infobereich, beendet sich Nexa samt den Fenstern der Chats.
 
 ## Renderer
 

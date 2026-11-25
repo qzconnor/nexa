@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { ArtifactsInvoke } from '@shared/artifacts'
+import { ChatWindowsEvent, ChatWindowsInvoke } from '@shared/chat-windows'
 import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
 import { CliConfigEvent, CliConfigInvoke } from '@shared/cli-config'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
@@ -101,6 +102,19 @@ const api: NexaApi = {
     removeGlobal: (name) => invoke(CliConfigInvoke.removeGlobal, name),
     syncGlobal: (name) => invoke(CliConfigInvoke.syncGlobal, name),
     onChanged: (cb) => subscribe(CliConfigEvent.changed, cb),
+  },
+  chatWindows: {
+    open: (sessionId, handoff) => invoke(ChatWindowsInvoke.open, sessionId, handoff ?? null),
+    list: () => invoke(ChatWindowsInvoke.list),
+    takeHandoff: (sessionId) => invoke(ChatWindowsInvoke.takeHandoff, sessionId),
+    toMain: (request) => invoke(ChatWindowsInvoke.toMain, request),
+    dock: (handoff) => invoke(ChatWindowsInvoke.dock, handoff),
+    closing: (handoff) => invoke(ChatWindowsInvoke.closing, handoff),
+    close: (sessionIds) => invoke(ChatWindowsInvoke.close, sessionIds),
+    onChanged: (cb) => subscribe(ChatWindowsEvent.changed, cb),
+    onClosing: (cb) => subscribe(ChatWindowsEvent.closing, cb),
+    onReturned: (cb) => subscribe(ChatWindowsEvent.returned, cb),
+    onRequest: (cb) => subscribe(ChatWindowsEvent.request, cb),
   },
   terminals: {
     list: () => invoke(TerminalsInvoke.list),

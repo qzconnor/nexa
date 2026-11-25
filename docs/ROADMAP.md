@@ -259,6 +259,12 @@
       (`--gemini-dir`). CLI-Konfiguration für `mcp_config.json`, `hooks.json` und die Berechtigungen.
       `nx --antigravity` bzw. `nx --agy`. Accounts und Chats von Gemini CLI aus Nexa 0.x übernimmt Nexa
       beim Start (Chats wechseln zur Standard-CLI, Gemini-Accounts fallen weg)
+- [x] Chat in eigenem Fenster: das Symbol neben Terminal und Neustart im Kopf des Chats (auch im Menü
+      „Mehr“, im Kontextmenü der Seitenleiste und in der Schnellsuche) löst den Chat in ein eigenes
+      Nexa-Fenster, nur mit diesem Chat. Entwurf, Terminal und Browser kommen mit, auch wieder zurück
+      (Symbol „Zurück ins Hauptfenster“ oder Schließen des Fensters). Die Seitenleiste markiert solche
+      Chats, ein Klick holt ihr Fenster nach vorn. Größe und Lage merkt sich Nexa je Chat, offene Fenster
+      kommen beim nächsten Start wieder. Meldungen, Blinken und `nx` gehen an das Fenster des Chats
 
 ## Als Nächstes
 
@@ -310,8 +316,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         (`security` bzw. Secret Service über `gdbus`, nach den Konventionen von go-keyring geschrieben) und
         Pfade sind umgesetzt, aber ohne Mac oder Linux nicht ausprobiert.
 - [ ] Weitere CLIs über das Provider-System.
-- [ ] Mehrere Fenster bzw. Session in eigenem Fenster; mehrere Chats nebeneinander (`GroupShell.vue` im
-      Claude Manager).
 - [ ] Verbrauchs-Dashboard: Tokens je Tag, Modell und Ordner, Verlauf der Limits als Diagramm, ohne
       Dollar (`DashboardView.vue`, `usage-history.ts` im Claude Manager).
 - [ ] Änderungen je Prompt aus den Checkpoints von Claude Code, Zurückspulen mit Vorschau (Claude

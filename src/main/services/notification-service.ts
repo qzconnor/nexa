@@ -31,7 +31,8 @@ export interface NotificationDeps {
   accounts: Pick<AccountService, 'on' | 'list'>
   settings: Pick<SettingsService, 'on' | 'get'>
   userDataDir: string
-  window: () => BrowserWindow | null
+  /** The app's windows, the main one first: it flashes for a chat no window shows. */
+  windows: () => readonly BrowserWindow[]
   open: NotificationTargets
 }
 
@@ -41,8 +42,8 @@ export interface NotificationDeps {
  * of an account is nearly used up or its login ended.
  */
 export class NotificationService {
-  /** The chat the window shows; null: the start page. */
-  private viewing: string | null = null
+  /** The chat each window shows, by the window's id (the main window, chats in windows of their own). */
+  private readonly viewing = new Map<number, string>()
   /**
    * The latest notification of each chat. Kept so it can be taken back once the chat was seen, and
    * so a click on it still arrives (Electron loses the events of collected notifications).
@@ -102,15 +103,21 @@ export class NotificationService {
     for (const off of this.offs.splice(0)) off()
   }
 
-  /** The window tells which chat it shows (null: none); that chat's notification is no longer needed. */
-  setViewing(sessionId: string | null): void {
-    this.viewing = sessionId
-    if (sessionId && this.inFront()) this.dismiss(sessionId)
+  /** A window tells which chat it shows (null: none); that chat's notification is no longer needed. */
+  setViewing(windowId: number, sessionId: string | null): void {
+    if (sessionId) this.viewing.set(windowId, sessionId)
+    else this.viewing.delete(windowId)
+    if (sessionId && this.inFront()?.id === windowId) this.dismiss(sessionId)
   }
 
-  /** The window came to the front: the notification of the chat it shows has been seen. */
-  windowFocused(): void {
-    if (this.viewing) this.dismiss(this.viewing)
+  /** A window came to the front: the notification of the chat it shows has been seen. */
+  windowFocused(windowId: number): void {
+    const sessionId = this.viewing.get(windowId)
+    if (sessionId) this.dismiss(sessionId)
+  }
+
+  windowClosed(windowId: number): void {
+    this.viewing.delete(windowId)
   }
 
   /** Shows what a notification looks like with the current settings. */
@@ -141,9 +148,8 @@ export class NotificationService {
 
   /** Notification and flashing taskbar button, unless the user looks at the chat anyway (setting `when`). */
   private alert(sessionId: string, title: string, body: string, settings: NotificationSettings): void {
-    const win = this.deps.window()
-    const inFront = this.inFront()
-    if (inFront && (settings.when === 'background' || this.viewing === sessionId)) return
+    const front = this.inFront()
+    if (front && (settings.when === 'background' || this.viewing.get(front.id) === sessionId)) return
     if (Notification.isSupported()) {
       const notification = this.create(title, body, settings)
       notification.on('click', () => this.deps.open.chat(sessionId))
@@ -152,13 +158,17 @@ export class NotificationService {
       this.shown.set(sessionId, notification)
       notification.show()
     }
-    // The taskbar button only flashes for a window in the background; it stops once the window is in front.
-    if (settings.flashTaskbar && !inFront && win && !win.isDestroyed()) win.flashFrame(true)
+    // The taskbar button only flashes while no window is in front; it stops once the window is. The
+    // chat's own window if it has one, else the main window.
+    if (!settings.flashTaskbar || front) return
+    const windows = this.deps.windows().filter((win) => !win.isDestroyed())
+    const win = windows.find((w) => this.viewing.get(w.id) === sessionId && w.isVisible()) ?? windows[0]
+    win?.flashFrame(true)
   }
 
-  private inFront(): boolean {
-    const win = this.deps.window()
-    return !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
+  /** The window of the app the user works in, if any. */
+  private inFront(): BrowserWindow | null {
+    return this.deps.windows().find((win) => !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()) ?? null
   }
 
   /**

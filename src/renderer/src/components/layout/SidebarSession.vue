@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArchiveIcon, CopyIcon, FileDownIcon, GitForkIcon, PencilIcon, PinIcon, PinOffIcon, Trash2Icon } from '@lucide/vue'
+import { ArchiveIcon, CopyIcon, FileDownIcon, GitForkIcon, PencilIcon, PinIcon, PinOffIcon, SquareArrowOutUpRightIcon, Trash2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { SessionMeta } from '@shared/types'
 import AccountDot from '@/components/accounts/AccountDot.vue'
@@ -11,6 +11,7 @@ import { useSessionDrag } from '@/composables/useSessionDrag'
 import { formatAge } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
+import { useChatWindowsStore } from '@/stores/chat-windows'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import SessionMoveMenu from './SessionMoveMenu.vue'
@@ -28,6 +29,9 @@ const props = defineProps<{
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const accounts = useAccountsStore()
+const chatWindows = useChatWindowsStore()
+/** In a window of its own: a click brings that window to the front. */
+const ownWindow = computed(() => chatWindows.hasWindow(props.meta.id))
 
 /** Whose login the chat runs with; only worth a dot while its CLI has more than one account. */
 const account = computed(() => (accounts.ofProvider(props.meta.provider).length > 1 ? accounts.get(accounts.sessionAccount(props.meta)) : undefined))
@@ -88,12 +92,21 @@ function endDrag(): void {
         <span v-if="place" class="max-w-[30%] shrink truncate text-[0.7rem] text-muted-foreground/80" :title="meta.cwd">{{ place }}</span>
         <!-- Up there under „Angeheftet“ the pin would say it twice. -->
         <PinIcon v-else-if="meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
+        <SquareArrowOutUpRightIcon
+          v-if="ownWindow"
+          v-tooltip="'In eigenem Fenster: Klicken holt es nach vorn'"
+          aria-label="In eigenem Fenster"
+          class="size-3 shrink-0 text-muted-foreground"
+        />
         <AccountDot v-if="account" v-tooltip="`Account: ${account.name}`" :color="account.color" class="size-1.5 ring-1" />
         <span class="shrink-0 text-[0.7rem] text-muted-foreground tabular-nums">{{ formatAge(meta.updatedAt, now) }}</span>
       </button>
     </ContextMenuTrigger>
     <ContextMenuContent class="w-56">
       <ContextMenuItem @select="rename"><PencilIcon /> Umbenennen</ContextMenuItem>
+      <ContextMenuItem @select="chat.popOut(meta)">
+        <SquareArrowOutUpRightIcon /> {{ ownWindow ? 'Fenster des Chats zeigen' : 'In eigenem Fenster öffnen' }}
+      </ContextMenuItem>
       <ContextMenuItem @select="sessions.update(meta.id, { pinned: !meta.pinned })">
         <component :is="meta.pinned ? PinOffIcon : PinIcon" /> {{ meta.pinned ? 'Lösen' : 'Anheften' }}
       </ContextMenuItem>

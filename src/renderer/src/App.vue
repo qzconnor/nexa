@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import AccountFormDialog from '@/components/accounts/AccountFormDialog.vue'
 import AccountLoginDialog from '@/components/accounts/AccountLoginDialog.vue'
 import BrowserLayer from '@/components/browser/BrowserLayer.vue'
@@ -20,12 +20,15 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import { Toaster } from '@/components/ui/sonner'
 import { Spinner } from '@/components/ui/spinner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useChatActions } from '@/composables/useChatActions'
 import { useShortcuts } from '@/composables/useShortcuts'
 import { useThemeSync } from '@/composables/useThemeSync'
+import { isChatWindow, ownChat } from '@/lib/chat-window'
 import { attempt, errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAppStore } from '@/stores/app'
+import { useChatWindowsStore } from '@/stores/chat-windows'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
@@ -45,6 +48,7 @@ const accounts = useAccountsStore()
 const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const chatWindows = useChatWindowsStore()
 
 const ready = ref(false)
 const fatal = ref<string | null>(null)
@@ -60,27 +64,71 @@ watch(
   { immediate: true },
 )
 
+const sidebarShown = computed(() => ui.sidebarOpen && !isChatWindow)
+
+if (isChatWindow) {
+  // The taskbar and Alt+Tab name the chat.
+  watch(
+    () => sessions.active?.title,
+    (title) => (document.title = title ? `${title} – Nexa` : 'Nexa'),
+    { immediate: true },
+  )
+  // Its chat is gone (deleted elsewhere): nothing left to show.
+  watch(
+    () => ready.value && !sessions.active,
+    (gone) => {
+      if (gone) void chatWindows.closeOwn()
+    },
+  )
+} else {
+  // The open chat went into a window of its own (or came up there at the start): the start page here.
+  const chatActions = useChatActions()
+  watch(
+    () => ui.view === 'chat' && chatWindows.elsewhere(sessions.activeId),
+    (gone) => {
+      if (gone) chatActions.newChat(sessions.active?.projectId ?? null)
+    },
+  )
+}
+
+/** A chat's own window: its chat, with what came along from the main window. */
+async function openOwnChat(id: string): Promise<void> {
+  ui.view = 'chat'
+  // Deleted meanwhile: the window closes once it is up (see above).
+  if (!sessions.get(id)) return
+  const handoff = await window.api.chatWindows.takeHandoff(id).catch(() => null)
+  if (handoff) chatWindows.apply(id, handoff)
+  await sessions.open(id)
+}
+
 onMounted(async () => {
   try {
     await Promise.all([settings.load(), app.load(), themes.load().catch((error) => console.error('[themes]', error))])
     await Promise.all([providers.load(), accounts.load(), projects.load(), sessions.load()])
-    // `nx` or the local API asks for a session.
-    window.api.sessions.onShow((id) => {
-      ui.view = 'chat'
-      void attempt(() => sessions.open(id), 'Session ließ sich nicht öffnen')
-    })
-    // `nx -r` without an id: the folder's chats to pick from, as Claude Code's `--resume` offers them.
-    window.api.sessions.onFind((query) => {
-      ui.paletteQuery = query
-      ui.paletteOpen = true
-    })
-    // A notification about an account's limits or login.
-    window.api.settings.onOpen((section) => ui.openSettings(section))
+    if (ownChat) {
+      await openOwnChat(ownChat)
+    } else {
+      // `nx` or the local API asks for a session.
+      window.api.sessions.onShow((id) => {
+        ui.view = 'chat'
+        void attempt(() => sessions.open(id), 'Session ließ sich nicht öffnen')
+      })
+      // `nx -r` without an id: the folder's chats to pick from, as Claude Code's `--resume` offers them.
+      window.api.sessions.onFind((query) => {
+        ui.paletteQuery = query
+        ui.paletteOpen = true
+      })
+      // A notification about an account's limits or login.
+      window.api.settings.onOpen((section) => ui.openSettings(section))
+    }
     ready.value = true
-    // After the window is up: the hints about a new version or an update just installed are toasts.
-    void useUpdatesStore()
-      .load()
-      .catch((error) => console.error('[updates]', error))
+    // After the window is up: the hints about a new version or an update just installed are toasts,
+    // in the main window only.
+    if (!isChatWindow) {
+      void useUpdatesStore()
+        .load()
+        .catch((error) => console.error('[updates]', error))
+    }
   } catch (error) {
     fatal.value = errorMessage(error)
   }
@@ -92,21 +140,25 @@ onMounted(async () => {
     <div v-if="ready" class="flex h-full flex-col">
       <TitleBar />
       <div class="flex min-h-0 flex-1">
-        <Sidebar v-if="ui.sidebarOpen" />
+        <Sidebar v-if="sidebarShown" />
         <!-- The page sits as a panel in the window's frame (title bar and sidebar share its colour). -->
         <main
           :class="
             cn(
               'relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-t bg-surface',
-              ui.sidebarOpen && 'rounded-tl-xl border-l',
+              sidebarShown && 'rounded-tl-xl border-l',
             )
           "
         >
           <ChatView v-if="ui.view === 'chat' && sessions.active" />
-          <ArtifactsView v-else-if="ui.view === 'artifacts'" />
-          <!-- Chats stay reachable; only the start page waits for the setup. -->
-          <SetupView v-else-if="!settings.settings.setup.done" />
-          <HomeView v-else />
+          <!-- A chat's own window shows that chat and nothing else. -->
+          <template v-else-if="!isChatWindow">
+            <ArtifactsView v-if="ui.view === 'artifacts'" />
+            <!-- Chats stay reachable; only the start page waits for the setup. -->
+            <SetupView v-else-if="!settings.settings.setup.done" />
+            <HomeView v-else />
+          </template>
+          <div v-else class="flex flex-1 items-center justify-center"><Spinner class="size-5 text-muted-foreground" /></div>
           <!-- The pages of the chats' browsers, placed over the open chat's browser panel. -->
           <BrowserLayer />
         </main>
@@ -122,7 +174,8 @@ onMounted(async () => {
       <Spinner v-else class="size-6 text-muted-foreground" />
     </div>
     <template v-if="ready">
-      <CommandPalette />
+      <!-- In a chat's own window the main window's quick open comes instead (ui.openPalette). -->
+      <CommandPalette v-if="!isChatWindow" />
       <SettingsDialog />
       <ThemeEditorDialog />
       <AccountFormDialog />

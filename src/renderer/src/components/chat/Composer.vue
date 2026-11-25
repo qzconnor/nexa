@@ -205,7 +205,7 @@ watch(
     text.value = draft?.text ?? ''
     images.value = draft?.images ? [...draft.images] : []
     shellMode.value = false
-    if (next) composer.attach(next, insertText)
+    if (next) composer.attach(next, insertText, readDraft)
     // The first draft comes with the composer; focus waits for onMounted then.
     if (previous === undefined) return
     void nextTick(() => {
@@ -227,6 +227,11 @@ onBeforeUnmount(() => {
   composer.saveDraft(props.draftKey, { text: text.value, images: images.value })
   composer.detach(props.draftKey, insertText)
 })
+
+/** What the field holds now, for a chat that moves to another window with what is written. */
+function readDraft(): { text: string; images: string[] } {
+  return { text: text.value, images: [...images.value] }
+}
 
 /** Puts text at the cursor (a file mentioned in the tree, review comments), with a space before it. */
 function insertText(snippet: string): void {

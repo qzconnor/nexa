@@ -28,6 +28,7 @@ import {
   SettingsIcon,
   ShapesIcon,
   SparklesIcon,
+  SquareArrowOutUpRightIcon,
   SquarePenIcon,
   SquareTerminalIcon,
   TerminalIcon,
@@ -295,6 +296,14 @@ const switchChoices = computed(() => {
           >
             <RotateCwIcon />
             Chat neu starten
+          </CommandItem>
+          <CommandItem
+            value="chat-window"
+            filter-text="In eigenem Fenster öffnen Fenster Popout auslagern abdocken loslösen separat zweiter Bildschirm"
+            @select="run(() => chat.popOut(meta!))"
+          >
+            <SquareArrowOutUpRightIcon />
+            In eigenem Fenster öffnen
           </CommandItem>
           <CommandItem value="chat-end" filter-text="Chat beenden schließen CLI Prozess stoppen Claude Codex Startseite exit" @select="run(() => chat.end(meta!))">
             <PowerIcon />

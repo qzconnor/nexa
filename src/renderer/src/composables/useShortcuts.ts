@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { chatAt, cycleChat, matchAppShortcut, type AppShortcut } from '@shared/shortcuts'
 import { DEFAULT_ZOOM, normalizeZoom, stepZoom } from '@shared/zoom'
+import { isChatWindow } from '@/lib/chat-window'
 import { attempt } from '@/lib/errors'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
@@ -71,11 +72,14 @@ export function useShortcuts(ready: Ref<boolean>): void {
         chat.newChat(openId() ? (sessions.active?.projectId ?? null) : null)
         return
       case 'cycle-chat': {
+        // A chat's own window has no sidebar to step through.
+        if (isChatWindow) return
         const id = cycleChat(chatOrder(), openId(), shortcut.step)
         if (id && id !== openId()) void chat.open(id)
         return
       }
       case 'select-chat': {
+        if (isChatWindow) return
         const id = chatAt(chatOrder(), shortcut.index)
         if (id && id !== openId()) void chat.open(id)
         return

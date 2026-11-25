@@ -2,6 +2,7 @@ import type { SessionMeta, SessionRemoveResult } from '@shared/types'
 import { toast } from 'vue-sonner'
 import { attempt, toastError } from '@/lib/errors'
 import { removalDescription, removalProblems, removedTitle, worktreeNote } from '@/lib/chat-cleanup'
+import { useChatWindowsStore } from '@/stores/chat-windows'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -37,6 +38,8 @@ export function useChatRemoval() {
 
     const ids = going.map((m) => m.id)
     const shown = sessions.activeId && ids.includes(sessions.activeId) ? sessions.activeId : null
+    // A chat's own window goes with it; brought back, the chat is in the sidebar again.
+    useChatWindowsStore().closeWindows(ids)
     sessions.hide(ids)
     if (shown && ui.view === 'chat') ui.view = 'home'
 

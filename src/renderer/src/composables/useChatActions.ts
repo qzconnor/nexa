@@ -1,9 +1,11 @@
 import { sectionIdOf } from '@shared/sections'
 import type { SessionMeta, SessionMoveInput } from '@shared/types'
 import { toast } from 'vue-sonner'
+import { isChatWindow } from '@/lib/chat-window'
 import { groupState, type ChatState, type GroupState } from '@/lib/chat-state'
 import { attempt, toastError } from '@/lib/errors'
 import { foldersOf, projectTree } from '@/lib/session-tree'
+import { useChatWindowsStore } from '@/stores/chat-windows'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
@@ -38,12 +40,20 @@ export function useChatActions() {
   }
 
   async function open(id: string): Promise<void> {
+    // In another window: that one comes to the front, or the main window shows it.
+    const windows = useChatWindowsStore()
+    if (windows.elsewhere(id)) return windows.show(id)
     ui.view = 'chat'
     await attempt(() => sessions.open(id), 'Session ließ sich nicht öffnen')
   }
 
   /** The start page, with the project a new chat goes to (null: the last one used there). */
   function newChat(projectId: string | null = null): void {
+    // A chat's own window has none: the main window shows it.
+    if (isChatWindow) {
+      void useChatWindowsStore().toMain({ kind: 'new', projectId })
+      return
+    }
     ui.homeProjectId = projectId
     sessions.close()
     ui.view = 'home'
@@ -109,6 +119,11 @@ export function useChatActions() {
 
   /** Gone at once, for 8 s to be brought back (useChatRemoval). */
   async function remove(meta: SessionMeta): Promise<void> {
+    // From a chat's own window the main window deletes it, where „Rückgängig“ outlives this window.
+    if (isChatWindow) {
+      await useChatWindowsStore().toMain({ kind: 'remove', sessionId: meta.id })
+      return
+    }
     await removal.remove([meta])
   }
 
@@ -133,7 +148,17 @@ export function useChatActions() {
     if (!(await cutOffOk(meta.id, 'Chat beenden?', 'Beenden'))) return
     const done = await attempt(() => sessions.stop(meta.id).then(() => true), 'Chat ließ sich nicht beenden')
     if (!done) return
-    if (sessions.activeId === meta.id) newChat(meta.projectId)
+    if (sessions.activeId !== meta.id) return
+    newChat(meta.projectId)
+    // Its own window has nothing left to show; what is written goes back with it.
+    if (isChatWindow) await useChatWindowsStore().closeOwn()
+  }
+
+  /** Into a window of its own, or that window to the front; from a chat's own window, back into the main window. */
+  async function popOut(meta: SessionMeta): Promise<void> {
+    const windows = useChatWindowsStore()
+    if (isChatWindow) await windows.dock()
+    else await windows.popOut(meta.id)
   }
 
   /**
@@ -168,6 +193,7 @@ export function useChatActions() {
     remove,
     restart,
     end,
+    popOut,
     offerRestart,
   }
 }

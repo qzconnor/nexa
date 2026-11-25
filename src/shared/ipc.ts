@@ -1,5 +1,6 @@
 import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput, LoginRenewResult } from './accounts'
 import type { ArtifactsApi } from './artifacts'
+import type { ChatWindowsApi } from './chat-windows'
 import type { CliConfigApi, CliConfigTarget } from './cli-config'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
 import type { SettingsImportPreview } from './settings-transfer'
@@ -228,6 +229,8 @@ export interface NexaApi {
   terminals: TerminalsApi
   /** The CLIs' own settings: MCP servers, permissions, hooks (shared/cli-config.ts). */
   cliConfig: CliConfigApi
+  /** Chats in windows of their own (shared/chat-windows.ts). */
+  chatWindows: ChatWindowsApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

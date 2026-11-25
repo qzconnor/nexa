@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
+import { ChatWindowsEvent } from '@shared/chat-windows'
 import { IpcEvent } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { findTheme } from '@shared/themes/builtin'
@@ -48,8 +49,10 @@ import { registerUpdatesIpc } from './services/updates-ipc'
 import { shellLaunch } from './services/user-shells'
 import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
 import { VoiceService } from './voice/voice-service'
+import { ChatWindows } from './window/chat-windows'
+import { registerChatWindowsIpc } from './window/chat-windows-ipc'
 import { handleFileProtocol, registerFileScheme } from './window/file-protocol'
-import { createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
+import { createChatWindow, createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
 import { AppTray } from './window/tray'
 import { WindowMaterialController } from './window/material'
 
@@ -139,15 +142,38 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   registerBrowserIpc(browserTabs, browserControl, sessionExists)
 
   let mainWindow: BrowserWindow | null = null
-  /** Brings the window to the front (a new one if there is none) and tells it what to show, once it can listen. */
-  const reveal = (channel?: string, arg?: string) => {
-    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : openWindow()
-    revealWindow(win)
-    if (!channel) return
-    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.send(channel, arg))
-    else win.webContents.send(channel, arg)
+  const liveMainWindow = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
+  /** Tells a window something once it can listen. */
+  const sendWhenLoaded = (win: BrowserWindow, channel: string, ...args: unknown[]) => {
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.send(channel, ...args))
+    else win.webContents.send(channel, ...args)
   }
-  const show = (sessionId?: string) => (sessionId ? reveal(IpcEvent.showSession, sessionId) : reveal())
+  /** Brings the main window to the front (a new one if there is none) and tells it what to show. */
+  const reveal = (channel?: string, ...args: unknown[]) => {
+    const win = liveMainWindow() ?? openWindow()
+    revealWindow(win)
+    if (channel) sendWhenLoaded(win, channel, ...args)
+  }
+  /** The app is quitting: the windows really close instead of going to the notification area or asking. */
+  let quitting = false
+
+  // Chats in windows of their own; the main window keeps the sidebar and everything else.
+  const chatWindows = new ChatWindows({
+    file: join(userDataDir, 'chat-windows.json'),
+    create: (sessionId, saved, onBounds) => {
+      const win = createChatWindow(settings.get(), sessionId, saved, liveMainWindow(), onBounds)
+      setUpWindow(win)
+      return win
+    },
+    quitting: () => quitting || updates.installing,
+  })
+  /** A chat shows in its own window if it has one, else in the main window. */
+  const show = (sessionId?: string) => {
+    const own = sessionId ? chatWindows.windowOf(sessionId) : null
+    if (own) revealWindow(own)
+    else if (sessionId) reveal(IpcEvent.showSession, sessionId)
+    else reveal()
+  }
 
   // Windows notifications about chats that are done or need the user, and about limits and logins.
   const notifications = new NotificationService({
@@ -156,7 +182,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     accounts,
     settings,
     userDataDir,
-    window: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+    windows: () => {
+      const main = liveMainWindow()
+      return main ? [main, ...openAppWindows().filter((win) => win !== main)] : openAppWindows()
+    },
     open: { chat: (id) => show(id), settings: (section) => reveal(IpcEvent.openSettings, section) },
   })
 
@@ -195,6 +224,15 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   }, () => terminalLaunch(settings.get().chat.shell))
   sessions.on('changed', (list) => terminals.keepSessions(new Set(list.map((meta) => meta.id))))
   registerTerminalsIpc(terminals)
+  // A chat's own window asks the main window to open another chat, the start page, to delete …
+  registerChatWindowsIpc(chatWindows, { exists: sessionExists, toMain: (request) => reveal(ChatWindowsEvent.request, request) })
+  sessions.on('changed', () => chatWindows.keepSessions(sessionExists))
+  // Back from its own window: the draft and the panels go to the main window, which shows the chat if asked.
+  chatWindows.on('returned', (sessionId, handoff, showIt) => {
+    const main = liveMainWindow()
+    if (handoff && main) sendWhenLoaded(main, ChatWindowsEvent.returned, sessionId, handoff)
+    if (showIt) show(sessionId)
+  })
   // The CLIs' own settings (MCP servers, permissions, hooks), in their own files.
   registerCliConfigIpc(new CliConfigService(providers, accounts, projects, join(userDataDir, 'global-mcp.json')))
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
@@ -226,6 +264,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   await api.init()
   await notifications.init()
   await autoSwitch.init()
+  await chatWindows.init()
 
   // Taking over the Claude Manager's workspaces, accounts, sessions, prompts and themes, and the
   // sessions in the CLIs' own folders (first start, or later in the settings).
@@ -284,12 +323,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     }
   }
 
-  /** The app is quitting: the window really closes instead of going to the notification area. */
-  let quitting = false
   const tray = new AppTray({ open: () => show(), quit: () => app.quit() })
 
-  const openWindow = ({ hidden = false } = {}): BrowserWindow => {
-    const win = createMainWindow(settings.get(), userDataDir, { hidden })
+  /** What every window of the app gets: the material and scale of the settings, its state, notifications. */
+  const setUpWindow = (win: BrowserWindow) => {
     const material = new WindowMaterialController(win)
     let applied = ''
     // The window starts at the setting's scale (createMainWindow); only changes are applied here.
@@ -308,22 +345,34 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     applyAppearance()
     const off = settings.on('changed', applyAppearance)
     forwardWindowState(win)
+    const id = win.id
     win.on('focus', () => {
       // In front again: what a notification pointed to is seen.
       win.flashFrame(false)
-      notifications.windowFocused()
+      notifications.windowFocused(id)
     })
+    // Windows shuts down or logs off: no `before-quit` comes, and the window must not hold it back.
+    win.on('session-end', () => (quitting = true))
+    win.on('closed', () => {
+      off()
+      notifications.windowClosed(id)
+    })
+  }
+
+  const openWindow = ({ hidden = false } = {}): BrowserWindow => {
+    const win = createMainWindow(settings.get(), userDataDir, { hidden })
+    setUpWindow(win)
     win.on('close', (event) => {
       // With the icon in the notification area the window only hides: chats and the API go on.
       if (quitting || updates.installing || !tray.visible) return
       event.preventDefault()
       win.hide()
     })
-    // Windows shuts down or logs off: no `before-quit` comes, and the window must not hold it back.
-    win.on('session-end', () => (quitting = true))
     win.on('closed', () => {
-      off()
       if (mainWindow === win) mainWindow = null
+      // Without the icon the main window is the app: closed, Nexa quits, its chats' own windows too
+      // (they open again at the next start).
+      if (!quitting && !tray.visible) app.quit()
     })
     mainWindow = win
     return win
@@ -351,6 +400,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // Started by the system at login: with the icon the window stays hidden until it is opened.
   const firstWindow = openWindow({ hidden: process.argv.includes(AUTOSTART_ARG) && tray.visible })
   if (launchRequest) firstWindow.webContents.once('did-finish-load', () => void openFromCommandLine(launchRequest))
+  // The chats' own windows of the last run come with the main window, not before (a hidden start). A
+  // maximized one shows at once.
+  if (firstWindow.isVisible()) chatWindows.restore(sessionExists)
+  else firstWindow.once('show', () => chatWindows.restore(sessionExists))
 
   app.on('second-instance', (_event, argv, _cwd, additionalData) => {
     if (isLaunchRequest(additionalData)) void openFromCommandLine(additionalData)
@@ -377,7 +430,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     const switchSaved = autoSwitch.dispose()
     // Ends the CLI processes and start commands (they would outlive the app) and writes what is pending.
     terminals.dispose()
-    void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), switchSaved])
+    void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), chatWindows.flush(), switchSaved])
       .then(() => {
         api.dispose()
         notifications.dispose()
