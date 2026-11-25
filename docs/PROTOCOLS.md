@@ -28,6 +28,15 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   solche Nachricht bis `started` unter dem Chat und setzt sie dann an dieser Stelle in den Verlauf.
   `--replay-user-messages` würde die Nachricht beim Aufnehmen noch einmal ausgeben (`isReplay: true`),
   Nexa braucht das nicht.
+- **Turn ohne Prompt** (geprüft mit 2.1.331): Endet eine Shell oder ein Agent im Hintergrund, nachdem der
+  Turn vorbei ist, macht Claude Code von sich aus weiter: `system/task_notification`, `system/init`,
+  `system/status` (`requesting`), dann die Antwort (`stream_event` `message_start` ohne
+  `parent_tool_use_id`) und am Ende ein `result`, aber kein `command_lifecycle`. Nexa zählt die erste
+  Antwort im Hauptchat ohne laufenden Turn als dessen Beginn (`ownTurn`), sonst stünde der Chat still,
+  während Claude Code arbeitet, und bliebe nach einer Rückfrage darin auf „wartet“. Antworten eines
+  Agents (mit `parent_tool_use_id`) beginnen keinen Turn. Fragt ein Agent im Hintergrund nach dem Turn,
+  ist der Chat nach der Antwort wieder in Ruhe (`idle`) statt auf „wartet“. `generate_session_title` und
+  `get_context_usage` nach einem Turn schicken nur ihre `control_response`.
 - **Ausgabe**: `system/init` (Sitzungs-ID, Modell, Werkzeuge), `stream_event` (Teil-Deltas für Text und
   Thinking), `assistant`/`user` (fertige Blöcke, `tool_use`/`tool_result`), `result` (Turn-Ende mit
   Kosten und Tokens), `rate_limit_event` (Usage-Fenster mit Prozent und Reset).

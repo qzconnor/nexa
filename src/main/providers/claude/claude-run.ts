@@ -306,7 +306,7 @@ export class ClaudeRun implements AgentRun {
     const answer = open.kind === 'elicitation' ? this.elicitationAnswer(response) : await this.toolAnswer(open, response)
     this.process.write({ type: 'control_response', response: { subtype: 'success', request_id: open.requestId, response: answer } })
     this.sink.item({ ...open.item, state: 'answered', response })
-    if (this.interactions.size === 0 && this.turnStartedAt !== null) this.sink.runtime({ status: 'running' })
+    this.questionsSettled()
   }
 
   /**
@@ -422,6 +422,7 @@ export class ClaudeRun implements AgentRun {
     const messageId = str(m.api_message_id) ?? (isPlainObject(event.message) ? str(event.message.id) : undefined)
     if (!messageId) return
     const parentId = this.parentOf(m)
+    if (event.type === 'message_start') this.ownTurn(parentId)
     if (event.type === 'content_block_start' && isPlainObject(event.content_block)) {
       const block = event.content_block
       const key = `${messageId}:${String(event.index)}`
@@ -465,6 +466,7 @@ export class ClaudeRun implements AgentRun {
     if (!message || !Array.isArray(message.content)) return
     const messageId = str(message.id) ?? randomUUID()
     const parentId = this.parentOf(m)
+    this.ownTurn(parentId)
     // Claude Code's own answer at a limit ("You've hit your limit · resets …").
     if (m.error === 'rate_limit' && !parentId) this.limitHit = true
     if (typeof message.model === 'string' && !parentId) this.model = message.model
@@ -638,7 +640,7 @@ export class ClaudeRun implements AgentRun {
       case 'init': {
         if (typeof m.session_id === 'string') this.sink.cliSession(m.session_id)
         if (typeof m.model === 'string') this.model = m.model
-        this.sink.runtime({ connected: true, model: this.model, ...(this.turnStartedAt === null ? { status: 'idle' } : {}) })
+        this.sink.runtime({ connected: true, model: this.model, ...(this.turnStartedAt === null && this.interactions.size === 0 ? { status: 'idle' } : {}) })
         return
       }
       case 'status': {
@@ -971,7 +973,16 @@ export class ClaudeRun implements AgentRun {
       this.sink.item({ ...open.item, state: 'cancelled' })
       cancelled = true
     }
-    if (cancelled && this.interactions.size === 0 && this.turnStartedAt !== null) this.sink.runtime({ status: 'running' })
+    if (cancelled) this.questionsSettled()
+  }
+
+  /**
+   * No question is open any more: the turn goes on, or, when an agent in the background asked after the
+   * turn had ended, the chat is at rest again rather than waiting for nobody.
+   */
+  private questionsSettled(): void {
+    if (this.interactions.size > 0) return
+    this.sink.runtime({ status: this.turnStartedAt !== null ? 'running' : 'idle' })
   }
 
   // ------------------------------------------------------------------------------------------
@@ -979,6 +990,20 @@ export class ClaudeRun implements AgentRun {
   private turnStarted(): void {
     if (this.turnStartedAt === null) this.turnStartedAt = Date.now()
     this.sink.runtime({ status: 'running', turnStartedAt: this.turnStartedAt, error: undefined })
+  }
+
+  /**
+   * Claude Code goes on with a turn of its own, without a prompt of Nexa's: once a shell or an agent in
+   * the background has ended (`task_notification`), it sends `system/init` and answers, with no
+   * `command_lifecycle`. Its first answer in the main thread starts that turn for Nexa as well, else the
+   * chat would look at rest while it works, and stay on „wartet“ after a question in it.
+   */
+  private ownTurn(parentId: string | null): void {
+    if (parentId !== null || this.turnStartedAt !== null) return
+    if (this.interactions.size === 0) return this.turnStarted()
+    // An agent in the background still asks: the chat waits for that answer while the turn runs.
+    this.turnStartedAt = Date.now()
+    this.sink.runtime({ turnStartedAt: this.turnStartedAt, error: undefined })
   }
 
   /** Items still streaming when a turn ends are finished as they are. */
