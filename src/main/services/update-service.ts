@@ -57,7 +57,10 @@ export class UpdateService extends TypedEmitter<Events> {
     progress: 0,
     checkedAt: null,
     error: null,
+    foundByUser: false,
   }
+  /** The check running now was started by the user (`check(true)`). */
+  private userCheck = false
   private notifiedVersion: string | null = null
   private releasesCache: { at: number; notes: ReleaseNote[] } | null = null
   private timers: NodeJS.Timeout[] = []
@@ -86,10 +89,12 @@ export class UpdateService extends TypedEmitter<Events> {
 
     autoUpdater.on('checking-for-update', () => this.setState({ status: 'checking', error: null }))
     autoUpdater.on('update-available', (info: UpdateInfo) => {
-      this.setState({ status: 'available', next: info.version, checkedAt: Date.now() })
-      this.notify(info.version)
+      // The automatic check that finds again what the user found stays theirs: known already.
+      const foundByUser = this.userCheck || (this.state.foundByUser && this.state.next === info.version)
+      this.setState({ status: 'available', next: info.version, checkedAt: Date.now(), foundByUser })
+      if (!foundByUser) this.notify(info.version)
     })
-    autoUpdater.on('update-not-available', () => this.setState({ status: 'up-to-date', next: null, checkedAt: Date.now() }))
+    autoUpdater.on('update-not-available', () => this.setState({ status: 'up-to-date', next: null, checkedAt: Date.now(), foundByUser: false }))
     autoUpdater.on('download-progress', (progress: ProgressInfo) =>
       this.setState({ status: 'downloading', progress: progress.percent }),
     )
@@ -113,8 +118,10 @@ export class UpdateService extends TypedEmitter<Events> {
     this.timers = []
   }
 
-  async check(): Promise<void> {
+  /** `byUser`: asked for in Settings › Updates, not by the timer. */
+  async check(byUser = false): Promise<void> {
     if (['unsupported', 'checking', 'downloading', 'downloaded'].includes(this.state.status)) return
+    this.userCheck = byUser
     try {
       await autoUpdater.checkForUpdates()
     } catch (error) {

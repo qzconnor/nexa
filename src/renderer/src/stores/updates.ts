@@ -7,22 +7,28 @@ import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
 
 const SEEN_KEY = 'nexa.seenVersion'
+/** A version the user found themselves and downloaded: once it runs, it gets no dot on the settings button. */
+const QUIET_KEY = 'nexa.quietVersion'
 
-function readSeen(): string | null {
+function readStored(key: string): string | null {
   try {
-    return localStorage.getItem(SEEN_KEY)
+    return localStorage.getItem(key)
   } catch {
     return null
   }
 }
 
-function writeSeen(version: string): void {
+function writeStored(key: string, version: string | null): void {
   try {
-    localStorage.setItem(SEEN_KEY, version)
+    if (version === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, version)
   } catch {
     // Private storage off: the hint after an update just comes again.
   }
 }
+
+const readSeen = () => readStored(SEEN_KEY)
+const writeSeen = (version: string) => writeStored(SEEN_KEY, version)
 
 /** New versions of the installed app and their release notes (the section „Updates“ of the settings). */
 export const useUpdatesStore = defineStore('updates', () => {
@@ -33,6 +39,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     progress: 0,
     checkedAt: null,
     error: null,
+    foundByUser: false,
   })
   const releases = ref<ReleaseNote[] | null>(null)
   const releasesLoading = ref(false)
@@ -50,24 +57,29 @@ export const useUpdatesStore = defineStore('updates', () => {
       ['available', 'downloading', 'downloaded'].includes(state.value.status) ||
       (state.value.status === 'error' && state.value.next !== null),
   )
+  /** An update the automatic check found: the settings button pulses for it. One the user looked for, they know of. */
+  const announced = computed(() => hasUpdate.value && !state.value.foundByUser)
   /** Updated since the notes were last opened – "what's new" is still to be seen. */
   const unseen = computed(() => !!state.value.current && !!seenVersion.value && seenVersion.value !== state.value.current)
 
   const show = () => useUiStore().openSettings('updates')
 
-  let announced: string | null = null
+  let toasted: string | null = null
 
   function apply(next: UpdateState): void {
     const before = state.value.status
     state.value = next
-    if (next.status === 'available' && next.next && announced !== next.next) {
-      announced = next.next
+    // Found by the user's own search: the page they look at says so already.
+    if (next.status === 'available' && next.next && toasted !== next.next && !next.foundByUser) {
+      toasted = next.next
       toast(`Update auf ${next.next} verfügbar`, {
         description: 'Es lässt sich direkt in der App installieren.',
         duration: 12_000,
         action: { label: 'Ansehen', onClick: show },
       })
     }
+    // Remembered across the restart that installs it, also one on quitting.
+    if (next.status === 'downloaded' && next.next) writeStored(QUIET_KEY, next.foundByUser ? next.next : null)
     if (next.status === 'downloaded' && before !== 'downloaded') {
       toast.success('Update ist bereit', {
         description: `Version ${next.next} wird beim nächsten Start installiert.`,
@@ -91,7 +103,10 @@ export const useUpdatesStore = defineStore('updates', () => {
         duration: 12_000,
         action: { label: 'Was ist neu?', onClick: show },
       })
+      // Installed after a search of the user's own: no dot on the settings button for it.
+      if (readStored(QUIET_KEY) === state.value.current) markSeen()
     }
+    if (readStored(QUIET_KEY) === state.value.current) writeStored(QUIET_KEY, null)
   }
 
   function markSeen(): void {
@@ -150,6 +165,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     references,
     justUpdated,
     hasUpdate,
+    announced,
     unseen,
     load,
     markSeen,

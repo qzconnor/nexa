@@ -206,8 +206,30 @@ describe('UpdateService checks', () => {
       progress: 100,
       checkedAt: NOW + MINUTE,
       error: null,
+      foundByUser: false,
     })
     expect(changes.map((state) => state.status)).toEqual(['checking', 'available', 'downloading', 'downloaded'])
+  })
+
+  it('tells an update the user looked for from one the automatic check found', async () => {
+    const updates = started()
+    await updates.check(true)
+    emit('update-available', { version: '1.2.0' })
+    expect(updates.getState()).toMatchObject({ status: 'available', next: '1.2.0', foundByUser: true })
+
+    // The timer finds the same again: still the user's, they know of it.
+    await updates.check()
+    emit('update-available', { version: '1.2.0' })
+    expect(updates.getState().foundByUser).toBe(true)
+
+    // A newer one than they found is news.
+    await updates.check()
+    emit('update-available', { version: '1.3.0' })
+    expect(updates.getState()).toMatchObject({ next: '1.3.0', foundByUser: false })
+
+    await updates.check(true)
+    emit('update-not-available', { version: '1.0.0' })
+    expect(updates.getState()).toMatchObject({ status: 'up-to-date', foundByUser: false })
   })
 
   it('is up to date when no newer version is offered, and forgets an offer from before', () => {

@@ -16,6 +16,11 @@ export interface UpdateState {
   /** End of the last check (epoch ms). */
   checkedAt: number | null
   error: string | null
+  /**
+   * `next` came from a check the user started (Settings › Updates), not from the automatic one: they
+   * know of it, so the settings button gets no dot for it, neither now nor once it is installed.
+   */
+  foundByUser: boolean
 }
 
 /** A published version with its release notes. */
