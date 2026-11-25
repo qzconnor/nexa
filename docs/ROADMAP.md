@@ -244,6 +244,12 @@
       Account und Ebene (Nutzer, Projekt, bei Claude auch Lokal), in den Dateien der CLIs selbst; Schlüssel
       in Variablen und Headern bleiben verborgen, was Nexa nicht kennt, bleibt erhalten. „Konnektoren
       verwalten“ führt dorthin, mit CLI, Account und Ordner des Chats
+- [x] Gemini CLI als dritte CLI über das Agent Client Protocol (`gemini --acp`, ein Prozess je Chat): Text,
+      Gedanken, Werkzeuge mit Diffs, Rückfragen zu Werkzeugen und Plänen, Modelle, Modi, Abbrechen,
+      Fortsetzen (`session/load`), Nexas MCP-Server mit Diagrammen und Browser, Anweisungen und
+      Ordner-Prompts vor dem ersten Prompt, Wechsel zwischen den drei CLIs mit Kontext. Accounts: der eigene
+      Ordner `~/.gemini`, Google-Logins mit eigenem `GEMINI_CLI_HOME` (Anmeldung im Browser aus Nexa) und
+      API-Keys aus Google AI Studio; `nx --gemini`
 
 ## Als Nächstes
 
@@ -266,7 +272,22 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 
 ## Später
 
-- [ ] Weitere CLIs (z. B. Gemini CLI) über das Provider-System.
+- [ ] **Gemini CLI, was noch fehlt** (`PROTOCOLS.md`, „Gemini CLI“):
+  - [ ] Aufgabenliste: `write_todos` schickt in ACP keine Einträge (kein `plan`-Update); sobald Gemini CLI
+        sie meldet, als Todo-Karte zeigen.
+  - [ ] Limits und Kontingente (Gemini CLI nennt sie keinem Client) und 429 als Limit mit Reset markieren.
+  - [ ] Titel vom Modell (ACP kann das Modell nicht nebenher fragen).
+  - [ ] MCP-Server und Erweiterungen von Gemini CLI im „+“-Menü (Liste mit Zustand, Schalter je Projekt
+        über `mcpOff`, Erweiterungen als Plugins). Bearbeiten lassen sie sich schon unter Einstellungen ›
+        CLI-Konfiguration.
+  - [ ] Sitzungen von Gemini CLI übernehmen (Import, `nx -r <id>`) und Abgleich, wenn sie außerhalb von
+        Nexa weiterlaufen.
+  - [ ] Abzweigen, Bearbeiten und Accountwechsel auf derselben Sitzung statt neu mit `<nexa-context>`
+        (Sitzungsdatei kopieren bzw. kürzen).
+  - [ ] Link der Google-Anmeldung im Dialog zeigen (Gemini CLI gibt ihn nicht heraus) und Abmelden.
+  - [ ] Die leere Sitzung aufräumen, die jeder Start von `gemini --acp` anlegt.
+  - [ ] Nexas Anweisungen nicht als ersten Prompt in Gemini CLIs eigener Sitzungsliste.
+- [ ] Weitere CLIs über das Provider-System.
 - [ ] Mehrere Fenster bzw. Session in eigenem Fenster; mehrere Chats nebeneinander (`GroupShell.vue` im
       Claude Manager).
 - [ ] Verbrauchs-Dashboard: Tokens je Tag, Modell und Ordner, Verlauf der Limits als Diagramm, ohne

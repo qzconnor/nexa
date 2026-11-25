@@ -33,6 +33,32 @@ const KIND_INFO: Record<ProviderId, Partial<Record<CreatableAccountKind, string>
   codex: {
     oauth: 'Eigener Codex-Ordner (CODEX_HOME), Anmeldung im Browser über „codex login“ mit einem ChatGPT-Konto. Codex erneuert den Token selbst.',
   },
+  gemini: {
+    oauth: 'Eigener Ordner (GEMINI_CLI_HOME), Anmeldung im Browser mit einem Google-Konto. Gemini CLI erneuert den Token selbst.',
+    apiKey: 'API-Key aus Google AI Studio (beginnt meist mit „AIza“), Gemini CLI bekommt ihn als GEMINI_API_KEY. Kostenlos mit Tageslimits oder nach Verbrauch.',
+  },
+}
+/** What the advanced fields say for each CLI. */
+const CLI_TEXT: Record<ProviderId, { args: string; dirEnv: string; system: string; copies: string }> = {
+  claude: {
+    args: 'z. B. --add-dir ../shared',
+    dirEnv: 'CLAUDE_CONFIG_DIR',
+    system: '~/.claude',
+    copies: 'Kopiert settings.json, CLAUDE.md, Skills, Commands und Agents – keine Anmeldedaten.',
+  },
+  codex: {
+    args: 'z. B. -c model_reasoning_effort=high',
+    dirEnv: 'CODEX_HOME',
+    system: '~/.codex',
+    copies: 'Kopiert config.toml, AGENTS.md, Prompts, Skills und Rules – keine Anmeldedaten.',
+  },
+  gemini: {
+    args: 'z. B. --sandbox',
+    // GEMINI_CLI_HOME stands for the home folder: Gemini CLI keeps its files in `.gemini` below it.
+    dirEnv: 'GEMINI_CLI_HOME, darin .gemini',
+    system: '~/.gemini',
+    copies: 'Kopiert settings.json, GEMINI.md, Commands, Skills, Agents und Policies – keine Anmeldedaten.',
+  },
 }
 /** Where secrets go, in the words of the system. */
 const SECRET_STORE = isWindows ? 'mit der Windows-Datenverschlüsselung' : window.api.platform === 'darwin' ? 'im Schlüsselbund' : 'im Schlüsselbund des Systems'
@@ -233,7 +259,7 @@ async function submit(): Promise<void> {
                 <Input
                   id="account-args"
                   v-model="form.extraArgs"
-                  :placeholder="provider === 'codex' ? 'z. B. -c model_reasoning_effort=high' : 'z. B. --add-dir ../shared'"
+                  :placeholder="CLI_TEXT[provider].args"
                   spellcheck="false"
                   class="font-mono"
                 />
@@ -245,7 +271,7 @@ async function submit(): Promise<void> {
                   <FieldContent>
                     <FieldLabel for="account-custom-dir">Vorhandenen Konfigurationsordner verwenden</FieldLabel>
                     <FieldDescription>
-                      Statt eines neuen Profils einen bestehenden Ordner ({{ provider === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR' }}) mit Login und Verlauf.
+                      Statt eines neuen Profils einen bestehenden Ordner ({{ CLI_TEXT[provider].dirEnv }}) mit Login und Verlauf.
                     </FieldDescription>
                   </FieldContent>
                 </Field>
@@ -267,14 +293,8 @@ async function submit(): Promise<void> {
                 <Field v-else orientation="horizontal">
                   <Checkbox id="account-import" v-model="form.importSettings" />
                   <FieldContent>
-                    <FieldLabel for="account-import">Einstellungen aus {{ provider === 'codex' ? '~/.codex' : '~/.claude' }} übernehmen</FieldLabel>
-                    <FieldDescription>
-                      {{
-                        provider === 'codex'
-                          ? 'Kopiert config.toml, AGENTS.md, Prompts, Skills und Rules – keine Anmeldedaten.'
-                          : 'Kopiert settings.json, CLAUDE.md, Skills, Commands und Agents – keine Anmeldedaten.'
-                      }}
-                    </FieldDescription>
+                    <FieldLabel for="account-import">Einstellungen aus {{ CLI_TEXT[provider].system }} übernehmen</FieldLabel>
+                    <FieldDescription>{{ CLI_TEXT[provider].copies }}</FieldDescription>
                   </FieldContent>
                 </Field>
               </template>

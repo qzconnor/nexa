@@ -170,7 +170,7 @@ describe('ChatTools', () => {
 
   it('starts a new chat with the CLI asked for', async () => {
     const { call, created } = tools()
-    expect(await call('chat_new', { cli: 'gemini', text: 'x' })).toMatchObject({ error: true })
+    expect(await call('chat_new', { cli: 'aider', text: 'x' })).toMatchObject({ error: true })
     const result = await call('chat_new', { cli: 'codex', text: 'Review bitte', title: 'Codex-Review' })
     expect(result.text).toMatch(/^Started the chat "Codex-Review" \(Codex, id: new\)/)
     expect(created).toEqual([{ from: 'self', provider: 'codex', text: 'Review bitte', title: 'Codex-Review' }])

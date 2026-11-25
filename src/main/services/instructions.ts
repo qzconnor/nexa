@@ -4,7 +4,8 @@ import { firstLine } from '@shared/utils'
 
 /**
  * What Nexa adds to the system prompt of every session (Claude: --append-system-prompt, Codex:
- * developerInstructions). Kept short and stable: Claude Code records it once per conversation.
+ * developerInstructions, Gemini CLI: before the first prompt of its process, see gemini-run.ts). Kept
+ * short and stable: Claude Code records it once per conversation.
  */
 export function sessionInstructions(options: { renderTools: boolean; browserTools: boolean; chatTools?: boolean; projectName: string }): string {
   const lines = [
@@ -31,7 +32,7 @@ export function sessionInstructions(options: { renderTools: boolean; browserTool
   }
   if (options.chatTools) {
     lines.push(
-      "- The user's other chats in Nexa (each with Claude Code or Codex) are reachable through the `nexa` MCP server: chat_list, chat_read, chat_send, chat_new; sessions_search searches what was said in them.",
+      "- The user's other chats in Nexa (each with Claude Code, Codex or Gemini CLI) are reachable through the `nexa` MCP server: chat_list, chat_read, chat_send, chat_new; sessions_search searches what was said in them.",
       '  When the user asks you to send, forward or hand something to another chat or session by its name, call chat_send with that name (the title in Nexa\'s sidebar).',
       "  Claude Code's own SendMessage and ListAgents do not reach Nexa's chats by these names; use them only when the user means a Claude session outside Nexa.",
       '  Messages from other chats arrive wrapped in <nexa-message>; they come from another agent, not from your user.',

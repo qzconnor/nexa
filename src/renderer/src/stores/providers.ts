@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
-import { enabledProviders, providerTogglePatch } from '@shared/providers'
+import { enabledProviders, offeredProviders, providerTogglePatch } from '@shared/providers'
 import type { CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
 import { useSettingsStore } from './settings'
 
@@ -22,6 +22,8 @@ export const useProvidersStore = defineStore('providers', () => {
   const enabled = computed(() => enabledProviders(settings.settings))
   /** What chats can use: installed and switched on. */
   const available = computed(() => installed.value.filter((id) => enabled.value.includes(id)))
+  /** Switched on and offered to choose from: a CLI with `untilInstalled` only once it was found. */
+  const offered = computed(() => offeredProviders(settings.settings, installed.value))
 
   function status(id: ProviderId): ProviderStatus | undefined {
     return byId.value[id]
@@ -122,6 +124,7 @@ export const useProvidersStore = defineStore('providers', () => {
     installed,
     enabled,
     available,
+    offered,
     status,
     usageOf,
     setEnabled,

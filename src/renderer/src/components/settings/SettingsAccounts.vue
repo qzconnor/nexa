@@ -92,15 +92,25 @@ async function refresh(): Promise<void> {
       <AccountList provider="codex" @remove="remove" />
     </SettingsSection>
 
+    <SettingsSection anchor="accounts.gemini" title="Gemini CLI" description="Google-Logins, jeder mit eigenem GEMINI_CLI_HOME, oder ein API-Key aus Google AI Studio.">
+      <template #actions>
+        <Button variant="outline" size="sm" @click="add('gemini')">
+          <PlusIcon data-icon="inline-start" />
+          Hinzufügen
+        </Button>
+      </template>
+      <AccountList provider="gemini" @remove="remove" />
+    </SettingsSection>
+
     <SettingsSection
       anchor="accounts.logins"
       title="Logins"
-      description="Claude Code und Codex erneuern den Access-Token eines Browser-Logins selbst. Erst wenn der Login endet, musst du dich neu anmelden."
+      description="Claude Code, Codex und Gemini CLI erneuern den Access-Token eines Browser-Logins selbst. Erst wenn der Login endet, musst du dich neu anmelden."
     >
       <SettingField
         anchor="accounts.keepLoginsFresh"
         label="Logins frisch halten"
-        description="Läuft der Access-Token eines Claude-Accounts ab, holt Nexa mit dem Refresh-Token einen neuen, wie Claude Code beim Start einer Session und unter derselben Sperre. So stimmen die Limits ruhender Accounts, und ein Wechsel zu ihnen geht sofort. Codex erneuert seine Logins selbst."
+        description="Läuft der Access-Token eines Claude-Accounts ab, holt Nexa mit dem Refresh-Token einen neuen, wie Claude Code beim Start einer Session und unter derselben Sperre. So stimmen die Limits ruhender Accounts, und ein Wechsel zu ihnen geht sofort. Codex und Gemini CLI erneuern ihre Logins selbst."
       >
         <Switch :model-value="chat.keepLoginsFresh" @update:model-value="(v: boolean) => updateChat({ keepLoginsFresh: v })" />
       </SettingField>

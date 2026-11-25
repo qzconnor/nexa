@@ -15,7 +15,8 @@ import type {
 /** An MCP server as a CLI reports it; whether it is on for the project is Nexa's. */
 export type McpServerState = Omit<McpServerInfo, 'enabled'>
 import type { AccountEnv } from '../accounts/account-env'
-import type { ResolvedCommand } from './cli-binary'
+import type { LoginCommand } from '../accounts/account-login'
+import type { McpCallLog } from '../mcp/call-log'
 import type { CliConfigAdapter } from './cli-config'
 
 /** Plan limits as a CLI reports them; the session service adds the account. */
@@ -86,9 +87,10 @@ export interface RunOptions {
   /**
    * Nexa's MCP server for this session; absent when its tools are off. The token is the session's own
    * (its browser tools drive the session's browser); `allowed` tools run without asking, `ask` ones
-   * only after the user agreed (names without the server's prefix, see mcp/nexa-tools.ts).
+   * only after the user agreed (names without the server's prefix, see mcp/nexa-tools.ts). `calls`:
+   * the arguments of the run's calls to the server, for CLIs that don't report them (Gemini CLI).
    */
-  mcp?: { url: string; token: string; allowed: string[]; ask: string[] }
+  mcp?: { url: string; token: string; allowed: string[]; ask: string[]; calls?: McpCallLog }
   /** Claude: start without Claude in Chrome, so it takes Nexa's browser (`--no-chrome`). */
   noChrome?: boolean
   /** The user's MCP servers that stay off in this run (switched off for the project). */
@@ -194,7 +196,7 @@ export interface AgentProvider {
    */
   openElsewhere?(account: AccountContext, sessionId: string, configDir: string): Promise<string | null>
   /** The browser login, started without a terminal (accounts/account-login.ts). */
-  loginCommand(): ResolvedCommand
+  loginCommand(): LoginCommand
   /** An account was removed: what runs for it ends. */
   forget(accountId: string): Promise<void>
   dispose(): Promise<void>

@@ -3,6 +3,7 @@ import { LogInIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { accountKindLabel, identityLabel, type Account, type LoginRenewResult } from '@shared/accounts'
+import { PROVIDER_IDS } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -26,7 +27,7 @@ const accounts = useAccountsStore()
 const now = useClock(30_000)
 const renewing = ref(new Set<string>())
 
-const list = computed(() => [...accounts.ofProvider('claude'), ...accounts.ofProvider('codex')])
+const list = computed(() => PROVIDER_IDS.flatMap((id) => accounts.ofProvider(id)))
 
 const toneClass: Record<LoginTone, string> = { ok: 'text-success', warning: 'text-warning', error: 'text-destructive' }
 

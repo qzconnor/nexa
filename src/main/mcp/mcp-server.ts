@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { isPlainObject } from '@shared/utils'
+import type { McpCallLog } from './call-log'
 import { handleRpc, INVALID_REQUEST, isRequest, PARSE_ERROR, rpcError, type McpServerSpec } from './mcp-protocol'
 
 const HOST = '127.0.0.1'
@@ -13,6 +15,8 @@ const KEEPALIVE_MS = 20_000
  */
 export interface McpCaller {
   sessionId: string | null
+  /** Keeps the arguments of its tool calls, for a CLI that doesn't report them (Gemini CLI). */
+  calls?: McpCallLog
 }
 
 /**
@@ -94,6 +98,11 @@ export class NexaMcpServer {
       return sendJson(res, 400, rpcError(null, PARSE_ERROR, 'Invalid JSON.'))
     }
     const spec = this.spec(caller)
+    if (caller.calls && isToolCall(message)) {
+      const params = (message as { params?: unknown }).params
+      const name = isPlainObject(params) && typeof params.name === 'string' ? params.name : null
+      if (name) caller.calls.record(name, isPlainObject(params) && isPlainObject(params.arguments) ? params.arguments : {})
+    }
     if (isToolCall(message) && (req.headers.accept ?? '').includes('text/event-stream')) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' })
       res.flushHeaders()

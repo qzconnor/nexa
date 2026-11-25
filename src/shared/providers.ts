@@ -18,6 +18,11 @@ export interface ProviderMeta {
   installHint: string
   loginCommand: string
   permissionModes: PermissionMode[]
+  /**
+   * Offered for chats only once Nexa found it (Settings › CLIs shows it always, with how to install it).
+   * A CLI few users have would otherwise sit in every chat's picker as „nicht installiert“.
+   */
+  untilInstalled?: boolean
 }
 
 export const PROVIDERS: Record<ProviderId, ProviderMeta> = {
@@ -41,6 +46,18 @@ export const PROVIDERS: Record<ProviderId, ProviderMeta> = {
     loginCommand: 'codex login',
     permissionModes: ['ask', 'edits', 'plan', 'full'],
   },
+  gemini: {
+    id: 'gemini',
+    name: 'Gemini CLI',
+    short: 'Gemini',
+    command: 'gemini',
+    installUrl: 'https://github.com/google-gemini/gemini-cli',
+    installHint: 'npm install -g @google/gemini-cli',
+    // Gemini CLI has no login command of its own: its TUI signs in with `/auth`, Nexa through ACP.
+    loginCommand: 'gemini',
+    permissionModes: ['ask', 'edits', 'plan', 'full'],
+    untilInstalled: true,
+  },
 }
 
 export const PERMISSION_MODES: Record<PermissionMode, { label: string; description: string }> = {
@@ -60,6 +77,11 @@ type ProviderToggles = Pick<AppSettings, ProviderId | 'defaults'>
 /** The CLIs switched on in the settings, in their order. */
 export function enabledProviders(settings: Pick<AppSettings, ProviderId>): ProviderId[] {
   return PROVIDER_IDS.filter((id) => settings[id].enabled)
+}
+
+/** The CLIs that are on and offered to choose from: one with `untilInstalled` only once it was found. */
+export function offeredProviders(settings: Pick<AppSettings, ProviderId>, installed: readonly ProviderId[]): ProviderId[] {
+  return enabledProviders(settings).filter((id) => !PROVIDERS[id].untilInstalled || installed.includes(id))
 }
 
 /**

@@ -17,6 +17,9 @@ import { useSettingsStore } from '@/stores/settings'
 import SettingField from './SettingField.vue'
 import SettingsSection from './SettingsSection.vue'
 
+/** An example of the extra arguments; Gemini CLI has no `--add-dir` (its own is `--include-directories`). */
+const ARGS_EXAMPLE: Record<ProviderId, string> = { claude: 'z. B. --add-dir ../shared', codex: 'z. B. --add-dir ../shared', gemini: 'z. B. --sandbox' }
+
 const store = useSettingsStore()
 const providers = useProvidersStore()
 const s = computed(() => store.settings)
@@ -67,7 +70,11 @@ async function pickCli(id: ProviderId): Promise<void> {
       <SettingField anchor="providers.provider" label="CLI">
         <SegmentedControl
           :model-value="s.defaults.provider"
-          :options="providers.enabled.map((id) => ({ value: id, label: PROVIDERS[id].short }))"
+          :options="
+            providers.enabled
+              .filter((id) => providers.offered.includes(id) || id === s.defaults.provider)
+              .map((id) => ({ value: id, label: PROVIDERS[id].short }))
+          "
           aria-label="CLI für neue Chats"
           @update:model-value="(provider) => update({ defaults: { provider } })"
         />
@@ -125,7 +132,7 @@ async function pickCli(id: ProviderId): Promise<void> {
         <Input
           :model-value="extraArgs(id)"
           class="h-8 w-64 font-mono text-xs"
-          placeholder="z. B. --add-dir ../shared"
+          :placeholder="ARGS_EXAMPLE[id]"
           @change="(e: Event) => setExtraArgs(id, (e.target as HTMLInputElement).value)"
         />
       </SettingField>

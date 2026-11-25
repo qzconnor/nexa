@@ -722,6 +722,10 @@
   --tool-run: oklch(0.56 0.15 150);
   /* The user's own commands (`!` in the composer): pink, as Claude Code's bash mode. */
   --tool-shell: oklch(0.6 0.2 355);
+  /* The mark of each CLI (ProviderIcon): the vendors' brand hues, legible on both themes. */
+  --provider-claude: #d97757;
+  --provider-codex: #10a37f;
+  --provider-gemini: #4285f4;
   /*
    * How wide messages and the composer get at most. As on a 1080p screen (about 40 % and 54 % of the
    * chat's column) on 4K and ultrawide ones too, where a fixed width would leave a narrow strip; never

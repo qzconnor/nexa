@@ -1,6 +1,6 @@
 # Nexa
 
-Desktop-App (Electron + Vue) für Chats mit CLI-Agenten, zum Start Claude Code und Codex. Die CLIs laufen
+Desktop-App (Electron + Vue) für Chats mit CLI-Agenten, zum Start Claude Code, Codex und Gemini CLI. Die CLIs laufen
 als Kindprozesse mit JSON-Streams, die Oberfläche rendert Nexa selbst. Befehl: `nx`.
 
 ## Regeln

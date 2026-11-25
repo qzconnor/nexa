@@ -48,7 +48,7 @@ import type {
 import { firstLine, searchTerms } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { claudePaths, codexPaths } from '../accounts/cli-files'
-import { claudeSessionFiles, codexRollouts, codexThreadFiles, diskSize } from '../accounts/conversation-files'
+import { claudeSessionFiles, codexRollouts, codexThreadFiles, diskSize, geminiResumable, geminiSessionFiles } from '../accounts/conversation-files'
 import { relocateClaudeSession } from '../accounts/session-move'
 import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript, findCodexRollout } from '../accounts/session-transfer'
 import type { GitService } from '../files/git-service'
@@ -56,6 +56,7 @@ import { readClaudeChat, readClaudeChatSince } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
 import { pool } from '../lib/pool'
 import { TypedEmitter } from '../lib/typed-emitter'
+import { McpCallLog } from '../mcp/call-log'
 import type { NexaMcpServer } from '../mcp/mcp-server'
 import { nexaToolsOn, type NexaToolGrant } from '../mcp/tool-grant'
 import { claudeOpenElsewhere } from '../providers/claude/claude-presence'
@@ -389,6 +390,8 @@ export class SessionService extends TypedEmitter<Events> {
     const cli: SessionMeta['cli'] = {}
     for (const provider of Object.keys(from.cli) as ProviderId[]) {
       const link = from.cli[provider]!
+      // Gemini CLI can't fork a conversation: the new chat's starts anew, with the chat as context.
+      if (provider === 'gemini') continue
       // A chat branched off and not yet used: the same point of the same conversation.
       const at = link.fork ? link.fork.at : await this.forkPointOf(s, provider, link, this.cwdOf(from, project)).catch(() => null)
       cli[provider] = { ...link, fork: at ? { at } : {} }
@@ -474,6 +477,8 @@ export class SessionService extends TypedEmitter<Events> {
    * it, Claude Code's last answer in it; `seen`, how many of the chat's items the CLI knows then.
    */
   private async editPoint(s: SessionState, provider: ProviderId, link: CliLink, before: ChatItem[], cwd: string): Promise<{ at: string; seen: number } | null> {
+    // Gemini CLI can't fork: it starts anew with the chat up to the prompt as context.
+    if (provider === 'gemini') return null
     if (provider === 'codex') {
       const end = before.findLastIndex((i) => i.kind === 'turn' && i.provider === 'codex' && i.id.startsWith('turn:'))
       return end < 0 ? null : { at: before[end]!.id.slice('turn:'.length), seen: end + 1 }
@@ -753,7 +758,8 @@ export class SessionService extends TypedEmitter<Events> {
     const meta = s.meta
     const project = this.projects.get(meta.projectId)
     // A conversation not forked yet is the other chat's: what comes to it there isn't this chat's.
-    const linked = PROVIDER_IDS.filter((p) => meta.cli[p] && !meta.cli[p]!.fork)
+    // Gemini CLI's conversations aren't read back yet (docs/ROADMAP.md).
+    const linked = PROVIDER_IDS.filter((p) => p !== 'gemini' && meta.cli[p] && !meta.cli[p]!.fork)
     if (!linked.length || !project || !s.items) return 0
     let elsewhere: SessionRuntime['openElsewhere']
     for (const provider of linked) {
@@ -1214,11 +1220,13 @@ export class SessionService extends TypedEmitter<Events> {
 
   /** The config folder the account's CLI starts with: where it saves and looks for conversations. */
   private configDirOf(provider: ProviderId, accountId: string): string {
+    if (provider === 'gemini') return this.accounts.geminiPaths(accountId).dir
     return provider === 'claude' ? this.accounts.claudePaths(accountId).configDir : this.accounts.codexPaths(accountId).configDir
   }
 
   /** Whether the account's CLI finds the conversation of `link`, copied from the folder it was saved in if need be. */
   private async locate(provider: ProviderId, accountId: string, link: CliLink, cwd: string): Promise<boolean> {
+    if (provider === 'gemini') return geminiResumable(this.accounts.geminiPaths(accountId).dir, link.sessionId)
     if (provider === 'claude') return ensureClaudeSession(this.accounts.claudePaths(accountId), link.configDir, link.sessionId, cwd)
     const { found, copiedTo } = await ensureCodexThread(this.accounts.codexPaths(accountId), link.configDir, link.sessionId, link.resumePath)
     if (copiedTo) link.resumePath = copiedTo
@@ -1228,6 +1236,9 @@ export class SessionService extends TypedEmitter<Events> {
   /** Copies the CLI's conversation from one account's folder (or the one it was saved in) to another's. */
   private async transfer(provider: ProviderId, from: string, to: string, link: CliLink, cwd: string): Promise<boolean> {
     if (!this.accounts.has(from) && !link.configDir) return false
+    // Gemini CLI files its conversations by project folder in its own registry: the other account's
+    // goes on anew, with the chat as context.
+    if (provider === 'gemini') return false
     if (provider === 'claude') {
       const source = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(from)
       return copyClaudeSession(source, this.accounts.claudePaths(to), link.sessionId, cwd)
@@ -1266,8 +1277,10 @@ export class SessionService extends TypedEmitter<Events> {
     if (nexaToolsOn(tools) && this.mcp.running) {
       // A token of its own for every run, Claude's and Codex's: it says whose browser the browser tools drive.
       if (s.mcpToken) this.mcp.revoke(s.mcpToken)
-      s.mcpToken = this.mcp.grant({ sessionId: meta.id })
-      mcp = { url: this.mcp.url, token: s.mcpToken, ...this.toolGrant(tools) }
+      // Gemini CLI reports its tool calls without their arguments: the server keeps them for the run.
+      const calls = provider === 'gemini' ? new McpCallLog() : undefined
+      s.mcpToken = this.mcp.grant({ sessionId: meta.id, calls })
+      mcp = { url: this.mcp.url, token: s.mcpToken, ...this.toolGrant(tools), calls }
     }
     const sink: RunSink = {
       item: (item) => {
@@ -1866,11 +1879,18 @@ export class SessionService extends TypedEmitter<Events> {
       if (!link || link.fork || shared.has(`${provider}:${link.sessionId}`)) continue
       for (const dir of this.conversationDirs(provider, link)) {
         const found =
-          provider === 'codex' ? codexThreadFiles(await lookup.codex(dir), link.sessionId) : await claudeSessionFiles(dir, link.sessionId, cwd, lookup.search)
+          provider === 'gemini'
+            ? await geminiSessionFiles(dir, link.sessionId)
+            : provider === 'codex'
+              ? codexThreadFiles(await lookup.codex(dir), link.sessionId)
+              : await claudeSessionFiles(dir, link.sessionId, cwd, lookup.search)
+        // Gemini CLI leaves no sign of where else a conversation is open.
         const open = async (): Promise<unknown> =>
-          provider === 'codex'
-            ? this.providers.openElsewhere('codex', this.codexAccount(meta), link.sessionId, dir)
-            : claudeOpenElsewhere(dir, link.sessionId)
+          provider === 'gemini'
+            ? null
+            : provider === 'codex'
+              ? this.providers.openElsewhere('codex', this.codexAccount(meta), link.sessionId, dir)
+              : claudeOpenElsewhere(dir, link.sessionId)
         if (found.length > 0 && lookup.search && (await open().catch(() => null))) {
           openElsewhere = true
           continue

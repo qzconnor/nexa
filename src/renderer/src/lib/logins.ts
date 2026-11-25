@@ -1,4 +1,5 @@
 import { canLogin, nexaRenewsLogin, usesSecret, type Account } from '@shared/accounts'
+import { PROVIDERS } from '@shared/providers'
 import { formatDateTime, formatRelative } from './format'
 
 /** What the table of logins (LoginTable.vue) says about an account: how long its tokens hold. */
@@ -41,7 +42,7 @@ export function loginEndText(account: Account, now: number): string {
 export function loginEndHint(account: Account, keepFresh: boolean): string | null {
   if (!canLogin(account.kind) || account.authState === 'missing') return null
   if (!account.renewable) return 'Kein Refresh-Token, der noch geht: Läuft der Access-Token ab, hilft nur neu anmelden.'
-  if (account.provider === 'codex') return 'Codex erneuert den Access-Token selbst, sobald eine Session startet.'
+  if (account.provider !== 'claude') return `${PROVIDERS[account.provider].name} erneuert den Access-Token selbst, sobald eine Session startet.`
   if (!account.loginEndsAt) return 'Claude Code hat kein Ende des Logins gespeichert.'
   const who = keepFresh ? 'erneuern Claude Code und Nexa' : 'erneuert Claude Code'
   return `Bis ${formatDateTime(Date.parse(account.loginEndsAt))} ${who} den Access-Token selbst, danach hilft nur neu anmelden.`
@@ -50,7 +51,7 @@ export function loginEndHint(account: Account, keepFresh: boolean): string | nul
 /** The tooltip of „Zuletzt erneuert“. */
 export function savedHint(account: Account): string | null {
   if (!account.tokenSavedAt) return null
-  const by = account.provider === 'codex' ? 'von Codex' : 'von Claude Code oder Nexa'
+  const by = account.provider === 'claude' ? 'von Claude Code oder Nexa' : `von ${PROVIDERS[account.provider].name}`
   return `Tokens gespeichert ${formatDateTime(Date.parse(account.tokenSavedAt))}, ${by}`
 }
 

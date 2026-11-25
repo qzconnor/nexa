@@ -101,7 +101,7 @@ const selectClass = 'h-8 min-w-0 flex-1 bg-background/60 text-[0.8rem]'
         <DialogDescription>
           {{
             withCli
-              ? 'Gelöschte Chats nehmen ihre Unterhaltungen in Claude Code und Codex mit, in den Papierkorb.'
+              ? 'Gelöschte Chats nehmen ihre Unterhaltungen in den CLIs mit, in den Papierkorb.'
               : 'Gelöscht wird der Verlauf in Nexa; die Unterhaltungen der CLIs bleiben (Einstellungen → Chat).'
           }}
         </DialogDescription>

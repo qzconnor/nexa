@@ -2,13 +2,15 @@ import type { ProviderId } from './chat'
 
 /**
  * Accounts: several logins per CLI side by side, as in the Claude Manager. Every account has its
- * own config folder (CLAUDE_CONFIG_DIR, CODEX_HOME) with its login, settings and conversations;
- * the standard account of a CLI is its own folder (`~/.claude`, `~/.codex`).
+ * own config folder (CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_CLI_HOME) with its login, settings and
+ * conversations; the standard account of a CLI is its own folder (`~/.claude`, `~/.codex`, `~/.gemini`).
  *
  * - `system`: the CLI's own folder, as without Nexa.
- * - `oauth`: a folder of its own, signed in through the browser (`claude auth login`, `codex login`).
+ * - `oauth`: a folder of its own, signed in through the browser (`claude auth login`, `codex login`,
+ *   Gemini CLI's „Log in with Google“).
  * - `token`: Claude Code with a long-lived token from `claude setup-token` (CLAUDE_CODE_OAUTH_TOKEN).
- * - `apiKey`: Claude Code with an Anthropic API key (ANTHROPIC_API_KEY).
+ * - `apiKey`: Claude Code with an Anthropic API key (ANTHROPIC_API_KEY), Gemini CLI with a Gemini API
+ *   key (GEMINI_API_KEY).
  */
 export type AccountKind = 'system' | 'oauth' | 'token' | 'apiKey'
 
@@ -104,6 +106,8 @@ export const ACCOUNT_KINDS: Record<ProviderId, CreatableAccountKind[]> = {
   claude: ['oauth', 'token', 'apiKey'],
   // A ChatGPT login only: an API key bills by use and has no plan limits to switch between.
   codex: ['oauth'],
+  // A Google login, or a key from AI Studio (its free tier has limits of its own).
+  gemini: ['oauth', 'apiKey'],
 }
 
 /** The fixed id of a CLI's standard account. */
@@ -196,9 +200,12 @@ export function nexaRenewsLogin(account: Pick<Account, 'provider' | 'kind'>): bo
   return account.provider === 'claude' && canLogin(account.kind)
 }
 
+const SYSTEM_FOLDERS: Record<ProviderId, string> = { claude: '~/.claude', codex: '~/.codex', gemini: '~/.gemini' }
+const BROWSER_LOGINS: Record<ProviderId, string> = { claude: 'Browser-Login', codex: 'ChatGPT-Login', gemini: 'Google-Login' }
+
 export function accountKindLabel(kind: AccountKind, provider: ProviderId): string {
-  if (kind === 'system') return provider === 'codex' ? 'Standard (~/.codex)' : 'Standard (~/.claude)'
-  if (kind === 'oauth') return provider === 'codex' ? 'ChatGPT-Login' : 'Browser-Login'
+  if (kind === 'system') return `Standard (${SYSTEM_FOLDERS[provider]})`
+  if (kind === 'oauth') return BROWSER_LOGINS[provider]
   if (kind === 'token') return 'Long-lived Token'
   return 'API-Key'
 }

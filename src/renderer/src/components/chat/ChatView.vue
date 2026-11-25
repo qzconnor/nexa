@@ -53,7 +53,7 @@ import { provideProjectPath } from '@/composables/useProjectPath'
 import { useStickToBottom } from '@/composables/useStickToBottom'
 import type { AppCommand } from '@/lib/chat-commands'
 import { attempt } from '@/lib/errors'
-import { formatDuration } from '@/lib/format'
+import { andList, formatDuration } from '@/lib/format'
 import { runErrorToShow } from '@/lib/run-error'
 import { dockShells } from '@/lib/shells'
 import { cn } from '@/lib/utils'
@@ -297,11 +297,7 @@ watch(
 // ── The CLIs' conversations, gone on outside Nexa (a terminal, Claude Desktop, VS Code) ──
 
 /** The CLIs the chat has a conversation with, by name: „Claude Code und Codex“. */
-const syncNames = computed(() =>
-  PROVIDER_IDS.filter((p) => meta.value?.cli[p])
-    .map((p) => PROVIDERS[p].name)
-    .join(' und '),
-)
+const syncNames = computed(() => andList(PROVIDER_IDS.filter((p) => meta.value?.cli[p]).map((p) => PROVIDERS[p].name)))
 const syncable = computed(() => !!syncNames.value)
 let lastSync = 0
 /** Takes in what came outside Nexa; quietly, as the chat comes back on screen. */
