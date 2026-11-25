@@ -170,13 +170,35 @@ export function codexItem(item: Json, parentId: string | null, completed: boolea
     }
     case 'webSearch': {
       const action = isPlainObject(item.action) ? item.action : {}
+      const queries = Array.isArray(action.queries) ? action.queries.filter((q): q is string => typeof q === 'string' && !!q) : []
+      // Codex's web tool opens pages and searches in them as well, all as `webSearch`.
+      const view =
+        action.type === 'openPage'
+          ? { title: 'Seite öffnen', detail: str(action.url) }
+          : action.type === 'findInPage'
+            ? { title: 'Auf der Seite suchen', detail: [str(action.pattern), str(action.url)].filter(Boolean).join(' · ') || undefined }
+            : { title: 'Im Web suchen', detail: str(item.query) || str(action.query) || queries.join(' · ') || undefined }
+      return tool({ tool: 'web', name: 'webSearch', ...view, status: completed ? 'done' : 'running' })
+    }
+    case 'plan':
+      return { ...base, kind: 'assistant', text: str(item.text) ?? '', streaming: !completed, phase: 'plan' }
+    case 'sleep': {
+      const ms = typeof item.durationMs === 'number' ? item.durationMs : null
       return tool({
-        tool: 'web',
-        name: 'webSearch',
-        title: 'Im Web suchen',
-        detail: str(item.query) ?? str(action.query) ?? str(action.url),
+        tool: 'other',
+        name: 'sleep',
+        title: 'Warten',
+        detail: ms === null ? undefined : ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`,
         status: completed ? 'done' : 'running',
       })
+    }
+    case 'hookPrompt': {
+      const fragments = Array.isArray(item.fragments) ? item.fragments.filter(isPlainObject) : []
+      const text = fragments
+        .map((f) => str(f.text) ?? '')
+        .filter((t) => t.trim())
+        .join('\n\n')
+      return text ? { ...base, kind: 'notice', level: 'info', text: 'Ein Hook gibt Codex einen Prompt', detail: text } : null
     }
     case 'imageView':
       return tool({ tool: 'image', name: 'imageView', title: 'Bild ansehen', detail: str(item.path), status: 'done' })

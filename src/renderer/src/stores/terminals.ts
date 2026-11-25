@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import type { TerminalInfo } from '@shared/terminals'
 import { attempt } from '@/lib/errors'
-import { TerminalSession, type TerminalLook } from '@/lib/terminal-session'
+import type { TerminalLook, TerminalSession } from '@/lib/terminal-session'
 import { terminalFontSize, terminalFontStack, xtermTheme } from '@/lib/terminal-theme'
 import { useBrowsersStore } from './browsers'
 import { useSettingsStore } from './settings'
@@ -53,6 +53,7 @@ export const useTerminalsStore = defineStore('terminals', () => {
   /** Counts the requests to give the shown terminal the keyboard. */
   const focusRequest = ref(0)
   const sessions = new Map<string, TerminalSession>()
+  let sessionModule: Promise<typeof import('@/lib/terminal-session')> | null = null
 
   const look = computed<TerminalLook>(() => {
     const appearance = settings.settings.appearance
@@ -121,12 +122,20 @@ export const useTerminalsStore = defineStore('terminals', () => {
     void attempt(() => window.api.terminals.kill(id), 'Das Terminal ließ sich nicht beenden')
   }
 
-  /** The xterm of a terminal, made the first time it is shown. */
-  function session(info: TerminalInfo): TerminalSession {
+  /**
+   * The xterm of a terminal, made the first time it is shown. xterm (about 450 KB) loads with the first
+   * terminal, not with the app; what the shell wrote until then comes from main's buffer.
+   */
+  async function session(info: TerminalInfo): Promise<TerminalSession> {
+    const known = sessions.get(info.id)
+    if (known) return known
+    const { TerminalSession } = await (sessionModule ??= import('@/lib/terminal-session'))
+    // Made meanwhile, by another view of the same terminal.
     let found = sessions.get(info.id)
     if (!found) {
       found = new TerminalSession(info.id, look.value, (url) => void openLink(info.sessionId, url))
-      if (info.status === 'exited') found.markExited(info.exitCode)
+      const now = list.value.find((t) => t.id === info.id) ?? info
+      if (now.status === 'exited') found.markExited(now.exitCode)
       sessions.set(info.id, found)
     }
     return found

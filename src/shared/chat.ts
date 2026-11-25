@@ -50,8 +50,11 @@ export interface AssistantItem extends ItemBase {
   kind: 'assistant'
   text: string
   streaming?: boolean
-  /** Codex separates commentary between tool calls from its final answer. */
-  phase?: 'commentary' | 'final'
+  /**
+   * Codex separates commentary between tool calls from its final answer, and in its plan mode the
+   * plan it proposes from both.
+   */
+  phase?: 'commentary' | 'final' | 'plan'
 }
 
 export interface ThinkingItem extends ItemBase {
@@ -98,6 +101,10 @@ export interface ToolItem extends ItemBase {
   title: string
   /** The main argument in one line: command, path, pattern, URL. */
   detail?: string
+  /** Text the call hands on (a message to another agent), shown as text in place of its input. */
+  text?: string
+  /** What a running tool last said about how far it is (an MCP server's progress). */
+  progress?: string
   input?: unknown
   output?: string
   status: ToolStatus
@@ -196,12 +203,39 @@ export type InteractionRequest =
   | { type: 'question'; questions: Question[] }
   | { type: 'plan'; plan: string }
   | { type: 'elicitation'; server: string; message: string; schema?: Record<string, unknown>; url?: string }
+  | FormRequest
+
+/** A field of a form the agent asks the user to fill in (`ask_user` of Nexa's MCP server). */
+export interface FormField {
+  /** The value's name in the answer. */
+  key: string
+  label: string
+  type: 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'multiselect' | 'path'
+  description?: string
+  /** The choices of `select` and `multiselect`. */
+  options?: string[]
+  default?: FormValue
+  required?: boolean
+}
+
+export type FormValue = string | number | boolean | string[]
+
+/** A form of the agent (`ask_user`); Nexa itself asks it, not the CLI. */
+export interface FormRequest {
+  type: 'form'
+  title: string
+  /** Markdown. */
+  description?: string
+  fields: FormField[]
+  submitLabel?: string
+}
 
 export type InteractionResponse =
   | { type: 'permission'; decision: PermissionOption['id']; message?: string }
   | { type: 'question'; answers: Record<string, string[]> }
   | { type: 'plan'; approve: boolean; mode?: PermissionMode; feedback?: string }
   | { type: 'elicitation'; action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }
+  | { type: 'form'; action: 'submit' | 'decline'; values?: Record<string, FormValue> }
 
 /** A question of the agent to the user: answered right in the chat. */
 export interface InteractionItem extends ItemBase {
@@ -214,6 +248,8 @@ export interface InteractionItem extends ItemBase {
 }
 
 export interface TodoEntry {
+  /** Claude Code's id of the task (its task tools change one by id); none from `TodoWrite` and Codex. */
+  id?: string
   text: string
   status: 'pending' | 'in_progress' | 'completed'
   /** Shown while the entry is in progress ("Tests werden ausgeführt"). */

@@ -69,6 +69,12 @@ export interface ChatSettings {
    */
   promptSuggestions: boolean
   /**
+   * A chat's CLI ends after this many minutes without a turn (0: never), with its MCP servers; the next
+   * prompt starts it again on the same conversation. Not while a turn runs or waits, prompts wait, or
+   * a shell or agent of it runs in the background. Codex lets go of its thread after a minute anyway.
+   */
+  releaseIdleMinutes: number
+  /**
    * A new chat gets its title from the model after the first prompt; until then, and when off, the
    * prompt's first line. Codex asks its model in a short request of its own for it.
    */
@@ -146,6 +152,11 @@ export interface GeneralSettings {
    * starting another one (main/launch.ts).
    */
   nxReuseChat: boolean
+  /**
+   * Quitting (or closing the window that ends the app) asks first while chats work, or commands run
+   * that would end with it (`!` commands, start commands).
+   */
+  confirmQuitRunning: boolean
 }
 
 /**

@@ -14,58 +14,30 @@ Gesammelt am 25.11.2026 aus dem Code von Nexa und im Vergleich mit dem Claude Ma
 
 ## Zuerst
 
-Großer Nutzen, wenig Aufwand:
-
-| | Idee | Aufwand | Warum |
-|---|---|---|---|
-| P4 | Untätige Prozesse von Claude Code und Antigravity beenden | S | Je Chat 300–400 MB RAM, dazu seine MCP-Server |
-| P9 | Renderer minifizieren, xterm und Dialoge erst bei Bedarf laden | S | Der Start-Chunk hat 3,5 MB, nicht minifiziert |
-| P2 | Markdown beim Streamen drosseln, erst am Ende hervorheben | S | Lange Antworten werden quadratisch teurer |
-| P1 | Blöcke des Chats nicht bei jedem Delta neu bauen | S–M | 17 ms je Delta im größten Chat |
-| U2 | Esc hält den Agenten an | S | So kennt man es aus den CLIs |
-| U4 | Toasts nicht über dem Senden-Knopf | S | Der Lösch-Toast verdeckt ihn 8 s lang |
-| N1 | Leiste je Nachricht: Kopieren, Uhrzeit, Modell | S | Kopieren geht heute nur für die letzte Antwort |
-| W1 | Aufrufe zeigen, die Nexa heute verschluckt | M | Claudes Tasks und der Plan von Codex fehlen ganz |
-| M1 | Rückfrage mit Formular (`ask_user`) | M | Antigravity hat kein Werkzeug für Rückfragen |
-| E2 | Rückfrage beim Beenden, wenn Chats arbeiten | S | Heute endet alles ohne Frage |
+Die zehn Ideen, die hier standen (P1, P2, P4, P9, U2, U4, N1, W1, M1, E2), sind umgesetzt und in
+`ROADMAP.md` abgehakt. Was von P2 und W1 offen ist, steht unten.
 
 ## Performance
 
 | | Idee | Nutzen | Aufwand |
 |---|---|---|---|
-| P1 | Blöcke nicht bei jedem Delta neu bauen | hoch | S–M |
-| P2 | Markdown beim Streamen drosseln | hoch | S / M |
+| P2 | Markdown blockweise rendern | mittel | M |
 | P3 | Schnellsuche ohne komplettes Einlesen aller Verläufe | hoch | M |
-| P4 | Untätige CLI-Prozesse beenden | hoch (RAM) | S |
 | P5 | Geöffnete Chats wieder aus dem Speicher nehmen | hoch | M |
 | P6 | Deltas bündeln, nur an Fenster mit dem Chat | mittel–hoch | M |
 | P7 | Beim Öffnen nicht den ganzen Verlauf übertragen | hoch bei großen Chats | S / L |
 | P8 | Chat-DOM begrenzen, Inline-Diffs kürzen | mittel | S |
-| P9 | Bundle minifizieren und aufteilen | mittel (Start) | S |
 | P10 | Claude-Probes aus dem laufenden Chat bedienen | mittel | S–M |
 | P11 | Session-Liste als Delta statt ganz | gering–mittel | S / M |
 | P12 | Abgleich liest nur das Ende des Transkripts | gering–mittel | S–M |
 | P13 | Login-Dateien nur bei Änderung lesen | gering | S |
 | P14 | xterm mit WebGL, Ausgabe nur an ein Fenster | gering–mittel | S |
 
-**P1 – Blöcke nicht bei jedem Delta neu bauen**
-- Der Chat ist tief reaktiv, und jedes Delta hängt an `item.text` an.
-- `chatBlocks` (`renderer/lib/tools.ts`) liest den Text aller Antworten und Gedanken. Damit laufen bei
-  jedem Delta `blocks` und die davon abhängigen `computed` in `MessageList.vue` neu, und jede `ToolGroup`
-  rendert neu.
-- Ist ein Agent-Verlauf offen, rechnet die versteckte Hauptliste mit.
-- Gemessen: 17 ms je Delta bei 9 465 Items, roh 0,65 ms.
-- Vorschlag: Struktur und Text trennen. `chatBlocks` liest Texte über `toRaw` und hängt an einem
-  Strukturzähler, den der Store bei neuem oder ersetztem Item erhöht. Nur das `Markdown` des streamenden
-  Items liest den Text reaktiv.
-
-**P2 – Markdown beim Streamen drosseln**
-- `Markdown.vue` parst bei jeder Änderung den ganzen Text, `useMarkdown.ts` hebt dabei jeden Codeblock
-  hervor, und `v-html` ersetzt das ganze DOM der Antwort; das löscht auch eine Textauswahl.
-- Gemessen: 557 ms für eine 9-KB-Antwort mit 452 Deltas, ohne DOM.
-- Vorschlag: beim Streamen höchstens einmal je Frame oder alle 50–100 ms rendern, ohne Hervorhebung; die
-  kommt bei `streaming=false`. Später blockweise: den stabilen Teil bis zur letzten Leerzeile außerhalb
-  eines Codeblocks cachen.
+**P2 – Markdown blockweise rendern**
+- Beim Streamen rendert `Markdown.vue` höchstens alle 80 ms und ohne Hervorhebung, die kommt am Ende.
+  Jedes Rendern parst aber noch den ganzen Text und ersetzt das ganze DOM der Antwort.
+- Vorschlag: den stabilen Teil bis zur letzten Leerzeile außerhalb eines Codeblocks cachen und nur den
+  Rest neu rendern.
 
 **P3 – Schnellsuche ohne komplettes Einlesen aller Verläufe**
 - Beim Öffnen der Schnellsuche liest `SessionService.search` alle nie geöffneten importierten Chats.
@@ -75,14 +47,6 @@ Großer Nutzen, wenig Aufwand:
 - Dasselbe gilt für `artifactChats` und `stats`.
 - Vorschlag: zeilenweise lesen und Zeilen ohne `user`/`assistant` vor `JSON.parse` verwerfen. Ein Index je
   Datei (mtime, Größe) auf der Platte, in einem Worker gebaut, gemeinsam für Suche, Artefakte und Turns.
-
-**P4 – Untätige CLI-Prozesse beenden**
-- `releaseWhenIdle` (`main/services/session-service.ts`) gilt nur für Codex. Claude Code und `agy acp`
-  bleiben samt MCP-Servern bis zum Ende des Chats.
-- Momentaufnahme: drei `claude.exe` mit 302, 324 und 418 MB, dazu MCP-Server mit je 33–110 MB.
-- Vorschlag: für alle CLIs nach 10–15 Minuten Ruhe, einstellbar. Ausnahmen: laufender Turn, Warteschlange,
-  Zusammenfassen, Shell oder Agent im Hintergrund. Fortgesetzt wird ohnehin mit `--resume` bzw.
-  `session/resume`.
 
 **P5 – Geöffnete Chats wieder aus dem Speicher nehmen**
 - Der Renderer gibt einen Chat nur beim Löschen frei, Main nie (`s.items`). Jedes Chat-Fenster hält eine
@@ -115,14 +79,6 @@ Großer Nutzen, wenig Aufwand:
 - Vorschlag: Folgt der Chat unten, den Anker nachziehen, sodass höchstens etwa zwei Seiten im DOM sind.
   `content-visibility: auto` je Block; das ungenutzte `MessageScrollerItem.vue` kann das schon.
   Inline-Diffs ab etwa 200 Zeilen mit „Alle Zeilen“, `changeLines` per WeakMap cachen.
-
-**P9 – Bundle minifizieren und aufteilen**
-- electron-vite 6 minifiziert nicht, und `electron.vite.config.ts` stellt das nicht um: `index-*.js` hat
-  3,5 MB.
-- xterm (450 KB) wird über `stores/terminals.ts` statisch geladen. `App.vue` importiert Einstellungen,
-  Theme-Editor, Dialoge, Artefakte und Einrichtung direkt, zusammen etwa 390 KB.
-- Vorschlag: `build.minify` für Renderer und Main, xterm per `import()`, Dialoge per
-  `defineAsyncComponent`.
 
 **P10 – Claude-Probes aus dem laufenden Chat bedienen**
 - `commands()` und `models()` starten je Account und Ordner alle 5 Minuten einen `claude`-Prozess, der
@@ -164,7 +120,6 @@ Schon gut gelöst:
 
 | | Idee | Aufwand |
 |---|---|---|
-| M1 | Rückfrage mit Formular (`ask_user`) | M |
 | M2 | Startbefehle und Terminal für den Agenten | M |
 | M3 | Werkzeuge je MCP-Server einzeln an und aus | M |
 | M4 | Zustand, Fehler und Logs der Server in den Einstellungen | M |
@@ -175,18 +130,6 @@ Schon gut gelöst:
 | M9 | Themes über MCP | S |
 | M10 | Dem Nutzer etwas in Nexa zeigen (`show_file`, `show_changes`) | S–M |
 | M11 | Server-Dialog: Anmelden, Zeitgrenzen, Arbeitsordner | S |
-
-**M1 – Rückfrage mit Formular (`ask_user`)**
-- Der Agent stellt eine Frage mit Optionen oder ein Formular und wartet. Er bekommt die Werte als JSON
-  zurück oder „abgelehnt“. Das geht in jeder CLI gleich.
-- Parameter: `{ title, description?, fields: [{ key, label, type: 'text'|'textarea'|'number'|'boolean'|
-  'select'|'multiselect'|'path', options?, default?, required? }], submitLabel? }`.
-- Warum: Antigravity hat kein Werkzeug für Rückfragen; sein Plan endet „mit einer Frage in Worten“. Und
-  `AskUserQuestion` von Claude kennt nur Optionen und Freitext.
-- Bausteine gibt es: `InteractionRequest` (`question`, `elicitation`), `ElicitationForm.vue`. Lange Aufrufe
-  hält der Server schon offen (SSE-Keepalive, bei Codex `tool_timeout_sec = 900`).
-- Wo: neu `main/mcp/ask-tool.ts`, `nexa-tools.ts`, `tool-grant.ts`, `session-service.ts`, `instructions.ts`,
-  `InteractionCard.vue`.
 
 **M2 – Startbefehle und Terminal für den Agenten**
 - Der Agent liest die Ausgabe des Dev-Servers aus den Startbefehlen und startet ihn neu. Er kann eine
@@ -264,7 +207,6 @@ Schon gut gelöst:
 | | Idee | Aufwand |
 |---|---|---|
 | E1 | Vorgaben je Projekt (CLI, Account, Modell, Aufwand, Freigaben) | M |
-| E2 | Rückfrage beim Beenden, wenn Chats arbeiten | S |
 | E3 | Nexa-Werkzeuge einzeln schalten, Freigabestufen für den Browser | S |
 | E4 | Prompt-Vorlagen mit Platzhaltern | M |
 | E5 | Umgebungsvariablen je CLI und Account (Proxy, Telemetrie) | S–M |
@@ -282,11 +224,6 @@ Schon gut gelöst:
 - `Project` hat heute nur `mcpOff` und `startCommands`, Vorgaben gibt es nur global.
 - Wo: `shared/types.ts`, `services/project-service.ts`, `SessionService.create`, `mcp/chat-tools.ts`,
   `launch.ts`, Dialog im Kontextmenü des Projekts.
-
-**E2 – Rückfrage beim Beenden, wenn Chats arbeiten**
-- Schließen oder Beenden, während Antworten, Shells oder Startbefehle laufen, fragt vorher. `before-quit`
-  in `main/index.ts` beendet heute alles; nur der Neustart für ein Update fragt.
-- CM: `general.confirmCloseRunning`.
 
 **E3 – Nexa-Werkzeuge einzeln schalten, Freigabestufen für den Browser**
 - Eigene Schalter für „Limits lesen“ und „Frühere Chats durchsuchen“. Für den Browser „ohne Nachfrage
@@ -348,9 +285,7 @@ Schon gut gelöst:
 | | Idee | Aufwand |
 |---|---|---|
 | U1 | Schmales Fenster: dem Chat bleibt Platz | M |
-| U2 | Esc hält den Agenten an | S |
 | U3 | Drag & Drop ins Eingabefeld für alle Dateien | S–M |
-| U4 | Toasts nicht über dem Senden-Knopf | S |
 | U5 | Abbrüche der CLI als Karte mit Aktionen | S–M |
 | U6 | Archivieren mit Rückweg | S–M |
 | U7 | Tastenkürzel sichtbar machen | S–M |
@@ -369,12 +304,6 @@ Schon gut gelöst:
   Unter etwa 1000 px die Seitenleiste als Overlay. Strg+B für die Seitenleiste, Breite ziehbar
   (`lib/separator-keys.ts`).
 
-**U2 – Esc hält den Agenten an**
-- Anhalten geht nur über den Quadrat-Knopf ohne Tooltip oder die Befehlsliste. Der Kommentar in
-  `Composer.vue` verspricht „the chat's Esc (stop the agent …)“, das gibt es aber nicht.
-- Vorschlag: Esc im Eingabefeld oder im Chat unterbricht, wenn keine Liste, kein Shell-Modus und kein
-  Diktat es braucht. Tooltips „Anhalten (Esc)“ und „Senden (Enter)“.
-
 **U3 – Drag & Drop ins Eingabefeld für alle Dateien**
 - Heute gehen nur Bilder. Eine PDF, eine `.ts`-Datei oder ein Ordner aus dem Explorer verschwindet ohne
   Rückmeldung.
@@ -383,12 +312,6 @@ Schon gut gelöst:
 - Vorschlag wie CM `TerminalPane.vue`: `dragDepth` zählen, nur `Files` und Dateibaum annehmen, ein Overlay
   „Loslassen hängt Bilder an und erwähnt Dateien“, der ganze Chat als Ablage. Andere Dateien werden zur
   `@`-Erwähnung, Ordner zu „Ordner hinzufügen“.
-
-**U4 – Toasts nicht über dem Senden-Knopf**
-- Toasts sitzen unten rechts (356 px breit) und ragen bei 1366 px rund 190 px über Zahnrad, Mikrofon und
-  Senden. Der Lösch-Toast mit „Rückgängig“ bleibt 8 s.
-- Vorschlag: `position="top-right"` unter der Titelleiste oder ein Versatz in Höhe des Docks
-  (`dockHeight` misst ChatView schon).
 
 **U5 – Abbrüche der CLI als Karte mit Aktionen**
 - Heute steht roher stderr-Text als rote Fläche unter dem Chat: ohne Überschrift, ungekürzt, ohne Aktion.
@@ -456,7 +379,7 @@ Trenngriffe per Tastatur, einheitlicher Aufbau der Dialoge.
 Ein statisches Werkzeug ist S: Spec in `shared/chat.ts`, Prüfung in `shared/render.ts`, Definition in
 `main/mcp/render-tools.ts`, Name in `lib/tools.ts`, Zweig in `RenderBlock.vue`, ein Satz in den
 Anweisungen. Was antwortet oder sich aktualisiert, braucht Zustand und ist M. Die Rückfrage mit Formular
-steht unter M1.
+(`ask_user`) gibt es schon.
 
 | | Idee | Aufwand |
 |---|---|---|
@@ -524,7 +447,7 @@ Nicht empfohlen:
 
 | | Idee | Aufwand |
 |---|---|---|
-| W1 | Aufrufe zeigen, die Nexa heute verschluckt oder roh zeigt | M |
+| W1 | Plan-Modus von Codex mit Freigabe | M |
 | W2 | Bilder aus Werkzeugen | S / M |
 | W3 | Befehle und Ausgaben wie im Terminal | M |
 | W4 | Web-Suche und Web-Abruf als Quellen | M |
@@ -533,18 +456,12 @@ Nicht empfohlen:
 | W7 | Pläne und Artefakte bleiben lesbar | S / M |
 | W8 | Diffs im Chat wortgenau und kommentierbar | S / M |
 
-**W1 – Aufrufe zeigen, die Nexa heute verschluckt oder roh zeigt**
-- **Claude `TaskCreate`/`TaskUpdate`/`TaskList`** werden zur Art `todo`, die `chatBlocks` überspringt. Ein
-  `TodoItem` entsteht aber nur aus `TodoWrite`, also bleiben sie unsichtbar.
-- **Claude `SubagentHandback`, `SendMessage`, `ListAgents`** erscheinen mit Rohnamen und JSON.
-  „Bericht übergeben“ ausblenden (doppelt mit dem Ergebnis), „Nachricht an …“ mit Text zeigen.
-- **Codex `plan`** (eigener Plan-Modus über `collaborationMode`, `item/plan/delta`) sollte wie bei Claude
-  ein Plan zur Freigabe sein. Heute ist Codex' „Plan“ nur `read-only`.
-- **Codex `sleep`, `hookPrompt`, `item/mcpToolCall/progress`** fehlen ganz. `webSearch` heißt auch bei
-  `openPage`/`findInPage` „Im Web suchen“.
-- Ungeprüft: Die Typen von Codex stammen aus Zeichenketten in `codex.exe` 0.169, nicht aus einem echten
-  Turn.
-- Wo: `codex-items.ts`, `codex-run.ts`, `claude-tools.ts`, `claude-run.ts`, `PROTOCOLS.md`.
+**W1 – Plan-Modus von Codex mit Freigabe**
+- Nexa zeigt den Plan von Codex (`plan`, `item/plan/delta`) als eigenen Block. Den Plan-Modus selbst
+  (`collaborationMode`) nutzt Nexa nicht: Der Modus „Plan“ ist bei Codex nur `read-only`.
+- Vorschlag: im Modus „Plan“ den Plan-Modus von Codex nehmen und den Plan wie bei Claude zur Freigabe
+  vorlegen.
+- Wo: `codex-run.ts`, `codex-overrides.ts`, `PROTOCOLS.md`.
 
 **W2 – Bilder aus Werkzeugen**
 - Vorschaubilder unter der Werkzeugzeile, ein Klick öffnet den Bildbetrachter. Betrifft:
@@ -602,7 +519,6 @@ Gibt es schon:
 
 | | Idee | Aufwand |
 |---|---|---|
-| N1 | Leiste je Nachricht: Kopieren, Uhrzeit, Modell; Tagestrenner | S |
 | N2 | Zitieren | S |
 | N3 | Abzweigen ab jeder Antwort | M |
 | N4 | Von Prompt zu Prompt springen | M |
@@ -612,17 +528,6 @@ Gibt es schon:
 | N8 | Export als HTML und PDF, vollständigeres Markdown | M |
 | N9 | Zusammenfassung des Kontexts lesbar machen | S |
 | N10 | Antworten vergleichen | L |
-
-**N1 – Leiste je Nachricht**
-- Beim Hover (und per Tastatur erreichbar) an jeder Antwort und jedem Prompt:
-  - Kopieren
-  - Uhrzeit („14:32“, das Datum im Tooltip)
-  - das Modell, wenn es wechselt
-  - später auch Zitieren, Lesezeichen und Abzweigen
-- Dazu Tagestrenner („Heute“, „Gestern“).
-- Heute geht Kopieren nur für die letzte Antwort über das Menü. Prompts lassen sich bearbeiten, aber nicht
-  kopieren. `ts` und `TurnItem.model` sind da, werden aber nicht gezeigt.
-- CM: Kopf „Claude · Modell · HH:MM“, `lib/transcript-days.ts`.
 
 **N2 – Zitieren**
 - Text in einer Antwort, einem Gedanken oder einer Ausgabe markieren, dann fügt „Zitieren“ `> …` an der

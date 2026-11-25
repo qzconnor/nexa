@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { SETTING_RANGES } from '@shared/defaults'
 import type { AppSettings, DeepPartial, UserShell } from '@shared/types'
 import { voiceAvailable, VOICE_LANGUAGES, voiceLanguage as resolveVoiceLanguage, voiceLanguageLabel } from '@shared/voice'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
@@ -15,6 +16,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import SettingField from './SettingField.vue'
 import SettingsSection from './SettingsSection.vue'
+import SliderControl from './SliderControl.vue'
 
 const store = useSettingsStore()
 const ui = useUiStore()
@@ -30,6 +32,23 @@ async function updateTools(patch: DeepPartial<AppSettings['tools']>): Promise<vo
   const saved = await attempt(() => store.update({ tools: patch }).then(() => true), 'Speichern fehlgeschlagen')
   if (saved) chatActions.offerRestart()
 }
+
+/** Saved once the slider rests, not for every minute passed while dragging. */
+const releaseIdle = ref(s.value.chat.releaseIdleMinutes)
+watch(
+  () => s.value.chat.releaseIdleMinutes,
+  (value) => (releaseIdle.value = value),
+)
+let releaseTimer: ReturnType<typeof setTimeout> | undefined
+const releaseIdleMinutes = computed({
+  get: () => releaseIdle.value,
+  set: (value: number) => {
+    releaseIdle.value = value
+    clearTimeout(releaseTimer)
+    releaseTimer = setTimeout(() => update({ chat: { releaseIdleMinutes: value } }), 300)
+  },
+})
+onBeforeUnmount(() => clearTimeout(releaseTimer))
 
 const SHELLS: { value: UserShell; label: string }[] = [
   { value: 'powershell', label: 'PowerShell' },
@@ -128,6 +147,22 @@ function cleanUp(): void {
         description="Neue Chats bekommen nach dem ersten Prompt einen kurzen Titel vom Modell, auch in der CLI. Codex fragt sein Modell dafür eigens. Aus: die erste Zeile des Prompts."
       >
         <Switch :model-value="s.chat.autoTitles" @update:model-value="(v: boolean) => update({ chat: { autoTitles: v } })" />
+      </SettingField>
+    </SettingsSection>
+
+    <SettingsSection anchor="chat.processes" title="Prozesse" description="Was die CLIs der Chats an Speicher belegen.">
+      <SettingField
+        anchor="chat.releaseIdleMinutes"
+        for="release-idle"
+        label="CLI nach Ruhe beenden"
+        description="Ein Chat, der so lange nichts tut, beendet seine CLI samt ihren MCP-Servern; der nächste Prompt startet sie wieder mit derselben Unterhaltung. Nicht, solange etwas im Hintergrund läuft."
+      >
+        <SliderControl
+          id="release-idle"
+          v-model="releaseIdleMinutes"
+          v-bind="SETTING_RANGES['chat.releaseIdleMinutes']"
+          :format="(v) => (v === 0 ? 'nie' : `nach ${v} min`)"
+        />
       </SettingField>
     </SettingsSection>
 

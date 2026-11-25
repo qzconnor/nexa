@@ -10,6 +10,11 @@ export interface SessionChat {
   items: ChatItem[]
   index: Map<string, number>
   loaded: boolean
+  /**
+   * Counts the texts that got their first words while streaming. The timeline's blocks depend on it
+   * instead of on every text (MessageList): they only change when a text stops being empty.
+   */
+  textShown: number
 }
 
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
@@ -85,7 +90,10 @@ export const useSessionsStore = defineStore('sessions', () => {
         const at = chat.index.get(event.itemId)
         if (at === undefined) return
         const item = chat.items[at]
-        if (event.field === 'text' && (item.kind === 'assistant' || item.kind === 'thinking')) item.text += event.text
+        if (event.field === 'text' && (item.kind === 'assistant' || item.kind === 'thinking')) {
+          if (!item.text.trim() && event.text.trim()) chat.textShown++
+          item.text += event.text
+        }
         else if (event.field === 'output' && item.kind === 'tool') item.output = (item.output ?? '') + event.text
         break
       }
@@ -106,7 +114,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       void sync(id).catch((error) => console.warn('[sessions] sync failed', error))
       return
     }
-    const chat: SessionChat = reactive({ items: [], index: new Map(), loaded: false }) as SessionChat
+    const chat: SessionChat = reactive({ items: [], index: new Map(), loaded: false, textShown: 0 }) as SessionChat
     chats.set(id, chat)
     try {
       const detail = await window.api.sessions.open(id)

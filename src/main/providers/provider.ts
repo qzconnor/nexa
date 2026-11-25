@@ -1,4 +1,4 @@
-import type { ChatItem, ContextDetail, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
+import type { ChatItem, ContextDetail, InteractionResponse, PermissionMode, ProviderId, SessionRuntime, TodoEntry } from '@shared/chat'
 import type { McpAppToolResult, McpToolUi } from '@shared/mcp-apps'
 import type {
   CommandOption,
@@ -101,6 +101,8 @@ export interface RunOptions {
   dirs?: string[]
   /** Claude: guess the user's next prompt after each answer (`SessionRuntime.suggestion`). */
   promptSuggestions?: boolean
+  /** Claude: the chat's task list as it shows it, so that its task tools change it by id. */
+  todos?: TodoEntry[]
   extraArgs: string[]
 }
 

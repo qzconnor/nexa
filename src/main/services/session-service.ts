@@ -10,12 +10,15 @@ import {
   type ChatItem,
   type ChatOrigin,
   type ContextDetail,
+  type FormRequest,
+  type InteractionItem,
   type InteractionRequest,
   type InteractionResponse,
   type ProviderId,
   type SessionEvent,
   type SessionResume,
   type SessionRuntime,
+  type TodoEntry,
   type ToolItem,
   type UserItem,
 } from '@shared/chat'
@@ -97,7 +100,7 @@ interface SessionState {
   rollout?: { key: string; path: string | null; at: number }
   /** While one look at the transcript runs, the next asks for the same. */
   syncing?: Promise<number>
-  /** Ends an idle Codex run (`releaseWhenIdle`). */
+  /** Ends an idle run (`releaseWhenIdle`). */
   releaseTimer?: ReturnType<typeof setTimeout>
   /** The last turns taken in from outside: their note, how many prompts it counts, their last item. */
   outside?: { provider: ProviderId; noticeId: string; prompts: number; lastId: string }
@@ -170,6 +173,12 @@ function conversationLookup(search: boolean): ConversationLookup {
   }
 }
 
+/** The main thread's todo list as the chat shows it, for a run to go on from (`RunOptions.todos`). */
+function mainTodos(items: readonly ChatItem[] | null | undefined): TodoEntry[] | undefined {
+  const todo = items?.findLast((item) => item.kind === 'todo' && item.id === 'todo:main')
+  return todo?.kind === 'todo' ? todo.entries : undefined
+}
+
 /** What the chats' worktrees take of git. */
 export type WorktreeGit = Pick<GitService, 'addWorktree' | 'removeWorktree'>
 
@@ -204,6 +213,8 @@ export class SessionService extends TypedEmitter<Events> {
   private readonly sessions = new Map<string, SessionState>()
   /** The commands the user runs with `!` in the composer. */
   private readonly userShells = new UserShells()
+  /** Forms of `ask_user` waiting for the user, by the id of their item: Nexa asks them, not a CLI. */
+  private readonly asks = new Map<string, { sessionId: string; settle: (response: InteractionResponse | null) => void }>()
   /** The prompts and answers of every chat for the search, by session, while `stamp` says the chat is unchanged. */
   private readonly searchCache = new Map<string, { stamp: string; texts: Promise<ChatText[]> }>()
   /** The artifacts each saved chat names, by session, while `stamp` says it is unchanged. */
@@ -258,6 +269,31 @@ export class SessionService extends TypedEmitter<Events> {
 
   list(): SessionMeta[] {
     return [...this.sessions.values()].map((s) => s.meta).sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  /**
+   * How many chats would lose something if Nexa quit now: a turn that runs or waits for the user,
+   * prompts that wait, a compaction, shells or agents of the CLI in the background, `!` commands.
+   */
+  working(): number {
+    let count = 0
+    for (const s of this.sessions.values()) {
+      if (this.atWork(s) || (!!s.run?.alive && this.busyInBackground(s)) || this.userShells.runsFor(s.meta.id)) count++
+    }
+    return count
+  }
+
+  /** The chat's CLI works for it: a turn runs or waits, prompts wait, or it compacts. */
+  private atWork(s: SessionState): boolean {
+    const { status, queued, compactingSince } = s.runtime
+    return status === 'starting' || status === 'running' || status === 'waiting' || !!queued?.length || !!compactingSince
+  }
+
+  /** A shell or agent of the CLI still runs in the background, after its turn: it would end with the CLI. */
+  private busyInBackground(s: SessionState): boolean {
+    return !!s.items?.some(
+      (i) => (i.kind === 'tool' && i.shell?.background === true && i.shell.status === 'running') || (i.kind === 'agent' && i.background === true && i.status === 'running'),
+    )
   }
 
   /** The chats whose CLI is up or at work; `nx` goes to one of them rather than starting another. */
@@ -1416,6 +1452,7 @@ export class SessionService extends TypedEmitter<Events> {
       },
       exited: (error) => {
         if (!current()) return
+        this.cancelAsks(meta.id)
         this.markOwn(s, provider)
         s.run = null
         s.runProvider = null
@@ -1442,6 +1479,7 @@ export class SessionService extends TypedEmitter<Events> {
               renderTools: !!mcp && tools.renderTools,
               browserTools: !!mcp && tools.browserTools,
               chatTools: !!mcp && tools.chatTools,
+              askTool: !!mcp,
               projectName: project.name,
             }),
             // The user's own for the project and the separators around it (`prompts.md`).
@@ -1454,6 +1492,7 @@ export class SessionService extends TypedEmitter<Events> {
           mcpOff: project.mcpOff?.[provider],
           dirs: meta.dirs,
           promptSuggestions: this.settings().chat.promptSuggestions,
+          todos: provider === 'claude' ? mainTodos(s.items) : undefined,
           extraArgs: [...this.accounts.extraArgs(accountId), ...(meta.cliArgs?.[provider] ?? [])],
         },
         sink,
@@ -1472,6 +1511,7 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   async interrupt(id: string): Promise<void> {
+    this.cancelAsks(id)
     await this.get(id).run?.interrupt()
   }
 
@@ -1715,7 +1755,43 @@ export class SessionService extends TypedEmitter<Events> {
     return { run: s.run, taskId: item.shell.taskId }
   }
 
+  /**
+   * A form of chat `id`'s agent for the user (`ask_user` of Nexa's MCP server): shown in the chat like
+   * the CLIs' questions, the answer once the user gave it. Null when it went unanswered: the turn
+   * stopped, the run ended, or the CLI gave up on the call (`signal`).
+   */
+  ask(id: string, request: FormRequest, signal?: AbortSignal): Promise<InteractionResponse | null> {
+    const s = this.get(id)
+    if (signal?.aborted) return Promise.resolve(null)
+    const provider = s.runProvider ?? s.meta.provider
+    const item: InteractionItem = { kind: 'interaction', id: `ask:${randomUUID()}`, ts: Date.now(), provider, request, state: 'pending' }
+    this.put(s, item)
+    this.emit('attention', id, { kind: 'input', provider, request })
+    if (s.runtime.status === 'running') this.setRuntime(s, { ...s.runtime, status: 'waiting' })
+    return new Promise((resolve) => {
+      const settle = (response: InteractionResponse | null): void => {
+        if (!this.asks.delete(item.id)) return
+        signal?.removeEventListener('abort', abort)
+        this.put(s, { ...item, state: response ? 'answered' : 'cancelled', ...(response ? { response } : {}) })
+        // Back to work, unless the CLI waits for an answer of its own as well.
+        const waitsMore = s.items?.some((i) => i.kind === 'interaction' && i.state === 'pending')
+        if (s.runtime.status === 'waiting' && !waitsMore) this.setRuntime(s, { ...s.runtime, status: 'running' })
+        resolve(response)
+      }
+      const abort = (): void => settle(null)
+      this.asks.set(item.id, { sessionId: id, settle })
+      signal?.addEventListener('abort', abort, { once: true })
+    })
+  }
+
+  /** The forms of chat `id` go unanswered: its turn or run ended. */
+  private cancelAsks(id: string): void {
+    for (const ask of [...this.asks.values()]) if (ask.sessionId === id) ask.settle(null)
+  }
+
   async respond(id: string, itemId: string, response: InteractionResponse): Promise<void> {
+    const ask = this.asks.get(itemId)
+    if (ask?.sessionId === id) return ask.settle(response)
     const s = this.get(id)
     if (!s.run) throw new Error('Die Session läuft nicht mehr, die Frage ist verfallen.')
     await s.run.respond(itemId, response)
@@ -1864,6 +1940,7 @@ export class SessionService extends TypedEmitter<Events> {
 
   async stop(id: string): Promise<void> {
     const s = this.get(id)
+    this.cancelAsks(id)
     const run = s.run
     if (run && s.runProvider) this.markOwn(s, s.runProvider)
     s.run = null
@@ -2130,24 +2207,40 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /**
-   * A Codex run idle for a while lets go of its thread: while one of Nexa's servers has it loaded,
-   * Codex refuses it to the TUI and every other program (codex-presence.ts). The next prompt resumes it.
+   * A run idle for a while ends; the next prompt resumes the conversation. Codex lets go of its thread
+   * after a minute: while one of Nexa's servers has it loaded, Codex refuses it to the TUI and every
+   * other program (codex-presence.ts). The other CLIs end after `chat.releaseIdleMinutes`: each held
+   * 300–400 MB, and its MCP servers ran along. A shell or agent in the background keeps it.
    */
   private releaseWhenIdle(s: SessionState): void {
-    const idle = () =>
-      s.runProvider === 'codex' && !!s.run?.alive && s.runtime.status === 'idle' && !s.runtime.queued?.length && !s.runtime.compactingSince
-    if (!idle()) {
+    const after = this.releaseAfterMs(s.runProvider)
+    const idle = () => !!s.run?.alive && s.runtime.status === 'idle' && !this.atWork(s)
+    if (after === null || !idle()) {
       clearTimeout(s.releaseTimer)
       s.releaseTimer = undefined
       return
     }
     if (s.releaseTimer) return
     const run = s.run
-    s.releaseTimer = setTimeout(() => {
-      s.releaseTimer = undefined
-      if (s.run === run && idle()) void this.stop(s.meta.id).catch(() => undefined)
-    }, CODEX_RELEASE_MS)
-    s.releaseTimer.unref?.()
+    const wait = (ms: number) => {
+      s.releaseTimer = setTimeout(() => {
+        s.releaseTimer = undefined
+        if (s.run !== run || !idle()) return
+        // What runs in the background ends with the CLI: looked at again later.
+        if (this.busyInBackground(s)) wait(after)
+        else void this.stop(s.meta.id).catch(() => undefined)
+      }, ms)
+      s.releaseTimer.unref?.()
+    }
+    wait(after)
+  }
+
+  /** How long an idle run of the CLI lives on; null: until the chat goes. */
+  private releaseAfterMs(provider: ProviderId | null): number | null {
+    if (!provider) return null
+    if (provider === 'codex') return CODEX_RELEASE_MS
+    const minutes = this.settings().chat.releaseIdleMinutes
+    return minutes > 0 ? minutes * 60_000 : null
   }
 
   private saveSoon(): void {

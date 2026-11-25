@@ -111,6 +111,7 @@ const placeholder = computed(() => {
   if (suggested.value) return suggested.value
   return props.busy ? 'Nachricht senden, während der Agent arbeitet …' : `Nachricht an ${PROVIDERS[props.provider].name} …`
 })
+const sendHint = computed(() => (settings.settings.chat.enterSends ? 'Senden (Enter)' : 'Senden (Strg+Enter)'))
 
 /** Tab writes the guess into the field, to send as it is or change first. */
 function takeSuggestion(): void {
@@ -607,6 +608,7 @@ defineExpose({
 
 <template>
   <div
+    data-composer
     :class="
       cn(
         'relative flex flex-col rounded-2xl border transition-colors focus-within:border-ring/60',
@@ -756,11 +758,11 @@ defineExpose({
           <!-- Recording: the capsule filled, its stand as lines. -->
           <MicIcon v-else :class="cn('size-4', dictating && '[&_rect]:fill-current')" />
         </Button>
-        <Button v-if="busy && !canSend && !dictating" size="icon-sm" variant="secondary" aria-label="Anhalten" @click="emit('stop')">
+        <Button v-if="busy && !canSend && !dictating" size="icon-sm" variant="secondary" aria-label="Anhalten" v-tooltip="'Anhalten (Esc)'" @click="emit('stop')">
           <SquareIcon class="size-3 fill-current" />
         </Button>
         <!-- Also while the agent works: the chat shows the prompt waiting („Wartet“) until the agent takes it up. -->
-        <Button v-else size="icon-sm" :disabled="!canSend" aria-label="Senden" class="rounded-full" @click="submit">
+        <Button v-else size="icon-sm" :disabled="!canSend" aria-label="Senden" v-tooltip="sendHint" class="rounded-full" @click="submit">
           <ArrowUpIcon />
         </Button>
       </div>

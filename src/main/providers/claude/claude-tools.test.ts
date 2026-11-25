@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compactionNotice } from '@shared/chat'
-import { changesFromResult, compactionOf, resultText, viewOfClaudeTool } from './claude-tools'
+import { ClaudeTasks, changesFromResult, compactionOf, resultText, viewOfClaudeTool } from './claude-tools'
 
 describe('resultText', () => {
   it('joins the text blocks of a result', () => {
@@ -76,5 +76,71 @@ describe('changesFromResult', () => {
     expect(changesFromResult(edit, { type: 'create', structuredPatch: [] })).toBeNull()
     expect(changesFromResult(edit, 'Error: file changed')).toBeNull()
     expect(changesFromResult(undefined, { structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: [] }] })).toBeNull()
+  })
+})
+
+describe('ClaudeTasks', () => {
+  it('builds the list from created tasks and changes them by their id', () => {
+    const tasks = new ClaudeTasks()
+    expect(tasks.call('t1', 'TaskCreate', { subject: 'Tests schreiben', activeForm: 'Schreibt Tests' })).toEqual([
+      { text: 'Tests schreiben', status: 'pending', activeText: 'Schreibt Tests' },
+    ])
+    expect(tasks.result('t1', 'TaskCreate', 'Task #1 created successfully: Tests schreiben', false, { task: { id: '1', subject: 'Tests schreiben' } })).toBeNull()
+    tasks.call('t2', 'TaskCreate', { subject: 'Bauen' })
+    // Without Claude Code's own result, the id comes from the text.
+    tasks.result('t2', 'TaskCreate', 'Task #2 created successfully: Bauen', false, undefined)
+    expect(tasks.call('t3', 'TaskUpdate', { taskId: '1', status: 'in_progress' })).toMatchObject([
+      { id: '1', status: 'in_progress', activeText: 'Schreibt Tests' },
+      { id: '2', status: 'pending' },
+    ])
+    expect(tasks.call('t4', 'TaskUpdate', { taskId: '2', status: 'deleted' })).toEqual([expect.objectContaining({ id: '1' })])
+    // An id the list doesn't know changes nothing.
+    expect(tasks.call('t5', 'TaskUpdate', { taskId: '9', status: 'completed' })).toBeNull()
+  })
+
+  it('drops a task whose creation failed', () => {
+    const tasks = new ClaudeTasks()
+    tasks.call('t1', 'TaskCreate', { subject: 'A' })
+    expect(tasks.result('t1', 'TaskCreate', 'Fehler', true, undefined)).toEqual([])
+  })
+
+  it('takes the whole list from TaskList, by its result or its text', () => {
+    const tasks = new ClaudeTasks()
+    tasks.seed([{ id: '1', text: 'Alt', status: 'pending', activeText: 'Macht Altes' }])
+    expect(
+      tasks.result('t1', 'TaskList', '', false, {
+        tasks: [
+          { id: '1', subject: 'Alt', status: 'completed' },
+          { id: '2', subject: 'Neu', status: 'in_progress' },
+        ],
+      }),
+    ).toEqual([
+      { id: '1', text: 'Alt', status: 'completed', activeText: 'Macht Altes' },
+      { id: '2', text: 'Neu', status: 'in_progress', activeText: undefined },
+    ])
+    expect(tasks.result('t2', 'TaskList', ['#1 [completed] Alt', '#3 [pending] Danach [blocked by #2]'].join('\n'), false, undefined)).toMatchObject([
+      { id: '1', text: 'Alt', status: 'completed' },
+      { id: '3', text: 'Danach', status: 'pending' },
+    ])
+    expect(tasks.result('t3', 'TaskList', 'No tasks found', false, undefined)).toEqual([])
+  })
+
+  it('takes a seed only with ids, and only while it has no list of its own', () => {
+    const tasks = new ClaudeTasks()
+    tasks.seed([{ text: 'Aus TodoWrite', status: 'pending' }])
+    expect(tasks.call('t1', 'TaskUpdate', { taskId: '1', status: 'completed' })).toBeNull()
+    tasks.seed([{ id: '1', text: 'A', status: 'pending' }])
+    expect(tasks.call('t2', 'TaskUpdate', { taskId: '1', status: 'completed' })).toEqual([{ id: '1', text: 'A', status: 'completed' }])
+  })
+})
+
+describe('viewOfClaudeTool for agents talking', () => {
+  it('names who a message goes to and keeps its text', () => {
+    expect(viewOfClaudeTool('SendMessage', { to: 'Prüfer', summary: 'Kurz', message: 'Lang und mehr' })).toMatchObject({
+      title: 'Nachricht an Prüfer',
+      detail: 'Kurz',
+      text: 'Lang und mehr',
+    })
+    expect(viewOfClaudeTool('ListAgents', {})).toMatchObject({ title: 'Agenten auflisten' })
   })
 })

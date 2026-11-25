@@ -103,12 +103,17 @@ export class NexaMcpServer {
       const name = isPlainObject(params) && typeof params.name === 'string' ? params.name : null
       if (name) caller.calls.record(name, isPlainObject(params) && isPlainObject(params.arguments) ? params.arguments : {})
     }
+    // Closed before the answer: the client gave up on the call (a stopped turn, its timeout).
+    const gone = new AbortController()
+    res.on('close', () => {
+      if (!res.writableFinished) gone.abort()
+    })
     if (isToolCall(message) && (req.headers.accept ?? '').includes('text/event-stream')) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' })
       res.flushHeaders()
       const keepalive = setInterval(() => res.write(': keepalive\n\n'), KEEPALIVE_MS)
       try {
-        const answer = await handleRpc(spec, message)
+        const answer = await handleRpc(spec, message, gone.signal)
         if (!res.writableEnded && !res.destroyed) res.write(`event: message\ndata: ${JSON.stringify(answer)}\n\n`)
       } finally {
         clearInterval(keepalive)
@@ -116,7 +121,7 @@ export class NexaMcpServer {
       }
       return
     }
-    const answer = await handleRpc(spec, message)
+    const answer = await handleRpc(spec, message, gone.signal)
     if (answer === null || (!Array.isArray(message) && !isRequest(message))) {
       res.writeHead(202)
       return void res.end()

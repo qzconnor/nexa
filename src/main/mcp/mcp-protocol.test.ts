@@ -44,7 +44,7 @@ describe('handleRpc', () => {
   it('calls a tool with its arguments', async () => {
     const callTool = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'hi' }] }))
     const answer = await handleRpc(spec(callTool), { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'echo', arguments: { a: 1 } } })
-    expect(callTool).toHaveBeenCalledWith('echo', { a: 1 })
+    expect(callTool).toHaveBeenCalledWith('echo', { a: 1 }, undefined)
     expect(answer).toEqual({ jsonrpc: '2.0', id: 5, result: { content: [{ type: 'text', text: 'hi' }] } })
   })
 

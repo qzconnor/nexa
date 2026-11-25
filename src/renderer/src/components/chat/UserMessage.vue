@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import Markdown from './Markdown.vue'
+import MessageActions from './MessageActions.vue'
 
 /**
  * A prompt of the user, on the right; the CLI it went to is shown when the session switched. One sent
@@ -161,17 +162,23 @@ function onKey(event: KeyboardEvent): void {
     >
       <Markdown :text="item.text" breaks />
       <!-- Left of the bubble, so that it takes no room under every prompt. -->
-      <Button
-        v-if="editable && sessionId && !sender"
-        variant="ghost"
-        size="icon-xs"
-        class="absolute top-1/2 right-full mr-1.5 -translate-y-1/2 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-        aria-label="Prompt bearbeiten"
-        v-tooltip="'Bearbeiten und neu senden'"
-        @click="startEdit"
+      <div
+        v-if="!queued"
+        class="absolute top-1/2 right-full mr-1.5 flex -translate-y-1/2 items-center gap-0.5 whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
       >
-        <PencilIcon />
-      </Button>
+        <MessageActions :text="item.text" :ts="item.ts" label="Prompt kopieren" />
+        <Button
+          v-if="editable && sessionId && !sender"
+          variant="ghost"
+          size="icon-xs"
+          class="text-muted-foreground"
+          aria-label="Prompt bearbeiten"
+          v-tooltip="'Bearbeiten und neu senden'"
+          @click="startEdit"
+        >
+          <PencilIcon />
+        </Button>
+      </div>
     </div>
     <div v-if="queued" class="flex items-center gap-1.5 text-[0.72rem] text-muted-foreground">
       <span class="flex items-center gap-1" v-tooltip="'Gesendet, während der Agent arbeitet: Er nimmt sie bei seinem nächsten Schritt auf.'">

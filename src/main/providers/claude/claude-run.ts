@@ -12,6 +12,7 @@ import type {
   Question,
   ShellState,
   ShellStatus,
+  TodoEntry,
   ToolItem,
 } from '@shared/chat'
 import { compactionNotice } from '@shared/chat'
@@ -29,7 +30,7 @@ import { claudeAuthStart } from '../plugins'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import { TITLE_TIMEOUT_MS, cleanTitle, titleDescription } from '../titles'
 import { contextDetailOf } from './claude-context'
-import { AGENT_TOOLS, changesFromResult, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
+import { AGENT_TOOLS, ClaudeTasks, HIDDEN_TOOLS, TASK_TOOLS, changesFromResult, compactionOf, resultText, splitMcpName, todosOf, viewOfClaudeTool } from './claude-tools'
 import { outputFilesOf, readTaskOutput, repairReadFile } from './output-encoding'
 
 type Json = Record<string, unknown>
@@ -141,6 +142,8 @@ export class ClaudeRun implements AgentRun {
   private readonly tasks = new Map<string, string>()
   /** The files Claude Code writes its shells' output to, by task id (see shellOutput). */
   private readonly outputFiles = new Map<string, string>()
+  /** The list of the task tools (`TaskCreate` & Co.), shown as the chat's todo list. */
+  private readonly taskList = new ClaudeTasks()
   private turnStartedAt: number | null = null
   private compactingSince: number | null = null
   /** The model's context window from the last result, for the context after a compaction. */
@@ -180,6 +183,7 @@ export class ClaudeRun implements AgentRun {
   ) {
     this.model = options.model
     this.suggestions = options.promptSuggestions ?? false
+    this.taskList.seed(options.todos)
     this.process = new JsonlProcess(binary.command(claudeArgs(options)), {
       cwd: options.cwd,
       env: cliEnv({ CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', ...CLAUDE_MCP_APPS_ENV, ...options.account.set }, options.account.unset),
@@ -623,6 +627,7 @@ export class ClaudeRun implements AgentRun {
   }
 
   private onToolUse(id: string, name: string, input: Json, parentId: string | null): void {
+    if (HIDDEN_TOOLS.has(name)) return
     const now = Date.now()
     if (AGENT_TOOLS.has(name)) {
       const agent: AgentItem = {
@@ -655,6 +660,7 @@ export class ClaudeRun implements AgentRun {
       name,
       title: view.title,
       detail: view.detail,
+      text: view.text,
       input,
       changes: view.changes,
       server: view.server,
@@ -669,6 +675,7 @@ export class ClaudeRun implements AgentRun {
       const entries = todosOf(input)
       if (entries) this.sink.item({ kind: 'todo', id: `todo:${parentId ?? 'main'}`, ts: now, provider: 'claude', parentId, entries })
     }
+    if (TASK_TOOLS.has(name)) this.putTasks(this.taskList.call(id, name, input), now)
     if (parentId) this.bumpAgent(parentId, view.title + (view.detail ? ` · ${view.detail}` : ''))
   }
 
@@ -686,6 +693,11 @@ export class ClaudeRun implements AgentRun {
     const next: ToolItem = { ...current, output: repaired }
     this.tools.set(toolId, next)
     this.sink.item(next)
+  }
+
+  /** The task list as the main thread's todo list: Claude Code keeps one for the whole conversation. */
+  private putTasks(entries: TodoEntry[] | null, ts: number): void {
+    if (entries) this.sink.item({ kind: 'todo', id: 'todo:main', ts, provider: 'claude', entries })
   }
 
   private putShell(tool: ToolItem, shell: ShellState): void {
@@ -734,6 +746,7 @@ export class ClaudeRun implements AgentRun {
         if (known.tool === 'read' && !isError && text.includes('�')) void this.repairRead(known.id, text)
         const changes = isError ? null : changesFromResult(known.changes, m.tool_use_result)
         if (changes) next.changes = changes
+        if (TASK_TOOLS.has(known.name)) this.putTasks(this.taskList.result(known.id, known.name, text, isError, m.tool_use_result), now)
         // The page of an MCP tool gets the result as the server gave it, beyond the text for the model.
         if (known.server && !known.render) {
           const result = appResultOf(m.tool_use_result ?? { content: block.content }, isError)

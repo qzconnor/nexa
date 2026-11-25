@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, shell, type MessageBoxOptions } from 'electron'
 import { ChatWindowsEvent } from '@shared/chat-windows'
 import { IpcEvent } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
@@ -30,6 +30,7 @@ import { MCP_APP_SCHEME_PRIVILEGES, McpAppViews } from './mcp-apps/mcp-app-views
 import { registerMcpAppsIpc } from './mcp-apps/mcp-apps-ipc'
 import { NexaMcpServer } from './mcp/mcp-server'
 import { ChatTools } from './mcp/chat-tools'
+import { AskTool } from './mcp/ask-tool'
 import { LimitsTool } from './mcp/limits-tool'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { AutoSwitch } from './services/auto-switch'
@@ -99,7 +100,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   let browserTools: BrowserTools | null = null
   let chatTools: ChatTools | null = null
   let limitsTool: LimitsTool | null = null
-  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools, limitsTool))
+  let askTool: AskTool | null = null
+  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools, limitsTool, askTool))
   await mcp.start().catch((error) => console.error('[mcp] server could not start', error))
 
   const git = new GitService()
@@ -211,6 +213,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     providers: () => enabledProviders(settings.get()),
     autoSwitch: () => settings.get().chat.autoSwitch,
   })
+  // Forms of the agents for the user (`ask_user`), shown in the calling chat.
+  askTool = new AskTool({ ask: (id, request, signal) => sessions.ask(id, request, signal) })
 
   const api = new ApiServer({ userDataDir, version: app.getVersion(), settings, accounts, providers, projects, sessions, show })
   // The `nx` command on the user PATH, (un)registered on the settings page.
@@ -338,6 +342,45 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
 
   const tray = new AppTray({ open: () => show(), quit: () => app.quit() })
 
+  /** The user said to quit although something ran; the next `before-quit` goes through. */
+  let quitConfirmed = false
+  let askingToQuit: Promise<boolean> | null = null
+  /** What quitting now would end, for the question; empty when nothing runs. */
+  const runningWork = (): string[] => {
+    const work: string[] = []
+    const chats = sessions.working()
+    if (chats) work.push(chats === 1 ? '1 Chat arbeitet noch' : `${chats} Chats arbeiten noch`)
+    const commands = startCommands.runs().filter((run) => run.status === 'running').length
+    if (commands) work.push(commands === 1 ? '1 Startbefehl läuft' : `${commands} Startbefehle laufen`)
+    return work
+  }
+  /**
+   * Quitting asks first while chats work or commands run (setting `general.confirmQuitRunning`); not
+   * when Windows ends the session (`quitting` is set then) or an update restarts the app.
+   */
+  const quitNeedsConfirm = () =>
+    !quitConfirmed && !quitting && !updates.installing && settings.get().general.confirmQuitRunning && runningWork().length > 0
+  const askToQuit = (): Promise<boolean> => {
+    askingToQuit ??= (async () => {
+      const work = runningWork()
+      const options: MessageBoxOptions = {
+        type: 'question',
+        title: APP_NAME,
+        message: 'Nexa beenden?',
+        detail: `${work.join(', ')}. Beim Beenden brechen die Antworten ab und die Befehle enden; die Chats lassen sich danach fortsetzen.`,
+        buttons: ['Beenden', 'Abbrechen'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      }
+      const win = liveMainWindow()
+      const { response } = win?.isVisible() ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+      if (response === 0) quitConfirmed = true
+      return quitConfirmed
+    })().finally(() => (askingToQuit = null))
+    return askingToQuit
+  }
+
   /** What every window of the app gets: the material and scale of the settings, its state, notifications. */
   const setUpWindow = (win: BrowserWindow) => {
     const material = new WindowMaterialController(win)
@@ -376,8 +419,15 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     const win = createMainWindow(settings.get(), userDataDir, { hidden })
     setUpWindow(win)
     win.on('close', (event) => {
+      if (quitting || updates.installing) return
+      if (!tray.visible) {
+        // Without the icon closing quits: asked while the window is still there.
+        if (!quitNeedsConfirm()) return
+        event.preventDefault()
+        void askToQuit().then((quit) => quit && app.quit())
+        return
+      }
       // With the icon in the notification area the window only hides: chats and the API go on.
-      if (quitting || updates.installing || !tray.visible) return
       event.preventDefault()
       win.hide()
     })
@@ -433,9 +483,16 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
 
   let cleanedUp = false
   app.on('before-quit', (event) => {
-    quitting = true
-    if (cleanedUp) return
+    if (cleanedUp) {
+      quitting = true
+      return
+    }
     event.preventDefault()
+    if (quitNeedsConfirm()) {
+      void askToQuit().then((quit) => quit && app.quit())
+      return
+    }
+    quitting = true
     cleanedUp = true
     tray.dispose()
     updates.dispose()

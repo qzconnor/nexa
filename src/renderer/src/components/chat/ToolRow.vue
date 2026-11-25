@@ -28,6 +28,8 @@ const { shorten, relative } = useProjectPath()
 const nexa = computed(() => nexaToolView(props.tool, (id) => sessions.get(id)?.title))
 const title = computed(() => nexa.value?.title ?? props.tool.title)
 const detail = computed(() => {
+  // While it runs, how far it is says more than its argument.
+  if (props.tool.progress && props.tool.status === 'running') return props.tool.progress
   const text = nexa.value ? nexa.value.detail : props.tool.detail
   return text ? shorten(text) : ''
 })
@@ -38,8 +40,10 @@ const failed = computed(() => props.tool.status === 'error')
 const hasChanges = computed(() => !!props.tool.changes?.length)
 const output = computed(() => (props.tool.output ?? '').replace(/\s+$/, ''))
 const inputText = computed(() => {
+  if (props.tool.text) return props.tool.text
   const input = props.tool.input
-  if (input === undefined || input === null) return ''
+  // An empty `{}` says nothing.
+  if (input === undefined || input === null || (typeof input === 'object' && !Object.keys(input).length)) return ''
   if (props.tool.tool === 'bash') return detail.value
   try {
     return JSON.stringify(input, null, 2)

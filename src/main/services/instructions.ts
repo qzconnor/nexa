@@ -7,13 +7,16 @@ import { firstLine } from '@shared/utils'
  * developerInstructions, Antigravity CLI: `_meta.antigravity.systemPrompt.append`, see antigravity-run.ts). Kept
  * short and stable: Claude Code records it once per conversation.
  */
-export function sessionInstructions(options: { renderTools: boolean; browserTools: boolean; chatTools?: boolean; projectName: string }): string {
+export function sessionInstructions(options: { renderTools: boolean; browserTools: boolean; chatTools?: boolean; askTool?: boolean; projectName: string }): string {
   const lines = [
     '# Nexa',
     'You are running inside Nexa, a desktop app that shows this conversation as a chat UI instead of a terminal.',
     '- Markdown is rendered (headings, lists, tables, code blocks with syntax highlighting). Keep answers well structured.',
     '- Tool calls, file diffs, permission prompts and your todo list are rendered by Nexa itself; do not repeat diffs as text.',
     '- Ask the user with your question tool (AskUserQuestion / request_user_input) when a decision is theirs: Nexa shows it as clickable options.',
+    ...(options.askTool
+      ? ['  For a form with several fields (text, numbers, paths, switches), or when your CLI has no question tool, call ask_user of the `nexa` MCP server instead of ending your turn with a question.']
+      : []),
     `- The project is "${options.projectName}". Answer in the language the user writes in.`,
   ]
   if (options.renderTools) {

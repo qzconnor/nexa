@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, CircleHelpIcon, MapIcon, PlugIcon, ShieldQuestionIcon, XIcon } from '@lucide/vue'
+import { CheckIcon, CircleHelpIcon, ClipboardListIcon, MapIcon, PlugIcon, ShieldQuestionIcon, XIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import type { InteractionItem, InteractionResponse, PermissionMode } from '@shared/chat'
 import { PERMISSION_MODES } from '@shared/providers'
@@ -10,6 +10,7 @@ import { attempt } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useProjectPath } from '@/composables/useProjectPath'
 import { useSessionsStore } from '@/stores/sessions'
+import AskForm from './AskForm.vue'
 import DiffView from './DiffView.vue'
 import ElicitationForm from './ElicitationForm.vue'
 import Markdown from './Markdown.vue'
@@ -17,7 +18,8 @@ import QuestionForm from './QuestionForm.vue'
 
 /**
  * A question of the agent, answered right here: a permission for a tool, questions with options,
- * a plan to approve, or a form of an MCP server. Once answered it shrinks to what was decided.
+ * a plan to approve, a form of an MCP server or of the agent itself (`ask_user`). Once answered it
+ * shrinks to what was decided.
  */
 const props = defineProps<{ item: InteractionItem; sessionId: string }>()
 const sessions = useSessionsStore()
@@ -50,8 +52,21 @@ const summary = computed(() => {
       return r.approve ? `Plan angenommen${r.mode ? ` · ${PERMISSION_MODES[r.mode].label}` : ''}` : 'Plan abgelehnt'
     case 'elicitation':
       return r.action === 'accept' ? 'Gesendet' : 'Abgelehnt'
+    case 'form':
+      return r.action === 'submit' ? 'Gesendet' : 'Abgelehnt'
   }
   return ''
+})
+
+/** What was filled into a form, field by field. */
+const formAnswers = computed(() => {
+  const r = props.item.response
+  if (request.value.type !== 'form' || r?.type !== 'form' || r.action !== 'submit') return []
+  return request.value.fields.map((field) => {
+    const value = r.values?.[field.key]
+    const text = Array.isArray(value) ? value.join(', ') : typeof value === 'boolean' ? (value ? 'Ja' : 'Nein') : String(value ?? '')
+    return { key: field.key, label: field.label, text }
+  })
 })
 
 /**
@@ -66,7 +81,9 @@ const answered = computed(() => {
 /** A column for the questions' labels, when one has a label. */
 const withHeaders = computed(() => answered.value.some(({ q }) => !!q.header))
 
-const icon = computed(() => ({ permission: ShieldQuestionIcon, question: CircleHelpIcon, plan: MapIcon, elicitation: PlugIcon })[request.value.type])
+const icon = computed(
+  () => ({ permission: ShieldQuestionIcon, question: CircleHelpIcon, plan: MapIcon, elicitation: PlugIcon, form: ClipboardListIcon })[request.value.type],
+)
 const heading = computed(() => {
   const r = request.value
   switch (r.type) {
@@ -78,6 +95,8 @@ const heading = computed(() => {
       return 'Plan zur Freigabe'
     case 'elicitation':
       return `Anfrage von ${r.server}`
+    case 'form':
+      return r.title
   }
   return ''
 })
@@ -117,6 +136,13 @@ const heading = computed(() => {
         <p :class="cn('selectable text-[0.85rem] break-words whitespace-pre-wrap', withHeaders && 'col-start-2')">{{ answer || '–' }}</p>
       </li>
     </ol>
+
+    <dl v-if="formAnswers.length" class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 px-4 pt-0.5 pb-3 text-[0.82rem]">
+      <template v-for="answer in formAnswers" :key="answer.key">
+        <dt class="text-muted-foreground">{{ answer.label }}</dt>
+        <dd class="selectable break-words whitespace-pre-wrap">{{ answer.text || '–' }}</dd>
+      </template>
+    </dl>
 
     <div v-if="pending" class="flex flex-col gap-3 px-4 pb-4">
       <!-- Permission for a tool -->
@@ -197,6 +223,15 @@ const heading = computed(() => {
         :request="request"
         :busy="busy"
         @answer="(action, content) => answer({ type: 'elicitation', action, content })"
+      />
+
+      <!-- A form of the agent -->
+      <AskForm
+        v-else-if="request.type === 'form'"
+        :request="request"
+        :busy="busy"
+        @submit="(values) => answer({ type: 'form', action: 'submit', values })"
+        @decline="answer({ type: 'form', action: 'decline' })"
       />
     </div>
   </div>

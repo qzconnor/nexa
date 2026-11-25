@@ -1,18 +1,20 @@
 import MarkdownIt from 'markdown-it'
 import { fenceLanguage, hasLanguage, highlightCode, loadLanguage } from '@/lib/syntax'
 
-function createRenderer(breaks: boolean) {
+function createRenderer(breaks: boolean, highlight: boolean) {
   const md = new MarkdownIt({
     html: false,
     linkify: true,
     breaks,
     typographer: false,
     // Code blocks in a loaded language come highlighted (escaped by highlight.js), the others plain.
-    highlight: (code, info) => {
-      const language = fenceLanguage(info)
-      const html = language ? highlightCode(code, language) : null
-      return html ? `<pre><code class="hljs language-${language}">${html}</code></pre>` : ''
-    },
+    highlight: highlight
+      ? (code, info) => {
+          const language = fenceLanguage(info)
+          const html = language ? highlightCode(code, language) : null
+          return html ? `<pre><code class="hljs language-${language}">${html}</code></pre>` : ''
+        }
+      : null,
   })
   // markdown-it drops `file:` links to plain text. The CLIs link files they wrote that way (Antigravity
   // its walkthroughs, Codex the files it touched); a click never navigates (`handleMarkdownClick`).
@@ -41,15 +43,17 @@ function createRenderer(breaks: boolean) {
   return md
 }
 
-const instances = new Map<boolean, ReturnType<typeof createRenderer>>()
+const instances = new Map<string, ReturnType<typeof createRenderer>>()
 
 /**
  * Shared markdown renderer. Raw HTML is disabled, so the output is safe for v-html. `breaks`: every
  * line break counts, as in what a user typed; Claude's answers are markdown where it doesn't.
+ * `highlight` off: code blocks stay plain, for text that is still streaming.
  */
-export function useMarkdown(breaks = false) {
-  let md = instances.get(breaks)
-  if (!md) instances.set(breaks, (md = createRenderer(breaks)))
+export function useMarkdown(breaks = false, highlight = true) {
+  const key = `${breaks}:${highlight}`
+  let md = instances.get(key)
+  if (!md) instances.set(key, (md = createRenderer(breaks, highlight)))
   return { render: (source: string) => md.render(source) }
 }
 

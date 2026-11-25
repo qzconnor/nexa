@@ -269,6 +269,21 @@
       die Nachricht geht sofort raus (Claude Code und Antigravity CLI; Codex nimmt sie ohnehin gleich auf)
 - [x] Vorschlag für den nächsten Prompt bei Claude Code (`prompt_suggestion`): grau im leeren
       Eingabefeld, Tab übernimmt ihn; abschaltbar unter Einstellungen › Chat
+- [x] Die ersten Ideen aus `IDEAS.md` („Zuerst“):
+  - [x] Schneller und sparsamer: Renderer minifiziert, xterm und selten gebrauchte Dialoge erst bei Bedarf
+        geladen; Markdown beim Streamen höchstens alle 80 ms und erst am Ende hervorgehoben; die Blöcke des
+        Chats nicht mehr bei jedem Stück Text neu gebaut
+  - [x] Claude Code und Antigravity CLI enden nach einer Ruhezeit (Einstellungen › Chat › Prozesse, ab
+        Werk 15 Minuten), nicht solange Shells oder Agents im Hintergrund laufen
+  - [x] Esc hält den Agenten an; Toasts oben rechts unter der Titelleiste statt über dem Senden-Knopf
+  - [x] An jeder Antwort und jedem Prompt Uhrzeit und Kopieren, das Modell in der Fußzeile, wenn es
+        wechselt, dazu Tagestrenner
+  - [x] Aufrufe, die Nexa verschluckte: Claudes Aufgaben (`TaskCreate` & Co.) als Todo-Liste,
+        `SendMessage` und `ListAgents` lesbar, `SubagentHandback` ausgeblendet; bei Codex der Plan, Warten,
+        Prompts von Hooks, der Fortschritt von MCP-Werkzeugen und was die Websuche tut
+  - [x] Rückfrage mit Formular (`ask_user` im Nexa-MCP-Server) für alle CLIs
+  - [x] Rückfrage beim Beenden, wenn Chats arbeiten oder Startbefehle laufen (abschaltbar)
+- [x] Kein Terminalfenster mehr beim Start durch das eigene Update von Antigravity CLI
 
 ## Als Nächstes
 

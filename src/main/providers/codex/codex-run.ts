@@ -345,8 +345,15 @@ export class CodexRun implements AgentRun {
         if (isPlainObject(params.item)) this.onItem(params.item, parentId, method === 'item/completed')
         return
       case 'item/agentMessage/delta':
+      case 'item/plan/delta':
         if (typeof params.itemId === 'string' && typeof params.delta === 'string') this.sink.delta(params.itemId, 'text', params.delta)
         return
+      case 'item/mcpToolCall/progress': {
+        const tool = typeof params.itemId === 'string' ? this.tools.get(params.itemId) : undefined
+        const message = str(params.message)?.trim()
+        if (tool?.kind === 'tool' && message && tool.status === 'running') this.putTool({ ...tool, progress: message })
+        return
+      }
       case 'item/reasoning/summaryTextDelta':
       case 'item/reasoning/textDelta':
         if (typeof params.itemId === 'string' && typeof params.delta === 'string') {

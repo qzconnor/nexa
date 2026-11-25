@@ -272,6 +272,57 @@ describe('SessionService.send while the agent works', () => {
   })
 })
 
+describe('SessionService.ask (ask_user)', () => {
+  const form = { type: 'form' as const, title: 'Angaben', fields: [{ key: 'name', label: 'Name', type: 'text' as const }] }
+
+  async function asking() {
+    let sink: RunSink | null = null
+    const run = { alive: true, send: async () => {}, interrupt: async () => {}, stop: async () => {}, respond: vi.fn() } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], {
+      start: async (_options, s) => {
+        sink = s
+        return run
+      },
+    })
+    let runtime: SessionRuntime | null = null
+    sessions.on('event', (event: { type: string; runtime?: SessionRuntime }) => {
+      if (event.type === 'runtime') runtime = event.runtime!
+    })
+    await sessions.send('chat', { text: 'los' })
+    sink!.runtime({ status: 'running' })
+    const card = async () => ((await sessions.history('chat'))!.items as ChatItem[]).find((i) => i.kind === 'interaction')
+    return { sessions, run, runtime: () => runtime!, card }
+  }
+
+  it('shows the form in the chat, waits for the answer and goes back to work', async () => {
+    const { sessions, run, runtime, card } = await asking()
+    const answer = sessions.ask('chat', form)
+    const item = await card()
+    expect(item).toMatchObject({ state: 'pending', request: form })
+    expect(runtime().status).toBe('waiting')
+
+    await sessions.respond('chat', item!.id, { type: 'form', action: 'submit', values: { name: 'Nexa' } })
+    expect(await answer).toEqual({ type: 'form', action: 'submit', values: { name: 'Nexa' } })
+    expect(await card()).toMatchObject({ state: 'answered', response: { values: { name: 'Nexa' } } })
+    expect(runtime().status).toBe('running')
+    // Nexa asked, not the CLI.
+    expect(run.respond).not.toHaveBeenCalled()
+  })
+
+  it('goes unanswered when the turn stops or the CLI gives up on the call', async () => {
+    const { sessions, card } = await asking()
+    const stopped = sessions.ask('chat', form)
+    await sessions.interrupt('chat')
+    expect(await stopped).toBeNull()
+    expect(await card()).toMatchObject({ state: 'cancelled' })
+
+    const gone = new AbortController()
+    const abandoned = sessions.ask('chat', form, gone.signal)
+    gone.abort()
+    expect(await abandoned).toBeNull()
+  })
+})
+
 describe('SessionService at a limit', () => {
   it('says so until something happens, and keeps when it goes on until the next prompt', async () => {
     let sink: RunSink | null = null
@@ -490,6 +541,82 @@ describe('SessionService with what came to its Codex thread outside Nexa', () =>
       // All the thread got up to here was Nexa's own: its server alone had it.
       expect(sessions.list()[0]!.cli.codex!.synced).toBeGreaterThanOrEqual(before)
       expect((await sessions.open('chat')).runtime).toMatchObject({ status: 'idle', connected: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('SessionService ending idle CLIs', () => {
+  /** A Claude Code run that finished its turn: the test reports for it through `sink`. */
+  async function idleClaude() {
+    let sink: RunSink | null = null
+    const run = {
+      alive: true,
+      send: async () => {},
+      stop: vi.fn(async () => {
+        run.alive = false
+      }),
+    }
+    const sessions = await start([meta('chat', {})], {
+      start: async (_options, s) => {
+        sink = s
+        return run as unknown as AgentRun
+      },
+    })
+    await sessions.send('chat', { text: 'Hallo' })
+    sink!.cliSession(GONE)
+    sink!.runtime({ status: 'running' })
+    return { run, sink: () => sink! }
+  }
+
+  it('ends Claude Code after the minutes of the setting without a turn', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      settings.chat.releaseIdleMinutes = 5
+      const { run, sink } = await idleClaude()
+      sink().runtime({ status: 'idle' })
+      await vi.advanceTimersByTimeAsync(4 * 60_000)
+      expect(run.stop).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(61_000)
+      expect(run.stop).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps it while a shell runs in the background, and never with 0', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      settings.chat.releaseIdleMinutes = 5
+      const { run, sink } = await idleClaude()
+      const shell: ToolItem = {
+        kind: 'tool',
+        id: 't1',
+        ts: 1,
+        provider: 'claude',
+        tool: 'bash',
+        name: 'Bash',
+        title: 'Server',
+        status: 'done',
+        startedAt: 1,
+        shell: { taskId: 'b1', background: true, status: 'running' },
+      }
+      sink().item(shell)
+      sink().runtime({ status: 'idle' })
+      await vi.advanceTimersByTimeAsync(20 * 60_000)
+      expect(run.stop).not.toHaveBeenCalled()
+
+      // It ended: the next look lets the CLI go.
+      sink().item({ ...shell, shell: { ...shell.shell!, status: 'done' } })
+      await vi.advanceTimersByTimeAsync(6 * 60_000)
+      expect(run.stop).toHaveBeenCalledOnce()
+
+      settings.chat.releaseIdleMinutes = 0
+      const other = await idleClaude()
+      other.sink().runtime({ status: 'idle' })
+      await vi.advanceTimersByTimeAsync(120 * 60_000)
+      expect(other.run.stop).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }

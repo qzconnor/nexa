@@ -19,6 +19,7 @@ import { settingsIndex, type SettingsAnchor, type SettingsEntry } from './settin
 const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'general.runInTray': { anchor: 'general.runInTray' },
   'general.launchAtLogin': { anchor: 'general.launchAtLogin' },
+  'general.confirmQuitRunning': { anchor: 'general.confirmQuitRunning', label: 'Vor dem Beenden fragen' },
   'general.nxReuseChat': { anchor: 'general.nxReuseChat', label: '„nx“ nutzt einen offenen Chat' },
   'appearance.theme': { anchor: 'appearance.theme' },
   'appearance.material': { anchor: 'appearance.material', label: 'Fenster-Material' },
@@ -41,6 +42,7 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'chat.autoTitles': { anchor: 'chat.autoTitles' },
   'chat.enterSends': { anchor: 'chat.enterSends' },
   'chat.promptSuggestions': { anchor: 'chat.promptSuggestions' },
+  'chat.releaseIdleMinutes': { anchor: 'chat.releaseIdleMinutes', label: 'CLI nach Ruhe beenden' },
   'chat.shell': { anchor: 'chat.shell' },
   'chat.voiceMicrophone': { anchor: 'chat.voiceMicrophone', label: 'Mikrofon der Spracheingabe' },
   'chat.voiceLanguage': { anchor: 'chat.voiceLanguage', label: 'Sprache der Spracheingabe' },

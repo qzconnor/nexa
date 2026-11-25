@@ -14,13 +14,18 @@ const terminals = useTerminalsStore()
 const host = ref<HTMLElement | null>(null)
 let session: TerminalSession | null = null
 let frame = 0
+let unmounted = false
 
 onMounted(async () => {
-  session = terminals.session(props.terminal)
-  await session.attach(host.value!)
+  const made = await terminals.session(props.terminal)
+  // Gone while xterm was loading: another view shows it, or none.
+  if (unmounted || !host.value) return
+  session = made
+  await session.attach(host.value)
   session.focus()
 })
 onBeforeUnmount(() => {
+  unmounted = true
   cancelAnimationFrame(frame)
   session?.detach()
 })

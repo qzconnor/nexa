@@ -182,6 +182,12 @@ export class UserShells {
     return this.running.has(itemId)
   }
 
+  /** Whether a command of `owner` (a chat, a project) still runs. */
+  runsFor(owner: string): boolean {
+    for (const entry of this.running.values()) if (entry.owner === owner && !entry.stopped) return true
+    return false
+  }
+
   /** Ends the command and what it started. */
   stop(itemId: string): void {
     const entry = this.running.get(itemId)
