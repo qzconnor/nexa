@@ -13,6 +13,7 @@ import type {
 } from '@shared/types'
 import { AccountLogins } from '../accounts/account-login'
 import type { AccountService } from '../accounts/account-service'
+import { refreshAntigravityKeyring } from '../accounts/antigravity-account'
 import { LoginRenewal } from '../accounts/login-renewal'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ClaudeProvider } from '../providers/claude/claude-provider'
@@ -248,12 +249,25 @@ export class ProviderService extends TypedEmitter<Events> {
   login(accountId: string): AccountLoginState {
     const account = this.accounts.get(accountId)
     if (!canLogin(account.kind)) throw new Error('Dieser Account meldet sich mit Token oder API-Key an, nicht im Browser.')
-    const command = this.providers[account.provider].loginCommand()
+    const env = this.accounts.env(accountId)
+    const command = this.providers[account.provider].loginCommand(env)
     if (!command) {
       const meta = PROVIDERS[account.provider]
       throw new Error(`${meta.name} meldet sich nur im Terminal an: Starte dort „${meta.loginCommand}“ und melde dich an, dann „Erneut prüfen“.`)
     }
-    return this.logins.start(account.provider, command, this.accounts.env(accountId))
+    return this.logins.start(account.provider, command, env)
+  }
+
+  /** Signs a browser login out, where the CLI can (`ProviderMeta.signOut`); its chats need a new login then. */
+  async logout(accountId: string): Promise<void> {
+    const account = this.accounts.get(accountId)
+    const provider = this.providers[account.provider]
+    if (!canLogin(account.kind) || !provider.logout) throw new Error(`${PROVIDERS[account.provider].name} meldet Accounts nicht über Nexa ab.`)
+    this.logins.cancel(accountId)
+    await provider.logout(this.accounts.env(accountId))
+    if (this.usages.delete(accountId)) this.emit('usage', this.usage())
+    this.accounts.refresh()
+    if (this.defaultAccount(account.provider) === accountId) await this.detect()
   }
 
   loginCode(accountId: string, code: string): void {
@@ -285,6 +299,11 @@ export class ProviderService extends TypedEmitter<Events> {
     if (!account) return
     void (async () => {
       if (account.provider === 'codex') await this.codex.relogged(account.id)
+      // A login into the keyring shows only once Nexa looks there again.
+      if (account.provider === 'antigravity') {
+        await refreshAntigravityKeyring()
+        this.accounts.refresh()
+      }
       if (this.defaultAccount(account.provider) === account.id) await this.detect()
       const usage = await this.providers[account.provider].usage(this.context(account.id), true).catch(() => null)
       if (usage) this.setUsage(account.id, usage)

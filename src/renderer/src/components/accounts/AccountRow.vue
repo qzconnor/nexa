@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CopyIcon, EllipsisIcon, FolderOpenIcon, GripVerticalIcon, KeyRoundIcon, LogInIcon, MergeIcon, PencilIcon, StarIcon, Trash2Icon } from '@lucide/vue'
+import { CopyIcon, EllipsisIcon, FolderOpenIcon, GripVerticalIcon, KeyRoundIcon, LogInIcon, LogOutIcon, MergeIcon, PencilIcon, StarIcon, Trash2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { accountKindLabel, canLogin, duplicateOf, identityLabel, isSystemAccountId, planLabel, usesSecret, type Account } from '@shared/accounts'
 import { PROVIDERS } from '@shared/providers'
@@ -54,6 +54,23 @@ const needsLogin = computed(() => canLogin(props.account.kind) && (props.account
 const needsSecret = computed(() => usesSecret(props.account.kind) && props.account.authState === 'missing')
 
 const startLogin = () => void attempt(() => accounts.login(props.account.id), 'Anmeldung ließ sich nicht starten')
+
+/** Nexa can sign the login out (Antigravity CLI): there is one to sign out of. */
+const canLogout = computed(() => !!PROVIDERS[props.account.provider].signOut && canLogin(props.account.kind) && props.account.authState !== 'missing')
+
+async function logout(): Promise<void> {
+  const cli = PROVIDERS[props.account.provider].name
+  const ok = await ui.confirm({
+    title: `„${props.account.name}“ abmelden?`,
+    description:
+      props.account.kind === 'system'
+        ? `${cli} vergisst den Google-Login im Schlüsselbund des Systems. Er gilt auch für ${cli} im Terminal: Dort bist du danach ebenfalls abgemeldet.`
+        : `${cli} löscht den Login dieses Accounts aus seinem Ordner. Chats mit dem Account brauchen danach eine neue Anmeldung.`,
+    confirmText: 'Abmelden',
+    destructive: true,
+  })
+  if (ok) await attempt(() => window.api.accounts.logout(props.account.id), 'Abmelden fehlgeschlagen')
+}
 const edit = () => (accounts.formRequest = { account: props.account, provider: props.account.provider })
 const makeDefault = () => void attempt(() => accounts.setDefault(props.account))
 const openFolder = () => void attempt(() => window.api.app.openPath(props.account.configDir), 'Ordner ließ sich nicht öffnen')
@@ -132,6 +149,7 @@ async function mergeIntoTwin(): Promise<void> {
             <DropdownMenuItem :disabled="isDefault" @select="makeDefault"><StarIcon /> Als Vorgabe verwenden</DropdownMenuItem>
             <DropdownMenuItem @select="edit"><PencilIcon /> Bearbeiten</DropdownMenuItem>
             <DropdownMenuItem v-if="canLogin(account.kind)" :disabled="loggingIn" @select="startLogin"><LogInIcon /> Neu anmelden</DropdownMenuItem>
+            <DropdownMenuItem v-if="canLogout" :disabled="loggingIn" @select="logout"><LogOutIcon /> Abmelden</DropdownMenuItem>
             <DropdownMenuItem @select="openFolder"><FolderOpenIcon /> Konfigurationsordner öffnen</DropdownMenuItem>
             <DropdownMenuItem v-if="twin" @select="mergeIntoTwin"><MergeIcon /> Mit {{ twinLabel }} zusammenführen</DropdownMenuItem>
             <template v-if="!isSystemAccountId(account.id)">

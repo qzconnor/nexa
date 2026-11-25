@@ -23,12 +23,18 @@ export function loginUrlOf(output: string): string | null {
   return match ? match[0].replace(/[.,;)]+$/, '') : null
 }
 
+/**
+ * The CLI asks for the code the browser shows after the login: Claude Code when its callback can't be
+ * reached, Antigravity CLI always (`agy acp --login`).
+ */
+const CODE_PROMPT = /Paste code here|paste the authorization code/i
+
 /** The last lines of the output, for a failed login. */
 function failureOf(output: string, code: number | null): string {
   const lines = plainOutput(output)
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l && !/^https?:\/\//.test(l) && !/Paste code here/i.test(l))
+    .filter((l) => l && !/^https?:\/\//.test(l) && !CODE_PROMPT.test(l))
   return lines.slice(-3).join('\n') || `Die Anmeldung wurde beendet (Code ${code ?? '?'}).`
 }
 
@@ -67,10 +73,10 @@ type Events = {
 }
 
 /**
- * Browser logins of accounts: `claude auth login` and `codex login`, started with the account's
- * config folder and without a terminal, or an ACP agent's through a `LoginDialog`. The CLI opens the
- * browser and waits for its callback; Nexa shows the link from its output and, for Claude Code,
- * passes on a code pasted from the browser.
+ * Browser logins of accounts: `claude auth login`, `codex login` and `agy acp --login`, started with
+ * the account's config folder and without a terminal, or an ACP agent's through a `LoginDialog`. The
+ * CLI opens the browser and waits for its callback or a code; Nexa shows the link from its output and
+ * passes on a code pasted from the browser (Claude Code, Antigravity CLI).
  */
 export class AccountLogins extends TypedEmitter<Events> {
   private readonly running = new Map<string, Running>()
@@ -123,7 +129,7 @@ export class AccountLogins extends TypedEmitter<Events> {
       entry.output = (entry.output + chunk.toString()).slice(-16_000)
       if (dialog) return
       const url = state.url ?? loginUrlOf(entry.output)
-      const acceptsCode = state.acceptsCode || /Paste code here/i.test(entry.output)
+      const acceptsCode = state.acceptsCode || CODE_PROMPT.test(entry.output)
       if (url !== state.url || acceptsCode !== state.acceptsCode) {
         state.url = url
         state.acceptsCode = acceptsCode

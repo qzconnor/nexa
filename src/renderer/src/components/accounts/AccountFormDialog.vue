@@ -34,8 +34,9 @@ const KIND_INFO: Record<ProviderId, Partial<Record<CreatableAccountKind, string>
     oauth: 'Eigener Codex-Ordner (CODEX_HOME), Anmeldung im Browser über „codex login“ mit einem ChatGPT-Konto. Codex erneuert den Token selbst.',
   },
   antigravity: {
-    apiKey:
-      'API-Key aus Google AI Studio (beginnt meist mit „AIza“), Antigravity CLI bekommt ihn als GEMINI_API_KEY, mit eigenem Datenordner. Den Google-Login gibt es nur einmal: den des Standard-Accounts.',
+    oauth:
+      'Eigener Datenordner (--gemini-dir) mit eigenem Google-Login: Nexa startet „agy acp --login“, danach fügst du den Code aus dem Browser ein. Der Login liegt im Ordner des Accounts, nicht im Schlüsselbund.',
+    apiKey: 'API-Key aus Google AI Studio (beginnt meist mit „AIza“), Antigravity CLI bekommt ihn als GEMINI_API_KEY, mit eigenem Datenordner.',
   },
 }
 /** What the advanced fields say for each CLI. */
@@ -99,6 +100,8 @@ const secretError = computed(() => {
   if (!submitted.value || !needsSecret.value) return null
   const secret = form.secret.trim()
   if (!secret) return editing.value ? null : kind.value === 'token' ? 'Bitte trage den Token ein.' : 'Bitte trage den API-Key ein.'
+  // Gemini keys have no fixed prefix; the main process catches obvious mix-ups.
+  if (provider.value !== 'claude') return null
   return secret.startsWith('sk-ant-') ? null : 'Muss mit „sk-ant-“ beginnen.'
 })
 const dirError = computed(() => (submitted.value && form.useCustomDir && !form.configDir.trim() ? 'Bitte wähle einen Ordner.' : null))
@@ -218,7 +221,13 @@ async function submit(): Promise<void> {
                 v-model="form.secret"
                 :type="showSecret ? 'text' : 'password'"
                 :placeholder="
-                  editing?.secretHint ? `${editing.secretHint} (leer lassen = unverändert)` : kind === 'token' ? 'sk-ant-oat01-…' : 'sk-ant-api03-…'
+                  editing?.secretHint
+                    ? `${editing.secretHint} (leer lassen = unverändert)`
+                    : kind === 'token'
+                      ? 'sk-ant-oat01-…'
+                      : provider === 'antigravity'
+                        ? 'AIza…'
+                        : 'sk-ant-api03-…'
                 "
                 autocomplete="off"
                 spellcheck="false"

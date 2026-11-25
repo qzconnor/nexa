@@ -92,7 +92,7 @@ async function refresh(): Promise<void> {
       <AccountList provider="codex" @remove="remove" />
     </SettingsSection>
 
-    <SettingsSection anchor="accounts.antigravity" title="Antigravity CLI" description="Der Google-Login des Standard-Accounts (einer je Nutzer) und API-Keys aus Google AI Studio, jeder mit eigenem Datenordner.">
+    <SettingsSection anchor="accounts.antigravity" title="Antigravity CLI" description="Der Google-Login aus dem Schlüsselbund (Standard), weitere Google-Logins und API-Keys aus Google AI Studio, jeder mit eigenem Datenordner.">
       <template #actions>
         <Button variant="outline" size="sm" @click="add('antigravity')">
           <PlusIcon data-icon="inline-start" />
@@ -110,7 +110,7 @@ async function refresh(): Promise<void> {
       <SettingField
         anchor="accounts.keepLoginsFresh"
         label="Logins frisch halten"
-        description="Läuft der Access-Token eines Claude-Accounts ab, holt Nexa mit dem Refresh-Token einen neuen, wie Claude Code beim Start einer Session und unter derselben Sperre. So stimmen die Limits ruhender Accounts, und ein Wechsel zu ihnen geht sofort. Codex und Gemini CLI erneuern ihre Logins selbst."
+        description="Läuft der Access-Token eines Claude-Accounts ab, holt Nexa mit dem Refresh-Token einen neuen, wie Claude Code beim Start einer Session und unter derselben Sperre. So stimmen die Limits ruhender Accounts, und ein Wechsel zu ihnen geht sofort. Codex und Antigravity CLI erneuern ihre Logins selbst."
       >
         <Switch :model-value="chat.keepLoginsFresh" @update:model-value="(v: boolean) => updateChat({ keepLoginsFresh: v })" />
       </SettingField>

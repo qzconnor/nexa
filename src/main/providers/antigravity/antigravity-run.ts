@@ -337,7 +337,7 @@ export class AntigravityRun implements AgentRun {
       code === 429
         ? `Antigravity meldet zu viele Anfragen (429). Warte kurz oder nimm ein anderes Modell oder einen anderen Account. ${message}`
         : code === AUTH_REQUIRED
-          ? `Antigravity CLI ist nicht angemeldet: ${message}`
+          ? `Antigravity CLI ist nicht angemeldet. Melde den Account unter Einstellungen → Accounts an. ${message}`
           : message
     return {
       kind: 'turn',

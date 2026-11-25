@@ -24,6 +24,8 @@ const account = computed(() => accounts.get(accounts.loginId))
 const state = computed(() => (accounts.loginId ? accounts.logins.get(accounts.loginId) : undefined))
 const running = computed(() => !state.value || state.value.status === 'starting' || state.value.status === 'waiting')
 const cli = computed(() => (account.value ? PROVIDERS[account.value.provider].name : ''))
+/** The login ends with a code to paste (Antigravity CLI): the page can't call the CLI back. */
+const codeLogin = computed(() => !!account.value && !!PROVIDERS[account.value.provider].loginCode)
 /** Who is signed in now, once the files of the account say so. */
 const signedIn = computed(() => {
   const a = account.value
@@ -112,6 +114,7 @@ function retry(): void {
         <div class="flex items-center gap-2.5 text-sm">
           <Spinner class="size-4 text-muted-foreground" />
           <span v-if="!state?.url && state?.status !== 'waiting'">{{ cli }} startet die Anmeldung …</span>
+          <span v-else-if="codeLogin">Warte auf den Code aus dem Browser …</span>
           <span v-else>Warte auf die Anmeldung im Browser …</span>
         </div>
         <!-- A CLI with a login dialog over stdin opens the browser itself and doesn't tell its client the link. -->
@@ -120,7 +123,11 @@ function retry(): void {
           selbst. Geht kein Browser auf, starte „{{ account ? PROVIDERS[account.provider].command : '' }}“ im Terminal und melde dich dort an.
         </p>
         <template v-if="state?.url">
-          <p class="text-sm text-muted-foreground">
+          <p v-if="codeLogin" class="text-sm text-muted-foreground">
+            {{ cli }} hat den Browser geöffnet. Melde dich dort mit dem Konto an, das zu „{{ account?.name }}“ gehört. Danach zeigt
+            die Seite einen Code: Füge ihn unten ein. Falls kein Browser aufging:
+          </p>
+          <p v-else class="text-sm text-muted-foreground">
             {{ cli }} hat den Browser geöffnet. Melde dich dort mit dem Konto an, das zu „{{ account?.name }}“ gehört – Nexa merkt
             es von selbst. Falls kein Browser aufging:
           </p>
@@ -137,10 +144,18 @@ function retry(): void {
           <Field v-if="state.acceptsCode">
             <FieldLabel for="login-code">Code aus dem Browser</FieldLabel>
             <form class="flex gap-2" @submit.prevent="sendCode">
-              <Input id="login-code" v-model="code" class="font-mono" autocomplete="off" spellcheck="false" placeholder="Nur wenn der Browser einen Code zeigt" />
-              <Button type="submit" variant="outline" :disabled="!code.trim() || sending">Senden</Button>
+              <Input
+                id="login-code"
+                v-model="code"
+                class="font-mono"
+                autocomplete="off"
+                spellcheck="false"
+                :placeholder="codeLogin ? 'Code oder Adresse der Seite' : 'Nur wenn der Browser einen Code zeigt'"
+              />
+              <Button type="submit" :variant="codeLogin ? 'default' : 'outline'" :disabled="!code.trim() || sending">Senden</Button>
             </form>
-            <FieldDescription>Nötig, wenn der Browser nicht zurückleiten kann, z. B. auf einem anderen Gerät.</FieldDescription>
+            <FieldDescription v-if="codeLogin">Statt des Codes geht auch die ganze Adresse der Seite, auf der du nach der Anmeldung landest.</FieldDescription>
+            <FieldDescription v-else>Nötig, wenn der Browser nicht zurückleiten kann, z. B. auf einem anderen Gerät.</FieldDescription>
           </Field>
         </template>
       </div>

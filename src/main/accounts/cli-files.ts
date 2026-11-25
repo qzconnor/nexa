@@ -247,6 +247,13 @@ export interface AntigravityPaths {
    * its permission rules, which `/permissions` calls „Project“ and puts before all others.
    */
   projectFile: string
+  /**
+   * The Google login when it isn't in the keyring: always with `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=true`
+   * (Nexa's own Google accounts), else when the keyring can't be reached.
+   */
+  tokenFile: string
+  /** `acp-server-*.log`: every start of `agy acp` writes one, with whom it signed in as. */
+  logDir: string
 }
 
 /** The project Antigravity CLI opens its sessions in when none is named (`--project`, not in `agy acp`). */
@@ -266,11 +273,48 @@ export function antigravityPaths(dir: string): AntigravityPaths {
     mcpFile: join(dir, 'config', 'mcp_config.json'),
     hooksFile: join(dir, 'config', 'hooks.json'),
     projectFile: join(dir, 'config', 'projects', `${ANTIGRAVITY_DEFAULT_PROJECT.id}.json`),
+    tokenFile: join(dir, 'antigravity-cli', 'antigravity-oauth-token'),
+    logDir: join(dir, 'antigravity-cli', 'log'),
   }
 }
 
-/** Where Antigravity CLI keeps its Google login in the Windows Credential Manager. */
-export const ANTIGRAVITY_KEYRING_TARGET = 'gemini:antigravity'
+/** Makes Antigravity CLI keep its Google login in the folder's `tokenFile`, never in the keyring. */
+export const ANTIGRAVITY_FILE_TOKENS = 'AGY_CLI_FORCE_FILE_TOKEN_STORAGE'
+
+/**
+ * Antigravity CLI's Google login in the keyring (zalando/go-keyring): service `gemini`, user
+ * `antigravity`. Windows names the entry `gemini:antigravity`.
+ */
+export const ANTIGRAVITY_KEYRING = { service: 'gemini', user: 'antigravity' } as const
+export const ANTIGRAVITY_KEYRING_TARGET = `${ANTIGRAVITY_KEYRING.service}:${ANTIGRAVITY_KEYRING.user}`
+
+/**
+ * The Google login in a token file: an OAuth token as JSON. Its fields are read where they are (an
+ * `expiry` in RFC 3339, a `refresh_token`); a file Nexa can't read still counts as a login, as it does
+ * for Antigravity CLI until a prompt says otherwise.
+ */
+export function readAntigravityToken(json: unknown, now = Date.now(), savedAt: number | null = null): Omit<LoginInfo, 'identity'> {
+  if (json === undefined || json === null) return { ...NO_LOGIN }
+  const token = isPlainObject(json) && isPlainObject(json.token) ? json.token : json
+  const expiry = isPlainObject(token) ? Date.parse(text(token.expiry) ?? '') : NaN
+  const renewable = isPlainObject(token) ? !!text(token.refresh_token) : false
+  const expired = Number.isFinite(expiry) && expiry <= now
+  return {
+    // Without a refresh token an expired login can't renew itself.
+    authState: !expired ? 'ok' : renewable ? 'expired' : 'dead',
+    tokenExpiresAt: Number.isFinite(expiry) ? new Date(expiry).toISOString() : null,
+    loginEndsAt: null,
+    tokenSavedAt: isoTime(savedAt),
+    renewable,
+    accessToken: null,
+  }
+}
+
+/** Whom `agy acp` signed in as, from one of its logs (the newest line wins); null if it doesn't say. */
+export function antigravityLogEmail(log: string): string | null {
+  const found = [...log.matchAll(/(?:authenticated successfully as|applyAuthResult: email=)\s*([^\s,@]+@[^\s,]+)/g)]
+  return found.at(-1)?.[1]?.replace(/[.;]+$/, '') ?? null
+}
 
 /**
  * Whether `cmdkey /list:gemini:antigravity` lists the login. It prints the target indented after a
@@ -278,6 +322,17 @@ export const ANTIGRAVITY_KEYRING_TARGET = 'gemini:antigravity'
  */
 export function keyringListsLogin(output: string): boolean {
   return /^\s+\S[^:\r\n]*:\s*(?:\S+=)?gemini:antigravity\s*$/im.test(output)
+}
+
+/**
+ * Whether the Secret Service (Linux) holds the login, from `gdbus call … SearchItems`: its answer
+ * lists unlocked and locked items, `([objectpath '/org/freedesktop/secrets/collection/login/3'], @ao [])`.
+ * Null for anything else (no answer, an error).
+ */
+export function secretServiceListsLogin(output: string): boolean | null {
+  if (/'\/org\/freedesktop\/secrets\/collection\//.test(output)) return true
+  if (/^\s*\(\s*@ao \[\]\s*,\s*@ao \[\]\s*\)\s*$/.test(output)) return false
+  return null
 }
 
 /** Codex keeps the login of a folder in its `auth.json` instead of the keyring: every account has its own. */

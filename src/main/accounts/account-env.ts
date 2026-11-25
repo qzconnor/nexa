@@ -1,5 +1,6 @@
 import type { ProviderId } from '@shared/chat'
 import type { AccountKind } from '@shared/accounts'
+import { ANTIGRAVITY_FILE_TOKENS } from './cli-files'
 
 /** Variables that make Claude Code use another login than the one of its config folder. */
 export const CLAUDE_AUTH_ENV = [
@@ -13,7 +14,7 @@ export const CLAUDE_AUTH_ENV = [
 /** Variables that make Codex use another login than the one of its CODEX_HOME. */
 export const CODEX_AUTH_ENV = ['CODEX_API_KEY', 'OPENAI_API_KEY']
 
-/** Variables that make Antigravity CLI sign in another way than its keyring login. */
+/** Variables that make Antigravity CLI sign in another way than its Google login. */
 export const ANTIGRAVITY_AUTH_ENV = ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT']
 
 /** How a CLI is started as an account: variables to set, and inherited ones to remove. */
@@ -44,7 +45,8 @@ export function accountEnv(account: EnvAccount, secret: string | null): AccountE
   const { id, provider, kind, configDir } = account
   if (provider === 'antigravity') {
     if (kind === 'system') return { accountId: id, set: {}, unset: [] }
-    // Only an API key keeps apart: every Google login of Antigravity CLI is the one in the keyring.
+    // The keyring holds one Google login per user; with file tokens each folder keeps its own.
+    if (kind === 'oauth') return { accountId: id, set: { [ANTIGRAVITY_FILE_TOKENS]: 'true' }, unset: [...ANTIGRAVITY_AUTH_ENV], dir: configDir }
     if (!secret) throw new Error('Für diesen Account ist kein gültiges Secret gespeichert. Bitte unter Einstellungen → Accounts neu eintragen.')
     return { accountId: id, set: { GEMINI_API_KEY: secret }, unset: ANTIGRAVITY_AUTH_ENV.filter((key) => key !== 'GEMINI_API_KEY'), dir: configDir }
   }

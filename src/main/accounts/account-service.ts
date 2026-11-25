@@ -23,7 +23,7 @@ import { readJsonGuarded, readJsonSync, writeJsonAtomic } from '../lib/json-file
 import { decryptSecret, encryptSecret } from '../lib/secrets'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { accountEnv, type AccountEnv } from './account-env'
-import { antigravityLogin, ensureApiKeySettings } from './antigravity-account'
+import { antigravityIdentity, antigravityLogin, ensureApiKeySettings } from './antigravity-account'
 import {
   antigravityPaths,
   claudePaths,
@@ -65,7 +65,7 @@ interface AccountsFile {
 const SHAREABLE_ITEMS: Record<ProviderId, string[]> = {
   claude: ['settings.json', 'keybindings.json', 'CLAUDE.md', 'skills', 'commands', 'agents', 'rules'],
   codex: ['config.toml', 'AGENTS.md', 'prompts', 'skills', 'rules'],
-  // `config`: MCP servers, hooks, plugins and skills; the login is in the keyring anyway.
+  // `config`: MCP servers, hooks, plugins and skills; the login is in the keyring or `antigravity-cli`.
   antigravity: ['GEMINI.md', 'config'],
 }
 
@@ -294,9 +294,9 @@ export class AccountService extends TypedEmitter<Events> {
     const account = this.require(id)
     if (account.provider === 'codex') return readCodexLogin(readJsonSync<unknown>(this.codexPaths(id).authFile))
     if (account.provider === 'antigravity') {
+      const login = antigravityLogin(this.configDir(account), account.kind === 'oauth')
       // The standard account may sign in with a key from the environment instead of the keyring.
-      if (process.env.GEMINI_API_KEY) return { ...antigravityLogin(), authState: 'ok' }
-      return antigravityLogin()
+      return account.kind === 'system' && process.env.GEMINI_API_KEY ? { ...login, authState: 'ok' } : login
     }
     const paths = this.claudePaths(id)
     // Claude Code keeps no time of its own with the tokens; the file's tells when they were saved.
@@ -307,8 +307,8 @@ export class AccountService extends TypedEmitter<Events> {
   /** Who is signed in in a config folder Nexa has no account for (yet), as the CLI would run with it. */
   identityAt(provider: ProviderId, configDir: string): AccountIdentity {
     if (provider === 'codex') return readCodexLogin(readJsonSync<unknown>(codexPaths(configDir).authFile)).identity
-    // Antigravity's login is in the keyring and names nobody.
-    if (provider === 'antigravity') return { ...NO_IDENTITY }
+    // Only Antigravity's logs name whom it signed in as.
+    if (provider === 'antigravity') return antigravityIdentity(configDir)
     const paths = claudePaths(configDir, true)
     return readClaudeLogin(readJsonSync<unknown>(paths.credentialsFile), readJsonSync<unknown>(paths.globalConfigFile)).identity
   }

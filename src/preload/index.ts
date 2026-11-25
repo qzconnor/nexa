@@ -212,6 +212,7 @@ const api: NexaApi = {
     loginCode: (id, code) => invoke(IpcInvoke.accountsLoginCode, id, code),
     cancelLogin: (id) => invoke(IpcInvoke.accountsLoginCancel, id),
     renewLogin: (id) => invoke(IpcInvoke.accountsRenewLogin, id),
+    logout: (id) => invoke(IpcInvoke.accountsLogout, id),
     onChanged: (cb) => subscribe(IpcEvent.accountsChanged, cb),
     onLogin: (cb) => subscribe(IpcEvent.accountsLogin, cb),
   },
