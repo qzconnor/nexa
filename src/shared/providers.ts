@@ -27,6 +27,8 @@ export interface ProviderMeta {
    * A CLI few users have would otherwise sit in every chat's picker as „nicht installiert“.
    */
   untilInstalled?: boolean
+  /** Its name in the switchers of the settings, when people know it by another (Gemini). Else `short`. */
+  settingsLabel?: string
 }
 
 export const PROVIDERS: Record<ProviderId, ProviderMeta> = {
@@ -63,6 +65,8 @@ export const PROVIDERS: Record<ProviderId, ProviderMeta> = {
     terminalLogin: true,
     permissionModes: ['ask', 'edits', 'plan', 'auto', 'full'],
     untilInstalled: true,
+    // It follows Gemini CLI and runs Google's Gemini models; in the settings both names help find it.
+    settingsLabel: 'Gemini / Antigravity',
   },
 }
 

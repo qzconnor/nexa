@@ -74,7 +74,7 @@ async function pickCli(id: ProviderId): Promise<void> {
           :options="
             providers.enabled
               .filter((id) => providers.offered.includes(id) || id === s.defaults.provider)
-              .map((id) => ({ value: id, label: PROVIDERS[id].short }))
+              .map((id) => ({ value: id, label: PROVIDERS[id].settingsLabel ?? PROVIDERS[id].short }))
           "
           aria-label="CLI für neue Chats"
           @update:model-value="(provider) => update({ defaults: { provider } })"
