@@ -958,13 +958,20 @@ export class ClaudeRun implements AgentRun {
     this.sink.runtime({ status: 'waiting' })
   }
 
+  /**
+   * Claude Code takes a question back, e.g. in auto mode once its classifier allowed the tool itself:
+   * the turn goes on, so the chat no longer waits for the user.
+   */
   private onControlCancel(m: Json): void {
     const requestId = str(m.request_id)
+    let cancelled = false
     for (const [id, open] of this.interactions) {
       if (open.requestId !== requestId) continue
       this.interactions.delete(id)
       this.sink.item({ ...open.item, state: 'cancelled' })
+      cancelled = true
     }
+    if (cancelled && this.interactions.size === 0 && this.turnStartedAt !== null) this.sink.runtime({ status: 'running' })
   }
 
   // ------------------------------------------------------------------------------------------
