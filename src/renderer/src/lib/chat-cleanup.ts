@@ -49,7 +49,7 @@ export function removalDescription(count: number, withCli: boolean, worktrees = 
   const whose = count === 1 ? 'Sein' : 'Ihr'
   const lost = `${whose} Verlauf in Nexa geht verloren`
   const text = withCli
-    ? `${lost}, ${count === 1 ? 'seine Unterhaltung' : 'ihre Unterhaltungen'} in Claude Code und Codex ${count === 1 ? 'kommt' : 'kommen'} in den Papierkorb.`
+    ? `${lost}, ${count === 1 ? 'seine Unterhaltung' : 'ihre Unterhaltungen'} in den CLIs ${count === 1 ? 'kommt' : 'kommen'} in den Papierkorb.`
     : `${lost}.`
   const note = worktreeNote(worktrees, count === 1)
   return note ? `${text} ${note}` : text

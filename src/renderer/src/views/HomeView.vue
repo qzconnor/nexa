@@ -10,6 +10,7 @@ import ProjectPicker from '@/components/common/ProjectPicker.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { attempt } from '@/lib/errors'
+import { andList } from '@/lib/format'
 import { provideProjectPath } from '@/composables/useProjectPath'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProjectsStore } from '@/stores/projects'
@@ -114,9 +115,9 @@ provideProjectPath(computed(() => project.value?.path ?? null))
 const anyReady = computed(() => providers.available.length > 0)
 /** The switch mid-chat is only worth telling about with more than one CLI on. */
 const tagline = computed(() => {
-  const names = providers.enabled.map((id) => PROVIDERS[id].name)
+  const names = providers.offered.map((id) => PROVIDERS[id].name)
   return names.length > 1
-    ? `${names.join(' und ')} in einer Oberfläche – wechsle mitten im Chat, der Verlauf geht mit.`
+    ? `${andList(names)} in einer Oberfläche – wechsle mitten im Chat, der Verlauf geht mit.`
     : `${names[0] ?? 'Deine CLI'} in einer eigenen Oberfläche, mit Dateien, Browser und Verlauf.`
 })
 

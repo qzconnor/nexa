@@ -1,12 +1,12 @@
 /**
- * The chat model every agent CLI is mapped onto. Claude Code (stream-json) and Codex (app-server)
- * speak different protocols; their providers in `src/main/providers` translate both into these
- * items, so the renderer draws one timeline no matter which CLI produced it, and a session can move
- * from one CLI to the other.
+ * The chat model every agent CLI is mapped onto. Claude Code (stream-json), Codex (app-server) and
+ * Gemini CLI (Agent Client Protocol) speak different protocols; their providers in
+ * `src/main/providers` translate them into these items, so the renderer draws one timeline no matter
+ * which CLI produced it, and a session can move from one CLI to another.
  */
 
-export type ProviderId = 'claude' | 'codex'
-export const PROVIDER_IDS: readonly ProviderId[] = ['claude', 'codex']
+export type ProviderId = 'claude' | 'codex' | 'gemini'
+export const PROVIDER_IDS: readonly ProviderId[] = ['claude', 'codex', 'gemini']
 
 /** How freely the agent may act. Each provider maps it onto its own flags (see providers/*). */
 export type PermissionMode = 'ask' | 'edits' | 'plan' | 'auto' | 'full'

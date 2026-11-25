@@ -44,7 +44,7 @@ describe('texts', () => {
   it('names one chat, counts several', () => {
     expect(removedTitle([{ title: 'Fix' }])).toBe('„Fix“ gelöscht')
     expect(removedTitle([{ title: 'a' }, { title: 'b' }])).toBe('2 Chats gelöscht')
-    expect(removalDescription(3, true)).toBe('Ihr Verlauf in Nexa geht verloren, ihre Unterhaltungen in Claude Code und Codex kommen in den Papierkorb.')
+    expect(removalDescription(3, true)).toBe('Ihr Verlauf in Nexa geht verloren, ihre Unterhaltungen in den CLIs kommen in den Papierkorb.')
     expect(removalDescription(1, false)).toBe('Sein Verlauf in Nexa geht verloren.')
     expect(removalDescription(1, false, 1)).toBe(
       'Sein Verlauf in Nexa geht verloren. Sein Worktree wird ebenfalls entfernt, sofern darin keine Änderungen und keine eigenen Commits sind.',

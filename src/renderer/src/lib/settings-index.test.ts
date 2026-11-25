@@ -29,8 +29,8 @@ describe('settingsIndex', () => {
       // Anchors of cards made in a loop, from an object: `anchor: 'usage.claude'`.
       for (const m of source.matchAll(/\banchor: '([\w.]+)'/g)) used.add(m[1])
       // The cards of the CLIs: `:anchor="id"` and `cliAnchor(id, 'row')` for each CLI.
-      if (source.includes(':anchor="id"')) ['claude', 'codex'].forEach((id) => used.add(id))
-      for (const m of source.matchAll(/cliAnchor\(id, '(\w+)'\)/g)) ['claude', 'codex'].forEach((id) => used.add(`${id}.${m[1]}`))
+      if (source.includes(':anchor="id"')) ['claude', 'codex', 'gemini'].forEach((id) => used.add(id))
+      for (const m of source.matchAll(/cliAnchor\(id, '(\w+)'\)/g)) ['claude', 'codex', 'gemini'].forEach((id) => used.add(`${id}.${m[1]}`))
     }
     for (const anchor of used) expect(ids.has(anchor as never), anchor).toBe(true)
     for (const id of ids) expect(used.has(id), id).toBe(true)
@@ -63,10 +63,11 @@ describe('matchSettings', () => {
     expect(match('gedanken port')!.ids.size).toBe(0)
   })
 
-  it('finds the rows of both CLIs', () => {
+  it('finds the rows of every CLI', () => {
     const found = match('zusätzliche argumente')!
     expect(found.ids.has('claude.extraArgs')).toBe(true)
     expect(found.ids.has('codex.extraArgs')).toBe(true)
-    expect(found.tabs.get('providers')).toBe(2)
+    expect(found.ids.has('gemini.extraArgs')).toBe(true)
+    expect(found.tabs.get('providers')).toBe(3)
   })
 })

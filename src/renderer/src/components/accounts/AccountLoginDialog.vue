@@ -111,9 +111,14 @@ function retry(): void {
       <div v-else class="flex min-w-0 flex-col gap-4">
         <div class="flex items-center gap-2.5 text-sm">
           <Spinner class="size-4 text-muted-foreground" />
-          <span v-if="!state?.url">{{ cli }} startet die Anmeldung …</span>
+          <span v-if="!state?.url && state?.status !== 'waiting'">{{ cli }} startet die Anmeldung …</span>
           <span v-else>Warte auf die Anmeldung im Browser …</span>
         </div>
+        <!-- Gemini CLI opens the browser itself and doesn't tell its client the link. -->
+        <p v-if="!state?.url && state?.status === 'waiting'" class="text-sm text-muted-foreground">
+          {{ cli }} öffnet den Browser selbst. Melde dich dort mit dem Konto an, das zu „{{ account?.name }}“ gehört – Nexa merkt es von
+          selbst. Geht kein Browser auf, starte „{{ account ? PROVIDERS[account.provider].command : '' }}“ im Terminal und melde dich dort an.
+        </p>
         <template v-if="state?.url">
           <p class="text-sm text-muted-foreground">
             {{ cli }} hat den Browser geöffnet. Melde dich dort mit dem Konto an, das zu „{{ account?.name }}“ gehört – Nexa merkt

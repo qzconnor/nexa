@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountEnv, CLAUDE_AUTH_ENV, CODEX_AUTH_ENV } from './account-env'
+import { accountEnv, CLAUDE_AUTH_ENV, CODEX_AUTH_ENV, GEMINI_AUTH_ENV } from './account-env'
 
 describe('accountEnv', () => {
   it('runs the standard accounts as without Nexa', () => {
@@ -23,6 +23,22 @@ describe('accountEnv', () => {
     expect(token.unset).toContain('ANTHROPIC_API_KEY')
     const key = accountEnv({ id: 'k', provider: 'claude', kind: 'apiKey', configDir: '/p/k' }, 'sk-ant-api03-x')
     expect(key.set.ANTHROPIC_API_KEY).toBe('sk-ant-api03-x')
+  })
+
+  it('gives a Gemini account its own GEMINI_CLI_HOME, with the key in GEMINI_API_KEY', () => {
+    expect(accountEnv({ id: 'system-gemini', provider: 'gemini', kind: 'system', configDir: '/home/me/.gemini' }, null)).toEqual({
+      accountId: 'system-gemini',
+      set: {},
+      unset: [],
+    })
+    const google = accountEnv({ id: 'g', provider: 'gemini', kind: 'oauth', configDir: '/p/g' }, null)
+    expect(google.set).toEqual({ GEMINI_CLI_HOME: '/p/g' })
+    expect(google.unset).toEqual(GEMINI_AUTH_ENV)
+    const key = accountEnv({ id: 'k', provider: 'gemini', kind: 'apiKey', configDir: '/p/k' }, 'AIzaSyX')
+    expect(key.set).toEqual({ GEMINI_CLI_HOME: '/p/k', GEMINI_API_KEY: 'AIzaSyX' })
+    expect(key.unset).not.toContain('GEMINI_API_KEY')
+    expect(key.unset).toContain('GOOGLE_API_KEY')
+    expect(() => accountEnv({ id: 'k', provider: 'gemini', kind: 'apiKey', configDir: '/p/k' }, null)).toThrow(/Secret/)
   })
 
   it('refuses a token account without its secret', () => {

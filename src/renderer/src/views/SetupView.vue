@@ -10,6 +10,7 @@ import CliSessionsImport from '@/components/setup/CliSessionsImport.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { attempt } from '@/lib/errors'
+import { andList } from '@/lib/format'
 import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -25,11 +26,14 @@ const checking = computed(() => !providers.checked || providers.detecting)
 /** What the button says: the start goes on without a usable CLI too, the start page then tells. */
 const ready = computed(() => providers.available.length > 0)
 const summary = computed(() => {
-  if (checking.value) return 'Nexa sucht nach Claude Code und Codex …'
+  if (checking.value) return 'Nexa sucht nach Claude Code, Codex und Gemini CLI …'
   const found = PROVIDER_IDS.filter((id) => providers.status(id)?.installed)
   if (!found.length) return 'Nexa hat keine der CLIs gefunden. Installiere eine und prüfe dann erneut.'
-  if (found.length === 1) return `Nexa hat ${PROVIDERS[found[0]].name} gefunden. Die andere CLI kannst du später dazunehmen.`
-  return 'Nexa hat beide CLIs gefunden. Schalte aus, was du nicht nutzen willst.'
+  if (found.length === 1) return `Nexa hat ${PROVIDERS[found[0]].name} gefunden. Die anderen CLIs kannst du später dazunehmen.`
+  if (found.length < PROVIDER_IDS.length) {
+    return `Nexa hat ${andList(found.map((id) => PROVIDERS[id].name))} gefunden. Schalte aus, was du nicht nutzen willst.`
+  }
+  return 'Nexa hat alle CLIs gefunden. Schalte aus, was du nicht nutzen willst.'
 })
 
 function finish(): void {

@@ -137,7 +137,7 @@ function chatToolDetail(short: string, tool: ToolItem, titleOf?: (id: string) =>
   }
   if (short === 'chat_new') {
     const cli = text('cli')
-    const provider = cli === 'claude' || cli === 'codex' ? PROVIDERS[cli].name : cli
+    const provider = cli && Object.hasOwn(PROVIDERS, cli) ? PROVIDERS[cli as keyof typeof PROVIDERS].name : cli
     return [provider, text('title') && `„${text('title')}“`].filter(Boolean).join(' · ') || undefined
   }
   const ref = text(short === 'chat_send' ? 'to' : 'chat')

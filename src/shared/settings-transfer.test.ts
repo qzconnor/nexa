@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PROVIDER_IDS } from './chat'
 import { defaultSettings } from './defaults'
 import {
   consistentChanges,
@@ -209,6 +210,9 @@ describe('consistentChanges', () => {
   })
 
   it('refuses to switch every CLI off', () => {
-    expect(consistentChanges(settings(), [change('claude.enabled', true, false), change('codex.enabled', true, false)])).toBeNull()
+    const allOff = PROVIDER_IDS.map((id) => change(`${id}.enabled`, true, false))
+    expect(consistentChanges(settings(), allOff)).toBeNull()
+    // One left on is enough.
+    expect(consistentChanges(settings(), allOff.slice(1))).not.toBeNull()
   })
 })

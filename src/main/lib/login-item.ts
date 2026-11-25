@@ -40,7 +40,7 @@ export function autostartEntry(executable: string): string {
     '[Desktop Entry]',
     'Type=Application',
     'Name=Nexa',
-    'Comment=Ein Chat für Coding-Agenten wie Claude Code und Codex',
+    'Comment=Ein Chat für Coding-Agenten wie Claude Code, Codex und Gemini CLI',
     `Exec=${quoteExec(executable)} ${AUTOSTART_ARG}`,
     'Icon=nexa',
     'Terminal=false',

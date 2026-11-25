@@ -2,6 +2,7 @@
 import { CircleAlertIcon, CircleCheckIcon, ClockAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { nexaRenewsLogin, usesSecret, type Account } from '@shared/accounts'
+import { PROVIDERS } from '@shared/providers'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -16,8 +17,7 @@ const status = computed(() => {
     if (settings.settings.chat.keepLoginsFresh && nexaRenewsLogin(props.account)) {
       return { icon: ClockAlertIcon, tone: 'text-warning', text: 'Token abgelaufen – Nexa erneuert ihn gleich' }
     }
-    const cli = provider === 'codex' ? 'Codex' : 'Claude Code'
-    return { icon: ClockAlertIcon, tone: 'text-warning', text: `Token abgelaufen – ${cli} erneuert ihn beim nächsten Start` }
+    return { icon: ClockAlertIcon, tone: 'text-warning', text: `Token abgelaufen – ${PROVIDERS[provider].name} erneuert ihn beim nächsten Start` }
   }
   if (authState === 'dead') return { icon: CircleAlertIcon, tone: 'text-destructive', text: 'Login abgelaufen – bitte neu anmelden' }
   return { icon: CircleAlertIcon, tone: 'text-destructive', text: usesSecret(kind) ? 'Kein gültiges Secret gespeichert' : 'Nicht angemeldet' }

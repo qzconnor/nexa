@@ -89,3 +89,8 @@ export function formatBytes(bytes: number): string {
   if (mb < 1024) return `${oneDecimal.format(mb)} MB`
   return `${oneDecimal.format(bytes / 1024 ** 3)} GB`
 }
+
+/** Names as German prose: „A“, „A und B“, „A, B und C“. */
+export function andList(items: readonly string[]): string {
+  return items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} und ${items.at(-1)}`
+}

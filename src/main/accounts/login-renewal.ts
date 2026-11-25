@@ -1,4 +1,5 @@
 import { nexaRenewsLogin, type Account, type LoginRenewResult } from '@shared/accounts'
+import { PROVIDERS } from '@shared/providers'
 import type { AccountService } from './account-service'
 import { renewClaudeLogin } from './claude-renewal'
 
@@ -44,7 +45,7 @@ export class LoginRenewal {
   async renewNow(accountId: string): Promise<LoginRenewResult> {
     const account = this.deps.accounts.get(accountId)
     if (!nexaRenewsLogin(account)) {
-      throw new Error(account.provider === 'claude' ? 'Nur Browser-Logins lassen sich erneuern.' : 'Codex erneuert seinen Login selbst.')
+      throw new Error(account.provider === 'claude' ? 'Nur Browser-Logins lassen sich erneuern.' : `${PROVIDERS[account.provider].name} erneuert seinen Login selbst.`)
     }
     if (account.authState === 'missing') throw new Error('Der Account ist nicht angemeldet.')
     return this.run(accountId, true)

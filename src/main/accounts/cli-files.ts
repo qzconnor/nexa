@@ -227,6 +227,99 @@ export function readCodexLogin(file: unknown, now = Date.now()): LoginInfo & { a
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Gemini CLI
+
+export interface GeminiPaths {
+  /** The `.gemini` folder: in GEMINI_CLI_HOME, else in the home folder. */
+  dir: string
+  /** The Google login (google-auth-library's credentials), unless GEMINI_FORCE_ENCRYPTED_FILE_STORAGE. */
+  oauthFile: string
+  /** `{ active, old }`: the e-mail of the Google login, cached by the CLI. */
+  accountsFile: string
+  settingsFile: string
+  /** `tmp/<project>/chats/session-<time>-<id8>.jsonl`, plus logs and tool outputs per conversation. */
+  tmpDir: string
+}
+
+/** The home Gemini CLI puts its `.gemini` folder in; an account's own is its GEMINI_CLI_HOME. */
+export function defaultGeminiHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.GEMINI_CLI_HOME ? resolve(env.GEMINI_CLI_HOME) : homedir()
+}
+
+/** `dir`: the `.gemini` folder itself. */
+export function geminiPaths(dir: string): GeminiPaths {
+  return {
+    dir,
+    oauthFile: join(dir, 'oauth_creds.json'),
+    accountsFile: join(dir, 'google_accounts.json'),
+    settingsFile: join(dir, 'settings.json'),
+    tmpDir: join(dir, 'tmp'),
+  }
+}
+
+/** The `.gemini` folder of a GEMINI_CLI_HOME. */
+export function geminiDirOf(home: string): string {
+  return join(home, '.gemini')
+}
+
+/**
+ * The login of a `.gemini` folder from its `oauth_creds.json` and `google_accounts.json`. The access
+ * token holds an hour; Gemini CLI renews it at every start as long as there is a refresh token.
+ * `otherAuth`: the folder (or the environment) signs in another way, with an API key or Vertex AI.
+ */
+export function readGeminiLogin(credentials: unknown, accounts: unknown, otherAuth: boolean, now = Date.now()): LoginInfo {
+  const creds = isPlainObject(credentials) ? credentials : null
+  const accessToken = text(creds?.access_token)
+  const refreshToken = text(creds?.refresh_token)
+  if (!creds || (!accessToken && !refreshToken)) {
+    return { ...NO_LOGIN, authState: otherAuth ? 'ok' : 'missing', identity: { ...NO_IDENTITY } }
+  }
+  const claims = jwtClaims(creds.id_token) ?? {}
+  const cached = isPlainObject(accounts) ? text(accounts.active) : null
+  const expires = typeof creds.expiry_date === 'number' ? creds.expiry_date : null
+  const expired = expires !== null && expires <= now
+  return {
+    authState: expired ? (refreshToken ? 'expired' : 'dead') : 'ok',
+    identity: { ...NO_IDENTITY, email: cached ?? text(claims.email), displayName: text(claims.name) },
+    tokenExpiresAt: isoTime(expires),
+    loginEndsAt: null,
+    tokenSavedAt: null,
+    renewable: !!refreshToken,
+    accessToken: null,
+  }
+}
+
+/** Gemini CLI's names of the ways to sign in (`security.auth.selectedType`), as far as Nexa sets them. */
+export type GeminiAuthType = 'oauth-personal' | 'gemini-api-key'
+
+/**
+ * `settings.json` with the way an account signs in, unless it already says so; null when nothing
+ * changes or the file isn't plain JSON (Gemini CLI allows comments, Nexa leaves such a file alone).
+ * Without it Gemini CLI takes an API key for new conversations and refuses to resume old ones.
+ */
+export function withGeminiAuthType(settings: string, type: GeminiAuthType): string | null {
+  let data: unknown = {}
+  if (settings.trim()) {
+    try {
+      data = JSON.parse(settings)
+    } catch {
+      return null
+    }
+  }
+  if (!isPlainObject(data)) return null
+  const security = isPlainObject(data.security) ? data.security : {}
+  const auth = isPlainObject(security.auth) ? security.auth : {}
+  if (auth.selectedType === type) return null
+  return `${JSON.stringify({ ...data, security: { ...security, auth: { ...auth, selectedType: type } } }, null, 2)}\n`
+}
+
+/** The way a `settings.json` signs in, if it names one. */
+export function geminiAuthTypeOf(settings: unknown): string | null {
+  if (!isPlainObject(settings) || !isPlainObject(settings.security) || !isPlainObject(settings.security.auth)) return null
+  return text(settings.security.auth.selectedType)
+}
+
 /** Codex keeps the login of a folder in its `auth.json` instead of the keyring: every account has its own. */
 export const CODEX_FILE_STORE = 'cli_auth_credentials_store = "file"'
 const CODEX_STORE_RE = /^\s*cli_auth_credentials_store\s*=/m

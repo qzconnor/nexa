@@ -629,11 +629,157 @@ Claude Code 2.1 und Codex 0.169.
   oder geändert); was sich außerhalb von Nexa geändert hat, bleibt unvertraut. Veraltete Schlüssel des
   Ereignisses entfernt es.
 
+## Gemini CLI (`gemini --acp`)
+
+Abgelesen an Gemini CLI 0.71.1 (`@google/gemini-cli`). Mit `--acp` spricht Gemini CLI das Agent Client
+Protocol (ACP, `protocolVersion: 1`): JSON-RPC 2.0 als NDJSON über stdio, in beide Richtungen. Ein Prozess
+je Chat (`GeminiRun`), gestartet im Ordner des Chats mit der Umgebung des Accounts und:
+
+- `GEMINI_CLI_TRUST_WORKSPACE=true`: Ein Ordner, dem Gemini CLI nicht vertraut, hält jeden Chat im Modus
+  `default` und lädt keine Einstellungen des Projekts. Der Nutzer hat den Ordner als Projekt gewählt.
+- `GEMINI_CLI_NO_RELAUNCH=true`: Sonst startet sich Gemini CLI als Kindprozess neu (für mehr Speicher),
+  und das Beenden des Prozesses ließe das Kind laufen.
+- `--include-directories a,b` für weitere Ordner des Chats, dahinter die Argumente des Accounts und des
+  Chats (`nx -- …`).
+
+**Methoden** (Client → Gemini CLI): `initialize { protocolVersion, clientCapabilities }` (Nexa meldet
+`fs` und `terminal` als `false`: Gemini CLI liest, schreibt und führt selbst aus), `session/new { cwd,
+mcpServers }`, `session/load { sessionId, cwd, mcpServers }`, `session/prompt { sessionId, prompt:
+ContentBlock[] }` (Text, Bilder als `{ type: 'image', mimeType, data }` in Base64), `session/set_mode`,
+`session/set_model { modelId }`, `authenticate { methodId }`, `session/cancel` (Benachrichtigung). Die
+Antwort von `initialize` nennt `authMethods` (`oauth-personal`, `gemini-api-key`, `vertex-ai`, `gateway`)
+und `agentCapabilities` (`loadSession`, Bilder, MCP über `http` und `sse`).
+
+- **MCP-Server von Nexa**: `mcpServers: [{ type: 'http', name: 'nexa', url, headers: [{ name:
+  'Authorization', value: 'Bearer <token>' }] }]` in `session/new` und `session/load`. Gemini CLI nennt
+  seine Werkzeuge `mcp_<server>_<tool>` und fragt bei jedem MCP-Werkzeug nach der Erlaubnis; die
+  Werkzeuge, die Nexa ohne Rückfrage erlaubt (`tool-grant.ts`), beantwortet `GeminiRun` selbst.
+- **Antwort von `session/new`**: `sessionId`, `modes { availableModes, currentModeId }` (`default`,
+  `autoEdit`, `yolo`, `plan`) und `models { availableModels: [{ modelId, name, description }],
+  currentModelId }` (`auto` und die Modelle, die der Login darf). Nexa merkt sich die Modelle für die
+  Auswahl; ohne laufenden Chat fragt es `gemini --list-models`.
+- **Modi**: `ask` → `default`, `edits` → `autoEdit`, `plan` → `plan`, `full` → `yolo`. Einen Modus mit
+  Klassifizierer (`auto`) hat Gemini CLI nicht; Nexa bietet ihn für Gemini nicht an. Einen Wechsel meldet
+  Gemini CLI zusätzlich als Text des Agents (`agent_message_chunk` „[MODE_UPDATE] autoEdit“); Nexa
+  filtert ihn heraus.
+- **Prompt**: Gemini CLI bricht einen laufenden Prompt ab, wenn der nächste kommt. Nexa hält Prompts
+  deshalb in einer eigenen Warteschlange und meldet sie erst als aufgenommen (`taken`), wenn sie
+  hinausgehen. Die Antwort von `session/prompt` beendet den Turn: `{ stopReason: end_turn | cancelled |
+  max_tokens | max_turn_requests | refusal, usage { inputTokens, outputTokens, totalTokens } }`.
+  `max_turn_requests` kommt auch, wenn Gemini CLI eine Schleife erkennt.
+- **Abbrechen**: `session/cancel` (Benachrichtigung). Offene Fragen beantwortet Nexa vorher mit
+  `cancelled`, sonst wartet Gemini CLI auf sie. Der Prompt endet danach mit `stopReason: cancelled`.
+- **Befehle**: Gemini CLI führt einige seiner `/`-Befehle in ACP selbst aus (`/about`, `/help`, `/init`,
+  `/memory …`, `/extensions …`, `/restore`) und nennt sie mit `available_commands_update`. Die Antwort
+  kommt als gewöhnlicher Text.
+
+**Systemprompt**: ACP hat keinen Weg, dem Systemprompt etwas hinzuzufügen, und `GEMINI_SYSTEM_MD` würde den
+ganzen Systemprompt ersetzen (samt den Anweisungen zu den Werkzeugen von Gemini CLI). Nexa stellt seine
+Anweisungen deshalb als `<nexa-instructions>…</nexa-instructions>` vor den ersten Prompt jedes Prozesses,
+der kein Befehl ist (ein `/befehl` muss am Anfang stehen). Die Ordner-Prompts (`prompts.md`) sind Teil
+dieser Anweisungen und gehen so mit.
+Nach einem Neustart des Prozesses (Resume) kommen sie mit dem nächsten Prompt erneut. In Gemini CLIs eigener
+Liste der Sitzungen steht deshalb der Anfang der Anweisungen als erster Prompt.
+
+**`session/update`** (Gemini CLI → Client, Benachrichtigung) mit `update.sessionUpdate`:
+
+- `agent_message_chunk { content: { type: 'text', text } }`: Antworttext in Stücken.
+- `agent_thought_chunk`: ein ganzer Gedanke als „**Betreff**\nText“. Nexa fasst Gedanken in Folge zu
+  einem Item zusammen.
+- **Wiederholungen**: Bricht der Stream ab, kommt ein Gedanke „_[Stream interrupted. Retrying
+  response...]_“ mit `_meta.retry`, und das erste Textstück danach trägt `_meta: { retry, reset }`: Die
+  Antwort beginnt neu, Nexa ersetzt den bisherigen Text. Wiederholte Anfragen an die API (429, Überlast)
+  erscheinen als Gedanke „[Retry 2/10] … Retrying in 5s...“; Nexa zeigt beides als Notiz.
+- `tool_call { toolCallId, status, title, kind, content, locations }` und `tool_call_update` (nur die
+  geänderten Felder). Die `toolCallId` ist `<werkzeug>__<id>` (eigene Aufrufe der Sitzung:
+  `<werkzeug>-<zeit>-<n>`); nur dort steht der Name des Werkzeugs, `title` ist ein Anzeigetext
+  („WriteFile“, der Befehl, „Requesting plan approval for: …“). Die Eingabe des Werkzeugs (`rawInput`)
+  fehlt. `kind`: `read`, `edit`, `delete`, `move`, `search`, `execute`, `fetch`, `think`, `other`;
+  `locations: [{ path }]`. `status`: `pending`, `in_progress`, `completed`, `failed` (abgelehnt: Text „…
+  was canceled by the user“).
+- **Diffs**: `content: [{ type: 'diff', path, oldText, newText, _meta: { kind: add | modify | delete } }]`
+  mit dem ganzen alten und neuen Text, sonst `{ type: 'content', content: { type: 'text', text } }`.
+- **MCP-Werkzeuge**: Auch ihre Argumente fehlen. Damit Nexa Diagramme zeichnen und Browser-Schritte zeigen
+  kann, merkt sich der MCP-Server von Nexa die Argumente jedes Aufrufs je Token (`McpCallLog`,
+  `mcp/call-log.ts`), und `GeminiRun` holt sie, wenn der Aufruf fertig ist (Werkzeuge eines Servers laufen
+  nacheinander, die Reihenfolge stimmt).
+- `usage_update { used, size }`: Tokens im Kontext und Größe des Fensters, nach jeder Antwort des Modells.
+- `plan { entries: [{ content, status, priority }] }`: die Aufgabenliste. Gemini CLI 0.71 schickt sie in
+  ACP nicht; `write_todos` erscheint nur als Werkzeugzeile („Set 3 todo(s)“).
+- `available_commands_update` (siehe oben), `user_message_chunk` (nur beim Laden).
+
+**`session/request_permission`** (Gemini CLI → Client, Anfrage) `{ sessionId, toolCall, options: [{
+optionId, name, kind }] }`. `kind`: `allow_once` (`proceed_once`), `allow_always` (`proceed_always`, bei
+MCP `proceed_always_tool` und `proceed_always_server`, dazu `proceed_always_and_save` für immer),
+`reject_once` (`cancel`). Antwort: `{ outcome: { outcome: 'selected', optionId } }` oder `{ outcome: {
+outcome: 'cancelled' } }`. Nexa bietet „Erlauben“, „Für diese Session erlauben“ (bei MCP nur das Werkzeug,
+nie „für immer“, das schriebe in die Einstellungen) und „Ablehnen“. Eine Nachricht zur Ablehnung kann ACP
+nicht mitgeben; Nexa schickt sie als nächsten Prompt. `toolCall._meta['gemini-cli'].mcp { server_name,
+tool_name }` nennt bei MCP-Werkzeugen Server und Werkzeug.
+
+- **Fragen** (`ask_user`) schließt Gemini CLI in ACP aus; Rückfragen kommen als Text.
+- **Plan**: Im Modus `plan` schreibt Gemini CLI den Plan in eine Datei und fragt mit `exit_plan_mode`;
+  der Titel lautet „Requesting plan approval for: <pfad>“. Nexa liest die Datei und zeigt den Plan zur
+  Freigabe. Nach `proceed_once` wechselt Gemini CLI in `default`; Nexa setzt danach den gewählten Modus
+  (`session/set_mode`), sobald der Aufruf fertig ist. Ein abgelehnter Plan mit Wünschen geht als nächster
+  Prompt („Überarbeite den Plan: …“).
+
+**Fehler**: Die Antwort trägt `error { code, message, data? }`. `-32000` heißt „Authentication required“,
+`-32602` u. a. „Session not found“, `-32603` mit dem Grund in `data.details`. Fehler der API kommen mit
+ihrem HTTP-Code (400, 429 …) und als JSON in JSON in `message` (`{"error":{"message":"{\n  \"error\":
+{…}}"}}`); Nexa zeigt die innerste Meldung (`errorText`). 429 nennt Nexa „zu viele Anfragen“; als Limit
+mit Reset markiert es den Turn nicht, Gemini CLI nennt keinen Zeitpunkt.
+
+### Sitzungen und Dateien
+
+- **Ordner**: `<GEMINI_CLI_HOME>/.gemini` (ohne die Variable `~/.gemini`) mit `settings.json`,
+  `oauth_creds.json`, `google_accounts.json` (`active`: E-Mail), `GEMINI.md`, `commands/`, `skills/`,
+  `agents/`, `policies/`, `extensions/` und `tmp/<projekt>/`.
+- **Sitzungen**: `tmp/<projekt>/chats/session-<zeit>-<id8>.jsonl` (`<projekt>` ist ein Kurzname des
+  Ordners, `<id8>` die ersten 8 Zeichen der Sitzungs-ID). Die erste Zeile ist ein Kopf mit `sessionId`, die
+  folgenden ändern den Stand schrittweise (`$set`, `$patch`, `$rewindTo`). Dazu gehören `tmp/<projekt>/
+  chats/<id>/`, `logs/session-<id>.jsonl` und `tool-outputs/session-<id>/`; Nexa legt sie beim Löschen
+  in den Papierkorb (`geminiSessionFiles`).
+- **Laden**: `session/load` spielt den Verlauf zuerst als `session/update` ab (`user_message_chunk`,
+  `agent_message_chunk` …) und antwortet danach wie `session/new`. Nexa hat den Verlauf und blendet die
+  Wiedergabe aus. Laden lässt sich nur eine Sitzung, in der das Modell schon geantwortet hat (eine Zeile
+  mit `"type":"gemini"`, `geminiResumable`); sonst „Session not found“.
+- **Anmeldung beim Laden**: `session/load` verlangt die Anmeldeart in `settings.json`
+  (`security.auth.selectedType`), sonst `-32000`. `session/new` nimmt ohne sie still `gemini-api-key`.
+  Nexa schreibt `selectedType` beim Anlegen eines Accounts (`withGeminiAuthType`; JSON mit Kommentaren
+  lässt es in Ruhe) und ruft bei `-32000` mit API-Key einmal `authenticate { methodId: 'gemini-api-key' }`
+  (das schreibt Gemini CLI selbst in seine Einstellungen) und lädt erneut.
+- **Zusätzliche Sitzung**: Jeder Start des Prozesses legt eine eigene, leere Sitzung an, auch wenn danach
+  `session/load` folgt. Sie bleibt in `tmp/<projekt>/chats/` liegen; Nexa räumt sie nicht weg.
+- **Abzweigen, Bearbeiten, Accountwechsel**: ACP kennt kein Abzweigen und kein Kürzen einer Sitzung. Nexa
+  startet dann eine neue Sitzung mit dem Chat als `<nexa-context>`. Sitzungen eines anderen Accounts
+  kopiert Nexa nicht hinüber (der Ordner unter `tmp/` hängt am Projekt, die Datei an Gemini CLIs Format).
+
+### Accounts und Login
+
+- **Mehrere Logins**: `GEMINI_CLI_HOME=<ordner>` je Account. Der Standard-Account ist `~/.gemini` (bzw.
+  `GEMINI_CLI_HOME` der Umgebung); Nexa ändert die Umgebung dafür nicht. Für die anderen nimmt Nexa die
+  Anmelde-Variablen aus der Umgebung (`GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_GENAI_USE_VERTEXAI`,
+  `GOOGLE_GENAI_USE_GCA`, `GOOGLE_CLOUD_ACCESS_TOKEN`, `GOOGLE_APPLICATION_CREDENTIALS`).
+- **API-Key**: aus Google AI Studio, als `GEMINI_API_KEY`; `selectedType: gemini-api-key`.
+- **Google-Login**: `oauth_creds.json` (google-auth-library: `access_token`, `refresh_token`,
+  `expiry_date` in ms, `id_token` mit `email` und `name`). Der Access-Token hält eine Stunde; Gemini CLI
+  erneuert ihn bei jedem Start selbst, Nexa nicht. Ohne Refresh-Token ist ein abgelaufener Login tot.
+- **Anmelden**: Gemini CLI hat keinen Login-Befehl. Nexa startet `gemini --acp` mit dem Ordner des
+  Accounts, schickt `initialize` und `authenticate { methodId: 'oauth-personal' }` (`LoginDialog` in
+  `account-login.ts`). Gemini CLI öffnet den Browser selbst und antwortet, sobald Google zurückgeleitet
+  hat. Den Link gibt es weder auf stdout noch auf stderr aus (er bleibt als Ereignis im Prozess); der Dialog
+  in Nexa zeigt deshalb keinen Link. Geht kein Browser auf, hilft nur die Anmeldung im Terminal.
+- **Limits**: Gemini CLI nennt einem Client weder Limits noch Kontingente; Nexa zeigt für Gemini nur die
+  Tokens seiner Chats.
+- **Titel**: ACP kennt keinen Titel einer Sitzung und keinen Weg, das Modell nebenher zu fragen
+  (`AgentRun.title` fehlt); ein Gemini-Chat heißt nach der ersten Zeile seines ersten Prompts.
+
 ## Nexa-MCP-Server
 
 Streamable HTTP auf `127.0.0.1:<port>/mcp`, Bearer-Token. Jeder Run bekommt ein eigenes Token, das seinen
-Chat nennt (`McpCaller.sessionId`): Claude über `--mcp-config`, Codex über `http_headers` des Threads
-(siehe oben). Werkzeuge: `render_chart`, `render_diagram`, `render_table`, `render_stats`, `render_callout`.
+Chat nennt (`McpCaller.sessionId`): Claude über `--mcp-config`, Codex über `http_headers` des Threads,
+Gemini CLI über `mcpServers` in `session/new` (siehe oben). Werkzeuge: `render_chart`, `render_diagram`, `render_table`, `render_stats`, `render_callout`.
 Der Aufruf wird als Werkzeugzeile angezeigt, das Ergebnis als `render`-Item direkt darunter (Specs in
 `src/shared/render.ts`).
 

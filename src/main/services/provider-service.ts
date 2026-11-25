@@ -17,6 +17,7 @@ import { LoginRenewal } from '../accounts/login-renewal'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ClaudeProvider } from '../providers/claude/claude-provider'
 import { CodexProvider } from '../providers/codex/codex-provider'
+import { GeminiProvider } from '../providers/gemini/gemini-provider'
 import type { AccountContext, AgentProvider, CliSessionInfo, McpServerState, RunUsage } from '../providers/provider'
 import { UsageSamples } from './usage-samples'
 
@@ -35,6 +36,7 @@ interface Events extends Record<string, unknown[]> {
 export class ProviderService extends TypedEmitter<Events> {
   readonly claude: ClaudeProvider
   readonly codex: CodexProvider
+  readonly gemini: GeminiProvider
   private readonly providers: Record<ProviderId, AgentProvider>
   private readonly logins = new AccountLogins()
   private readonly renewal: LoginRenewal
@@ -54,7 +56,8 @@ export class ProviderService extends TypedEmitter<Events> {
     this.claude = new ClaudeProvider(() => settings().claude)
     this.codex = new CodexProvider(() => settings().codex)
     this.codex.onUsage = (accountId, usage) => this.setUsage(accountId, usage)
-    this.providers = { claude: this.claude, codex: this.codex }
+    this.gemini = new GeminiProvider(() => settings().gemini)
+    this.providers = { claude: this.claude, codex: this.codex, gemini: this.gemini }
     this.renewal = new LoginRenewal({ accounts, enabled: () => settings().chat.keepLoginsFresh })
     this.logins.on('state', (state) => this.onLogin(state))
     let known = new Set(accounts.list().map((a) => a.id))

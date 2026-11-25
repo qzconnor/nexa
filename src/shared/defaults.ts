@@ -45,11 +45,12 @@ export function defaultSettings(): AppSettings {
     defaults: {
       provider: 'claude',
       permissionMode: 'ask',
-      accounts: { claude: systemAccountId('claude'), codex: systemAccountId('codex') },
+      accounts: { claude: systemAccountId('claude'), codex: systemAccountId('codex'), gemini: systemAccountId('gemini') },
       projectsFolder: '',
     },
     claude: provider(),
     codex: provider(),
+    gemini: provider(),
     chat: {
       showThinking: true,
       collapseDiffs: false,
