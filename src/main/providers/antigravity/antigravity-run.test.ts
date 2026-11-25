@@ -275,6 +275,46 @@ describe('AntigravityRun turns', () => {
   })
 })
 
+describe('AntigravityRun.replay', () => {
+  it('turns the stream of `session/load` into the chat: a turn per prompt, tools and errors included', async () => {
+    const command = { toolCallId: 'call_1', name: 'run_command', args: { CommandLine: 'echo fertig' }, kind: 'execute', title: 'echo fertig' }
+    // As Antigravity CLI 1.5.16 replays a conversation: prompts too, without times.
+    const stream: Json[] = [
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Test' } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Ready! How can I help you?' } },
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Führe ' } },
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'echo aus' } },
+      { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Running echo.\n\n\n' } },
+      { sessionUpdate: 'tool_call', ...command, status: 'in_progress' },
+      { sessionUpdate: 'tool_call_update', ...command, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Command exited with code 0.\nCommand output:\nfertig\r\n' } }] },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Erledigt.' } },
+      { sessionUpdate: 'current_mode_update', currentModeId: 'default' },
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Noch mal' } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '⚠ agent executor error: quota exceeded' } },
+    ]
+    const t = setup({}, { 'session/load': () => (stream.forEach((u) => t.update(u)), { sessionId: SESSION }) })
+    await t.run.replay(SESSION)
+    expect(t.requests).toEqual([{ method: 'session/load', params: { sessionId: SESSION, cwd: 'F:\\scratch\\proj', mcpServers: [] } }])
+    const shown = [...t.items.values()].map((i) =>
+      i.kind === 'user' || i.kind === 'assistant' || i.kind === 'thinking' ? `${i.kind}:${i.text}` : i.kind === 'tool' ? `tool:${i.status}:${i.output}` : i.kind === 'turn' ? `turn:${i.status}:${i.error ?? ''}` : i.kind,
+    )
+    expect(shown).toEqual([
+      'user:Test',
+      'assistant:Ready! How can I help you?',
+      'turn:done:',
+      'user:Führe echo aus',
+      'thinking:Running echo.',
+      'tool:done:fertig',
+      'assistant:Erledigt.',
+      'turn:done:',
+      'user:Noch mal',
+      'turn:error:quota exceeded',
+    ])
+    // Nothing of it is still streaming.
+    expect([...t.items.values()].some((i) => 'streaming' in i && i.streaming)).toBe(false)
+  })
+})
+
 describe('AntigravityRun permissions', () => {
   const WRITE = {
     sessionUpdate: 'tool_call',

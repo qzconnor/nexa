@@ -6,9 +6,11 @@ import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
 import type { ChatItem, SessionEvent, SessionRuntime, ToolItem } from '@shared/chat'
 import type { WorktreeOptions } from '@shared/files'
-import { claudeProjectKey, codexPaths } from '../accounts/cli-files'
+import { antigravityPaths, claudeProjectKey, codexPaths } from '../accounts/cli-files'
 import { inFolder } from '@shared/folders'
 import type { AgentProvider, AgentRun, RunInput, RunOptions, RunSink } from '../providers/provider'
+import { conversationFile, readSteps, USER_STEP } from '../providers/antigravity/antigravity-conversations'
+import { writeConversation } from '../providers/antigravity/conversation-fixture'
 import { SessionService, type WorktreeGit } from './session-service'
 
 const CWD = 'F:\\Projekte\\demo'
@@ -21,6 +23,8 @@ let dataDir: string
 let claudeA: string
 let claudeB: string
 let codexA: string
+/** The data folder of Antigravity CLI the chats run with. */
+let agyA: string
 let settings: AppSettings
 let trashed: string[]
 let service: SessionService | null
@@ -75,6 +79,7 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
     ],
     claudePaths: (id: string) => ({ configDir: id === 'claude-a' ? claudeA : claudeB }),
     codexPaths: () => codexPaths(codexA),
+    antigravityPaths: () => antigravityPaths(agyA),
     has: (id: string) => ['claude-a', 'claude-b', 'codex-a'].includes(id),
     resolve: () => 'claude-a',
     get: () => ({ id: 'claude-a', kind: 'system' }),
@@ -127,6 +132,7 @@ beforeEach(async () => {
   claudeA = join(root, 'claude-a')
   claudeB = join(root, 'claude-b')
   codexA = join(root, 'codex-a')
+  agyA = join(root, 'agy-a')
   settings = defaultSettings()
   trashed = []
   service = null
@@ -487,6 +493,148 @@ describe('SessionService with what came to its Codex thread outside Nexa', () =>
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('SessionService with Antigravity CLI', () => {
+  const CONVERSATION = '1cdfb3c6-7f4b-4e69-a335-d6dfab82fbfb'
+  const TRAJECTORY = '0ec8cdec-a0e2-498d-9a20-ba2d9acf3538'
+  const SYNCED = 1_700_000_000_000
+  const linked = (patch: Partial<SessionMeta> = {}) =>
+    meta('chat', { provider: 'antigravity', cli: { antigravity: { sessionId: CONVERSATION, seenItems: 2, accountId: 'claude-a', configDir: agyA } }, ...patch })
+
+  /** A fake run of the CLI: its starts recorded, its sink to answer with. */
+  function cli() {
+    const starts: RunOptions[] = []
+    let sink: RunSink | null = null
+    const run = {
+      alive: true,
+      send: async () => {},
+      stop: async () => {
+        run.alive = false
+      },
+    }
+    const provider: Partial<AgentProvider> = {
+      start: async (options, s) => {
+        starts.push(options)
+        sink = s
+        run.alive = true
+        return run as unknown as AgentRun
+      },
+    }
+    return { provider, starts, sink: () => sink! }
+  }
+
+  it('reads the history of a conversation taken over once, through the account that keeps it', async () => {
+    const asked: string[] = []
+    readHistory = async (accountId, sessionId) => {
+      asked.push(`${accountId}:${sessionId}`)
+      return [{ kind: 'user', id: 'u1', ts: 1, provider: 'antigravity', text: 'Hallo' }]
+    }
+    const sessions = await start([linked({ importedFrom: CONVERSATION })])
+    expect((await sessions.history('chat'))!.items).toMatchObject([{ kind: 'user', text: 'Hallo' }])
+    expect(asked).toEqual([`claude-a:${CONVERSATION}`])
+    expect(sessions.list()[0]!.cli.antigravity!.seenItems).toBe(1)
+  })
+
+  it('takes in the turns of prompts made outside Nexa, and reads again only when the conversation changed', async () => {
+    const file = await writeConversation(agyA, CONVERSATION, TRAJECTORY, [
+      [USER_STEP, SYNCED - 5000],
+      [15, SYNCED - 4000],
+      [USER_STEP, SYNCED + 3000],
+      [15, SYNCED + 4000],
+    ])
+    await utimes(file, new Date(), new Date(SYNCED + 10_000))
+    const asked: (number | undefined)[] = []
+    readHistory = async (_account, _id, since) => {
+      asked.push(since)
+      return [
+        { kind: 'user', id: 'u2', ts: SYNCED + 3000, provider: 'antigravity', text: 'Im Terminal' },
+        { kind: 'assistant', id: 'a2', ts: SYNCED + 3001, provider: 'antigravity', parentId: null, text: 'Dort' },
+        { kind: 'turn', id: 't2', ts: SYNCED + 4000, provider: 'antigravity', status: 'done' },
+      ]
+    }
+    const sessions = await start([linked({ cli: { antigravity: { sessionId: CONVERSATION, seenItems: 0, accountId: 'claude-a', configDir: agyA, synced: SYNCED } } })])
+
+    expect((await sessions.open('chat')).items).toMatchObject([
+      { kind: 'notice', text: 'Außerhalb von Nexa weitergeführt', detail: 'Ein Prompt mit Antwort aus Antigravity CLI übernommen' },
+      { id: 'u2' },
+      { id: 'a2' },
+      { id: 't2' },
+    ])
+    expect(asked).toEqual([SYNCED])
+    expect(sessions.list()[0]!.cli.antigravity!.synced).toBe(SYNCED + 4000)
+    expect(await sessions.syncCli('chat')).toBe(0)
+    expect(asked).toHaveLength(1)
+  })
+
+  it('goes on from before an edited prompt in a copy of the conversation, cut there', async () => {
+    const { provider, starts, sink } = cli()
+    const sessions = await start([meta('chat', { provider: 'antigravity' })], provider)
+    const turn = (n: number) => {
+      sink().item({ kind: 'assistant', id: `a${n}`, ts: Date.now(), provider: 'antigravity', parentId: null, text: `Antwort ${n}` })
+      sink().item({ kind: 'turn', id: `turn:t${n}`, ts: Date.now(), provider: 'antigravity', status: 'done' })
+      sink().runtime({ status: 'idle' })
+    }
+    await sessions.send('chat', { text: 'erste' })
+    sink().cliSession(CONVERSATION)
+    turn(1)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await sessions.send('chat', { text: 'zweite' })
+    turn(2)
+    const [first, second] = ((await sessions.history('chat'))!.items as ChatItem[]).filter((i) => i.kind === 'user')
+    // As Antigravity wrote it: each prompt's step a moment after Nexa sent it.
+    await writeConversation(agyA, CONVERSATION, TRAJECTORY, [
+      [USER_STEP, first!.ts + 1],
+      [15, first!.ts + 2],
+      [USER_STEP, second!.ts + 1],
+      [15, second!.ts + 2],
+    ])
+
+    await sessions.edit('chat', second!.id, { text: 'zweite, anders' })
+
+    const started = starts.at(-1)!
+    expect(started.resumeId).toBeDefined()
+    expect(started.resumeId).not.toBe(CONVERSATION)
+    expect(started.fork).toBeUndefined()
+    expect(readSteps(conversationFile(agyA, started.resumeId!))).toHaveLength(2)
+    const saved = sessions.list()[0]!
+    expect(saved.cli.antigravity).toMatchObject({ sessionId: started.resumeId, seenItems: 3 })
+    // The conversation with the old prompt stays the chat's, to go along when it is deleted.
+    expect(saved.earlierCli).toEqual([{ antigravity: expect.objectContaining({ sessionId: CONVERSATION }) }])
+  })
+
+  it('branches off with a copy of the conversation, while the chat it came from keeps its own', async () => {
+    await writeConversation(agyA, CONVERSATION, TRAJECTORY, [
+      [USER_STEP, 1000],
+      [15, 2000],
+    ])
+    const { provider, starts } = cli()
+    const sessions = await start([linked()], provider)
+
+    const fork = await sessions.fork('chat')
+    expect(fork.cli.antigravity).toMatchObject({ sessionId: CONVERSATION, fork: { at: expect.any(String) } })
+    await sessions.send(fork.id, { text: 'weiter' })
+
+    const started = starts.at(-1)!
+    expect(started.resumeId).not.toBe(CONVERSATION)
+    expect(readSteps(conversationFile(agyA, started.resumeId!))).toHaveLength(2)
+    expect(sessions.list().find((m) => m.id === fork.id)!.cli.antigravity).toMatchObject({ sessionId: started.resumeId, seenItems: 2 })
+    expect(sessions.list().find((m) => m.id === 'chat')!.cli.antigravity!.sessionId).toBe(CONVERSATION)
+  })
+
+  it('starts anew with the chat as context when nothing of the conversation comes before the edited prompt', async () => {
+    await writeConversation(agyA, CONVERSATION, TRAJECTORY, [
+      [USER_STEP, Date.now() + 60_000],
+      [15, Date.now() + 61_000],
+    ])
+    const { provider, starts } = cli()
+    const sessions = await start([linked({ cli: { antigravity: { sessionId: CONVERSATION, seenItems: 2, accountId: 'claude-a', configDir: agyA, fork: { at: String(Date.now()) } } } })], provider)
+
+    await sessions.send('chat', { text: 'weiter' })
+
+    expect(starts.at(-1)!.resumeId).toBeUndefined()
+    expect((await sessions.history('chat'))!.items).toContainEqual(expect.objectContaining({ kind: 'notice', text: 'Unterhaltung von Antigravity CLI nicht abgezweigt' }))
   })
 })
 

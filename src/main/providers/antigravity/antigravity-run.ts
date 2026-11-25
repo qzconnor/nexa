@@ -66,7 +66,10 @@ interface Streaming {
   text: string
 }
 
-const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+/** The updates that belong to a turn: the agent's answer, thoughts, tools and todo list. */
+const TURN_UPDATES = new Set(['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan'])
+
+const IMAGE_TYPES: Record<string, string> ={ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 
 /** Nexa's instructions before the first prompt, for a version that can't add to its system prompt. */
 export function withInstructions(instructions: string, text: string): string {
@@ -88,6 +91,12 @@ export class AntigravityRun implements AgentRun {
   private instructionsPending = false
   /** `session/load` streams the old conversation before it answers: the chat has it already. */
   private replaying = false
+  /** Reading a conversation (`replay`): its stream becomes items, a turn per prompt. */
+  private collecting = false
+  /** The prompt the stream of a read conversation is at, while its chunks come. */
+  private replayedPrompt: { id: string; ts: number; text: string } | null = null
+  /** A turn of a read conversation has begun and gets its end. */
+  private replayedTurn = false
   private text: Streaming | null = null
   private thought: Streaming | null = null
   /** An error of the agent that came as text of its answer: the turn ends with it. */
@@ -151,7 +160,8 @@ export class AntigravityRun implements AgentRun {
       mcpServers,
       ...(append ? { _meta: { antigravity: { systemPrompt: { append: instructions } } } } : {}),
     }
-    // Antigravity can't fork a conversation: the session service starts a new one with the chat as context instead.
+    // ACP can't fork a conversation: the session service copies it under a new id before the start
+    // (antigravity-conversations.ts), so a fork never comes here; were one to, it starts anew.
     const resumeId = this.options.fork ? undefined : this.options.resumeId
     let response: Json
     if (resumeId) {
@@ -180,6 +190,52 @@ export class AntigravityRun implements AgentRun {
     } finally {
       this.replaying = false
     }
+  }
+
+  /**
+   * Reads a conversation instead of going on with it (antigravity-provider.ts, `history`): `session/load`
+   * streams it again, prompts included, and the stream becomes the chat's items as a turn's would. The
+   * connection must be initialized; the stream carries no times, the caller stamps them.
+   */
+  async replay(sessionId: string): Promise<void> {
+    this.sessionId = sessionId
+    this.collecting = true
+    try {
+      await this.conn.request('session/load', { sessionId, cwd: this.options.cwd, mcpServers: [] })
+    } finally {
+      this.endReplayedTurn()
+      this.collecting = false
+    }
+  }
+
+  /** A prompt of the read conversation: one in chunks, the turn before it ends. */
+  private replayedUser(content: Json): void {
+    const text = content.type === 'text' ? (str(content.text) ?? '') : ''
+    if (this.replayedPrompt) this.replayedPrompt.text += text
+    else {
+      this.endReplayedTurn()
+      this.replayedPrompt = { id: `antigravity-user:${randomUUID()}`, ts: Date.now(), text }
+      this.replayedTurn = true
+    }
+    const { id, ts, text: whole } = this.replayedPrompt
+    this.sink.item({ kind: 'user', id, ts, provider: 'antigravity', text: whole })
+  }
+
+  private endReplayedTurn(): void {
+    this.replayedPrompt = null
+    if (!this.replayedTurn) return
+    this.replayedTurn = false
+    this.endStreams()
+    this.finishRunning(false)
+    const error = this.executorError
+    this.executorError = null
+    this.sink.item({
+      kind: 'turn',
+      id: `turn:${randomUUID()}`,
+      ts: Date.now(),
+      provider: 'antigravity',
+      ...(error !== null ? { status: 'error' as const, error: error || 'Antigravity meldet einen Fehler.' } : { status: 'done' as const }),
+    })
   }
 
   /** The session's model and level of thought; its models for the composer. */
@@ -451,14 +507,21 @@ export class AntigravityRun implements AgentRun {
       return
     }
     if (kind === 'session_info_update') {
-      // The replay of a loaded conversation names it as it was; that isn't a new name.
-      const title = this.replaying ? undefined : str(update.title)?.trim()
+      // The replay of a loaded or read conversation names it as it was; that isn't a new name.
+      const title = this.replaying || this.collecting ? undefined : str(update.title)?.trim()
       if (title) this.takeTitle(title)
       return
     }
-    // The replay of a loaded conversation, and what comes between turns (mode changes): the chat has it.
-    if (this.replaying || !this.prompting) return
     const content = isPlainObject(update.content) ? update.content : {}
+    if (this.collecting) {
+      if (kind === 'user_message_chunk') return this.replayedUser(content)
+      // Mode changes and titles between turns are no turn's.
+      if (!kind || !TURN_UPDATES.has(kind)) return
+      this.replayedPrompt = null
+      this.replayedTurn = true
+    }
+    // The replay of a loaded conversation, and what comes between turns (mode changes): the chat has it.
+    else if (this.replaying || !this.prompting) return
     switch (kind) {
       case 'agent_message_chunk': {
         const text = content.type === 'text' ? (str(content.text) ?? '') : ''

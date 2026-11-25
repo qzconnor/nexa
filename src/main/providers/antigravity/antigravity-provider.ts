@@ -1,13 +1,18 @@
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, normalize } from 'node:path'
+import type { ChatItem } from '@shared/chat'
 import type { CommandOption, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus } from '@shared/types'
+import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import { antigravityLoggedIn, ensureApiKeySettings, refreshAntigravityLogin } from '../../accounts/antigravity-account'
+import { defaultAntigravityDir } from '../../accounts/cli-files'
 import { AcpConnection } from '../acp/acp-connection'
 import { CliBinary, cliEnv } from '../cli-binary'
-import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
+import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { AntigravityConfig, antigravityMcpServers, setAntigravityMcpEnabled } from './antigravity-config'
-import { commandsOf, modelsOf, tierOf, usageOfQuota } from './antigravity-items'
+import { conversationFile, conversationMtime, promptTimes, readSteps } from './antigravity-conversations'
+import { stampHistory } from './antigravity-history'
+import { commandsOf, modelsOf, pathOf, str, tierOf, usageOfQuota } from './antigravity-items'
 import { AntigravityRun } from './antigravity-run'
 
 const NAME = 'Antigravity CLI'
@@ -111,8 +116,10 @@ export class AntigravityProvider implements AgentProvider {
     }
   }
 
-  private withTimeout<T>(promise: Promise<T>): Promise<T> {
-    return Promise.race([promise, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Antigravity CLI antwortet nicht.')), 30_000))])
+  private withTimeout<T>(promise: Promise<T>, ms = 30_000): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<T>((_, reject) => (timer = setTimeout(() => reject(new Error('Antigravity CLI antwortet nicht.')), ms)))
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
   }
 
   /** A model's level of thought is named with its models. */
@@ -245,6 +252,92 @@ export class AntigravityProvider implements AgentProvider {
     void this.readUsage(account)
       .then((usage) => sink.usage(usage))
       .catch(() => undefined)
+  }
+
+  /** The account's data folder: its own (`--gemini-dir`) or Antigravity's default. */
+  private dirOf(account: AccountEnv): string {
+    return account.dir ?? defaultAntigravityDir()
+  }
+
+  /** The conversations of the account's folder that can go on, as Antigravity lists them (`session/list`). */
+  async sessions(account: AccountContext): Promise<CliSessionInfo[]> {
+    const listed = await this.reading(account, (conn) => this.listed(conn))
+    // Its list keeps conversations whose database was deleted.
+    const dir = this.dirOf(account)
+    const kept = await Promise.all(listed.map(async (s) => ((await conversationMtime(dir, s.id)) === null ? null : s)))
+    return kept.filter((s): s is CliSessionInfo => !!s)
+  }
+
+  /**
+   * A conversation as chat items: `session/load` streams it again (antigravity-run.ts `replay`), the
+   * times come from its database. `since`: only the turns of prompts made after it, read only when there are any.
+   */
+  async history(account: AccountContext, sessionId: string, since?: number): Promise<ChatItem[]> {
+    const steps = readSteps(conversationFile(this.dirOf(account), sessionId))
+    if (since !== undefined && !(promptTimes(steps) ?? []).some((t) => t > since)) return []
+    const items = await this.reading(account, async (conn, bind) => {
+      // `session/load` needs the folder the conversation ran in.
+      const cwd = (await this.listed(conn)).find((s) => s.id === sessionId)?.cwd
+      if (!cwd) throw new Error('Antigravity CLI kennt diese Unterhaltung nicht.')
+      const collected = new Map<string, ChatItem>()
+      const sink: RunSink = {
+        item: (item) => void collected.set(item.id, item),
+        delta: () => undefined,
+        runtime: () => undefined,
+        cliSession: () => undefined,
+        usage: () => undefined,
+        taken: () => undefined,
+        exited: () => undefined,
+      }
+      const run = new AntigravityRun(conn, { sessionId, cwd, permissionMode: 'ask', account, instructions: '', extraArgs: [] }, sink)
+      bind(run)
+      await this.withTimeout(run.replay(sessionId), 120_000)
+      return [...collected.values()]
+    })
+    return stampHistory(items, steps, since)
+  }
+
+  /** Every page of `session/list`, its paths as the system writes them. */
+  private async listed(conn: AcpConnection): Promise<CliSessionInfo[]> {
+    const found: CliSessionInfo[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < 100; page++) {
+      const result = await this.withTimeout(conn.request('session/list', cursor ? { cursor } : {}))
+      for (const s of Array.isArray(result.sessions) ? result.sessions.filter(isPlainObject) : []) {
+        const id = str(s.sessionId)
+        const cwd = pathOf(str(s.cwd))
+        if (!id || !cwd) continue
+        const updatedAt = Date.parse(str(s.updatedAt) ?? '')
+        // Its title is the last prompt, cut („…“), until the conversation has a name.
+        found.push({ id, cwd: normalize(cwd), title: str(s.title)?.trim() || null, firstPrompt: null, createdAt: null, updatedAt: Number.isNaN(updatedAt) ? null : updatedAt })
+      }
+      cursor = str(result.nextCursor)
+      if (!cursor) break
+    }
+    return found
+  }
+
+  /** A process of its own for one look at the account's conversations, ended after it. */
+  private async reading<T>(account: AccountEnv, use: (conn: AcpConnection, bind: (run: AntigravityRun) => void) => Promise<T>): Promise<T> {
+    if (account.dir && account.set.GEMINI_API_KEY) await ensureApiKeySettings(account.dir)
+    let run: AntigravityRun | null = null
+    const conn = new AcpConnection(
+      this.binary.command(this.argsOf(account, [])),
+      { cwd: tmpdir(), env: cliEnv(account.set, account.unset), name: NAME },
+      {
+        notification: (method, params) => run?.notification(method, params),
+        request: (id) => conn.respondError(id, 'Nicht unterstützt.'),
+        exited: () => undefined,
+      },
+    )
+    try {
+      await this.withTimeout(
+        conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'nexa', version: '1' } }),
+      )
+      return await use(conn, (r) => (run = r))
+    } finally {
+      await conn.stop(1000).catch(() => undefined)
+    }
   }
 
   /**

@@ -60,6 +60,7 @@ import { McpCallLog } from '../mcp/call-log'
 import type { NexaMcpServer } from '../mcp/mcp-server'
 import { nexaToolsOn, type NexaToolGrant } from '../mcp/tool-grant'
 import { claudeOpenElsewhere } from '../providers/claude/claude-presence'
+import { copyConversation, conversationMtime } from '../providers/antigravity/antigravity-conversations'
 import { forkPoint } from '../providers/claude/claude-transcript'
 import { codexTurnsFromOutside } from '../providers/codex/codex-items'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
@@ -290,11 +291,16 @@ export class SessionService extends TypedEmitter<Events> {
     if (items.length || !source) return items
     const meta = s.meta
     // Imported sessions have the one CLI they came from.
-    const provider: ProviderId = meta.cli.codex && !meta.cli.claude ? 'codex' : 'claude'
+    const provider: ProviderId = meta.cli.claude ? 'claude' : meta.cli.codex ? 'codex' : meta.cli.antigravity ? 'antigravity' : 'claude'
     const notice = (text: string, detail: string): ChatItem => ({ kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'warning', text, detail })
     let imported: ChatItem[]
     try {
-      imported = provider === 'codex' ? await this.codexHistory(meta) : await readClaudeChat(source)
+      imported =
+        provider === 'codex'
+          ? await this.codexHistory(meta)
+          : provider === 'antigravity'
+            ? await this.antigravityHistory(meta)
+            : await readClaudeChat(source)
       // The CLI has seen all of it: the next prompt resumes its conversation without context.
       const link = meta.cli[provider]
       if (link) {
@@ -305,7 +311,7 @@ export class SessionService extends TypedEmitter<Events> {
     } catch (error) {
       console.warn('[sessions] history could not be read', error)
       imported = [
-        provider === 'codex'
+        provider !== 'claude'
           ? notice('Der Verlauf dieser Session ließ sich nicht lesen', error instanceof Error ? error.message : String(error))
           : notice('Der Verlauf dieser Session ist nicht mehr da', 'Claude Code hat sein Transkript gelöscht oder es liegt nicht mehr am alten Ort.'),
       ]
@@ -393,8 +399,6 @@ export class SessionService extends TypedEmitter<Events> {
     const cli: SessionMeta['cli'] = {}
     for (const provider of Object.keys(from.cli) as ProviderId[]) {
       const link = from.cli[provider]!
-      // Antigravity CLI can't fork a conversation: the new chat's starts anew, with the chat as context.
-      if (provider === 'antigravity') continue
       // A chat branched off and not yet used: the same point of the same conversation.
       const at = link.fork ? link.fork.at : await this.forkPointOf(s, provider, link, this.cwdOf(from, project)).catch(() => null)
       cli[provider] = { ...link, fork: at ? { at } : {} }
@@ -480,8 +484,12 @@ export class SessionService extends TypedEmitter<Events> {
    * it, Claude Code's last answer in it; `seen`, how many of the chat's items the CLI knows then.
    */
   private async editPoint(s: SessionState, provider: ProviderId, link: CliLink, before: ChatItem[], cwd: string): Promise<{ at: string; seen: number } | null> {
-    // Antigravity CLI can't fork: it starts anew with the chat up to the prompt as context.
-    if (provider === 'antigravity') return null
+    if (provider === 'antigravity') {
+      // Its copy ends before the prompt's time (`forkAntigravity`): what it made from then on is after the prompt.
+      const end = before.findLastIndex((i) => i.kind === 'turn' && i.provider === 'antigravity')
+      const prompt = s.items?.[before.length]
+      return end < 0 || !prompt ? null : { at: String(prompt.ts), seen: end + 1 }
+    }
     if (provider === 'codex') {
       const end = before.findLastIndex((i) => i.kind === 'turn' && i.provider === 'codex' && i.id.startsWith('turn:'))
       return end < 0 ? null : { at: before[end]!.id.slice('turn:'.length), seen: end + 1 }
@@ -498,8 +506,12 @@ export class SessionService extends TypedEmitter<Events> {
     return { at, seen: end < 0 ? before.length : end + 1 }
   }
 
-  /** Where a fork of the chat's conversation with a CLI ends: Claude Code's last answer, Codex's last turn. */
+  /**
+   * Where a fork of the chat's conversation with a CLI ends: Claude Code's last answer, Codex's last
+   * turn, Antigravity's now (its copy leaves out prompts made after it).
+   */
   private async forkPointOf(s: SessionState & { items: ChatItem[] }, provider: ProviderId, link: CliLink, cwd: string): Promise<string | null> {
+    if (provider === 'antigravity') return String(Date.now())
     if (provider === 'codex') {
       const turn = s.items.findLast((i) => i.kind === 'turn' && i.provider === 'codex' && i.id.startsWith('turn:'))
       return turn ? turn.id.slice('turn:'.length) : null
@@ -761,8 +773,7 @@ export class SessionService extends TypedEmitter<Events> {
     const meta = s.meta
     const project = this.projects.get(meta.projectId)
     // A conversation not forked yet is the other chat's: what comes to it there isn't this chat's.
-    // Antigravity CLI's conversations aren't read back yet (docs/ROADMAP.md).
-    const linked = PROVIDER_IDS.filter((p) => p !== 'antigravity' && meta.cli[p] && !meta.cli[p]!.fork)
+    const linked = PROVIDER_IDS.filter((p) => meta.cli[p] && !meta.cli[p]!.fork)
     if (!linked.length || !project || !s.items) return 0
     let elsewhere: SessionRuntime['openElsewhere']
     for (const provider of linked) {
@@ -778,7 +789,8 @@ export class SessionService extends TypedEmitter<Events> {
     for (const provider of linked) {
       // Not into a turn at work, of either CLI: its items would come between the turn's.
       if (this.busy(s)) break
-      const found = provider === 'claude' ? await this.claudeOutside(s, project) : await this.codexOutside(s)
+      const found =
+        provider === 'claude' ? await this.claudeOutside(s, project) : provider === 'codex' ? await this.codexOutside(s) : await this.antigravityOutside(s)
       if (found && !this.busy(s)) added += await this.takeOutside(s, provider, found)
     }
     return added
@@ -791,6 +803,8 @@ export class SessionService extends TypedEmitter<Events> {
 
   /** Where else the chat's conversation with a CLI is open now, other than in Nexa's own run of it. */
   private async openElsewhere(s: SessionState, provider: ProviderId): Promise<string | null> {
+    // Antigravity CLI leaves no sign of where else a conversation is open.
+    if (provider === 'antigravity') return null
     const link = s.meta.cli[provider]!
     const own = !!s.run?.alive && s.runProvider === provider
     if (provider === 'claude') {
@@ -840,6 +854,22 @@ export class SessionService extends TypedEmitter<Events> {
     s.syncedMtime = { ...s.syncedMtime, codex: info.mtimeMs }
     const history = await this.providers.history('codex', accountId, link.sessionId, since)
     const items = codexTurnsFromOutside(history ?? [], (id) => s.index.has(id), since)
+    return items.length ? { items, last: items.reduce((max, item) => Math.max(max, item.ts), since) } : null
+  }
+
+  /**
+   * The turns Antigravity CLI's conversation gained since the chat last held it: those of prompts made
+   * after it (the times of its steps), read back through `session/load`. Nexa's own turns end before
+   * the mark (`synced` at each turn's end), so whatever came after it came from outside.
+   */
+  private async antigravityOutside(s: SessionState): Promise<{ items: ChatItem[]; last: number } | null> {
+    const link = s.meta.cli.antigravity!
+    const accountId = this.linkAccount(s.meta, 'antigravity')
+    const mtime = await conversationMtime(link.configDir ?? this.configDirOf('antigravity', accountId), link.sessionId)
+    const since = this.syncedSince(s, link)
+    if (mtime === null || !since || mtime <= since || mtime === s.syncedMtime?.antigravity) return null
+    s.syncedMtime = { ...s.syncedMtime, antigravity: mtime }
+    const items = (await this.providers.history('antigravity', accountId, link.sessionId, since)) ?? []
     return items.length ? { items, last: items.reduce((max, item) => Math.max(max, item.ts), since) } : null
   }
 
@@ -957,10 +987,22 @@ export class SessionService extends TypedEmitter<Events> {
     return (await this.providers.history('codex', this.codexAccount(meta), link.sessionId)) ?? []
   }
 
+  /** An Antigravity CLI conversation's chat, read through a process of the account whose folder keeps it. */
+  private async antigravityHistory(meta: SessionMeta): Promise<ChatItem[]> {
+    const link = meta.cli.antigravity
+    if (!link) return []
+    return (await this.providers.history('antigravity', this.linkAccount(meta, 'antigravity'), link.sessionId)) ?? []
+  }
+
   /** The account whose folder keeps the chat's Codex thread. */
   private codexAccount(meta: SessionMeta): string {
-    const saved = meta.cli.codex?.accountId ?? systemAccountId('codex')
-    return this.accounts.has(saved) ? saved : this.accountFor(meta, 'codex')
+    return this.linkAccount(meta, 'codex')
+  }
+
+  /** The account whose folder keeps the chat's conversation with a CLI. */
+  private linkAccount(meta: SessionMeta, provider: ProviderId): string {
+    const saved = meta.cli[provider]?.accountId ?? systemAccountId(provider)
+    return this.accounts.has(saved) ? saved : this.accountFor(meta, provider)
   }
 
   /** The chat as saved, without loading it into the session; an imported one not opened yet from its CLI's history. */
@@ -1218,7 +1260,31 @@ export class SessionService extends TypedEmitter<Events> {
       this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider, level: 'info', text: `Unterhaltung von ${PROVIDERS[provider].name} nicht gefunden`, detail: 'Weiter mit dem bisherigen Verlauf als Kontext' })
       this.saveSoon()
     }
+    const forked = meta.cli[provider]
+    if (provider === 'antigravity' && forked?.fork && !running) await this.forkAntigravity(s, accountId, forked)
     return accountId
+  }
+
+  /**
+   * ACP can't fork a conversation: a chat branched off (or a prompt edited) goes on with a copy of
+   * Antigravity CLI's conversation under a new id, without the prompts made from `fork.at` (a time) on.
+   * Without a copy it starts anew, with the chat as context.
+   */
+  private async forkAntigravity(s: SessionState, accountId: string, link: CliLink): Promise<void> {
+    const dir = this.configDirOf('antigravity', accountId)
+    const id = randomUUID()
+    const before = link.fork?.at ? Number(link.fork.at) : undefined
+    const copied = await copyConversation({ dir: link.configDir ?? dir, id: link.sessionId }, { dir, id }, Number.isFinite(before) ? before : undefined).catch((error) => {
+      console.warn('[sessions] Antigravity conversation could not be copied', error)
+      return false
+    })
+    if (copied) {
+      s.meta.cli.antigravity = { sessionId: id, seenItems: link.seenItems, accountId, configDir: dir, ...(link.synced ? { synced: link.synced } : {}) }
+    } else {
+      delete s.meta.cli.antigravity
+      this.put(s, { kind: 'notice', id: randomUUID(), ts: Date.now(), provider: 'antigravity', level: 'info', text: 'Unterhaltung von Antigravity CLI nicht abgezweigt', detail: 'Weiter mit dem bisherigen Verlauf als Kontext' })
+    }
+    this.saveSoon()
   }
 
   /** The config folder the account's CLI starts with: where it saves and looks for conversations. */
@@ -1239,9 +1305,11 @@ export class SessionService extends TypedEmitter<Events> {
   /** Copies the CLI's conversation from one account's folder (or the one it was saved in) to another's. */
   private async transfer(provider: ProviderId, from: string, to: string, link: CliLink, cwd: string): Promise<boolean> {
     if (!this.accounts.has(from) && !link.configDir) return false
-    // Antigravity CLI keeps a conversation in a database of its folder, not made for copying: the other account's
-    // goes on anew, with the chat as context.
-    if (provider === 'antigravity') return false
+    if (provider === 'antigravity') {
+      const source = link.configDir ?? this.configDirOf(provider, from)
+      const target = this.configDirOf(provider, to)
+      return folderKey(source) === folderKey(target) || copyConversation({ dir: source, id: link.sessionId }, { dir: target, id: link.sessionId })
+    }
     if (provider === 'claude') {
       const source = link.configDir ? claudePaths(link.configDir, true) : this.accounts.claudePaths(from)
       return copyClaudeSession(source, this.accounts.claudePaths(to), link.sessionId, cwd)

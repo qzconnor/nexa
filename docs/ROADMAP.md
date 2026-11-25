@@ -286,10 +286,11 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         Verbrauch; ein Turn am Kontingent endet als Limit mit Reset (Texte aus den Strings von agy 1.5.17,
         ein echter Fehler dieser Art noch nicht gesehen).
   - [x] Titel aus `session_info_update` übernehmen.
-  - [ ] Unterhaltungen von Antigravity CLI lesen (`conversations/<id>.db`): übernehmen (Import,
-        `nx -r <id>`), Abgleich, wenn sie außerhalb von Nexa weiterlaufen, und Accountwechsel auf derselben
-        Unterhaltung.
-  - [ ] Abzweigen und Bearbeiten auf derselben Unterhaltung statt neu mit `<nexa-context>`.
+  - [x] Unterhaltungen von Antigravity CLI lesen: übernehmen (Import, `nx -r <id>`) über `session/list`
+        und `session/load`, Abgleich, wenn sie außerhalb von Nexa weiterlaufen (Zeiten der Schritte aus
+        `conversations/<id>.db`), und Accountwechsel auf derselben Unterhaltung (Kopie der Datenbank).
+  - [x] Abzweigen und Bearbeiten auf derselben Unterhaltung: Nexa kopiert die Datenbank unter neuer ID und
+        schneidet sie vor dem Prompt ab (ACP kann weder abzweigen noch kürzen).
   - [x] Berechtigungen eines Projekts unter Einstellungen › CLI-Konfiguration: die Regeln des
         Antigravity-Projekts (`config/projects/default-cli-project.json`), die `/permissions` „Project“
         nennt. Antigravity CLI nimmt dieses Projekt in jedem Ordner, die Regeln gelten also in allen
