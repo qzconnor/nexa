@@ -62,6 +62,7 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'notifications.onNearLimit': { anchor: 'notifications.onNearLimit' },
   'notifications.nearLimitPercent': { anchor: 'notifications.nearLimitPercent', label: 'Schwelle für „Limit fast verbraucht“' },
   'notifications.onLoginLost': { anchor: 'notifications.onLoginLost' },
+  'notifications.fromAgents': { anchor: 'notifications.fromAgents', label: 'Benachrichtigungen von den Agents' },
   'notifications.when': { anchor: 'notifications.when' },
   'notifications.preview': { anchor: 'notifications.preview', label: 'Vorschau in der Benachrichtigung' },
   'notifications.sound': { anchor: 'notifications.sound', label: 'Ton der Benachrichtigung' },

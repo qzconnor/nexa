@@ -382,6 +382,7 @@ const TREE = [
           { id: 'notifications.onNearLimit', label: 'Limit fast verbraucht', keywords: 'Warnung Schwelle Usage Verbrauch Account 80' },
           { id: 'notifications.nearLimitPercent', label: 'Schwelle', keywords: 'Prozent Grenze Warnung 80' },
           { id: 'notifications.onLoginLost', label: 'Login abgelaufen', keywords: 'Anmeldung Account neu anmelden Token' },
+          { id: 'notifications.fromAgents', label: 'Von den Agents', keywords: 'notify Werkzeug MCP Knöpfe Aktionen geplante Aufgaben' },
         ],
       },
       {

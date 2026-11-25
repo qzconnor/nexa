@@ -88,6 +88,7 @@ export function defaultSettings(): AppSettings {
       onNearLimit: true,
       nearLimitPercent: 80,
       onLoginLost: true,
+      fromAgents: true,
       when: 'background',
       preview: true,
       sound: true,

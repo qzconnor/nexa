@@ -4,6 +4,7 @@ import { BROWSER_INSTRUCTIONS, SENSITIVE_BROWSER_TOOLS } from '../browser/browse
 import { ASK_INSTRUCTIONS, ASK_TOOL_DEF, isAskTool, type AskTool } from './ask-tool'
 import { CHAT_INSTRUCTIONS, CHAT_TOOL_DEFS, CHAT_TOOL_NAMES, isChatTool, type ChatTools } from './chat-tools'
 import { isLimitsTool, LIMITS_INSTRUCTIONS, LIMITS_TOOL_DEF, type LimitsTool } from './limits-tool'
+import { isNotifyTool, NOTIFY_INSTRUCTIONS, NOTIFY_TOOL_DEF, type NotifyTool } from './notify-tool'
 import type { McpServerSpec } from './mcp-protocol'
 import type { McpCaller } from './mcp-server'
 import { RENDER_INSTRUCTIONS, RENDER_TOOL_DEFS, renderServerSpec } from './render-tools'
@@ -17,7 +18,7 @@ export function grantFor(tools: ToolSettings, browser: BrowserTools | null): Nex
       render: RENDER_TOOL_DEFS.map((tool) => tool.name),
       browser: browser?.list().map((tool) => tool.name) ?? [],
       chat: CHAT_TOOL_NAMES,
-      app: [LIMITS_TOOL_DEF.name, ASK_TOOL_DEF.name],
+      app: [LIMITS_TOOL_DEF.name, ASK_TOOL_DEF.name, NOTIFY_TOOL_DEF.name],
     },
     SENSITIVE_BROWSER_TOOLS,
   )
@@ -25,7 +26,7 @@ export function grantFor(tools: ToolSettings, browser: BrowserTools | null): Nex
 
 /**
  * What Nexa's MCP server offers one caller: the render tools, the browser of the caller's chat, the
- * other chats, the limits of the accounts and forms for the user (`ask_user`, for a chat's caller). It follows the settings of the moment; a tool switched
+ * other chats, the limits of the accounts, forms for the user (`ask_user`) and notifications (`notify`), both for a chat's caller. It follows the settings of the moment; a tool switched
  * off since the CLI listed them says so when it is called.
  */
 export function nexaServerSpec(
@@ -35,11 +36,13 @@ export function nexaServerSpec(
   chats: ChatTools | null,
   limits: LimitsTool | null,
   ask: AskTool | null = null,
+  notify: NotifyTool | null = null,
 ): McpServerSpec {
   const render = renderServerSpec()
   const browserOn = tools.browserTools && browser !== null && caller.sessionId !== null
   const chatsOn = tools.chatTools && chats !== null && caller.sessionId !== null
   const askOn = ask !== null && caller.sessionId !== null
+  const notifyOn = notify !== null && caller.sessionId !== null
   const browserList = browser?.list() ?? []
   const isBrowserTool = (name: string) => browserList.some((tool) => tool.name === name)
   const instructions = [
@@ -48,6 +51,7 @@ export function nexaServerSpec(
     chatsOn ? CHAT_INSTRUCTIONS : null,
     limits ? LIMITS_INSTRUCTIONS : null,
     askOn ? ASK_INSTRUCTIONS : null,
+    notifyOn ? NOTIFY_INSTRUCTIONS : null,
   ].filter(Boolean)
   return {
     name: render.name,
@@ -59,12 +63,17 @@ export function nexaServerSpec(
       ...(chatsOn ? CHAT_TOOL_DEFS : []),
       ...(limits ? [LIMITS_TOOL_DEF] : []),
       ...(askOn ? [ASK_TOOL_DEF] : []),
+      ...(notifyOn ? [NOTIFY_TOOL_DEF] : []),
     ],
-    knowsTool: (name) => render.tools.some((tool) => tool.name === name) || isBrowserTool(name) || isChatTool(name) || isLimitsTool(name) || isAskTool(name),
+    knowsTool: (name) => render.tools.some((tool) => tool.name === name) || isBrowserTool(name) || isChatTool(name) || isLimitsTool(name) || isAskTool(name) || isNotifyTool(name),
     callTool: async (name, args, signal) => {
       if (isAskTool(name)) {
         if (!ask) throw new Error('Nexa cannot show forms right now.')
         return ask.call(caller.sessionId, args, signal)
+      }
+      if (isNotifyTool(name)) {
+        if (!notify) throw new Error('Nexa cannot send notifications right now.')
+        return notify.call(caller.sessionId, args, signal)
       }
       if (isLimitsTool(name)) {
         if (!limits) throw new Error('Nexa cannot read the limits right now.')

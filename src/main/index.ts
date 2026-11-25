@@ -19,7 +19,7 @@ import { GitService } from './files/git-service'
 import { ClaudeManagerImport } from './import/claude-manager'
 import { CliSessionImport } from './import/cli-import'
 import { registerImportIpc } from './import/import-ipc'
-import { forwardWindowState, registerIpc } from './ipc'
+import { broadcast, forwardWindowState, registerIpc } from './ipc'
 import { isLaunchRequest, readLaunchRequest, resolveLaunch, type LaunchRequest } from './launch'
 import type { AccountEnv } from './accounts/account-env'
 import { AccountService } from './accounts/account-service'
@@ -33,6 +33,9 @@ import { ChatTools } from './mcp/chat-tools'
 import { AskTool } from './mcp/ask-tool'
 import { LimitsTool } from './mcp/limits-tool'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
+import { NotifyTool } from './mcp/notify-tool'
+import { registerScheduledIpc } from './scheduled/scheduled-ipc'
+import { ScheduledTasks } from './scheduled/scheduled-tasks'
 import { AutoSwitch } from './services/auto-switch'
 import { CliConfigService } from './services/cli-config-service'
 import { registerCliConfigIpc } from './services/cli-config-ipc'
@@ -101,7 +104,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   let chatTools: ChatTools | null = null
   let limitsTool: LimitsTool | null = null
   let askTool: AskTool | null = null
-  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools, limitsTool, askTool))
+  let notifyTool: NotifyTool | null = null
+  const mcp = new NexaMcpServer((caller) => nexaServerSpec(caller, settings.get().tools, browserTools, chatTools, limitsTool, askTool, notifyTool))
   await mcp.start().catch((error) => console.error('[mcp] server could not start', error))
 
   const git = new GitService()
@@ -200,7 +204,13 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
       return main ? [main, ...openAppWindows().filter((win) => win !== main)] : openAppWindows()
     },
     open: { chat: (id) => show(id), settings: (section) => reveal(IpcEvent.openSettings, section) },
+    // The agents' notifications (`notify`) as toasts in the window in front.
+    toasts: {
+      show: (win, notification) => win.webContents.send(IpcEvent.agentNotification, notification),
+      done: (id) => broadcast(IpcEvent.agentNotificationDone, id),
+    },
   })
+  notifyTool = new NotifyTool({ notify: (id, request, signal) => notifications.fromAgent(id, request, signal) })
 
   // A chat at its account's limit: goes on with the next free account, or at the reset.
   const autoSwitch = new AutoSwitch({ sessions, providers, accounts, settings, userDataDir })
@@ -255,6 +265,20 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
   // The pages MCP tools bring along, read and called through the chat's CLI.
   registerMcpAppsIpc(mcpAppViews, sessions)
+  // Prompts on a schedule (page „Geplant“), each run a chat; the clock starts once the CLIs are known.
+  const scheduled = new ScheduledTasks({
+    file: join(userDataDir, 'scheduled-tasks.json'),
+    sessions: {
+      create: (input) => sessions.create(input),
+      update: (id, patch) => sessions.update(id, patch),
+      send: (id, input) => sessions.send(id, input),
+      exists: sessionExists,
+      isWorking: (id) => sessions.isWorking(id),
+    },
+    projects,
+    accounts,
+  })
+  registerScheduledIpc(scheduled)
   // The microphone in the composer: Claude's speech recognition with a Claude account's login, for every
   // CLI; without a Claude login there is none.
   const voice = new VoiceService({
@@ -294,7 +318,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   updates.init()
 
   // Which CLIs are installed and logged in, then their usage; the window shows it once known.
-  void providers.detect().then(() => providers.refreshUsage())
+  const detected = providers.detect()
+  void detected.then(() => providers.refreshUsage())
+  // A run missed while Nexa was off needs its CLI found first.
+  void detected.catch(() => undefined).finally(() => scheduled.start())
   providers.startPolling()
 
   /**
@@ -500,7 +527,9 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     const switchSaved = autoSwitch.dispose()
     // Ends the CLI processes and start commands (they would outlive the app) and writes what is pending.
     terminals.dispose()
-    void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), chatWindows.flush(), switchSaved])
+    // Before the chats end: no run starts while Nexa quits.
+    const scheduledSaved = scheduled.dispose()
+    void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), chatWindows.flush(), switchSaved, scheduledSaved])
       .then(() => {
         api.dispose()
         notifications.dispose()

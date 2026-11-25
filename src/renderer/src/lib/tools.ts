@@ -111,6 +111,13 @@ const CHAT_NAMES: Record<string, string> = {
 /** Nexa's other tools, about the app itself, in words. */
 const APP_NAMES: Record<string, string> = {
   limits: 'Limits abfragen',
+  notify: 'Benachrichtigung',
+}
+
+/** A notification of the agent by its title, which says more than the CLI's guess at a detail. */
+function notifyDetail(tool: ToolItem): string | undefined {
+  const title = (tool.input as { title?: unknown } | undefined)?.title
+  return typeof title === 'string' && title.trim() ? `„${title.trim()}“` : tool.detail
 }
 
 /** One of Nexa's tools in words (`render_chart` → „Chart“, `browser_click` → „Klicken“). */
@@ -170,7 +177,7 @@ export function nexaToolView(
   // Claude names them `mcp__nexa__render_chart`, Codex `nexa.render_chart`.
   const prefix = [`mcp__${RENDER_SERVER}__`, `${RENDER_SERVER}.`].find((p) => tool.name.startsWith(p)) ?? ''
   const short = tool.name.slice(prefix.length)
-  const detail = CHAT_NAMES[short] ? chatToolDetail(short, tool, titleOf) : tool.detail
+  const detail = CHAT_NAMES[short] ? chatToolDetail(short, tool, titleOf) : short === 'notify' ? notifyDetail(tool) : tool.detail
   return { title: nexaToolName(short), detail, plumbing: false }
 }
 

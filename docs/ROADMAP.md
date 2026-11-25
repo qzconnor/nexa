@@ -284,6 +284,13 @@
   - [x] Rückfrage mit Formular (`ask_user` im Nexa-MCP-Server) für alle CLIs
   - [x] Rückfrage beim Beenden, wenn Chats arbeiten oder Startbefehle laufen (abschaltbar)
 - [x] Kein Terminalfenster mehr beim Start durch das eigene Update von Antigravity CLI
+- [x] Geplante Aufgaben (Idee aus Claude Desktop): Seite „Geplant“ unter „Artefakte“, je Aufgabe CLI,
+      Account, Modell, Freigaben und Projekt; täglich, wochentags, an Wochentagen, monatlich, stündlich,
+      einmalig oder nur von Hand. Jeder Lauf ist ein Chat (oder geht im selben weiter), verpasste Läufe
+      holt Nexa einmal nach, Vorlagen für Überblick, Pull Requests, Tests, Abhängigkeiten und mehr
+- [x] Benachrichtigungen der Agents (`notify` im Nexa-MCP-Server): Toast im Fenster oder Meldung des
+      Systems, ein Klick öffnet den Chat, bis zu drei Knöpfe, deren Wahl der Agent abwartet; abschaltbar
+      unter Einstellungen › Benachrichtigungen
 
 ## Als Nächstes
 

@@ -183,6 +183,8 @@ export interface NotificationSettings {
   nearLimitPercent: number
   /** An account's browser login ended and can't be renewed: once per login. */
   onLoginLost: boolean
+  /** The agents may notify through Nexa (`notify` of Nexa's MCP server), also with buttons they wait on. */
+  fromAgents: boolean
   when: NotifyWhen
   /** The notification shows the beginning of the answer, the command waiting for permission or the question. */
   preview: boolean
@@ -565,6 +567,11 @@ export interface SessionMeta {
    * read through the app-server of the account in `cli.codex`.
    */
   importedFrom?: string
+  /**
+   * The scheduled task that started the chat, with its name at the time: the sidebar marks it, its
+   * agent learns that nobody watches, and its notifications don't wait for a long turn.
+   */
+  scheduledTask?: { id: string; name: string }
 }
 
 export interface SessionCreateInput {
@@ -588,6 +595,8 @@ export interface SessionCreateInput {
   permissionMode?: PermissionMode
   /** Arguments for the chat's CLI (`nx -- …`, see `SessionMeta.cliArgs`). */
   cliArgs?: string[]
+  /** Only from main's scheduler (`SessionMeta.scheduledTask`); the window's IPC drops it. */
+  scheduledTask?: { id: string; name: string }
 }
 
 export interface SessionUpdateInput {

@@ -5,7 +5,7 @@
 ```
 Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  claude -p … / codex app-server
       ^                      │    │
-      └── Events ────────────┘    ├── Nexa-MCP-Server (HTTP, 127.0.0.1) <── Agenten rufen render_*, browser_*, chat_*, limits, ask_user auf
+      └── Events ────────────┘    ├── Nexa-MCP-Server (HTTP, 127.0.0.1) <── Agenten rufen render_*, browser_*, chat_*, limits, ask_user, notify auf
                                   └── Lokale API (HTTP + SSE, 127.0.0.1) <── nx, Stream Deck, Skripte
 ```
 
@@ -36,6 +36,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/claude-renewal.ts` | Erneuert den Access-Token eines Claude-Browser-Logins mit dem Refresh-Token, unter der Sperre von Claude Code (aus dem Claude Manager) |
 | `accounts/login-renewal.ts` | Wann Nexa erneuert: abgelaufene Claude-Logins vor dem Abfragen der Limits (`chat.keepLoginsFresh`) und „Jetzt erneuern“, siehe „Logins frisch halten“ |
 | `artifacts/artifact-service.ts` | Claudes Artefakte auf claude.ai je Account (Liste, Vorschaubilder als `data:`-URL, umbenennen, löschen, anpinnen); Kanäle `artifacts:*` in `artifact-ipc.ts`, Typen und Link-Erkennung in `shared/artifacts.ts` |
+| `scheduled/scheduled-tasks.ts` | Geplante Aufgaben (`scheduled-tasks.json`): Zeitplan, nächster Lauf, Läufe als Chats über `SessionService`; Kanäle `scheduled:*` in `scheduled-ipc.ts`, Typen, Zeitpläne und Prüfung in `shared/scheduled-tasks.ts`, siehe „Geplante Aufgaben“ |
 | `mcp-apps/mcp-app-views.ts` | Seiten von MCP-Werkzeugen (MCP Apps): liest die `ui://`-Ressource (`appPageOf`), hält sie unter `nexa-app://<token>/` und liefert sie mit der CSP ihrer Ressource aus; Kanäle `mcp-apps:*` in `mcp-apps-ipc.ts`, siehe „MCP Apps“ |
 | `voice/voice-service.ts` | Spracheingabe: wählt einen Claude-Account mit gültigem Login, streamt die Aufnahme an Claudes Spracherkennung (WebSocket, wie `/voice` in Claude Code) und meldet die Wörter dem Fenster; Kanäle `voice:*` in `voice-ipc.ts`, Typen und Sprachen in `shared/voice.ts` |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
@@ -71,10 +72,10 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `lib/secrets.ts` | Ver- und Entschlüsseln von Token und Keys (`safeStorage`) |
 | `lib/shell-env.ts` | Linux: übernimmt beim Start die Umgebung der Login-Shell (PATH mit nvm & Co.), damit die CLIs auch beim Start aus dem Anwendungsmenü gefunden werden |
 | `lib/linux.ts` | Wie die Linux-Version installiert ist (AppImage, deb, rpm); `cliEnv` nimmt mit `withoutAppImageEnv` die Pfade des AppImage-Mounts aus der Umgebung der CLIs |
-| `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts` |
+| `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts`. Dazu die Benachrichtigungen der Agents (`notify`): Toast im Fenster vorn oder Meldung des Systems mit Knöpfen |
 | `services/auto-switch.ts` | Am Limit eines Accounts (`attention` `limit`): den verlassenen Account bis zu seinem Reset sperren, mit `chat.autoSwitch` beim nächsten freien Account derselben CLI weitermachen, sonst bis zum ersten Reset warten (`SessionRuntime.resume`); gemerkt in `auto-switch.json`, siehe „Accounts“ |
 | `services/update-service.ts` | Updates aus den GitHub-Releases (electron-updater, Suche nach 10 s und alle 4 h), Versionshinweise über die GitHub-API bzw. den Atom-Feed; Kanäle `updates:*` in `updates-ipc.ts` |
-| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `ask-tool.ts` zeigt mit `ask_user` ein Formular im Chat des Aufrufers und wartet auf die Antwort (`SessionService.ask`, ebenso immer dabei); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen; `call-log.ts` merkt sich die Argumente der Aufrufe eines ACP-Chats für Agents, die sie nicht nennen (Antigravity nennt sie, Nexa leert das Protokoll dort nur) |
+| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `ask-tool.ts` zeigt mit `ask_user` ein Formular im Chat des Aufrufers und wartet auf die Antwort (`SessionService.ask`, ebenso immer dabei); `notify-tool.ts` schickt mit `notify` eine Benachrichtigung, die zum Chat führt, auf Wunsch mit Knöpfen, deren Wahl der Agent abwartet (`NotificationService.fromAgent`, ebenso immer dabei); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen; `call-log.ts` merkt sich die Argumente der Aufrufe eines ACP-Chats für Agents, die sie nicht nennen (Antigravity nennt sie, Nexa leert das Protokoll dort nur) |
 | `browser/browser-tabs.ts` | Tabs der Browser je Chat (`browser-tabs.json`): welche Seiten, welche gezeigt, wer sie geöffnet hat |
 | `browser/browser-control.ts` | Aus dem Claude Manager: steuert die Seiten für die Agents über das DevTools-Protokoll (`page-driver.ts`, Frames, Netzwerk, Routen, Dialoge, Emulation), Protokoll, Übernehmen |
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |
@@ -644,6 +645,35 @@ nur er, ohne Seitenleiste, Startseite und Schnellsuche.
   und blinken darf das Fenster des Chats, sonst das Hauptfenster. Schließt das Hauptfenster ohne
   Infobereich, beendet sich Nexa samt den Fenstern der Chats.
 
+## Geplante Aufgaben
+
+Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein Chat im gewählten Projekt
+(Idee aus Claude Desktop, mit CLI und Account je Aufgabe).
+
+- **Modell** (`shared/scheduled-tasks.ts`): Name, Anweisungen, CLI, Account (leer: der Standard-Account
+  der CLI beim Lauf), Modell und Denkaufwand (leer: Vorgabe), Freigaben, Projekt, Zeitplan, `reuseChat`
+  (jeder Lauf im Chat des letzten statt in einem neuen), `catchUp` und die letzten 20 Läufe (`TaskRun`:
+  Zeit, Auslöser `schedule`/`manual`/`catch-up`, Ergebnis `started`/`skipped`/`missed`/`error`, Chat).
+  Zeitpläne: von Hand, stündlich (alle 1–12 Stunden zu einer Minute), täglich, wochentags, an Wochentagen,
+  monatlich (Tag 29–31 in kürzeren Monaten am letzten) und einmalig. `nextRunAfter` rechnet in lokaler
+  Zeit über den `Date`-Konstruktor, Sommer- und Winterzeit verschieben also nichts; `parseTaskInput`
+  prüft, was aus dem Fenster kommt (deutsche Fehlertexte).
+- **Ablauf** (`main/scheduled/scheduled-tasks.ts`): startet nach der Erkennung der CLIs und schläft bis
+  zum nächsten Lauf, höchstens 60 s am Stück (Uhr verstellt, Ruhezustand). Fällige Aufgaben rücken erst
+  ihren nächsten Lauf vor, dann laufen sie; einmalige schalten sich danach aus. Ein Lauf, der mehr als
+  5 Minuten zu spät käme (Nexa zu, Computer schlief), läuft mit `catchUp` einmal nach, egal wie viele
+  ausfielen, sonst steht er als verpasst in der Liste. Arbeitet der Chat des letzten Laufs noch, wird
+  übersprungen. Ein Lauf ist `SessionService.create` mit `scheduledTask: { id, name }`, Titel
+  „Name · 25.11. 7:05“ und `send` mit den Anweisungen; „Jetzt ausführen“ (`runNow`) gibt den Lauf zurück.
+  `scheduledTask` setzt nur Main (`sessions:create` aus dem Fenster verwirft es), ein abgezweigter Chat
+  erbt es nicht.
+- **Chats der Läufe**: Symbol in der Seitenleiste, eine Meldung „fertig“ auch unter der Mindestdauer, und
+  im Systemprompt der Hinweis, dass niemand zusieht und `notify` der Weg zum Nutzer ist (`instructions.ts`).
+  Freigaben, die fragen, halten den Lauf an, bis jemand antwortet; der Dialog nimmt deshalb `auto`, wo die
+  CLI es kann, und sagt, was jede Stufe für einen unbeaufsichtigten Lauf heißt (`lib/scheduled.ts`).
+- Aufgaben laufen nur, solange Nexa läuft; mit „Im Infobereich weiterlaufen“ auch bei geschlossenem
+  Fenster. Seite und Dialog weisen darauf hin.
+
 ## Renderer
 
 - `App.vue`: Titelleiste, Sidebar, Inhalt als Panel (`main`, `bg-surface`, runde Ecke). Darüber die
@@ -676,6 +706,16 @@ nur er, ohne Seitenleiste, Startseite und Schnellsuche.
   schon zeigt, wird wiederverwendet), ohne Chat im Standardbrowser. Das Menü einer Karte benennt eigene
   Artefakte um, löscht sie (mit Rückfrage) und pinnt sie auf claude.ai an, wenn die Liste Pins kennt
   (`pinsEnabled`); Anpinnen zeigt der Store sofort und nimmt es zurück, wenn claude.ai ablehnt.
+- **Geplant** (`views/ScheduledView.vue`, `ui.view = 'scheduled'`, Eintrag unter „Artefakte“ mit der Zahl
+  der Aufgaben, die von selbst laufen): die Aufgaben mit nächstem und letztem Lauf, Schalter, „Jetzt
+  ausführen“ und Menü, darunter Vorlagen (`components/scheduled/task-templates.ts`). Der Dialog
+  (`ScheduledTaskDialog`, `scheduled.dialog`) hat unter den Anweisungen CLI, Account, Freigaben und Modell
+  wie der Composer, dazu Projekt, Zeitplan mit Vorschau des nächsten Laufs, erweiterte Einstellungen und
+  die letzten Läufe. `stores/scheduled.ts` hält die Liste aktuell (`event:scheduled-changed`).
+- **Benachrichtigungen der Agents** (`composables/useAgentNotifications.ts`, in jedem Fenster): Toasts zu
+  `notify` mit Chat, Text und Knöpfen (`AgentNotificationBody` als Beschreibung des Sonner-Toasts, dessen
+  eigener Platz nur einen Knopf fasst). Ein Knopf oder das Schließen antwortet Main genau einmal;
+  `onAgentDone` nimmt den Toast weg, wenn die Antwort anderswo kam.
 - Themes: eingebaute in `shared/themes/builtin.ts`, eigene als JSON-Dateien im Ordner `themes` der
   App-Daten (Format des Claude Managers, `ThemeService` überwacht den Ordner). `themes/apply.ts` setzt
   die Tokens, `themes/color-info.ts` beschreibt jede Farbe für den Editor.

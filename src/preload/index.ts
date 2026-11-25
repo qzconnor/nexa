@@ -7,6 +7,7 @@ import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
 import { McpAppsInvoke } from '@shared/mcp-apps'
+import { ScheduledEvent, ScheduledInvoke } from '@shared/scheduled-tasks'
 import { StartCommandsEvent, StartCommandsInvoke } from '@shared/start-commands'
 import { TerminalsEvent, TerminalsInvoke } from '@shared/terminals'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
@@ -72,6 +73,14 @@ const api: NexaApi = {
     rename: (accountId, id, title) => invoke(ArtifactsInvoke.rename, accountId, id, title),
     remove: (accountId, id) => invoke(ArtifactsInvoke.remove, accountId, id),
     setPinned: (accountId, id, pinned) => invoke(ArtifactsInvoke.setPinned, accountId, id, pinned),
+  },
+  scheduled: {
+    list: () => invoke(ScheduledInvoke.list),
+    save: (input, id) => invoke(ScheduledInvoke.save, input, id ?? null),
+    remove: (id) => invoke(ScheduledInvoke.remove, id),
+    setEnabled: (id, enabled) => invoke(ScheduledInvoke.setEnabled, id, enabled),
+    runNow: (id) => invoke(ScheduledInvoke.runNow, id),
+    onChanged: (cb) => subscribe(ScheduledEvent.changed, cb),
   },
   mcpApps: {
     open: (sessionId, itemId) => invoke(McpAppsInvoke.open, sessionId, itemId),
@@ -207,6 +216,9 @@ const api: NexaApi = {
   notifications: {
     viewing: (sessionId) => invoke(IpcInvoke.notificationsViewing, sessionId),
     test: () => invoke(IpcInvoke.notificationsTest),
+    answer: (id, answer) => invoke(IpcInvoke.notificationsAnswer, id, answer),
+    onAgent: (cb) => subscribe(IpcEvent.agentNotification, cb),
+    onAgentDone: (cb) => subscribe(IpcEvent.agentNotificationDone, cb),
   },
   themes: {
     list: () => invoke(IpcInvoke.themesList),

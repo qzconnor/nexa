@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArchiveIcon, CopyIcon, FileDownIcon, GitForkIcon, PencilIcon, PinIcon, PinOffIcon, SquareArrowOutUpRightIcon, Trash2Icon } from '@lucide/vue'
+import { ArchiveIcon, CalendarClockIcon, CopyIcon, FileDownIcon, GitForkIcon, PencilIcon, PinIcon, PinOffIcon, SquareArrowOutUpRightIcon, Trash2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { SessionMeta } from '@shared/types'
 import AccountDot from '@/components/accounts/AccountDot.vue'
@@ -92,6 +92,12 @@ function endDrag(): void {
         <span v-if="place" class="max-w-[30%] shrink truncate text-[0.7rem] text-muted-foreground/80" :title="meta.cwd">{{ place }}</span>
         <!-- Up there under „Angeheftet“ the pin would say it twice. -->
         <PinIcon v-else-if="meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
+        <CalendarClockIcon
+          v-if="meta.scheduledTask"
+          v-tooltip="`Geplante Aufgabe: ${meta.scheduledTask.name}`"
+          aria-label="Von einer geplanten Aufgabe"
+          class="size-3 shrink-0 text-muted-foreground"
+        />
         <SquareArrowOutUpRightIcon
           v-if="ownWindow"
           v-tooltip="'In eigenem Fenster: Klicken holt es nach vorn'"

@@ -56,6 +56,7 @@ const onLimit = bind('onLimit')
 const onNearLimit = bind('onNearLimit')
 const nearLimitPercent = bindRested('nearLimitPercent', 1)
 const onLoginLost = bind('onLoginLost')
+const fromAgents = bind('fromAgents')
 const when = bind('when')
 const preview = bind('preview')
 const sound = bind('sound')
@@ -164,6 +165,14 @@ async function sendTest(): Promise<void> {
         description="Der Browser-Login eines Accounts lässt sich nicht mehr erneuern, nur neu anmelden hilft. Einmal je Login, ein Klick zeigt die Accounts."
       >
         <Switch id="notify-login-lost" v-model="onLoginLost" :disabled="off" />
+      </SettingField>
+      <SettingField
+        anchor="notifications.fromAgents"
+        for="notify-from-agents"
+        label="Von den Agents"
+        description="Agents dürfen dich über Nexa benachrichtigen (Werkzeug „notify“), etwa wenn eine geplante Aufgabe etwas gefunden hat. Mit Knöpfen wartet der Agent auf deine Wahl; ein Klick öffnet den Chat."
+      >
+        <Switch id="notify-from-agents" v-model="fromAgents" :disabled="off" />
       </SettingField>
     </SettingsSection>
 
