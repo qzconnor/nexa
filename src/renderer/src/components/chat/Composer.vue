@@ -685,6 +685,7 @@ defineExpose({
       <ComposerControls
         :provider="provider"
         :account="account"
+        :model="model"
         @update:provider="emit('update:provider', $event)"
         @update:account="emit('update:account', $event)"
       />

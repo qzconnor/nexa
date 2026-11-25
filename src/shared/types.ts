@@ -289,6 +289,11 @@ export interface UsageWindow {
   /** Milliseconds since the epoch. */
   resetsAt?: number
   windowMinutes?: number
+  /**
+   * The models whose use counts against the window, by name („Claude Sonnet 4.6“; Antigravity's groups
+   * of models). Without: every model of the account.
+   */
+  models?: string[]
   /** Where the window heads at the current pace, from the readings Nexa noted (main process). */
   forecast?: UsageForecast | null
 }
