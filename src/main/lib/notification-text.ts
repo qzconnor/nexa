@@ -39,6 +39,8 @@ function inputText(request: InteractionRequest, agent: string, preview: boolean)
       return { title: `${agent} wartet auf die Freigabe des Plans`, detail: preview ? shorten(plainText(request.plan)) : null }
     case 'elicitation':
       return { title: `„${request.server}“ braucht eine Eingabe`, detail: preview ? shorten(request.message) : null }
+    case 'form':
+      return { title: `${agent} braucht Angaben von dir`, detail: preview ? shorten(request.title) : null }
     case 'permission': {
       const detail = preview ? shorten(request.detail) : null
       return { title: `${agent} braucht deine Erlaubnis`, detail: detail ? `${request.title}: ${detail}` : request.title }

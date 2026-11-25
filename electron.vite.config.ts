@@ -20,5 +20,8 @@ export default defineConfig({
       },
     },
     plugins: [vue(), tailwindcss()],
+    // electron-vite leaves it off: the start chunk had 3.5 MB to load and parse. Main stays readable
+    // for its stack traces.
+    build: { minify: true },
   },
 })

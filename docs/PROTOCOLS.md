@@ -198,6 +198,19 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   gespeichert wird. Gleich nach dem ersten Prompt gefragt, antwortet es in unter 1 s, und Claude Code
   schreibt danach keinen anderen `ai-title`. Nexa fragt so nach dem ersten Prompt (`description` ist der
   Prompt, auf 2000 Zeichen gekürzt). `rename_session { title, source }` setzt einen Namen wie `/rename`.
+- **Aufgaben** (`TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`; neuere Versionen statt `TodoWrite`):
+  Anders als `TodoWrite` trägt kein Aufruf die ganze Liste. `TaskCreate { subject, description,
+  activeForm? }` legt eine Aufgabe an, ihre ID steht erst im Ergebnis („Task #3 created successfully: …“,
+  `tool_use_result.task.id`); `TaskUpdate { taskId, status?, subject?, activeForm?, … }` ändert sie,
+  `status: "deleted"` löscht sie; `TaskList` gibt alle („#1 [completed] Betreff [blocked by #2]“,
+  `tool_use_result.tasks[]`). Es gibt eine Liste je Sitzung, Subagents eingeschlossen. Nexa führt sie in
+  `ClaudeTasks` (`claude-tools.ts`) als Todo-Liste des Hauptchats (`todo:main`, Einträge mit `id`); ein
+  neuer Run übernimmt sie aus dem Chat (`RunOptions.todos`), damit `TaskUpdate` nach einem Neustart
+  greift. Die Formate stammen aus dem Quelltext, ein echter Aufruf lag nicht vor (ungeprüft).
+- **Agents untereinander**: `SendMessage { to, summary?, message }` zeigt Nexa als „Nachricht an <to>“ mit
+  dem Text (`ToolItem.text`), `ListAgents {}` als „Agenten auflisten“. `SubagentHandback { message }`
+  (ein Subagent übergibt seinen Bericht, Ergebnis `{"success":true,"message":"Report delivered to your
+  caller."}`) blendet Nexa aus: Derselbe Bericht ist das Ergebnis des Agents auf seiner Karte.
 
 ### Accounts, Login und Limits
 
@@ -491,8 +504,19 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   zwischen Prozessen wie bei Claude Code gibt es nicht.
 - **Benachrichtigungen**: `turn/started`, `turn/completed`, `item/started`, `item/completed`,
   `item/agentMessage/delta`, `item/reasoning/textDelta`, `item/reasoning/summaryTextDelta`,
-  `item/commandExecution/outputDelta`, `turn/plan/updated`, `thread/tokenUsage/updated`,
-  `thread/compacted`, `model/rerouted`, `account/rateLimits/updated`.
+  `item/commandExecution/outputDelta`, `item/plan/delta`, `item/mcpToolCall/progress`,
+  `turn/plan/updated`, `thread/tokenUsage/updated`, `thread/compacted`, `model/rerouted`,
+  `account/rateLimits/updated`.
+- **Weitere Items** (Typen aus `codex app-server generate-ts` von 0.169, ohne echten Turn geprüft):
+  - `plan { id, text }`, gestreamt mit `item/plan/delta { itemId, delta }`: der Plan, den Codex im
+    Plan-Modus vorschlägt. Nexa zeigt ihn als Antwort mit `phase: 'plan'`, eingerahmt.
+  - `sleep { id, durationMs }`: Codex wartet; „Warten“ mit der Dauer.
+  - `hookPrompt { id, fragments: [{ text, hookRunId }] }`: Ein Hook gibt Codex einen Prompt; Nexa zeigt
+    ihn als Hinweis mit dem Text.
+  - `item/mcpToolCall/progress { itemId, message }`: Fortschritt eines MCP-Aufrufs; steht, solange er
+    läuft, in der Werkzeugzeile (`ToolItem.progress`).
+  - `webSearch { id, query, action }` mit `action` `search { query, queries }`, `openPage { url }`,
+    `findInPage { url, pattern }` oder `other`: „Im Web suchen“, „Seite öffnen“, „Auf der Seite suchen“.
 - **Zusammenfassen des Kontexts**: ein Item `contextCompaction` (`id`, `startedAtMs`, `completedAtMs`)
   mit `item/started` und `item/completed`, ohne Tokens oder Anlass (geprüft mit 0.169). Dazwischen kommt
   `thread/tokenUsage/updated` mit `last.inputTokens` und `last.outputTokens` 0; Nexa nimmt als Größe
@@ -937,6 +961,15 @@ und den Zeichenketten der Binärdatei.
   die Variable, wenn es keinen Schlüsselbund gibt (Linux ohne D-Bus-Sitzung); Nexa liest sie deshalb bei
   jedem Account zuerst. Felder `expiry` und `refresh_token` wie bei einem Go-`oauth2.Token` (angenommen,
   ein echter Token lag nicht vor); was Nexa nicht lesen kann, gilt als angemeldet.
+- **Eigenes Update**: Liegt die letzte Prüfung (`antigravity-cli/last_check.timestamp`) länger zurück,
+  startet jeder Aufruf von agy einen eigenen Update-Prozess (Log: „auto_updater.go … Spawned background
+  update process with PID …“, Ergebnis in `antigravity-cli/updater/update_status.json`). Unter Windows
+  bekommt dieser Prozess eine neue Konsole. Ist Windows Terminal das Standardterminal, geht dabei kurz
+  ein Terminalfenster auf, auch wenn Nexa agy versteckt startet; meist beim Start von Nexa, das
+  `agy -p /usage` aufruft. `AGY_CLI_DISABLE_AUTO_UPDATE=true` schaltet das ab (nur `true`, `1` wirkt
+  nicht; Log: „Auto-update disabled via environment variable AGY_CLI_DISABLE_AUTO_UPDATE“). Nexa setzt
+  die Variable für jede CLI, die es startet (`cliEnv`). Im Terminal und mit `agy update` aktualisiert
+  sich agy weiter selbst.
 - **Nicht dafür**: `AGY_ACCOUNT` wählt eines der verbundenen Konten (etwa GitHub) für Befehle in der
   Sandbox („AGY_ACCOUNT=account-2 gh api user“); `ANTIGRAVITY_CREDENTIAL_SCOPE` (sonst
   `%APPDATA%\antigravity\credential-user-scope`) trennt die Zugangsdaten von Plugins und MCP-Servern.
@@ -1113,3 +1146,20 @@ Zeitzone und Abstand („in 2 h“).
 Das Werkzeug hat keinen eigenen Schalter: Es kommt mit dem Server, sobald einer der Schalter unter
 „Nexa-Werkzeuge“ an ist (`nexaToolsOn`), und läuft ohne Rückfrage (`NexaToolGrant`, `app`). Es liest nur, und nur Zahlen des Nutzers, die die
 Titelleiste ohnehin zeigt; es erreicht weder Chats noch Dateien noch das Netz.
+
+### Rückfrage mit Formular (`ask_user`)
+
+`ask_user { title, description?, fields: [{ key, label, type, description?, options?, default?, required? }],
+submitLabel? }` (`mcp/ask-tool.ts`) zeigt im Chat des Aufrufers ein Formular und wartet auf die Antwort.
+Typen: `text`, `textarea`, `number`, `boolean`, `select` und `multiselect` (mit `options`), `path`
+(Ordner oder Datei, mit Auswahldialog). `formRequest` prüft die Felder (Titel, mindestens ein und höchstens
+20 Felder, eindeutige Schlüssel, Optionen für Auswahlen) und verwirft Vorgaben, die nicht zum Feld passen.
+Das Ergebnis ist JSON mit den Werten (leere Felder fehlen, Zahlen als Zahlen), bei „Ablehnen“ ein Satz, dass
+der Nutzer abgelehnt hat; unbeantwortet (Turn angehalten, Run beendet) ein Fehler.
+
+Im Chat ist es eine `InteractionItem` mit `request.type: 'form'` (Id `ask:<uuid>`), die Nexa selbst
+beantwortet (`SessionService.ask`/`respond`), nicht die CLI. Solange sie offen ist, steht der Chat auf
+„wartet“, mit Meldung wie bei den Fragen der CLIs. Bricht die CLI den Aufruf ab (die Verbindung schließt vor
+der Antwort, `McpServerSpec.callTool` bekommt ein `AbortSignal`), verfällt das Formular. Codex wartet höchstens
+`tool_timeout_sec` (900 s). Wie `limits` hat es keinen eigenen Schalter und läuft ohne Rückfrage; es kommt
+nur für Verbindungen, die zu einem Chat gehören.

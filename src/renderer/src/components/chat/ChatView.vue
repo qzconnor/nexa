@@ -250,7 +250,20 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key !== 'Escape' || event.defaultPrevented || !viewed.value) return
   if (document.querySelector('[role="menu"], [role="dialog"], [role="listbox"]')) return
+  // Taken: the same press doesn't also stop the agent (below).
+  event.preventDefault()
   ui.agentId = viewed.value.parentId ?? null
+})
+
+// Escape stops the agent, as in the CLIs: in the composer or anywhere in the chat, once nothing above
+// took it (the composer keeps its own for its list, the shell mode and dictation).
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || event.repeat || !busy.value || !meta.value || diff.value) return
+  const target = event.target as HTMLElement | null
+  const inComposer = !!target?.closest('[data-composer]')
+  if (inComposer ? event.defaultPrevented || browsers.fullscreen || !!document.querySelector('[role="menu"], [role="dialog"], [role="listbox"]') : escapeTaken(event)) return
+  event.preventDefault()
+  void attempt(() => sessions.interrupt(meta.value!.id), 'Anhalten fehlgeschlagen')
 })
 
 /**

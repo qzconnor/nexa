@@ -22,6 +22,7 @@ function bind<K extends keyof GeneralSettings>(key: K) {
 }
 const runInTray = bind('runInTray')
 const launchAtLogin = bind('launchAtLogin')
+const confirmQuitRunning = bind('confirmQuitRunning')
 
 const areaName = isWindows ? 'Infobereich' : 'Statusbereich'
 const startLabel = isWindows ? 'Mit Windows starten' : 'Bei der Anmeldung starten'
@@ -47,6 +48,14 @@ const startDescription = computed(() => {
       </SettingField>
       <SettingField anchor="general.launchAtLogin" for="launch-at-login" :label="startLabel" :description="startDescription">
         <Switch id="launch-at-login" v-model="launchAtLogin" />
+      </SettingField>
+      <SettingField
+        anchor="general.confirmQuitRunning"
+        for="confirm-quit-running"
+        label="Vor dem Beenden fragen, wenn noch etwas läuft"
+        description="Arbeitet ein Chat noch oder läuft ein Befehl, fragt Nexa vor dem Beenden. Sonst brechen die Antworten ab, und die Befehle enden."
+      >
+        <Switch id="confirm-quit-running" v-model="confirmQuitRunning" />
       </SettingField>
     </SettingsSection>
     <!-- nx.exe is Windows' only. -->

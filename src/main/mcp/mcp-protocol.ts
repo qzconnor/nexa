@@ -39,8 +39,11 @@ export interface McpServerSpec {
    * client listed them is unknown to the list, but its call can say why it fails.
    */
   knowsTool?(name: string): boolean
-  /** Errors become a result with `isError`, which the model sees. */
-  callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult>
+  /**
+   * Errors become a result with `isError`, which the model sees. `signal` aborts when the client
+   * gave up on the call (its connection closed), for tools that wait on the user.
+   */
+  callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<McpToolResult>
 }
 
 type Id = string | number | null
@@ -73,16 +76,16 @@ export function isRequest(message: unknown): boolean {
  * Answers one message, or a batch of them. Null when there is nothing to answer: notifications and
  * responses of the client (HTTP 202).
  */
-export async function handleRpc(spec: McpServerSpec, message: unknown): Promise<JsonRpcResponse | JsonRpcResponse[] | null> {
+export async function handleRpc(spec: McpServerSpec, message: unknown, signal?: AbortSignal): Promise<JsonRpcResponse | JsonRpcResponse[] | null> {
   if (Array.isArray(message)) {
     if (message.length === 0) return rpcError(null, INVALID_REQUEST, 'Empty batch.')
-    const answers = (await Promise.all(message.map((item) => handleOne(spec, item)))).filter((a): a is JsonRpcResponse => a !== null)
+    const answers = (await Promise.all(message.map((item) => handleOne(spec, item, signal)))).filter((a): a is JsonRpcResponse => a !== null)
     return answers.length > 0 ? answers : null
   }
-  return handleOne(spec, message)
+  return handleOne(spec, message, signal)
 }
 
-async function handleOne(spec: McpServerSpec, message: unknown): Promise<JsonRpcResponse | null> {
+async function handleOne(spec: McpServerSpec, message: unknown, signal?: AbortSignal): Promise<JsonRpcResponse | null> {
   if (!isObject(message) || message.jsonrpc !== '2.0') return rpcError(null, INVALID_REQUEST, 'Not a JSON-RPC 2.0 message.')
   const { id, method, params } = message
   // A response to something the server asked; it asks nothing.
@@ -120,7 +123,7 @@ async function handleOne(spec: McpServerSpec, message: unknown): Promise<JsonRpc
       if (!isObject(args)) return rpcError(id, INVALID_PARAMS, 'arguments must be an object.')
       let result: McpToolResult
       try {
-        result = await spec.callTool(name, args)
+        result = await spec.callTool(name, args, signal)
       } catch (error) {
         result = { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
       }

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from '@lucide/vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, useTemplateRef, watch } from 'vue'
 import type { ChatItem } from '@shared/chat'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
+import { formatDay, sameDay } from '@/lib/format'
 import { chatBlocks, type ChatBlock } from '@/lib/tools'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import AgentCard from './AgentCard.vue'
+import AssistantMessage from './AssistantMessage.vue'
 import InteractionCard from './InteractionCard.vue'
-import Markdown from './Markdown.vue'
 import McpAppBlock from './McpAppBlock.vue'
 import NoticeRow from './NoticeRow.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
@@ -25,7 +26,15 @@ const props = defineProps<{ items: ChatItem[]; sessionId: string; parentId?: str
 const settings = useSettingsStore()
 const sessions = useSessionsStore()
 
-const blocks = computed(() => chatBlocks(props.items, props.parentId ?? null, settings.settings.chat.showThinking))
+/**
+ * Built anew when an item comes, goes or is replaced, not for every piece of streamed text: the texts
+ * are read past Vue, and only their first words count (`textShown`). The streaming answer's own
+ * component follows its text.
+ */
+const blocks = computed(() => {
+  void sessions.chats.get(props.sessionId)?.textShown
+  return chatBlocks(props.items, props.parentId ?? null, settings.settings.chat.showThinking, (item) => !!toRaw(item).text.trim())
+})
 // A long chat renders its newest blocks only and older ones as the user scrolls up: hundreds of
 // Markdown blocks with highlighted code take seconds to lay out, the last screens are what is read.
 const PAGE = 40
@@ -176,6 +185,41 @@ const busy = computed(() => {
   return status === 'running' || status === 'starting' || status === 'waiting'
 })
 
+/** The model a turn ran with shows at the first turn and where it differs from the turn before. */
+const modelChanges = computed(() => {
+  const ids = new Set<string>()
+  let last: string | undefined
+  for (const item of props.items) {
+    if (item.kind !== 'turn' || item.parentId || !item.model) continue
+    if (item.model !== last) ids.add(item.id)
+    last = item.model
+  }
+  return ids
+})
+
+function startOf(block: ChatBlock): number {
+  if (block.type === 'item') return block.item.ts
+  return block.type === 'thinking' ? block.items[0]!.ts : block.tools[0]!.ts
+}
+
+/**
+ * The day above the first block of it („Heute“, „Gestern“, a date), in the main thread. A chat of
+ * today alone has none: the day only says something once there are others.
+ */
+const days = computed(() => {
+  const out = new Map<string, string>()
+  if (props.parentId) return out
+  const now = Date.now()
+  let last: number | null = null
+  for (const block of blocks.value) {
+    const ts = startOf(block)
+    if (!ts) continue
+    if (last === null ? !sameDay(ts, now) : !sameDay(ts, last)) out.set(keyOf(block), formatDay(ts, now))
+    last = ts
+  }
+  return out
+})
+
 /** The CLI a prompt went to shows when it differs from the one before. */
 const providerChanges = computed(() => {
   const ids = new Set<string>()
@@ -203,6 +247,11 @@ const providerChanges = computed(() => {
       Ältere Nachrichten laden
     </button>
     <template v-for="block in shown" :key="keyOf(block)">
+      <div v-if="days.has(keyOf(block))" data-find-skip class="flex items-center gap-3 py-2 text-[0.72rem] text-muted-foreground" role="separator">
+        <span class="h-px flex-1 bg-border" />
+        {{ days.get(keyOf(block)) }}
+        <span class="h-px flex-1 bg-border" />
+      </div>
       <!-- Right above the divider of the last /clear: open or fold what came before it. -->
       <button
         v-if="keyOf(block) === clearedKey"
@@ -228,12 +277,7 @@ const providerChanges = computed(() => {
           :editable="editable.has(block.item.id)"
           :busy="busy"
         />
-        <div
-          v-else-if="block.item.kind === 'assistant'"
-          :class="block.item.phase === 'commentary' ? 'py-1.5 text-[0.92rem] text-foreground/85' : 'py-2.5'"
-        >
-          <Markdown :text="block.item.text" :streaming="block.item.streaming" />
-        </div>
+        <AssistantMessage v-else-if="block.item.kind === 'assistant'" :item="block.item" />
         <template v-else-if="block.item.kind === 'tool'">
           <RenderBlock v-if="block.item.render" :spec="block.item.render" />
           <UserShellBlock v-else-if="block.item.byUser" :tool="block.item" :session-id="sessionId" />
@@ -244,7 +288,7 @@ const providerChanges = computed(() => {
         <InteractionCard v-else-if="block.item.kind === 'interaction'" :item="block.item" :session-id="sessionId" />
         <TodoCard v-else-if="block.item.kind === 'todo'" :item="block.item" />
         <NoticeRow v-else-if="block.item.kind === 'notice'" :item="block.item" />
-        <TurnFooter v-else-if="block.item.kind === 'turn'" :item="block.item" />
+        <TurnFooter v-else-if="block.item.kind === 'turn'" :item="block.item" :show-model="modelChanges.has(block.item.id)" />
       </template>
     </template>
   </div>

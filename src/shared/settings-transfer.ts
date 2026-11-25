@@ -194,6 +194,7 @@ const CHECKS: Record<string, Check> = {
   'chat.voiceAccount': text(200),
   'chat.voiceMicrophone': text(500),
   'chat.continuePrompt': text(2000),
+  'chat.releaseIdleMinutes': slider('chat.releaseIdleMinutes', true),
   'notifications.minBusySeconds': slider('notifications.minBusySeconds', true),
   'notifications.nearLimitPercent': slider('notifications.nearLimitPercent', true),
   'notifications.when': oneOf(['background', 'hidden']),

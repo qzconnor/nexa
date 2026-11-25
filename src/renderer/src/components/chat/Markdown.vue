@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { handleMarkdownClick, loadFenceLanguages, useMarkdown } from '@/composables/useMarkdown'
 import { useOpenFile } from '@/composables/useOpenFile'
 import { sortOrder } from '@/lib/table-sort'
@@ -11,11 +11,43 @@ import { cn } from '@/lib/utils'
  */
 const props = defineProps<{ text: string; streaming?: boolean; breaks?: boolean; class?: string }>()
 const { render } = useMarkdown(props.breaks ?? false)
+const { render: renderPlain } = useMarkdown(props.breaks ?? false, false)
 const openFile = useOpenFile()
 const version = ref(0)
+
+/**
+ * While the text streams it is parsed at most this often and without highlighting, which comes once
+ * it is complete: each parse takes the whole text, so rendering every delta grew with the square of
+ * a long answer's length, and each render replaced the answer's DOM (a selection in it too).
+ */
+const STREAM_RENDER_MS = 80
+const streamed = ref(props.text)
+let renderedAt = 0
+let timer: ReturnType<typeof setTimeout> | undefined
+function catchUp(): void {
+  clearTimeout(timer)
+  timer = undefined
+  renderedAt = performance.now()
+  streamed.value = props.text
+}
+watch(
+  () => props.text,
+  () => {
+    if (!props.streaming || timer) return
+    const wait = STREAM_RENDER_MS - (performance.now() - renderedAt)
+    if (wait <= 0) catchUp()
+    else timer = setTimeout(catchUp, wait)
+  },
+)
+watch(
+  () => props.streaming,
+  () => catchUp(),
+)
+onBeforeUnmount(() => clearTimeout(timer))
+
 const html = computed(() => {
   void version.value
-  return render(props.text)
+  return props.streaming ? renderPlain(streamed.value) : render(props.text)
 })
 
 let loading = false

@@ -1,21 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import AccountFormDialog from '@/components/accounts/AccountFormDialog.vue'
-import AccountLoginDialog from '@/components/accounts/AccountLoginDialog.vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import BrowserLayer from '@/components/browser/BrowserLayer.vue'
 import ChatView from '@/components/chat/ChatView.vue'
 import AppTooltip from '@/components/common/AppTooltip.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import ChatCleanupDialog from '@/components/layout/ChatCleanupDialog.vue'
-import FolderPromptDialog from '@/components/layout/FolderPromptDialog.vue'
-import StartCommandsDialog from '@/components/layout/StartCommandsDialog.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
-import WorktreeDialog from '@/components/layout/WorktreeDialog.vue'
 import CommandPalette from '@/components/palette/CommandPalette.vue'
-import SettingsDialog from '@/components/settings/SettingsDialog.vue'
-import SettingsImportDialog from '@/components/settings/SettingsImportDialog.vue'
-import ThemeEditorDialog from '@/components/themes/ThemeEditorDialog.vue'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Toaster } from '@/components/ui/sonner'
 import { Spinner } from '@/components/ui/spinner'
@@ -36,9 +27,23 @@ import { useSettingsStore } from '@/stores/settings'
 import { useThemesStore } from '@/stores/themes'
 import { useUiStore } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
-import ArtifactsView from '@/views/ArtifactsView.vue'
 import HomeView from '@/views/HomeView.vue'
-import SetupView from '@/views/SetupView.vue'
+
+/*
+ * Dialogs and pages that aren't on screen at the start come as chunks of their own: the start loads
+ * and parses less, and each comes right after the window is up.
+ */
+const AccountFormDialog = defineAsyncComponent(() => import('@/components/accounts/AccountFormDialog.vue'))
+const AccountLoginDialog = defineAsyncComponent(() => import('@/components/accounts/AccountLoginDialog.vue'))
+const ChatCleanupDialog = defineAsyncComponent(() => import('@/components/layout/ChatCleanupDialog.vue'))
+const FolderPromptDialog = defineAsyncComponent(() => import('@/components/layout/FolderPromptDialog.vue'))
+const StartCommandsDialog = defineAsyncComponent(() => import('@/components/layout/StartCommandsDialog.vue'))
+const WorktreeDialog = defineAsyncComponent(() => import('@/components/layout/WorktreeDialog.vue'))
+const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/SettingsDialog.vue'))
+const SettingsImportDialog = defineAsyncComponent(() => import('@/components/settings/SettingsImportDialog.vue'))
+const ThemeEditorDialog = defineAsyncComponent(() => import('@/components/themes/ThemeEditorDialog.vue'))
+const ArtifactsView = defineAsyncComponent(() => import('@/views/ArtifactsView.vue'))
+const SetupView = defineAsyncComponent(() => import('@/views/SetupView.vue'))
 
 const settings = useSettingsStore()
 const themes = useThemesStore()
@@ -49,6 +54,9 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const chatWindows = useChatWindowsStore()
+
+/** Under the title bar, where no button of the chat sits (`--titlebar-height`, main.css). */
+const TOAST_OFFSET = { top: 'calc(var(--titlebar-height) + 0.75rem)', right: '1rem' }
 
 const ready = ref(false)
 const fatal = ref<string | null>(null)
@@ -188,6 +196,7 @@ onMounted(async () => {
     </template>
     <ConfirmDialog />
     <AppTooltip />
-    <Toaster :theme="theme.mode" position="bottom-right" close-button />
+    <!-- At the top, under the title bar: at the bottom they covered the composer's send button for seconds. -->
+    <Toaster :theme="theme.mode" position="top-right" :offset="TOAST_OFFSET" :mobile-offset="TOAST_OFFSET" close-button />
   </TooltipProvider>
 </template>

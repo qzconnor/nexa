@@ -1,5 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { codexThreadItems, codexTurnsFromOutside } from './codex-items'
+import { codexItem, codexThreadItems, codexTurnsFromOutside } from './codex-items'
+
+describe('codexItem', () => {
+  it('names what the web tool does: search, open a page, find in it', () => {
+    expect(codexItem({ type: 'webSearch', id: 'w1', query: '', action: { type: 'search', query: null, queries: ['vite 8', 'rolldown'] } }, null, true)).toMatchObject({
+      title: 'Im Web suchen',
+      detail: 'vite 8 · rolldown',
+    })
+    expect(codexItem({ type: 'webSearch', id: 'w2', query: '', action: { type: 'openPage', url: 'https://example.com' } }, null, true)).toMatchObject({
+      title: 'Seite öffnen',
+      detail: 'https://example.com',
+    })
+    expect(codexItem({ type: 'webSearch', id: 'w3', query: '', action: { type: 'findInPage', url: 'https://example.com', pattern: 'Preis' } }, null, true)).toMatchObject({
+      title: 'Auf der Seite suchen',
+      detail: 'Preis · https://example.com',
+    })
+  })
+
+  it('shows a plan as an answer of its own, a pause and a hook’s prompt', () => {
+    expect(codexItem({ type: 'plan', id: 'p1', text: '1. Lesen' }, null, false)).toMatchObject({ kind: 'assistant', phase: 'plan', text: '1. Lesen', streaming: true })
+    expect(codexItem({ type: 'sleep', id: 's1', durationMs: 30_000 }, null, true)).toMatchObject({ kind: 'tool', title: 'Warten', detail: '30 s', status: 'done' })
+    expect(codexItem({ type: 'hookPrompt', id: 'h1', fragments: [{ text: 'Prüfe die Tests', hookRunId: 'r1' }] }, null, true)).toMatchObject({
+      kind: 'notice',
+      detail: 'Prüfe die Tests',
+    })
+    expect(codexItem({ type: 'hookPrompt', id: 'h2', fragments: [] }, null, true)).toBeNull()
+  })
+})
 
 const turn = (id: string, items: object[], more: object = {}) => ({ id, items, itemsView: 'full', status: 'completed', error: null, startedAt: 100, completedAt: 110, durationMs: 10_000, ...more })
 

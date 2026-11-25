@@ -174,5 +174,14 @@ export function cliEnv(extra: Record<string, string> = {}, unset: readonly strin
     if (/^(ELECTRON_|VSCODE_)/.test(key)) continue
     env[key] = value
   }
-  return { ...withoutAppImageEnv(env), ...extra }
+  return { ...withoutAppImageEnv(env), ...QUIET_CLI_ENV, ...extra }
 }
+
+/**
+ * Set for every CLI Nexa starts, and so for what their agents run as well. Antigravity CLI's own
+ * updater (agy 1.5.17, `auto_updater.go`) starts a process of its own with a new console whenever
+ * its last check is older than its window: on Windows that console popped up as a terminal window
+ * beside Nexa, mostly at Nexa's start, which runs `agy -p /usage`. Only `true` switches it off,
+ * `1` doesn't. agy still updates itself when it runs in a terminal, and with `agy update`.
+ */
+const QUIET_CLI_ENV: Record<string, string> = { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' }

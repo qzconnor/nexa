@@ -1,4 +1,4 @@
-import type { Compaction, FileChange, ToolKind } from '@shared/chat'
+import type { Compaction, FileChange, TodoEntry, ToolKind } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
 import { firstLine, isPlainObject } from '@shared/utils'
 
@@ -7,6 +7,8 @@ export interface ToolView {
   tool: ToolKind
   title: string
   detail?: string
+  /** Text the call hands on, shown as text rather than inside its input. */
+  text?: string
   changes?: FileChange[]
   server?: string
   /** The tool's short name without the MCP prefix. */
@@ -15,6 +17,12 @@ export interface ToolView {
 
 /** Tools that start a subagent. */
 export const AGENT_TOOLS = new Set(['Task', 'Agent'])
+
+/**
+ * Calls the chat leaves out: a subagent handing back its report (`SubagentHandback`) would show it
+ * twice, since it is the subagent's result on its card as well.
+ */
+export const HIDDEN_TOOLS = new Set(['SubagentHandback'])
 
 const s = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
 
@@ -130,6 +138,12 @@ export function viewOfClaudeTool(name: string, input: unknown): ToolView {
     case 'TaskStop':
     case 'KillTask':
       return { tool: 'other', title: 'Aufgabe beenden', detail: s(i.task_id), shortName: name }
+    case 'SendMessage': {
+      const to = s(i.to) ?? s(i.recipient)
+      return { tool: 'other', title: to ? `Nachricht an ${to}` : 'Nachricht senden', detail: s(i.summary), text: s(i.message), shortName: name }
+    }
+    case 'ListAgents':
+      return { tool: 'other', title: 'Agenten auflisten', shortName: name }
   }
   const mcp = splitMcpName(name)
   if (mcp) {
@@ -155,6 +169,106 @@ export function todosOf(input: unknown): { text: string; status: 'pending' | 'in
     activeText: s(t.activeForm),
   }))
 }
+
+const TASK_STATUS = new Set(['pending', 'in_progress', 'completed'])
+
+/**
+ * The task list of Claude Code's task tools (`TaskCreate`, `TaskUpdate`, `TaskList`), which newer
+ * versions use in place of `TodoWrite`. Unlike that one, a call holds no whole list: a task is
+ * created with its subject, gets its id only in the result („Task #3 created successfully: …“) and is
+ * changed by that id. One list for the conversation, subagents included: Claude Code keeps one per
+ * session, and a subagent's call may change a task of the main thread.
+ */
+export class ClaudeTasks {
+  private list: TodoEntry[] = []
+  /** Tasks created by a call whose result (with the id) hasn't come yet, by the call's id. */
+  private readonly creating = new Map<string, TodoEntry>()
+
+  /** The list as the chat had it (a restart, reading on): entries with their id. */
+  seed(entries: readonly TodoEntry[] | undefined): void {
+    if (this.list.length || !entries?.some((e) => e.id)) return
+    this.list = entries.filter((e) => e.id).map((e) => ({ ...e }))
+  }
+
+  /** A call of one of the task tools; the list when it changed. */
+  call(toolId: string, name: string, input: unknown): TodoEntry[] | null {
+    const i = isPlainObject(input) ? input : {}
+    if (name === 'TaskCreate') {
+      const subject = s(i.subject)
+      if (!subject) return null
+      const entry: TodoEntry = { text: subject, status: 'pending', activeText: s(i.activeForm) }
+      this.creating.set(toolId, entry)
+      this.list = [...this.list, entry]
+      return this.list
+    }
+    if (name !== 'TaskUpdate') return null
+    const id = s(i.taskId) ?? (typeof i.taskId === 'number' ? String(i.taskId) : undefined)
+    const at = id ? this.list.findIndex((e) => e.id === id) : -1
+    if (at < 0) return null
+    if (i.status === 'deleted') {
+      this.list = this.list.filter((_, n) => n !== at)
+      return this.list
+    }
+    const old = this.list[at]!
+    const entry: TodoEntry = {
+      ...old,
+      text: s(i.subject) ?? old.text,
+      status: typeof i.status === 'string' && TASK_STATUS.has(i.status) ? (i.status as TodoEntry['status']) : old.status,
+      activeText: s(i.activeForm) ?? old.activeText,
+    }
+    this.list = this.list.map((e, n) => (n === at ? entry : e))
+    return this.list
+  }
+
+  /**
+   * The result of a call: a created task's id, or the whole list (`TaskList`). `outcome` is Claude
+   * Code's own result of the call (`tool_use_result`), the text what the model reads. The list when it
+   * changed.
+   */
+  result(toolId: string, name: string, text: string, isError: boolean, outcome: unknown): TodoEntry[] | null {
+    const created = this.creating.get(toolId)
+    if (created) {
+      this.creating.delete(toolId)
+      const task = isPlainObject(outcome) && isPlainObject(outcome.task) ? outcome.task : null
+      const id = idOf(task?.id) ?? /#(\w+)/.exec(text)?.[1]
+      if (isError || !id) {
+        this.list = this.list.filter((e) => e !== created)
+        return isError ? this.list : null
+      }
+      const entry = { ...created, id }
+      this.list = this.list.map((e) => (e === created ? entry : e))
+      return null
+    }
+    if (name !== 'TaskList' || isError) return null
+    const tasks = isPlainObject(outcome) && Array.isArray(outcome.tasks) ? outcome.tasks.filter(isPlainObject) : null
+    const listed = tasks
+      ? tasks.flatMap((t) => {
+          const id = idOf(t.id)
+          const subject = s(t.subject)
+          return id && subject ? [{ id, text: subject, status: t.status }] : []
+        })
+      : text.split('\n').flatMap((line) => {
+          // „#1 [in_progress] Subject [blocked by #2]“
+          const m = /^#(\w+) \[(\w+)\] (.+?)(?: \[blocked by [^\]]*\])?$/.exec(line.trim())
+          return m ? [{ id: m[1]!, text: m[3]!, status: m[2] }] : []
+        })
+    if (!listed.length && !/no tasks/i.test(text)) return null
+    this.list = listed.map(({ id, text: subject, status }) => ({
+      id,
+      text: subject,
+      status: typeof status === 'string' && TASK_STATUS.has(status) ? (status as TodoEntry['status']) : 'pending',
+      activeText: this.list.find((e) => e.id === id)?.activeText,
+    }))
+    return this.list
+  }
+}
+
+function idOf(value: unknown): string | undefined {
+  return typeof value === 'number' ? String(value) : s(value)
+}
+
+/** The task tools that change or show the list of `ClaudeTasks`. */
+export const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskList'])
 
 /**
  * What a `compact_boundary` says about its compaction: the stream sends `compact_metadata` in

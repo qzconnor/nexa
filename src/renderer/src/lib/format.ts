@@ -2,6 +2,8 @@ const rtf = new Intl.RelativeTimeFormat('de', { numeric: 'auto' })
 const dateTime = new Intl.DateTimeFormat('de', { dateStyle: 'medium', timeStyle: 'short' })
 const clock = new Intl.DateTimeFormat('de', { hour: '2-digit', minute: '2-digit' })
 const weekdayClock = new Intl.DateTimeFormat('de', { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+const weekdayDate = new Intl.DateTimeFormat('de', { weekday: 'long', day: 'numeric', month: 'long' })
+const weekdayDateYear = new Intl.DateTimeFormat('de', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const integer = new Intl.NumberFormat('de')
 const oneDecimal = new Intl.NumberFormat('de', { maximumFractionDigits: 1 })
 
@@ -78,6 +80,19 @@ export function formatSpan(ms: number): string {
 
 export function formatDateTime(ms: number): string {
   return dateTime.format(ms)
+}
+
+/** The day of a moment for a divider in the chat: „Heute“, „Gestern“, „Montag, 23. November“ (a year ago with the year). */
+export function formatDay(ms: number, now = Date.now()): string {
+  const days = Math.round((startOfDay(now) - startOfDay(ms)) / 86_400_000)
+  if (days === 0) return 'Heute'
+  if (days === 1) return 'Gestern'
+  return new Date(ms).getFullYear() === new Date(now).getFullYear() ? weekdayDate.format(ms) : weekdayDateYear.format(ms)
+}
+
+/** Whether two moments fall on the same day, in the local time zone. */
+export function sameDay(a: number, b: number): boolean {
+  return startOfDay(a) === startOfDay(b)
 }
 
 /** A file's size: bytes, KB, MB with one place, GB. */

@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentItem, AgentStatus, ChatItem, ShellStatus, ToolItem, TurnItem } from '@shared/chat'
+import type { AgentItem, AgentStatus, ChatItem, ShellStatus, TodoEntry, ToolItem, TurnItem } from '@shared/chat'
 import { compactionNotice } from '@shared/chat'
 import { renderSpecOf } from '@shared/render'
 import { firstLine, isPlainObject } from '@shared/utils'
-import { AGENT_TOOLS, changesFromResult, compactionOf, resultText, todosOf, viewOfClaudeTool } from './claude-tools'
+import { AGENT_TOOLS, ClaudeTasks, HIDDEN_TOOLS, TASK_TOOLS, changesFromResult, compactionOf, resultText, todosOf, viewOfClaudeTool } from './claude-tools'
 
 /**
  * Claude Code's own transcript of a session (`<config>/projects/<key>/<id>.jsonl`) read as Nexa's
@@ -202,6 +202,8 @@ class ChatBuilder {
   private lastTs = 0
   /** The user's `! command` whose output comes as an entry of its own. */
   private awaiting: ToolItem | null = null
+  /** The list of the task tools (`TaskCreate` & Co.), shown as the chat's todo list. */
+  private readonly taskList = new ClaudeTasks()
 
   get<T extends ChatItem>(id: string): T | undefined {
     const at = this.index.get(id)
@@ -210,6 +212,12 @@ class ChatBuilder {
 
   seed(items: readonly ChatItem[]): void {
     for (const item of items) if (item.kind === 'tool' || item.kind === 'agent' || item.kind === 'todo') this.known.set(item.id, item)
+    const todo = this.known.get('todo:main')
+    if (todo?.kind === 'todo') this.taskList.seed(todo.entries)
+  }
+
+  private putTasks(entries: TodoEntry[] | null, ts: number): void {
+    if (entries) this.put({ kind: 'todo', id: 'todo:main', ts, provider: 'claude', entries })
   }
 
   put(item: ChatItem): void {
@@ -312,6 +320,7 @@ class ChatBuilder {
       return
     }
     if (known.kind !== 'tool') return
+    if (TASK_TOOLS.has(known.name)) this.putTasks(this.taskList.result(known.id, known.name, text, isError, outcome), ts)
     const denied = isError && DENIED.test(text) && text.length < 400
     const next: ToolItem = { ...known, status: denied ? 'denied' : isError ? 'error' : 'done', output: text, endedAt: ts }
     const changes = isError ? null : changesFromResult(known.changes, outcome)
@@ -370,6 +379,7 @@ class ChatBuilder {
   }
 
   private toolUse(id: string, name: string, input: Json, parentId: string | null, ts: number): void {
+    if (HIDDEN_TOOLS.has(name)) return
     if (AGENT_TOOLS.has(name)) {
       const agent: AgentItem = {
         kind: 'agent',
@@ -399,6 +409,7 @@ class ChatBuilder {
         name,
         title: view.title,
         detail: view.detail,
+        text: view.text,
         input,
         changes: view.changes,
         server: view.server,
@@ -410,6 +421,7 @@ class ChatBuilder {
         const entries = todosOf(input)
         if (entries) this.put({ kind: 'todo', id: `todo:${parentId ?? 'main'}`, ts, provider: 'claude', parentId, entries })
       }
+      if (TASK_TOOLS.has(name)) this.putTasks(this.taskList.call(id, name, input), ts)
     }
     const agent = parentId ? this.get(parentId) : undefined
     if (agent?.kind === 'agent') this.put({ ...agent, toolCount: (agent.toolCount ?? 0) + 1 })

@@ -15,7 +15,7 @@ import {
   WrenchIcon,
 } from '@lucide/vue'
 import type { Component } from 'vue'
-import type { ChatItem, ThinkingItem, ToolItem, ToolKind } from '@shared/chat'
+import type { AssistantItem, ChatItem, ThinkingItem, ToolItem, ToolKind } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
 import { isRenderTool, RENDER_SERVER, type RenderToolName } from '@shared/render'
 
@@ -195,7 +195,13 @@ export function browserStep(tool: ToolItem): { title: string; detail?: string } 
  * group; drawings of Nexa's tools, todo lists and the tool calls behind a question stand alone or
  * are left out, as their own items show them.
  */
-export function chatBlocks(items: readonly ChatItem[], parentId: string | null, showThinking: boolean): ChatBlock[] {
+export function chatBlocks(
+  items: readonly ChatItem[],
+  parentId: string | null,
+  showThinking: boolean,
+  /** Whether an answer or thought has words; MessageList reads it past Vue, so each delta isn't a change. */
+  hasText: (item: AssistantItem | ThinkingItem) => boolean = (item) => !!item.text.trim(),
+): ChatBlock[] {
   // A tool call a question is about: the question shows it while it is open; questions and plans for good.
   const answeredTools = new Set<string>()
   for (const item of items) {
@@ -240,7 +246,7 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
       continue
     }
     if (item.kind === 'thinking') {
-      if (!showThinking || !item.text.trim()) continue
+      if (!showThinking || !hasText(item)) continue
       // Thinking between tool calls doesn't break their group (the calls after it join the group above),
       // so thoughts would stand one under the other: one block, the newest in place of the one before.
       const last = blocks.at(-1)
@@ -248,7 +254,7 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
       else blocks.push({ type: 'thinking', id: `thinking:${item.id}`, items: [item] })
       continue
     }
-    if (item.kind === 'assistant' && !item.text.trim() && !item.streaming) continue
+    if (item.kind === 'assistant' && !item.streaming && !hasText(item)) continue
     group = null
     browser = null
     blocks.push({ type: 'item', item })

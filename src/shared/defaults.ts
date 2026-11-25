@@ -17,6 +17,7 @@ export const SETTING_RANGES = {
   'appearance.radius': { min: 0, max: 1.2, step: 0.05 },
   'appearance.uiFontSize': { min: 12, max: 18, step: 1 },
   'notifications.minBusySeconds': { min: 0, max: 300, step: 5 },
+  'chat.releaseIdleMinutes': { min: 0, max: 120, step: 5 },
   'notifications.nearLimitPercent': { min: 50, max: 95, step: 5 },
 } as const
 
@@ -27,6 +28,7 @@ export function defaultSettings(): AppSettings {
       runInTray: false,
       launchAtLogin: false,
       nxReuseChat: true,
+      confirmQuitRunning: true,
     },
     appearance: {
       theme: DEFAULT_THEME_ID,
@@ -56,6 +58,7 @@ export function defaultSettings(): AppSettings {
       collapseDiffs: false,
       enterSends: true,
       promptSuggestions: true,
+      releaseIdleMinutes: 15,
       autoTitles: true,
       deleteCliConversations: true,
       shell: 'powershell',
