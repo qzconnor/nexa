@@ -176,12 +176,23 @@ export function compactionOf(meta: Record<string, unknown>): Compaction {
   }
 }
 
-/** The text of a tool result's content (a string or content blocks). */
+/**
+ * The text of a tool result's content (a string or content blocks). Claude Code wraps what its own
+ * checks refuse (a file not read before writing, an unknown tool) in `<tool_use_error>` for the model;
+ * the chat shows the message inside.
+ */
 export function resultText(content: unknown): string {
-  if (typeof content === 'string') return content
+  if (typeof content === 'string') return unwrapToolError(content)
   if (!Array.isArray(content)) return ''
-  return content
-    .map((block) => (isPlainObject(block) && block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
-    .filter(Boolean)
-    .join('\n')
+  return unwrapToolError(
+    content
+      .map((block) => (isPlainObject(block) && block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+      .filter(Boolean)
+      .join('\n'),
+  )
+}
+
+function unwrapToolError(text: string): string {
+  const wrapped = /^\s*<tool_use_error>([\s\S]*)<\/tool_use_error>\s*$/.exec(text)
+  return wrapped ? wrapped[1]!.trim() : text
 }
