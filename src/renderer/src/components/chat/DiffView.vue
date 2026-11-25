@@ -68,8 +68,8 @@ const typeLabel = computed(() => ({ add: 'neu', update: '', delete: 'gelöscht' 
       <table class="w-full border-collapse">
         <tbody>
           <tr v-for="(line, i) in lines" :key="i" class="diff-line" :data-kind="line.kind">
-            <td class="diff-gutter w-[1%] whitespace-nowrap">{{ line.kind === 'hunk' ? '' : (line.old ?? '') }}</td>
-            <td class="diff-gutter w-[1%] whitespace-nowrap">{{ line.kind === 'hunk' ? '' : (line.new ?? '') }}</td>
+            <!-- One number per line, as in the diff of the file view: where it is now, a removed one where it was. -->
+            <td class="diff-gutter w-[1%] whitespace-nowrap">{{ line.kind === 'hunk' ? '' : (line.new ?? line.old ?? '') }}</td>
             <td class="w-4 select-none text-center text-muted-foreground">{{ line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : '' }}</td>
             <td v-if="html[i]" class="pr-4 whitespace-pre" v-html="html[i]" />
             <td v-else class="pr-4 whitespace-pre">{{ line.text }}</td>

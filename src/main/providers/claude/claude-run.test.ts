@@ -100,6 +100,54 @@ describe('ClaudeRun prompts', () => {
     expect(runtime.status).toBe('idle')
   })
 
+  const ask = (id: string) =>
+    stream({ type: 'control_request', request_id: id, request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'git push' }, tool_use_id: `t-${id}` } })
+  const answerStart = (parent: string | null) =>
+    stream({ type: 'stream_event', parent_tool_use_id: parent, event: { type: 'message_start', message: { id: `m-${parent}` } } })
+
+  it('works in a turn Claude Code starts itself once a task in the background ended', async () => {
+    await initialized()
+    expect(runtime.status).toBe('idle')
+    // The order of Claude Code 2.1.331: no command_lifecycle, an init, then the answer.
+    stream({ type: 'system', subtype: 'task_notification', task_id: 'b1', status: 'completed' })
+    stream({ type: 'system', subtype: 'init', session_id: 'cli-1' })
+    expect(runtime.status).toBe('idle')
+    answerStart(null)
+    expect(runtime.status).toBe('running')
+    expect(runtime.turnStartedAt).toEqual(expect.any(Number))
+
+    // A question in that turn: answered, the chat is at work again, not waiting.
+    ask('r1')
+    expect(runtime.status).toBe('waiting')
+    await run.respond('interaction:r1', { type: 'permission', decision: 'allow' })
+    expect(runtime.status).toBe('running')
+    stream({ type: 'result', subtype: 'success', duration_ms: 10 })
+    expect(runtime.status).toBe('idle')
+  })
+
+  it('is at rest again once an agent in the background asked after the turn and got its answer', async () => {
+    await initialized()
+    // The agent's own answers start no turn of the chat.
+    answerStart('agent-1')
+    expect(runtime.status).toBe('idle')
+    ask('r1')
+    expect(runtime.status).toBe('waiting')
+    await run.respond('interaction:r1', { type: 'permission', decision: 'allow' })
+    expect(runtime.status).toBe('idle')
+
+    // Taken back instead of answered: the same.
+    ask('r2')
+    stream({ type: 'control_cancel_request', request_id: 'r2' })
+    expect(runtime.status).toBe('idle')
+
+    // The chat goes on meanwhile: it still waits for the agent's question, and then works.
+    ask('r3')
+    answerStart(null)
+    expect(runtime.status).toBe('waiting')
+    await run.respond('interaction:r3', { type: 'permission', decision: 'deny' })
+    expect(runtime.status).toBe('running')
+  })
+
   it('works on after an interrupt when a prompt waited', async () => {
     await run.send({ id: 'p1', text: 'lange Aufgabe' })
     // The order Claude Code reports it in: the interrupted turn ends, the waiting prompt starts one.
