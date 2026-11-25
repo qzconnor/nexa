@@ -112,9 +112,12 @@ describe('gitStateChange', () => {
 
 describe('FileTreeService with git', () => {
   let dir: string
-  const service = new FileTreeService()
+  // One per test: dispose() leaves a git run alone that has started, and what it finds late must not
+  // reach the next test's listeners as that test's files.
+  let service: FileTreeService
 
   beforeEach(async () => {
+    service = new FileTreeService()
     dir = await mkdtemp(join(tmpdir(), 'file-tree-git-'))
     // git as the service runs it: without the user's configuration, no repository above the temp folder.
     vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1')
@@ -126,10 +129,11 @@ describe('FileTreeService with git', () => {
   afterEach(async () => {
     vi.unstubAllEnvs()
     service.dispose()
-    await rm(dir, { recursive: true, force: true })
+    // On Windows a folder can't go while a git the service started still runs in it (EBUSY).
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
-  const git = (cwd: string, ...args: string[]) =>
+  const git =(cwd: string, ...args: string[]) =>
     execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'init.defaultBranch=main', ...args], {
       cwd,
       encoding: 'utf8',
@@ -363,7 +367,8 @@ describe('FileTreeService with git', () => {
     const { paths } = await service.searchList(repo)
     expect(paths).toContain('new.txt')
     expect(paths.filter((path) => path.endsWith('/'))).toEqual([])
-  })
+    // About 10 runs of git, one a submodule add: on Windows, with the other tests running, more than 5 s.
+  }, 20_000)
 
   it('lights up a commit’s files where the session works, through a link too', async () => {
     const real = join(dir, 'real')
