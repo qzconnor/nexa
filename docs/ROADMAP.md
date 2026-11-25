@@ -237,6 +237,13 @@
       startet oder was die Agents ohne Nachfrage dürfen, ist nicht vorgewählt. Was es auf dem Computer nicht
       gibt (Pfad zur CLI, Accounts, Schriften, Mikrofon, Git Bash) und ungültige Werte bleiben, wie sie sind,
       und werden genannt; eigene Themes kommen dazu. „Rückgängig“ im Toast nimmt alles zurück
+- [x] Einstellungen der CLIs im UI (Einstellungen › CLI-Konfiguration): MCP-Server (Befehl, HTTP, SSE)
+      hinzufügen, bearbeiten, entfernen und bei Codex ein- und ausschalten, Berechtigungen (Claude: Modus,
+      Erlauben, Immer fragen, Verbieten, weitere Ordner; Codex: Freigaben, Sandbox, Netzwerk, schreibbare
+      Ordner) und Hooks je Ereignis mit Matcher, Befehl und Zeitgrenze, bei Codex mit Vertrauen. Je CLI,
+      Account und Ebene (Nutzer, Projekt, bei Claude auch Lokal), in den Dateien der CLIs selbst; Schlüssel
+      in Variablen und Headern bleiben verborgen, was Nexa nicht kennt, bleibt erhalten. „Konnektoren
+      verwalten“ führt dorthin, mit CLI, Account und Ordner des Chats
 
 ## Als Nächstes
 
@@ -248,8 +255,6 @@
 
 - [ ] **Sites von Codex** auf der Seite „Artefakte“, sobald der App-Server sie herausgibt (0.169 hat keine
       Methode dafür). Dazu für Claudes Artefakte: umbenennen, löschen und anpinnen wie im Claude Manager.
-- [ ] **Einstellungen der CLIs** im UI (MCP-Server, Berechtigungen, Hooks) lesen und bearbeiten; dahin
-      führt dann „Konnektoren verwalten“ (bis dahin zu claude.ai bzw. zur `config.toml` von Codex).
 
 ## Aus dem Claude Manager
 

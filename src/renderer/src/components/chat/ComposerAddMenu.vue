@@ -2,7 +2,6 @@
 import {
   BlocksIcon,
   ChevronRightIcon,
-  ExternalLinkIcon,
   FolderPlusIcon,
   LoaderCircleIcon,
   LogInIcon,
@@ -10,6 +9,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   SearchIcon,
+  SlidersHorizontalIcon,
   SquareSlashIcon,
 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
@@ -33,6 +33,7 @@ import { Switch } from '@/components/ui/switch'
 import { toastError } from '@/lib/errors'
 import { containsTerms, searchText } from '@/lib/search'
 import { cn } from '@/lib/utils'
+import { useCliConfigStore } from '@/stores/cli-config'
 import ComposerPluginsMenu from './ComposerPluginsMenu.vue'
 
 /**
@@ -42,6 +43,7 @@ import ComposerPluginsMenu from './ComposerPluginsMenu.vue'
  */
 const props = defineProps<{ sessionId?: string; provider: ProviderId; disabled?: boolean }>()
 const emit = defineEmits<{ files: []; folder: []; commands: [] }>()
+const cliConfig = useCliConfigStore()
 
 const open = ref(false)
 const servers = shallowRef<McpServerInfo[] | null>(null)
@@ -258,16 +260,12 @@ function runAction(server: McpServerInfo): void {
   else void authenticate(server)
 }
 
-/** Where the connectors are set up: claude.ai for Claude's, `config.toml` for Codex. */
-const settingsHint = computed(() => (props.provider === 'codex' ? 'config.toml' : 'claude.ai'))
-
+/** The chat's CLI, account and folder under Einstellungen › CLI-Konfiguration, at its MCP servers. */
 async function manageConnectors(): Promise<void> {
   const id = props.sessionId
   if (!id) return
   try {
-    const target = await window.api.sessions.connectorSettings(id)
-    if ('url' in target) await window.api.app.openExternal(target.url)
-    else await window.api.app.openPath(target.path)
+    await cliConfig.open(await window.api.sessions.configTarget(id))
   } catch (error) {
     toastError(error, 'Konnektoren lassen sich nicht öffnen')
   }
@@ -380,10 +378,7 @@ function onSearchKey(event: KeyboardEvent): void {
               </template>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem @select="manageConnectors">
-              <ExternalLinkIcon /> Konnektoren verwalten
-              <DropdownMenuShortcut>{{ settingsHint }}</DropdownMenuShortcut>
-            </DropdownMenuItem>
+            <DropdownMenuItem @select="manageConnectors"><SlidersHorizontalIcon /> Konnektoren verwalten</DropdownMenuItem>
             <p class="px-2 py-1.5 text-[0.7rem] leading-snug text-muted-foreground">
               Schalter gelten für alle Chats des Projekts.
               <template v-if="provider === 'codex'">Codex übernimmt sie mit dem nächsten Prompt.</template>

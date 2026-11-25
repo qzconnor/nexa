@@ -44,6 +44,9 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/mcp-servers.ts` | Antworten der CLIs auf die Frage nach ihren MCP-Servern → `McpServerState` (ohne Nexas eigenen) |
 | `providers/titles.ts` | Titel eines Chats vom Modell (`AgentRun.title`): Anweisung für Codex, Prompt gekürzt, Antwort bereinigt (`cleanTitle`) |
 | `providers/plugins.ts` | Plugins der CLIs (`claude plugin list --json`, Codex `plugin/installed`) → `PluginInfo`, Antworten auf das Schalten und auf die Anmeldung an MCP-Servern (`McpAuthStart`) |
+| `providers/cli-config.ts` | Schnittstelle `CliConfigAdapter` für die Einstellungen einer CLI und was die Adapter teilen: JSON-Dateien lesen und atomar ändern, Secrets in Variablen und Headern zurückhalten, Hooks über ihre Herkunft zurückschreiben; siehe „Einstellungen der CLIs“ |
+| `providers/claude/claude-config.ts`, `providers/codex/codex-config.ts` | Adapter für Claude Code (Dateien, MCP über `claude mcp`) und Codex (App-Server `config/*`, `hooks/list`) |
+| `services/cli-config-service.ts` | Prüft Ziel (CLI, Account, Ebene, Projektordner) und Eingaben, ruft den Adapter; Kanäle `cli-config:*` in `cli-config-ipc.ts` |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten, dazu Prompts, Themes, Namen und Pins (`cm-extras.ts`); Kanäle `import:*` in `import-ipc.ts` |
 | `import/cli-import.ts` | Übernahme der Sessions der CLIs selbst: Transkripte von Claude Code und Threads von Codex (`thread/list`) aus allen Accounts, je Ordner ein Projekt; Kanäle `import:cli-*` |
@@ -500,6 +503,34 @@ und mit wem (`LimitBanner.vue` über der Eingabe, mit Countdown und „Nicht for
 jeder Prompt beendet es. Vor dem Weitermachen prüft `SessionService.limitState`, dass seit dem Limit nichts
 geschah. Sperren und wartende Chats stehen in `auto-switch.json` und überdauern einen Neustart; ein Chat,
 den der Nutzer fortsetzen ließ und der gleich wieder am Limit steht, wartet erneut.
+
+## Einstellungen der CLIs
+
+Einstellungen › CLI-Konfiguration (`SettingsCliConfig.vue`, Teile in `components/cli-config/*`,
+`stores/cli-config.ts`) zeigt und ändert MCP-Server, Berechtigungen und Hooks in den Dateien, die die CLI
+selbst liest: sie gelten damit auch im Terminal. Ziel ist `CliConfigTarget` (`shared/cli-config.ts`): CLI,
+Account (sein Konfigurationsordner), Ebene (`user`, `project`, `local`) und für die Ebenen eines Projekts
+dessen Ordner. „Konnektoren verwalten“ im „+“ der Eingabe öffnet die Seite mit CLI, Account und Ordner des
+Chats (`sessions:config-target`).
+
+- Jede CLI hat einen Adapter (`AgentProvider.config`, `CliConfigAdapter`); eine CLI ohne Adapter fehlt
+  in der Auswahl. Der Adapter sagt, welche Ebenen und Arten von Servern es gibt, welche Felder die
+  Berechtigungen haben (`PermissionField`: Auswahl, Liste, Schalter) und welche Hook-Ereignisse; das
+  Fenster zeichnet nur, was er liefert, und kennt keine CLI.
+- **Nichts geht verloren**: Was Nexa nicht bearbeitet, bleibt. Ein Server behält seine übrigen Schlüssel
+  (`other`, im Fenster angezeigt), ein Hook über `origin` (Gruppe und Platz in der Datei beim Lesen) seine
+  (`statusMessage` & Co.), Hooks anderer Art (prompt, agent, http, mcp_tool) werden nur gezeigt und
+  mitgenommen. JSON-Dateien liest `updateJsonFile` direkt vor dem Schreiben und schreibt sie atomar; eine,
+  die kein gültiges JSON ist (Kommentare, die CLI schreibt gerade), fasst Nexa nicht an und zeigt die Ebene
+  nur (`readOnly`). Hooks tragen die Version ihres Stands (`versionOf`); hat sich die Datei seitdem
+  geändert, lehnt das Speichern ab.
+- **Secrets** in Variablen und Headern (nach Name oder Form, `isSecretEntry`) verlassen Main nicht: Sie
+  kommen leer mit `masked` ins Fenster und behalten beim Speichern ihren Wert aus der Datei, solange der
+  Nutzer nichts einträgt (`entriesIn`). Verweise wie `${TOKEN}` sind keine Secrets.
+- Nach jeder Änderung liest die Seite neu und `cli-config:changed` sagt es den anderen Fenstern. Claude
+  leert danach seine Caches der MCP-Server und Befehle des Accounts, Codex lädt die MCP-Server neu
+  (`config/mcpServer/reload`).
+- Dateien, Befehle und Eigenheiten je CLI: PROTOCOLS.md, „Einstellungen der CLIs“.
 
 ## Renderer
 

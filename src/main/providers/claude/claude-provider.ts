@@ -1,13 +1,14 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { CommandOption, ConnectorSettings, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus } from '@shared/types'
+import type { CommandOption, McpAuthStart, ModelDefaults, ModelOption, PluginInfo, ProviderSettings, ProviderStatus } from '@shared/types'
 import { firstLine, isPlainObject } from '@shared/utils'
 import { fetchClaudeUsage } from '../../accounts/claude-usage'
 import { CliBinary, cliEnv, type ResolvedCommand } from '../cli-binary'
 import { claudeMcpServers } from '../mcp-servers'
 import { byPluginName, claudeAuthStart, claudeManifest, claudePlugins, claudePluginToggleError } from '../plugins'
 import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
+import { ClaudeConfig } from './claude-config'
 import { claudeCommands, claudeModels, openClaudeControl, probeClaude, type ClaudeControl } from './claude-probe'
 import { ClaudeRun } from './claude-run'
 
@@ -49,6 +50,7 @@ const FALLBACK_MODELS: ModelOption[] = [
 export class ClaudeProvider implements AgentProvider {
   readonly id = 'claude' as const
   readonly binary: CliBinary
+  readonly config: ClaudeConfig
   /** By account: a plan may offer other models. */
   private readonly modelCache = new Map<string, { models: ModelOption[]; at: number }>()
   private readonly modelsLoading = new Map<string, Promise<ModelOption[]>>()
@@ -74,6 +76,12 @@ export class ClaudeProvider implements AgentProvider {
       },
       () => this.settings().path,
     )
+    // Servers changed in the settings: the lists Nexa keeps of them (and the prompts they bring) go.
+    this.config = new ClaudeConfig(this.binary, (accountId) => {
+      for (const cache of [this.mcpCache, this.commandCache]) {
+        for (const key of cache.keys()) if (key.startsWith(`${accountId}\0`)) cache.delete(key)
+      }
+    })
   }
 
   async detect(account: AccountContext): Promise<ProviderStatus> {
@@ -225,11 +233,6 @@ export class ClaudeProvider implements AgentProvider {
       const servers = claudeMcpServers(await control.request({ subtype: 'mcp_status' }).catch(() => null))
       if (servers.find((s) => s.name === name)?.status === 'connected') return
     }
-  }
-
-  /** claude.ai's connectors are set up on claude.ai; the others Claude Code keeps in its own files. */
-  connectorSettings(): ConnectorSettings {
-    return { url: 'https://claude.ai/settings/connectors' }
   }
 
   /**

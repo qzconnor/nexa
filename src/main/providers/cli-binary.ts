@@ -127,9 +127,12 @@ export class CliBinary {
 
   /**
    * Runs the CLI in a folder and returns what it wrote, also when it failed (commands with `--json`
-   * tell why on standard output and exit with an error).
+   * tell why on standard output and exit with an error). `input` goes to its standard input.
    */
-  output(args: string[], options: { cwd: string; env: Record<string, string>; timeout?: number }): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  output(
+    args: string[],
+    options: { cwd: string; env: Record<string, string>; timeout?: number; input?: string },
+  ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
     let cmd: ResolvedCommand
     try {
       cmd = this.command(args)
@@ -137,9 +140,16 @@ export class CliBinary {
       return Promise.resolve({ ok: false, stdout: '', stderr: error instanceof Error ? error.message : String(error) })
     }
     return new Promise((resolve) => {
-      execFile(cmd.file, cmd.args, { cwd: options.cwd, timeout: options.timeout ?? 30_000, windowsHide: true, env: options.env, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) =>
-        resolve({ ok: !error, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }),
+      const child = execFile(
+        cmd.file,
+        cmd.args,
+        { cwd: options.cwd, timeout: options.timeout ?? 30_000, windowsHide: true, env: options.env, maxBuffer: 16 * 1024 * 1024 },
+        (error, stdout, stderr) => resolve({ ok: !error, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }),
       )
+      if (options.input === undefined) return
+      // A CLI that doesn't read its input mustn't fail the call by closing the pipe early.
+      child.stdin?.on('error', () => undefined)
+      child.stdin?.end(options.input)
     })
   }
 

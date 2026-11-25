@@ -1,5 +1,6 @@
 import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput, LoginRenewResult } from './accounts'
 import type { ArtifactsApi } from './artifacts'
+import type { CliConfigApi, CliConfigTarget } from './cli-config'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
 import type { SettingsImportPreview } from './settings-transfer'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
@@ -9,7 +10,6 @@ import type {
   AppSettings,
   CommandOption,
   CommandStatus,
-  ConnectorSettings,
   DeepPartial,
   FolderPromptInfo,
   McpAuthStart,
@@ -128,7 +128,7 @@ export const IpcInvoke = {
   sessionsSetMcp: 'sessions:set-mcp',
   sessionsReconnectMcp: 'sessions:reconnect-mcp',
   sessionsAuthenticateMcp: 'sessions:authenticate-mcp',
-  sessionsConnectorSettings: 'sessions:connector-settings',
+  sessionsConfigTarget: 'sessions:config-target',
   sessionsPlugins: 'sessions:plugins',
   sessionsSetPlugin: 'sessions:set-plugin',
   sessionsSync: 'sessions:sync',
@@ -225,6 +225,8 @@ export interface NexaApi {
   startCommands: StartCommandsApi
   /** The user's terminals beside the chats (shared/terminals.ts). */
   terminals: TerminalsApi
+  /** The CLIs' own settings: MCP servers, permissions, hooks (shared/cli-config.ts). */
+  cliConfig: CliConfigApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>
@@ -382,8 +384,8 @@ export interface NexaApi {
     reconnectMcp(id: string, name: string): Promise<void>
     /** Starts a server's sign-in: the page to open; null when it needs none. */
     authenticateMcp(id: string, name: string): Promise<McpAuthStart | null>
-    /** Where the connectors of the chat's CLI are set up (a page, or its config file). */
-    connectorSettings(id: string): Promise<ConnectorSettings>
+    /** The settings of the chat's CLI and account for its folder, for „Konnektoren verwalten“. */
+    configTarget(id: string): Promise<CliConfigTarget>
     /** The plugins the chat's CLI has installed for its folder. */
     plugins(id: string): Promise<PluginInfo[]>
     /** Switches a plugin in the CLI's own settings; its running chats load the plugins anew. */
