@@ -79,6 +79,7 @@ function setup(options: Partial<RunOptions> = {}, answers: Record<string, Answer
   const items = new Map<string, ChatItem>()
   const runtimes: Json[] = []
   const models: unknown[] = []
+  const ended: boolean[] = []
   const sink: RunSink = {
     item: (item) => items.set(item.id, item),
     delta: (id, _field, text) => {
@@ -95,11 +96,11 @@ function setup(options: Partial<RunOptions> = {}, answers: Record<string, Answer
     conn,
     { sessionId: 'chat', cwd: 'F:\\scratch\\proj', permissionMode: 'ask', account: { accountId: 'system-antigravity', set: {}, unset: [] }, instructions: '', extraArgs: [], ...options },
     sink,
-    { models: (list) => models.push(list) },
+    { models: (list) => models.push(list), turnEnded: (limit) => ended.push(limit) },
   )
   const update = (update: Json) => run.notification('session/update', { sessionId: SESSION, update })
   const of = <K extends ChatItem['kind']>(kind: K) => [...items.values()].filter((i): i is Extract<ChatItem, { kind: K }> => i.kind === kind)
-  return { run, requests, notified, responses, items, runtimes, models, update, of, methods: () => requests.map((r) => r.method) }
+  return { run, requests, notified, responses, items, runtimes, models, ended, update, of, methods: () => requests.map((r) => r.method) }
 }
 
 /** A prompt that waits until the test ends it. */
@@ -182,6 +183,44 @@ describe('AntigravityRun turns', () => {
     await flush()
     expect(t.of('assistant')).toEqual([])
     expect(t.of('turn')[0]).toMatchObject({ status: 'error', error: 'generating and executing: Error 400, Message: API key not valid.' })
+    expect(t.of('turn')[0]!.limit).toBeUndefined()
+    expect(t.ended).toEqual([false])
+  })
+
+  it('marks a turn that stopped at the quota as at the limit, and says so after it', async () => {
+    const p = prompting()
+    const t = setup({}, p.answers)
+    await t.run.connect()
+    await t.run.send({ id: 'p1', text: 'Hi' })
+    await flush()
+    // The wording of agy 1.5.17's strings; a real one wasn't seen yet.
+    t.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '⚠ agent executor error: RESOURCE_EXHAUSTED: You have exhausted your quota on this model.' } })
+    p.turn.resolve({ stopReason: 'end_turn', usage: {} })
+    await flush()
+    expect(t.of('turn')[0]).toMatchObject({ status: 'error', limit: true })
+    expect(t.ended).toEqual([true])
+  })
+
+  it('takes the name Antigravity gives the conversation during the first turn as the chat’s title', async () => {
+    const p = prompting()
+    const t = setup({}, p.answers)
+    await t.run.connect()
+    await t.run.send({ id: 'p1', text: 'Antworte nur mit dem Wort: Hallo' })
+    const title = t.run.title()
+    // As agy 1.5.17 sends it, before the answer's text.
+    t.update({ sessionUpdate: 'session_info_update', title: 'Antwort Mit Hallo' })
+    expect(await title).toBe('Antwort Mit Hallo')
+    expect(await t.run.title()).toBe('Antwort Mit Hallo')
+    p.turn.resolve(END_TURN)
+    await flush()
+  })
+
+  it('gives no title once the run ended without one', async () => {
+    const t = setup()
+    await t.run.connect()
+    const title = t.run.title()
+    await t.run.stop()
+    expect(await title).toBeNull()
   })
 
   it('shows tool calls with their arguments, a diff, and a command with its output', async () => {

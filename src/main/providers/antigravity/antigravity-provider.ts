@@ -7,10 +7,13 @@ import { AcpConnection } from '../acp/acp-connection'
 import { CliBinary, cliEnv } from '../cli-binary'
 import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { AntigravityConfig } from './antigravity-config'
-import { commandsOf, modelsOf, tierOf } from './antigravity-items'
+import { commandsOf, modelsOf, tierOf, usageOfQuota } from './antigravity-items'
 import { AntigravityRun } from './antigravity-run'
 
 const NAME = 'Antigravity CLI'
+
+/** After a turn the quota is read again, at most this often per account (a reading starts `agy` for ~2 s). */
+const USAGE_AFTER_TURN_MS = 60_000
 
 /** Until Antigravity named them in a session (they depend on the login). */
 const FALLBACK_MODELS: ModelOption[] = [
@@ -23,7 +26,8 @@ const asCommand = (c: { name: string; description?: string }): CommandOption => 
 /**
  * Antigravity CLI through the Agent Client Protocol (`agy acp`): a process per chat. Its Google login
  * is one per user, in the keyring; an account with an API key gets its own data folder
- * (`--gemini-dir`). It tells the plan of the login, but no limits (docs/PROTOCOLS.md).
+ * (`--gemini-dir`). ACP tells the plan of the login; its quota comes from `agy -p "/usage"`
+ * (docs/PROTOCOLS.md).
  */
 export class AntigravityProvider implements AgentProvider {
   readonly id = 'antigravity' as const
@@ -35,6 +39,8 @@ export class AntigravityProvider implements AgentProvider {
   private commands_: CommandOption[] | null = null
   private tier: string | undefined
   private readonly runs = new Map<string, Set<AntigravityRun>>()
+  /** When the quota of an account was last read. */
+  private readonly usageReadAt = new Map<string, number>()
 
   constructor(private readonly settings: () => ProviderSettings) {
     this.binary = new CliBinary(
@@ -170,6 +176,7 @@ export class AntigravityProvider implements AgentProvider {
       models: (list) => {
         this.models_ = list
       },
+      turnEnded: (limit) => this.afterTurn(account, sink, limit),
     })
     const accountRuns = this.runs.get(account.accountId) ?? new Set<AntigravityRun>()
     this.runs.set(account.accountId, accountRuns)
@@ -186,8 +193,51 @@ export class AntigravityProvider implements AgentProvider {
     return run
   }
 
-  async usage(): Promise<RunUsage | null> {
-    return null
+  /**
+   * The quota of the Google login. An API key has none (agy exits with code 2). A reading starts a
+   * process, so the regular look only comes while a chat of the account runs or before the first
+   * reading; by hand (`wake`) always.
+   */
+  async usage(account: AccountContext, wake: boolean): Promise<RunUsage | null> {
+    if (!this.hasQuota(account)) return null
+    const running = [...(this.runs.get(account.accountId) ?? [])].some((r) => r.alive)
+    if (!wake && !running && this.usageReadAt.has(account.accountId)) return null
+    return this.readUsage(account)
+  }
+
+  private hasQuota(account: AccountEnv): boolean {
+    return account.set.GEMINI_API_KEY === undefined && antigravityLoggedIn() !== false && !!this.binary.resolve()
+  }
+
+  /**
+   * `/usage` in print mode answers without a turn, without quota and without a conversation left
+   * behind. It knows no `--gemini-dir` (only `acp` does): the Google login is the user's anyway.
+   */
+  private async readUsage(account: AccountEnv): Promise<RunUsage> {
+    this.usageReadAt.set(account.accountId, Date.now())
+    const result = await this.binary.output(['-p', '/usage', '--output-format', 'json'], { cwd: tmpdir(), env: cliEnv(account.set, account.unset), timeout: 30_000 })
+    // The JSON is the output's last line; a notice of the updater may come before it.
+    const line = result.stdout.trim().split(/\r?\n/).pop() ?? ''
+    let parsed: unknown = null
+    try {
+      parsed = JSON.parse(line)
+    } catch {
+      // Below as no quota.
+    }
+    const quota = usageOfQuota(parsed)
+    const base = { provider: 'antigravity' as const, plan: this.tier, updatedAt: Date.now(), source: 'api' as const }
+    if (quota) return { ...base, ...quota }
+    const reason = result.stderr.trim().split(/\r?\n/).pop() || 'keine Angaben'
+    return { ...base, windows: [], message: `Antigravity CLI nennt keine Kontingente (${reason}).` }
+  }
+
+  /** The quota after a turn, so the title bar follows the chat; at once when the turn stopped at it. */
+  private afterTurn(account: AccountEnv, sink: RunSink, limit: boolean): void {
+    if (!this.hasQuota(account)) return
+    if (!limit && Date.now() - (this.usageReadAt.get(account.accountId) ?? 0) < USAGE_AFTER_TURN_MS) return
+    void this.readUsage(account)
+      .then((usage) => sink.usage(usage))
+      .catch(() => undefined)
   }
 
   /**

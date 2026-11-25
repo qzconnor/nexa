@@ -282,9 +282,10 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         ihn nicht. Zu prüfen: `AGY_CLI_FORCE_FILE_TOKEN_STORAGE`, `AGY_ACCOUNT`,
         `ANTIGRAVITY_CREDENTIAL_SCOPE`.
   - [ ] Anmelden und Abmelden aus Nexa statt im Terminal, mit dem Namen des Kontos.
-  - [ ] Limits und Kontingente (Antigravity nennt nur den Plan) und Fehler „zu viele Anfragen“ als Limit
-        mit Reset markieren.
-  - [ ] Titel aus `session_info_update` übernehmen.
+  - [x] Limits und Kontingente: je Modellgruppe aus `agy -p "/usage"` in Titelleiste, Accounts und
+        Verbrauch; ein Turn am Kontingent endet als Limit mit Reset (Texte aus den Strings von agy 1.5.17,
+        ein echter Fehler dieser Art noch nicht gesehen).
+  - [x] Titel aus `session_info_update` übernehmen.
   - [ ] Unterhaltungen von Antigravity CLI lesen (`conversations/<id>.db`): übernehmen (Import,
         `nx -r <id>`), Abgleich, wenn sie außerhalb von Nexa weiterlaufen, und Accountwechsel auf derselben
         Unterhaltung.

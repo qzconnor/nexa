@@ -705,6 +705,11 @@ Verlauf ab), `session/prompt { sessionId, prompt: ContentBlock[] }`, `session/se
   inputTokens, outputTokens } }`.
 - **Fehler als Text**: Scheitert eine Anfrage an das Modell, endet der Turn mit `end_turn`, der Fehler steht
   als Antworttext da („⚠ agent executor error: …“). Nexa beendet den Turn dann als Fehler mit diesem Text.
+  Nennt er das Kontingent („You have exhausted your quota on this model.“, „individual quota reached“,
+  `RESOURCE_EXHAUSTED`, „Your AI credits balance is too low to continue.“), ohne von Kapazität zu reden,
+  markiert Nexa den Turn als Limit (`isQuotaError`) und liest die Kontingente sofort neu. Diese Texte stammen
+  aus den Strings von agy 1.5.17; einen echten Fehler dieser Art hat Nexa noch nicht gesehen. Kurze Limits
+  je Minute wiederholt Antigravity selbst (bis 4 Minuten), sie enden nicht im Turn.
 - **Abbrechen**: `session/cancel`. Offene Fragen beantwortet Nexa vorher mit `cancelled`, sonst wartet
   Antigravity auf sie. Der Prompt endet mit `stopReason: cancelled` (Nexa: „Abgebrochen“).
 
@@ -723,8 +728,11 @@ Verlauf ab), `session/prompt { sessionId, prompt: ContentBlock[] }`, `session/se
   code 0.“, „Command output:“); Nexa nimmt ihn ab und liest den Exit-Code daraus.
 - `update_steps` ist die Aufgabenliste (die Schritte in den Argumenten); Nexa zeigt sie als To-dos.
 - `usage_update { used, size }`: Tokens im Kontext und Größe des Fensters.
-- `available_commands_update`, `config_option_update`, `session_info_update` (Titel, von Nexa noch nicht
-  genutzt).
+- `available_commands_update`, `config_option_update`.
+- `session_info_update { title }`: der Name der Unterhaltung, den Antigravity selbst vergibt, schon früh im
+  ersten Turn, vor dem Text der Antwort (geprüft mit 1.5.17: „Antwort Mit Hallo“). Nexa nimmt ihn als Titel
+  des Chats wie die Titel von Claude Code (`AntigravityRun.title`, bis 60 s nach dem ersten Prompt); die
+  Wiedergabe von `session/load` zählt nicht.
 
 **`session/request_permission`** (Antigravity → Client, Anfrage) `{ sessionId, toolCall { toolCallId, name,
 args, … }, options: [{ optionId, name, kind }] }` mit `kind` `allow_once`, `allow_always`, `reject_once`.
@@ -762,8 +770,19 @@ Rückfrage brauchen (`tool-grant.ts`), erlaubt `AntigravityRun` selbst.
 - **API-Key**: aus Google AI Studio, als `GEMINI_API_KEY` in der Umgebung des Prozesses, mit eigenem Ordner
   (`--gemini-dir`). Ohne `modelProvider: "gemini"` in `antigravity-cli/settings.json` fragt Antigravity
   trotzdem nach dem Google-Login; Nexa schreibt den Schlüssel beim Anlegen und vor jedem Start.
-- **Limits**: Antigravity nennt einem Client keine Limits, nur den Plan (`tier`).
-- **Titel**: Ein Chat heißt nach der ersten Zeile seines ersten Prompts.
+- **Kontingente**: ACP nennt nur den Plan (`tier`). `agy -p "/usage" --output-format json` beantwortet den
+  Befehl ohne Turn, ohne Kontingent und ohne Unterhaltung (~2,5 s; `/quota` ist dasselbe). Im JSON steht unter
+  `command.data.groups[]` je Modellgruppe (`name`: „Gemini Models“, „Claude and GPT models“) eine Liste
+  `buckets[]` mit `id` (`gemini-weekly`, `3p-5h`, `3p-weekly`), `name`, `window` (`weekly`, `5h`),
+  `remaining_fraction` (0–1) und `reset_time` (UTC; `1970-01-01T00:00:00Z`, solange niemand den Bucket
+  angebrochen hat). Ein abgeschalteter Bucket trägt `disabled`. Nexa macht daraus Fenster „Gemini · Woche“,
+  „Claude/GPT · 5 Stunden“ … (`usageOfQuota`), die Titelleiste zeigt die Gruppe mit. Print-Mode kennt kein
+  `--gemini-dir` (nur `acp`), das schadet nicht: Der Google-Login ist ohnehin einer je Benutzer. Mit API-Key
+  gibt es kein Kontingent (agy endet mit Code 2), Nexa fragt dann nicht. Gelesen wird beim Start, auf
+  „Aktualisieren“, alle 5 Minuten nur, solange ein Chat des Accounts läuft, nach einem Turn höchstens einmal
+  je Minute und nach einem Limit sofort. Geprüft mit 1.5.17.
+- **Titel**: Antigravitys eigener (`session_info_update`, siehe oben); bis er kommt, die erste Zeile des
+  ersten Prompts.
 
 ### Unterschiede zu Gemini CLI (bis Nexa 0.x)
 

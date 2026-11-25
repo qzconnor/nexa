@@ -16,6 +16,7 @@ import {
   configOf,
   contentText,
   EXECUTOR_ERROR,
+  isQuotaError,
   mcpToolOf,
   modelsOf,
   permissionChoices,
@@ -41,6 +42,9 @@ export interface AcpLike {
 
 /** ACP's code for „Authentication required“. */
 const AUTH_REQUIRED = -32000
+
+/** How long a title may take after the first prompt: Antigravity names the conversation early in its turn. */
+const TITLE_WAIT_MS = 60_000
 
 interface Prompt {
   /** The prompt's item in the chat; null for one Nexa sends on its own (a plan's answer). */
@@ -100,6 +104,9 @@ export class AntigravityRun implements AgentRun {
   private currentModel: string | undefined
   private currentEffort: string | undefined
   private closed = false
+  /** The conversation's name from `session_info_update` since the current turn began. */
+  private named: string | null = null
+  private readonly titleWaiters = new Set<(title: string | null) => void>()
 
   constructor(
     private readonly conn: AcpLike,
@@ -108,6 +115,8 @@ export class AntigravityRun implements AgentRun {
     private readonly hooks: {
       commands?(commands: { name: string; description?: string }[]): void
       models?(models: ModelOption[]): void
+      /** A turn ended (not by the user's cancel); `limit`: at the quota of the login. */
+      turnEnded?(limit: boolean): void
     } = {},
   ) {
     this.mode = options.permissionMode
@@ -202,6 +211,8 @@ export class AntigravityRun implements AgentRun {
     const startedAt = Date.now()
     this.executorError = null
     this.plan = null
+    // A name from before (a resumed conversation's) isn't the one the first prompt gives.
+    this.named = null
     this.sink.runtime({ status: 'running', turnStartedAt: startedAt, error: undefined })
     let turn: TurnItem
     try {
@@ -216,6 +227,7 @@ export class AntigravityRun implements AgentRun {
     this.finishRunning(turn.status === 'interrupted')
     this.sink.item(turn)
     this.prompting = false
+    if (turn.status !== 'interrupted') this.hooks.turnEnded?.(!!turn.limit)
     if (this.queue.length) return void this.pump()
     const plan = turn.status === 'done' ? this.plan : null
     this.plan = null
@@ -250,7 +262,10 @@ export class AntigravityRun implements AgentRun {
     if (reason && notes[reason]) this.notice('warning', notes[reason])
     const base = { kind: 'turn' as const, id: `turn:${randomUUID()}`, ts: Date.now(), provider: 'antigravity' as const, durationMs: Date.now() - startedAt, model: this.model ?? this.currentModel }
     // Antigravity ends a turn whose request failed as a normal one, the error as its text.
-    if (this.executorError !== null && reason !== 'cancelled') return { ...base, status: 'error', error: this.executorError || 'Antigravity meldet einen Fehler.' }
+    if (this.executorError !== null && reason !== 'cancelled') {
+      const error = this.executorError || 'Antigravity meldet einen Fehler.'
+      return { ...base, status: 'error', error, ...(isQuotaError(error) ? { limit: true } : {}) }
+    }
     return {
       ...base,
       status: reason === 'cancelled' ? 'interrupted' : 'done',
@@ -268,7 +283,41 @@ export class AntigravityRun implements AgentRun {
         : code === AUTH_REQUIRED
           ? `Antigravity CLI ist nicht angemeldet: ${message}`
           : message
-    return { kind: 'turn', id: `turn:${randomUUID()}`, ts: Date.now(), provider: 'antigravity', status: 'error', durationMs: Date.now() - startedAt, error: text, model: this.model ?? this.currentModel }
+    return {
+      kind: 'turn',
+      id: `turn:${randomUUID()}`,
+      ts: Date.now(),
+      provider: 'antigravity',
+      status: 'error',
+      durationMs: Date.now() - startedAt,
+      error: text,
+      model: this.model ?? this.currentModel,
+      ...(isQuotaError(message) ? { limit: true } : {}),
+    }
+  }
+
+  /**
+   * The name Antigravity gives the conversation by its first prompt (`session_info_update`), which it
+   * keeps as the conversation's title too; null when none comes in time or the run ends.
+   */
+  title(): Promise<string | null> {
+    if (this.named) return Promise.resolve(this.named)
+    if (this.closed) return Promise.resolve(null)
+    return new Promise((resolve) => {
+      const done = (title: string | null) => {
+        clearTimeout(timer)
+        this.titleWaiters.delete(done)
+        resolve(title)
+      }
+      const timer = setTimeout(() => done(null), TITLE_WAIT_MS)
+      this.titleWaiters.add(done)
+    })
+  }
+
+  /** A name from Antigravity, or null when none will come (the run ended): to whoever waits for it. */
+  private takeTitle(title: string | null): void {
+    if (title) this.named = title
+    for (const waiter of [...this.titleWaiters]) waiter(title)
   }
 
   async interrupt(): Promise<void> {
@@ -353,6 +402,7 @@ export class AntigravityRun implements AgentRun {
     if (this.prompting) await this.interrupt()
     this.closed = true
     this.cancelOpen()
+    this.takeTitle(null)
     await this.conn.stop(2000)
     this.sink.exited()
   }
@@ -362,6 +412,7 @@ export class AntigravityRun implements AgentRun {
     if (this.closed) return
     this.closed = true
     this.cancelOpen()
+    this.takeTitle(null)
     const detail = stderr
       .split(/\r?\n/)
       .filter((l) => l.trim())
@@ -397,6 +448,12 @@ export class AntigravityRun implements AgentRun {
       if (typeof update.used === 'number' && typeof update.size === 'number' && update.size > 0) {
         this.sink.runtime({ context: { used: update.used, window: update.size } })
       }
+      return
+    }
+    if (kind === 'session_info_update') {
+      // The replay of a loaded conversation names it as it was; that isn't a new name.
+      const title = this.replaying ? undefined : str(update.title)?.trim()
+      if (title) this.takeTitle(title)
       return
     }
     // The replay of a loaded conversation, and what comes between turns (mode changes): the chat has it.

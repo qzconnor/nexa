@@ -70,8 +70,13 @@ export function forecastHint(window: UsageWindow, now: number): ForecastHint | n
   }
 }
 
-/** Short label of a window for the title bar. */
+/**
+ * Short label of a window for the title bar. A window of a group of models (Antigravity:
+ * „Gemini · Woche“) keeps its group, else two weekly windows would read alike.
+ */
 export function shortWindowLabel(label: string, minutes?: number): string {
+  const at = label.indexOf(' · ')
+  if (at > 0) return `${label.slice(0, at)} ${shortWindowLabel(label.slice(at + 3), minutes)}`
   if (minutes === 300 || /5 ?Std|5 Stunden|five/i.test(label)) return '5 Std.'
   if (minutes === 10080 || /Woche|week/i.test(label)) return 'Woche'
   if (minutes && minutes >= 40000) return 'Monat'
