@@ -1,6 +1,7 @@
 import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput, LoginRenewResult } from './accounts'
 import type { ArtifactsApi } from './artifacts'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
+import type { SettingsImportPreview } from './settings-transfer'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
 import type {
   ApiStatus,
@@ -63,6 +64,8 @@ export const IpcInvoke = {
 
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  settingsExport: 'settings:export',
+  settingsImportPreview: 'settings:import-preview',
 
   themesList: 'themes:list',
   themesCreate: 'themes:create',
@@ -248,6 +251,10 @@ export interface NexaApi {
   settings: {
     get(): Promise<AppSettings>
     update(patch: DeepPartial<AppSettings>): Promise<AppSettings>
+    /** Saves the settings and the user's own themes to a file the user picks; its path, null when cancelled. */
+    exportToFile(): Promise<string | null>
+    /** What a file the user picks would change, without taking anything over; null when cancelled. */
+    previewImport(): Promise<SettingsImportPreview | null>
     onChanged(cb: (settings: AppSettings) => void): Unsubscribe
     /** A click on a notification about an account's limits or login: the window shows that section. */
     onOpen(cb: (section: NotifiedSettings) => void): Unsubscribe

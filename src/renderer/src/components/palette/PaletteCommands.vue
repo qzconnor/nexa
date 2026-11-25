@@ -7,6 +7,8 @@ import {
   CircleStopIcon,
   CopyIcon,
   FileDownIcon,
+  FileInputIcon,
+  FileOutputIcon,
   FolderGit2Icon,
   FolderIcon,
   FolderOpenIcon,
@@ -39,6 +41,7 @@ import AccountDot from '@/components/accounts/AccountDot.vue'
 import { SETTINGS_ICONS } from '@/components/settings/settings-icons'
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/components/ui/command'
 import { useChatActions } from '@/composables/useChatActions'
+import { useSettingsTransfer } from '@/composables/useSettingsTransfer'
 import { SETTINGS } from '@/composables/useSettingsSearch'
 import { attempt } from '@/lib/errors'
 import type { SettingsEntry } from '@/lib/settings-index'
@@ -67,6 +70,7 @@ const ui = useUiStore()
 const startCommands = useStartCommandsStore()
 const terminals = useTerminalsStore()
 const chat = useChatActions()
+const transfer = useSettingsTransfer()
 
 /** Closes the quick open first, so the keyboard is back in the window before the action runs. */
 function run(action: () => unknown, keepFocus = false): void {
@@ -212,6 +216,22 @@ const switchChoices = computed(() => {
           <SettingsIcon />
           Einstellungen
           <CommandShortcut>Strg+,</CommandShortcut>
+        </CommandItem>
+        <CommandItem
+          value="settings-export"
+          filter-text="Einstellungen exportieren Export sichern Sicherung Backup Datei anderer Computer Themes"
+          @select="run(transfer.exportSettings)"
+        >
+          <FileOutputIcon />
+          Einstellungen exportieren…
+        </CommandItem>
+        <CommandItem
+          value="settings-import"
+          filter-text="Einstellungen importieren Import übernehmen wiederherstellen Datei anderer Computer vergleichen Themes"
+          @select="run(transfer.importSettings, true)"
+        >
+          <FileInputIcon />
+          Einstellungen importieren…
         </CommandItem>
         <CommandItem value="updates" filter-text="Updates und Versionshinweise neue Version Changelog" @select="run(() => ui.openSettings('updates'), true)">
           <SparklesIcon />

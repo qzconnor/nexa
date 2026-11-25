@@ -14,6 +14,7 @@ import TitleBar from '@/components/layout/TitleBar.vue'
 import WorktreeDialog from '@/components/layout/WorktreeDialog.vue'
 import CommandPalette from '@/components/palette/CommandPalette.vue'
 import SettingsDialog from '@/components/settings/SettingsDialog.vue'
+import SettingsImportDialog from '@/components/settings/SettingsImportDialog.vue'
 import ThemeEditorDialog from '@/components/themes/ThemeEditorDialog.vue'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Toaster } from '@/components/ui/sonner'
@@ -130,6 +131,7 @@ onMounted(async () => {
       <StartCommandsDialog />
       <ChatCleanupDialog />
       <WorktreeDialog />
+      <SettingsImportDialog />
     </template>
     <ConfirmDialog />
     <AppTooltip />

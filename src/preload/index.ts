@@ -158,6 +158,8 @@ const api: NexaApi = {
   settings: {
     get: () => invoke(IpcInvoke.settingsGet),
     update: (patch) => invoke(IpcInvoke.settingsUpdate, patch),
+    exportToFile: () => invoke(IpcInvoke.settingsExport),
+    previewImport: () => invoke(IpcInvoke.settingsImportPreview),
     onChanged: (cb) => subscribe(IpcEvent.settingsChanged, cb),
     onOpen: (cb) => subscribe(IpcEvent.openSettings, cb),
   },

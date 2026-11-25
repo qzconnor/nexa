@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { SETTING_RANGES } from '@shared/defaults'
 import type { AppearanceSettings, WindowMaterial } from '@shared/types'
 import { DEFAULT_ZOOM, normalizeZoom, ZOOM_STEPS } from '@shared/zoom'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
@@ -83,7 +84,7 @@ const CHAT_WIDTHS = [
           <Switch v-model="keepMaterialActive" :disabled="material === 'none'" />
         </SettingField>
         <SettingField anchor="appearance.surfaceOpacity" for="surface-opacity" label="Deckkraft der Flächen" description="Wie stark Inhalt, Karten und Sidebar das Material verdecken.">
-          <SliderControl id="surface-opacity" v-model="surfaceOpacity" :min="20" :max="100" :step="2" :format="(v) => `${v} %`" />
+          <SliderControl id="surface-opacity" v-model="surfaceOpacity" v-bind="SETTING_RANGES['appearance.surfaceOpacity']" :format="(v) => `${v} %`" />
         </SettingField>
       </template>
       <SettingField
@@ -99,7 +100,7 @@ const CHAT_WIDTHS = [
         </Select>
       </SettingField>
       <SettingField anchor="appearance.radius" for="radius" label="Ecken" description="Rundung von Karten, Knöpfen und Dialogen.">
-        <SliderControl id="radius" v-model="radius" :min="0" :max="1.2" :step="0.05" :format="(v) => `${v.toFixed(2)} rem`" />
+        <SliderControl id="radius" v-model="radius" v-bind="SETTING_RANGES['appearance.radius']" :format="(v) => `${v.toFixed(2)} rem`" />
       </SettingField>
     </SettingsSection>
 
@@ -108,7 +109,7 @@ const CHAT_WIDTHS = [
         <FontPicker id="ui-font" v-model="uiFont" standard="Geist" :recommended="RECOMMENDED_UI_FONTS" :fallbacks="UI_FONT_FALLBACKS" />
       </SettingField>
       <SettingField anchor="appearance.uiFontSize" for="ui-font-size" label="Schriftgröße">
-        <SliderControl id="ui-font-size" v-model="uiFontSize" :min="12" :max="18" :format="(v) => `${v} px`" />
+        <SliderControl id="ui-font-size" v-model="uiFontSize" v-bind="SETTING_RANGES['appearance.uiFontSize']" :format="(v) => `${v} px`" />
       </SettingField>
       <SettingField
         anchor="appearance.codeFont"

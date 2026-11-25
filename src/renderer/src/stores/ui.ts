@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, shallowRef, watch } from 'vue'
+import type { SettingsImportPreview } from '@shared/settings-transfer'
 import type { ThemeContent } from '@shared/themes/types'
 import type { PromptTarget } from '@shared/types'
 import type { SettingsAnchor } from '@/lib/settings-index'
@@ -144,6 +145,8 @@ export const useUiStore = defineStore('ui', () => {
   const startCommandsProject = ref<string | null>(null)
   /** The dialog for a new chat in a worktree: the project it is asked from, the repository's folder; null: closed. */
   const worktreeRequest = ref<{ projectId: string; folder: string } | null>(null)
+  /** What a settings file would change, shown for the user to pick (SettingsImportDialog); null: closed. */
+  const settingsImport = shallowRef<SettingsImportPreview | null>(null)
 
   const confirmState = ref<(ConfirmOptions & { open: boolean }) | null>(null)
   /** The question shown, and those that wait for it: one never answers another one with No. */
@@ -211,6 +214,7 @@ export const useUiStore = defineStore('ui', () => {
     cleanupProject,
     startCommandsProject,
     worktreeRequest,
+    settingsImport,
     confirmState,
     confirmInput,
     toggleSidebar,

@@ -24,6 +24,8 @@ import { projectToSection } from './services/project-sections'
 import type { ProviderService } from './services/provider-service'
 import type { SessionService } from './services/session-service'
 import type { SettingsService } from './services/settings-service'
+import { SettingsTransfer } from './services/settings-transfer'
+import { gitBash } from './services/user-shells'
 import type { ThemeService } from './services/theme-service'
 import { fromAppWindow, openAppWindows, windowState } from './window/main-window'
 
@@ -103,6 +105,12 @@ function themeArg(value: unknown): ThemeContent {
 }
 
 const THEME_FILE_FILTERS = [{ name: 'Theme', extensions: ['json'] }]
+const SETTINGS_FILE_FILTERS = [{ name: 'Einstellungen von Nexa', extensions: ['json'] }]
+
+/** `2026-11-24`, for the name of an exported file. */
+function localDate(date: Date): string {
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map((n) => String(n).padStart(2, '0')).join('-')
+}
 /** Theme files taken over in one go. */
 const MAX_THEME_IMPORT = 100
 
@@ -212,6 +220,38 @@ export function registerIpc(ctx: AppContext): void {
   // Settings & themes --------------------------------------------------------------------------
   handle(IpcInvoke.settingsGet, () => settings.get())
   handle(IpcInvoke.settingsUpdate, (_e, patch: unknown) => settings.update((patch ?? {}) as never))
+  const transfer = new SettingsTransfer(
+    {
+      settings: () => settings.get(),
+      accounts: () => accounts.list(),
+      themes: () => themes.list(),
+      fonts: listFontFamilies,
+      exists: (path) => existsSync(path),
+      // PowerShell 5.1 and cmd are part of Windows; elsewhere `!` runs the login shell whatever is set.
+      hasShell: (shell) => process.platform !== 'win32' || shell !== 'gitbash' || gitBash(process.env, existsSync) !== null,
+    },
+    { version: app.getVersion(), platform: process.platform },
+  )
+  handle(IpcInvoke.settingsExport, async (event) => {
+    const { canceled, filePath } = await dialog.showSaveDialog(windowOf(event), {
+      title: 'Einstellungen exportieren',
+      defaultPath: join(app.getPath('documents'), `nexa-einstellungen-${localDate(new Date())}.json`),
+      filters: SETTINGS_FILE_FILTERS,
+    })
+    if (canceled || !filePath) return null
+    await transfer.exportTo(filePath)
+    return filePath
+  })
+  handle(IpcInvoke.settingsImportPreview, async (event) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(windowOf(event), {
+      title: 'Einstellungen importieren',
+      defaultPath: app.getPath('documents'),
+      properties: ['openFile'],
+      filters: SETTINGS_FILE_FILTERS,
+    })
+    const file = filePaths[0]
+    return canceled || !file ? null : transfer.preview(file)
+  })
   handle(IpcInvoke.themesList, () => themes.list())
   handle(IpcInvoke.themesCreate, (_e, theme: unknown) => themes.create(themeArg(theme)))
   handle(IpcInvoke.themesSave, (_e, id: unknown, theme: unknown) => themes.save(str(id, 'id'), themeArg(theme)))
