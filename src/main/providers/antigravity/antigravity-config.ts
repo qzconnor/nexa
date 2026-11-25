@@ -151,14 +151,17 @@ export function withAntigravityProjectRules(data: Json, values: Record<string, P
   else delete data.permissionGrants
 }
 
-/** A server of `mcp_config.json` as Nexa shows it: a remote one by `url` (or `serverUrl`), else a command. */
-export function antigravityServerOut(name: string, raw: unknown): McpServerConfig {
+/**
+ * A server of `mcp_config.json` as Nexa shows it: a remote one by `url` (or `serverUrl`), else a
+ * command. `reveal`: with its secrets, for main only.
+ */
+export function antigravityServerOut(name: string, raw: unknown, reveal = false): McpServerConfig {
   const entry = isPlainObject(raw) ? raw : {}
   const other = otherKeys(entry, SERVER_KEYS)
   const enabled = entry.disabled !== true
   const url = str(entry.url) ?? str(entry.serverUrl)
-  if (url) return { name, transport: 'http', url, headers: entriesOut(entry.headers), enabled, other }
-  return { name, transport: 'stdio', command: str(entry.command) ?? '', args: strings(entry.args), env: entriesOut(entry.env), enabled, other }
+  if (url) return { name, transport: 'http', url, headers: entriesOut(entry.headers, reveal), enabled, other }
+  return { name, transport: 'stdio', command: str(entry.command) ?? '', args: strings(entry.args), env: entriesOut(entry.env, reveal), enabled, other }
 }
 
 /** The entry to save: the edited keys over what it had besides (`cwd`, `variables`, tool filters …). */
@@ -418,6 +421,12 @@ export class AntigravityConfig implements CliConfigAdapter {
       delete rest[name]
       data.mcpServers = rest
     })
+  }
+
+  async exportMcpServers(ctx: CliConfigContext): Promise<McpServerConfig[]> {
+    const data = await readJsonFile(antigravityConfigFiles(ctx.account, ctx.scope, ctx.folder).mcp)
+    const servers = data && isPlainObject(data.mcpServers) ? data.mcpServers : {}
+    return Object.entries(servers).map(([name, raw]) => antigravityServerOut(name, raw, true))
   }
 
   async savePermissions(ctx: CliConfigContext, values: Record<string, PermissionValue>): Promise<void> {

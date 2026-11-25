@@ -15,10 +15,18 @@ import { errorMessage } from '@/lib/errors'
 import { useCliConfigStore } from '@/stores/cli-config'
 
 /**
- * Adds an MCP server to the scope shown or edits one. Values main withheld as secrets come back
- * empty and marked: left alone they keep what the file has; typing replaces them.
+ * Adds an MCP server to the scope shown or edits one; with `global`, one in every CLI and account.
+ * Values main withheld as secrets come back empty and marked: left alone they keep what the file
+ * has; typing replaces them.
  */
-const props = defineProps<{ server: McpServerConfig | null; transports: McpTransport[]; bearerTokenEnvVar: boolean }>()
+const props = defineProps<{
+  server: McpServerConfig | null
+  transports: McpTransport[]
+  bearerTokenEnvVar: boolean
+  global?: boolean
+  /** Saves elsewhere than in the scope shown (the global servers). */
+  save?: (server: McpServerConfig, previousName: string | null) => Promise<void>
+}>()
 const open = defineModel<boolean>('open', { required: true })
 const store = useCliConfigStore()
 
@@ -35,6 +43,10 @@ const form = reactive({
 const saving = ref(false)
 const error = ref<string | null>(null)
 
+const title = computed(() => {
+  if (props.global) return props.server ? 'Globalen MCP-Server bearbeiten' : 'Globalen MCP-Server hinzufügen'
+  return props.server ? 'MCP-Server bearbeiten' : 'MCP-Server hinzufügen'
+})
 const transportOptions = computed(() => props.transports.map((value) => ({ value, label: MCP_TRANSPORT_LABELS[value] })))
 const remote = computed(() => form.transport !== 'stdio')
 const entries = computed(() => (remote.value ? form.headers : form.env))
@@ -95,7 +107,7 @@ async function submit(): Promise<void> {
   if (error.value) return
   saving.value = true
   try {
-    await store.saveMcp(server, props.server?.name ?? null)
+    await (props.save ?? store.saveMcp)(server, props.server?.name ?? null)
     toast.success(props.server ? `„${server.name}“ gespeichert` : `„${server.name}“ hinzugefügt`)
     open.value = false
   } catch (e) {
@@ -110,8 +122,16 @@ async function submit(): Promise<void> {
   <Dialog v-model:open="open">
     <DialogContent class="max-h-[calc(100vh-4rem)] overflow-y-auto sm:max-w-lg">
       <DialogHeader>
-        <DialogTitle>{{ server ? 'MCP-Server bearbeiten' : 'MCP-Server hinzufügen' }}</DialogTitle>
-        <DialogDescription>Die CLI startet ihn mit jedem Chat dieser Ebene und bietet seine Werkzeuge an.</DialogDescription>
+        <DialogTitle>{{ title }}</DialogTitle>
+        <DialogDescription>
+          {{
+            global
+              ? 'Nexa trägt ihn in jede CLI und jeden Account ein und hält ihn dort gleich. Ausschalten lässt er sich je CLI.'
+              : server?.global
+                ? 'Er ist global: Was du hier änderst, übernimmt Nexa in alle CLIs und Accounts.'
+                : 'Die CLI startet ihn mit jedem Chat dieser Ebene und bietet seine Werkzeuge an.'
+          }}
+        </DialogDescription>
       </DialogHeader>
 
       <form id="mcp-server-form" class="flex flex-col gap-5" @submit.prevent="submit">

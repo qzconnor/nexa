@@ -107,8 +107,8 @@ export function codexHome(account: AccountEnv): string {
   return account.set.CODEX_HOME ? resolve(account.set.CODEX_HOME) : defaultCodexHome()
 }
 
-/** A server of Codex's config as Nexa shows it; Codex knows stdio and streamable HTTP. */
-export function codexServerOut(name: string, raw: unknown): McpServerConfig {
+/** A server of Codex's config as Nexa shows it; Codex knows stdio and streamable HTTP. `reveal`: with its secrets, for main only. */
+export function codexServerOut(name: string, raw: unknown, reveal = false): McpServerConfig {
   const entry = isPlainObject(raw) ? raw : {}
   const enabled = entry.enabled !== false
   const other = otherKeys(entry, SERVER_KEYS)
@@ -117,13 +117,13 @@ export function codexServerOut(name: string, raw: unknown): McpServerConfig {
       name,
       transport: 'http',
       url: entry.url as string,
-      headers: entriesOut(entry.http_headers),
+      headers: entriesOut(entry.http_headers, reveal),
       bearerTokenEnvVar: str(entry.bearer_token_env_var),
       enabled,
       other,
     }
   }
-  return { name, transport: 'stdio', command: str(entry.command) ?? '', args: strings(entry.args), env: entriesOut(entry.env), enabled, other }
+  return { name, transport: 'stdio', command: str(entry.command) ?? '', args: strings(entry.args), env: entriesOut(entry.env, reveal), enabled, other }
 }
 
 /** The entry Codex gets: the edited keys over what it had besides (timeouts, tool lists …). */
@@ -334,6 +334,10 @@ export class CodexConfig implements CliConfigAdapter {
       await this.write(ctx, [{ keyPath: 'mcp_servers', value: Object.keys(next).length ? next : null, mergeStrategy: 'replace' }])
     }
     await this.request(ctx.account, 'config/mcpServer/reload', {}).catch(() => undefined)
+  }
+
+  async exportMcpServers(ctx: CliConfigContext): Promise<McpServerConfig[]> {
+    return Object.entries(await this.rawServers(ctx)).map(([name, raw]) => codexServerOut(name, raw, true))
   }
 
   async savePermissions(ctx: CliConfigContext, values: Record<string, PermissionValue>): Promise<void> {

@@ -244,6 +244,10 @@
       Account und Ebene (Nutzer, Projekt, bei Claude auch Lokal), in den Dateien der CLIs selbst; Schlüssel
       in Variablen und Headern bleiben verborgen, was Nexa nicht kennt, bleibt erhalten. „Konnektoren
       verwalten“ führt dorthin, mit CLI, Account und Ordner des Chats
+- [x] CLI-Konfiguration in Tabs (Alle CLIs und eine je CLI, darunter MCP-Server, Berechtigungen und Hooks)
+      und globale MCP-Server: einmal anlegen oder einen vorhandenen global machen, Nexa trägt ihn in jede
+      CLI und jeden Account ein und hält ihn gleich (Ändern und Entfernen gelten überall, neue Accounts
+      bekommen ihn). Die Übersicht zeigt je Server und Account, wo er fehlt oder abweicht, und gleicht an
 - [x] Antigravity CLI als dritte CLI statt Gemini CLI: Google hat Gemini CLI für private Konten
       eingestellt, Antigravity CLI (`agy`) ist der Nachfolger und spricht ebenfalls das Agent Client
       Protocol (`agy acp`, ein Prozess je Chat). Text, Gedanken, Werkzeuge mit Diffs und Befehlsausgabe,

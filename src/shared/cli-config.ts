@@ -70,6 +70,63 @@ export interface McpServerConfig {
   other?: string[]
   /** Why Nexa only shows it (a kind of server it doesn't edit, e.g. WebSocket); it can still be removed. */
   locked?: string
+  /** A global server (user scope only): Nexa keeps it the same in every CLI and account. */
+  global?: boolean
+}
+
+/** The kinds of servers every CLI with an adapter knows: what a global server may be. */
+export const GLOBAL_MCP_TRANSPORTS: readonly McpTransport[] = ['stdio', 'http']
+
+/** One CLI account in the overview of all CLIs, at its user scope. */
+export interface McpOverviewColumn {
+  provider: ProviderId
+  accountId: string
+  /** Its files couldn't be read: why. */
+  error?: string
+}
+
+/**
+ * A server in one CLI account, against the row's version (a global server's source, else the version
+ * most accounts have): the same, another, not there, or of a kind the CLI doesn't know.
+ */
+export type McpCellState = 'same' | 'different' | 'missing' | 'unsupported' | 'error'
+
+export interface McpOverviewCell {
+  state: McpCellState
+  /** Off without being removed (Codex, Antigravity). */
+  enabled?: boolean
+}
+
+export interface McpOverviewRow {
+  name: string
+  global: boolean
+  /** The row's version as the window may see it (secrets masked). */
+  server: McpServerConfig
+  /** By column, in the order of `McpOverview.columns`. */
+  cells: McpOverviewCell[]
+  /** Columns holding a version of their own (the first of each), to make it global from. */
+  sources: number[]
+  /** Why it can't be global (a kind of server not every CLI knows, a token variable only Codex has). */
+  notGlobal?: string
+}
+
+/** The MCP servers of every CLI account's user scope side by side (Einstellungen › CLI-Konfiguration › Alle CLIs). */
+export interface McpOverview {
+  columns: McpOverviewColumn[]
+  rows: McpOverviewRow[]
+}
+
+/** What a change to a global server couldn't write, by CLI account. */
+export interface McpSyncResult {
+  failed: { provider: ProviderId; accountId: string; message: string }[]
+}
+
+/** Why a server can't be global; null when it can. */
+export function globalMcpProblem(server: McpServerConfig): string | null {
+  if (server.locked) return server.locked
+  if (!GLOBAL_MCP_TRANSPORTS.includes(server.transport)) return 'Nur Claude Code kennt SSE, Codex und Antigravity CLI nicht. Nimm HTTP, wenn der Server es kann.'
+  if (server.bearerTokenEnvVar) return 'Die Variable mit dem Token kennt nur Codex. Trag den Token als Header „Authorization“ ein.'
+  return null
 }
 
 export type PermissionValue = string | string[] | boolean | null
@@ -206,6 +263,13 @@ export const CliConfigInvoke = {
   savePermissions: 'cli-config:save-permissions',
   saveHooks: 'cli-config:save-hooks',
   trustHook: 'cli-config:trust-hook',
+  overview: 'cli-config:mcp-overview',
+  addGlobal: 'cli-config:add-global-mcp',
+  saveGlobal: 'cli-config:save-global-mcp',
+  makeGlobal: 'cli-config:make-global-mcp',
+  unglobal: 'cli-config:unglobal-mcp',
+  removeGlobal: 'cli-config:remove-global-mcp',
+  syncGlobal: 'cli-config:sync-global-mcp',
 } as const
 
 export const CliConfigEvent = {
@@ -217,9 +281,27 @@ export interface CliConfigApi {
   /** The CLIs that have an adapter, in their order. */
   providers(): Promise<ProviderId[]>
   read(target: CliConfigTarget): Promise<CliConfigSnapshot>
-  /** Adds a server, or replaces the one called `previousName` (renamed when the name differs). */
-  saveMcp(target: CliConfigTarget, server: McpServerConfig, previousName: string | null): Promise<void>
-  removeMcp(target: CliConfigTarget, name: string): Promise<void>
+  /**
+   * Adds a server, or replaces the one called `previousName` (renamed when the name differs). A global
+   * one goes on to every other CLI account; what that couldn't write comes back.
+   */
+  saveMcp(target: CliConfigTarget, server: McpServerConfig, previousName: string | null): Promise<McpSyncResult>
+  /** Removes a server; a global one from every CLI account, and it isn't global any more. */
+  removeMcp(target: CliConfigTarget, name: string): Promise<McpSyncResult>
+  /** The servers of every CLI account side by side. */
+  overview(): Promise<McpOverview>
+  /** A new global server, in every CLI account. */
+  addGlobal(server: McpServerConfig): Promise<McpSyncResult>
+  /** Changes a global server (renamed when the name differs) in every CLI account. */
+  saveGlobal(server: McpServerConfig, previousName: string): Promise<McpSyncResult>
+  /** Makes the server of `source` (its user scope) global: from there into every other CLI account. */
+  makeGlobal(name: string, source: McpOverviewColumn): Promise<McpSyncResult>
+  /** No longer global: the entries stay as they are. */
+  unglobal(name: string): Promise<void>
+  /** A global server out of every CLI account. */
+  removeGlobal(name: string): Promise<McpSyncResult>
+  /** Writes a global server's version where it is missing or differs. */
+  syncGlobal(name: string): Promise<McpSyncResult>
   /** By `PermissionField.key`; null removes the setting (the CLI's default then). */
   savePermissions(target: CliConfigTarget, values: Record<string, PermissionValue>): Promise<void>
   saveHooks(target: CliConfigTarget, save: HooksSave): Promise<void>

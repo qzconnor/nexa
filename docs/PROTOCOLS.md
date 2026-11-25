@@ -691,6 +691,27 @@ Abgelesen an Antigravity CLI 1.5.16 (`agy`): die Dateien, die es selbst anlegt, 
     (`AgentProvider.setMcpEnabled`). Für Server des Nutzers gilt er damit in allen Projekten und im
     Terminal, das Menü sagt das. Laufende Chats mit dem Account starten danach neu.
 
+### Globale MCP-Server
+
+Ein Server, den Nexa auf der Ebene Nutzer jedes Accounts jeder installierten CLI einträgt und gleich hält
+(`services/global-mcp.ts`). Was die drei CLIs gemeinsam haben, bestimmt, was global sein kann:
+
+| | Claude Code | Codex | Antigravity CLI |
+| --- | --- | --- | --- |
+| Arten | stdio, HTTP, SSE | stdio, HTTP | stdio, HTTP |
+| Token aus einer Variable | – | `bearer_token_env_var` | – |
+| Ausschalten | – (nur im Prozess, `mcp_toggle`) | `enabled = false` | `disabled: true` |
+
+- Global geht also nur stdio und HTTP ohne Token-Variable (`globalMcpProblem`); ein Token gehört dann als
+  Header `Authorization` in den Eintrag.
+- Gleich heißt: gleicher Befehl mit Argumenten und Variablen bzw. gleiche Adresse mit Headern, mit Werten
+  (`mcpFingerprint`). Der Schalter zählt nicht und bleibt je CLI, ebenso Schlüssel, die Nexa nicht
+  bearbeitet (Zeitgrenzen, Werkzeugfilter, `cwd`): Das Schreiben übernimmt sie wie jede Änderung aus dem
+  Eintrag, der schon dasteht.
+- Die Server stehen nur in den Dateien der CLIs, mit ihren Secrets. `global-mcp.json` im Datenordner von
+  Nexa hält nur Namen und Quelle (CLI und Account, deren Fassung gilt); fehlt der Server dort, nimmt Nexa
+  den ersten Account, der ihn hat.
+
 ## Antigravity CLI (`agy acp`)
 
 Abgelesen an Antigravity CLI 1.5.16 unter Windows. Antigravity CLI ersetzt in Nexa die Gemini CLI, die
