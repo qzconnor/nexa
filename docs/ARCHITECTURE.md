@@ -75,7 +75,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `api/routes.ts` | Die Routen als Tabelle: Methode, Pfad, Parameter, Body mit Beispiel, Antwort, Fehler; `matchRoute` findet Route und Parameter (405 mit `Allow`) |
 | `api/openapi.ts`, `api/docs-page.ts` | Beschreibung der API aus der Tabelle: `GET /openapi.json` (OpenAPI 3.1, Schemas in `API_SCHEMAS`) und `GET /docs` (eigenständiges HTML ohne Skripte und ohne Netz, CSP `default-src 'none'`), beide ohne Token; `openapi.test.ts` prüft, dass jede Route des Servers beschrieben ist und umgekehrt |
 | `files/file-tree-service.ts` | Dateibaum aus dem Claude Manager: Ordner lesen und überwachen, Git-Status, Diffs, Suche, Vormerken/Verwerfen, angefasste Dateien (`touched`) |
-| `files/git-service.ts` | Branch, Checkouts, Web-Adresse und Hauptordner eines Repositorys |
+| `files/git-service.ts` | Branch, Checkouts, Web-Adresse und Hauptordner eines Repositorys; Worktrees der Chats anlegen, betreten und entfernen |
+| `files/worktree-setup.ts` | Was ein neuer Worktree mitbekommt: Dateien aus `.worktreeinclude` (Muster, Auswahl, sicheres Kopieren) und `worktree.baseRef` aus den Einstellungen von Claude Code |
 | `files/activity-tracker.ts` | Leitet aus den Werkzeug-Items der Sessions ab, was der Agent mit Dateien tut (live und aus dem Verlauf) |
 | `files/file-activity.ts`, `files/shell-files.ts` | Shell-Befehle: welche Dateien sie nennen, schreiben, ob sie committen |
 | `files/files-ipc.ts` | Kanäle `files:*` und `git:*` mit Prüfung der Pfade |
@@ -131,23 +132,48 @@ Chat, wo er ist. Ein Ordner außerhalb aller Projekte bekommt ein eigenes Projek
 „Neuer Chat in Worktree …“ (Kontextmenü eines Projekts oder Ordners in der Sidebar, Befehlsliste) öffnet
 `WorktreeDialog`: Repository (ein Ordner darin, vorbelegt mit dem des Projekts, Ordners oder Chats), Name
 (geprüft für Branch und Ordner, auch Windows' Gerätenamen, `shared/worktree.ts`; vorbelegt mit einem
-erfundenen wie `bright-running-fox`, leer erfindet Nexa einen) und die vorhandenen Worktrees zum Anklicken.
+erfundenen wie `bright-running-fox`, leer erfindet Nexa einen), die vorhandenen Worktrees zum Anklicken und
+„Abzweigen von“: „Standard-Branch“ (`origin/main`) oder „Aktueller Stand“ (der HEAD des Ordners), vorbelegt
+mit `worktree.baseRef` aus den Einstellungen von Claude Code (`settings.local.json` und `settings.json` des
+Hauptordners, dann die des Nutzers), sonst „Standard-Branch“; ohne `origin` gibt es nur den HEAD.
 `GitService.worktreeCheck` (Kanal `git:worktree-check`) sagt, ob es geht (Repository mit einem Commit), wovon
-ein neuer abzweigt, welche Worktrees und übrig gebliebenen `worktree-*`-Branches es gibt und ob git
-`.claude/worktrees/` ignoriert (sonst ein Hinweis auf die `.gitignore`).
+ein neuer abzweigen kann (`head`, `fresh`, `baseRef`), welche Worktrees und übrig gebliebenen
+`worktree-*`-Branches es gibt, ob git `.claude/worktrees/` ignoriert (sonst ein Hinweis auf die `.gitignore`)
+und was `.worktreeinclude` mitbringt (`include`: Zahl, die ersten Namen, Größe bis 2 000 Dateien). Sind es
+viele (über 1 000 Dateien oder 100 MB), warnt der Dialog, dass das Anlegen dauert.
 
 Den Worktree legt Nexa selbst mit git an, wo und wie Claude Code es mit `claude --worktree <name>` täte
-(`GitService.addWorktree`): `.claude/worktrees/<name>` im Hauptordner des Repositorys, auch aus einem anderen
-Worktree heraus, auf einem neuen Branch `worktree-<name>` vom HEAD des gewählten Ordners. Den Schalter von
-Claude Code nimmt Nexa nicht (siehe `docs/PROTOCOLS.md`): So arbeitet Codex ebenso darin, und der Chat ist ein
-gewöhnlicher Chat in einem Ordner. `SessionService.create` mit `worktree` setzt `cwd` auf den Worktree und
-merkt ihn in `SessionMeta.worktree`; liegt er nicht im Projekt (das Projekt ist ein Unterordner des
-Repositorys), kommt der Chat ins innerste Projekt darüber, sonst in ein neues für den Hauptordner. Einen
-Worktree des Namens, den es schon gibt, betritt der Chat wieder; einen übrig gebliebenen Branch
-`worktree-<name>` setzt der neue Worktree fort. Filter aus der Konfiguration des Repositorys
-(`filter.<name>.smudge`/`clean`/`process`) laufen beim Auschecken nicht (`files/git-filters.ts`, wie im
-Dateibaum), denn auch ein Agent kann sie dort eintragen; mit `git lfs install --local` liegen dann Zeiger
-statt der Dateien im Worktree (`git lfs pull` darin holt sie). `.worktreeinclude` wertet Nexa nicht aus.
+(`GitService.addWorktree`, Einzelheiten zu Claude Code in `docs/PROTOCOLS.md`): `.claude/worktrees/<name>` im
+Hauptordner des Repositorys, auch aus einem anderen Worktree heraus, auf einem neuen Branch `worktree-<name>`
+(`--no-track`). Mit `fresh` zweigt er vom Standard-Branch von `origin` ab (`originDefault`: der Branch von
+`origin/HEAD`, sonst `main`, sonst `master`); war das Repository seit 24 Stunden nicht geholt (`FETCH_HEAD`),
+holt Nexa vorher diesen einen Branch, ohne zu fragen und höchstens 5 s lang, sonst nimmt es den, den git hat.
+Hat git ihn gar nicht, holt Nexa ihn (bis 20 s); klappt das nicht, zweigt der Worktree vom HEAD ab, und der
+Dialog sagt es in einem Toast (`SessionMeta.worktree.base` nennt, wovon er abzweigte). Mit `head` nimmt er den
+HEAD des gewählten Ordners. Den Schalter von Claude Code nimmt Nexa nicht (siehe `docs/PROTOCOLS.md`): So
+arbeitet Codex ebenso darin, und der Chat ist ein gewöhnlicher Chat in einem Ordner. `SessionService.create`
+mit `worktree` setzt `cwd` auf den Worktree und merkt ihn in `SessionMeta.worktree`; liegt er nicht im Projekt
+(das Projekt ist ein Unterordner des Repositorys), kommt der Chat ins innerste Projekt darüber, sonst in ein
+neues für den Hauptordner. Filter aus der Konfiguration des Repositorys (`filter.<name>.smudge`/`clean`/`process`)
+laufen beim Auschecken nicht (`files/git-filters.ts`, wie im Dateibaum), denn auch ein Agent kann sie dort
+eintragen; mit `git lfs install --local` liegen dann Zeiger statt der Dateien im Worktree (`git lfs pull` darin
+holt sie). Aus demselben Grund holt Nexa mit `--upload-pack=git-upload-pack` und listet ohne `core.fsmonitor`.
+
+Ein neuer Worktree bekommt danach, was Claude Code ihm mitgibt (`files/worktree-setup.ts`): die Dateien, die
+`.worktreeinclude` im Hauptordner nennt (Syntax der `.gitignore`), sofern git sie ignoriert, so dass nie eine
+Datei aus dem Repository doppelt kommt. `git ls-files --others --ignored --exclude-standard --directory` nennt
+sie; einen ganz ignorierten Ordner wie `node_modules/` liest Nexa nur, wenn ein Muster in ihn führt
+(`reachesInto`, wie Claude Code). Kopiert wird nur, was eine gewöhnliche Datei ist, nie ein Link, nie über
+eine Datei, die der Checkout schon hat, nie durch einen Link im Worktree und nie etwas unter
+`.claude/worktrees/`. Auf Windows kommt auch `.claude/settings.local.json` mit, weil Claude Code sie dort im
+Ordner der Sitzung sucht. Was sich nicht kopieren lässt, steht im Log; der Worktree entsteht trotzdem.
+
+Einen Worktree des Namens, den es schon gibt, betritt der Chat wieder, ohne Kopieren. Mit `fresh` bringt
+Nexa ihn vorher auf den Stand des Standard-Branchs (`refresh`, `git reset --hard`), wenn dabei nichts verloren
+geht: Er ist auf seinem Branch, `git status` zeigt nichts, alle seine Commits sind schon auf dem
+Standard-Branch, kein Chat arbeitet darin (`SessionService.inUse`) und git sperrt ihn nicht (eine laufende
+Sitzung von Claude Code). Einen übrig gebliebenen Branch `worktree-<name>` setzt der neue Worktree fort, anders
+als Claude Code, das ihn zurücksetzt: Nexa lässt ihn beim Löschen nur stehen, wenn er eigene Commits hat.
 
 Die Sidebar zeigt einen Worktree als eine Ebene mit seinem Namen und dem Worktree-Symbol
 (`lib/session-tree.ts`), auch für Chats, die Claude Code selbst in einem Worktree hatte.
@@ -155,8 +181,9 @@ Die Sidebar zeigt einen Worktree als eine Ebene mit seinem Namen und dem Worktre
 Gelöscht wird der Worktree mit dem letzten Chat, der ihn in `worktree` hat (`SessionService.remove`,
 `GitService.removeWorktree`), samt Branch, wie Claude Code es am Ende einer Sitzung im Worktree tut: nur,
 wenn kein anderer Chat darin arbeitet (auch als hinzugefügter Ordner), `git status` nichts zeigt und seine
-Commits auch auf einem anderen Branch oder Tag liegen (ein gemergter Branch geht also mit, ein
-Squash-Merge nicht). Was git ignoriert, geht mit. Sonst bleibt er, und das Fenster sagt warum, mit „Ordner
+Commits auch auf einem anderen Branch, einem Tag oder einem Remote-Branch liegen (ein gemergter oder
+gepushter Branch geht also mit, ein Squash-Merge nicht; ein Worktree vom Standard-Branch von `origin` bringt
+Commits mit, die lokal noch kein Branch hat). Was git ignoriert, geht mit, auch die kopierten Dateien. Sonst bleibt er, und das Fenster sagt warum, mit „Ordner
 öffnen“ (`SessionRemoveResult.worktreesKept`). Die Rückfrage vor dem Löschen erwähnt es. Ein Abzweig des
 Chats teilt sich den Worktree; zieht ein Chat aus seinem Worktree weg, nimmt er ihn nicht mehr mit.
 
