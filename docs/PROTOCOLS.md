@@ -699,7 +699,8 @@ mit der Umgebung des Accounts und:
 `terminal` sind `false`: Antigravity liest, schreibt und führt selbst aus), `session/new { cwd, mcpServers,
 _meta }`, `session/resume { sessionId, cwd, mcpServers, _meta }`, `session/load` (dasselbe, spielt aber den
 Verlauf ab), `session/prompt { sessionId, prompt: ContentBlock[] }`, `session/set_mode { modeId }`,
-`session/set_config_option { configId, value }`, `session/cancel` (Benachrichtigung). Die Antwort von
+`session/set_config_option { configId, value }`, `session/cancel` (Benachrichtigung), `session/list` (siehe
+„Sitzungen und Dateien“). Die Antwort von
 `initialize` nennt `agentCapabilities` mit `loadSession`, `sessionCapabilities.resume` und
 `_meta.antigravity.systemPrompt.append`.
 
@@ -776,13 +777,52 @@ Rückfrage brauchen (`tool-grant.ts`), erlaubt `AntigravityRun` selbst.
 ### Sitzungen und Dateien
 
 - **Ordner**: `<.gemini>/antigravity-cli/` mit `settings.json`, `conversations/<id>.db` (SQLite, eine
-  Unterhaltung je Datei) und `brain/<id>/` (ihre Artefakte: Plan, `walkthrough.md` …), dazu `GEMINI.md`
-  und `config/` in `<.gemini>`. Beim Löschen legt Nexa die Datei und den Ordner der Unterhaltung in den
-  Papierkorb (`antigravitySessionFiles`).
+  Unterhaltung je Datei) und `brain/<id>/` (ihre Artefakte: Plan, `walkthrough.md` …), dazu
+  `conversation_summaries.db` (die Liste für `session/list`), `GEMINI.md` und `config/` in `<.gemini>`.
+  Beim Löschen legt Nexa die Datei samt `-wal`/`-shm` und den Ordner der Unterhaltung in den Papierkorb
+  (`antigravitySessionFiles`).
 - **Fortsetzen** geht nur, wenn es `conversations/<id>.db` gibt (`antigravityResumable`): Eine Sitzung ohne
   Prompt legt Antigravity nicht ab. Sonst beginnt der Chat neu mit seinem Verlauf als `<nexa-context>`.
-- **Abzweigen, Bearbeiten, Accountwechsel**: ACP kennt kein Abzweigen und kein Kürzen. Nexa startet dann
-  eine neue Sitzung mit dem Chat als `<nexa-context>`.
+- **Die Datenbank einer Unterhaltung** (`antigravity-conversations.ts`) läuft im WAL-Modus: Was seit dem
+  letzten Checkpoint kam, steht in `<id>.db-wal`, die Zeit der letzten Änderung ist die jüngere der
+  beiden Dateien. Tabellen: `trajectory_meta` (`trajectory_id`, `cascade_id` = die ID der
+  Unterhaltung), `steps` (`idx`, `step_type`, `metadata` und weitere Blobs, Protobuf ohne
+  veröffentlichtes Schema), `gen_metadata` (je Antwort des Modells, Feld 2: die Schritte, die sie
+  machte), `executor_metadata` (je Turn, Feld 3: sein letzter Schritt), `trajectory_metadata_blob`
+  (u. a. der Systemprompt). `step_type` 14 ist ein Prompt (auch die, die Nexa selbst schickt), 15 eine
+  Antwort, 132 ein Werkzeug, 101 und 17 kommen dazwischen. Feld 1 der `metadata` ist die Zeit des
+  Schritts (`google.protobuf.Timestamp`), Feld 20 nennt Trajectory, Index und Unterhaltung. Nexa liest
+  nur Art und Zeit der Schritte (`node:sqlite`, nur lesend).
+- **Verlauf lesen** (Import, Abgleich): `session/load` spielt die Unterhaltung samt Prompts ab
+  (`user_message_chunk`), ohne Zeiten und ohne IDs; die Datei ändert sich dabei nicht. `AntigravityRun.replay`
+  macht daraus Chat-Elemente wie in einem Turn, je Prompt ein Turn; die Zeiten kommen aus den Schritten
+  (Prompt = Zeit seines Schritts, Turn-Ende = Zeit des letzten Schritts davor). Passen Prompts und
+  Schritte nicht zusammen, zählt Nexa von der letzten Zeit zurück und nimmt beim Abgleich nichts.
+  `<nexa-instructions>` und `<nexa-context>` vor einem Prompt nimmt Nexa ab. `session/load` braucht den
+  Ordner der Unterhaltung: aus `session/list`.
+- **`session/list`** (`{ cursor? }`) → `{ sessions: [{ sessionId, cwd, title, updatedAt }], nextCursor? }`,
+  aus `conversation_summaries.db`: `cwd` als `/F:/ordner`, `title` ist der letzte Prompt (gekürzt mit
+  „...“), `updatedAt` ISO-Zeit. Die Liste behält Unterhaltungen, deren Datenbank gelöscht ist; Nexa lässt
+  die aus. Eine Kopie unter neuer ID listet Antigravity, sobald es sie einmal geladen hat.
+- **Übernehmen** (Einstellungen › Import, `nx -r <id>`): die Unterhaltungen aus `session/list` jedes
+  Accounts, deren ID Nexa nicht kennt, mit dem Verlauf aus `session/load` beim ersten Öffnen.
+- **Abgleich**: Nach jedem Turn in Nexa merkt sich der Chat die Zeit (`CliLink.synced`). Ist die
+  Datenbank danach geändert und gibt es Prompts, die nach dieser Zeit gemacht wurden, kamen sie von
+  außerhalb (`agy` im Terminal): Nexa liest ihre Turns über `session/load` und nimmt sie unter „Außerhalb
+  von Nexa weitergeführt“ auf. Wo die Unterhaltung sonst offen ist, sagt Antigravity nicht.
+- **Abzweigen, Bearbeiten**: ACP kennt kein Abzweigen und kein Kürzen (intern hat Antigravity
+  `ForkConversation` und `RevertToCascadeStep`, aber nur in seinem eigenen Language Server, nicht über
+  ACP und nicht als Befehl). Nexa kopiert die Datenbank deshalb vor dem nächsten Start unter einer neuen
+  ID (`copyConversation`): `VACUUM INTO` (eine stimmige Kopie, auch während Antigravity schreibt), die
+  alte ID der Unterhaltung und der Trajectory in allen Blobs ersetzt (gleich lang, Protobuf bleibt
+  gültig), `trajectory_meta` neu, `brain/<id>/` mit. `CliLink.fork.at` ist eine Zeit: Die Kopie endet
+  vor dem ersten Prompt, der dann oder später kam (beim Abzweigen der Zeitpunkt des Abzweigens, beim
+  Bearbeiten der des Prompts), mit den Einträgen in `gen_metadata` und `executor_metadata`, die zu den
+  weggelassenen Schritten gehören. Geprüft mit 1.5.16: `session/resume` der Kopie geht, das Modell kennt
+  nur die Prompts davor. Bleibt nichts übrig oder ist eine Zeit unlesbar, beginnt der Chat neu mit
+  `<nexa-context>`.
+- **Accountwechsel**: dieselbe Kopie unter derselben ID in den Ordner des anderen Accounts (ein API-Key
+  hat einen eigenen, der Google-Login nutzt `~/.gemini`); ein altes `-wal` am Ziel löscht Nexa vorher.
 
 ### Accounts und Login
 

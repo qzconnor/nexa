@@ -50,7 +50,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `services/cli-config-service.ts` | Prüft Ziel (CLI, Account, Ebene, Projektordner) und Eingaben, ruft den Adapter; Kanäle `cli-config:*` in `cli-config-ipc.ts` |
 | `providers/claude/claude-context.ts` | `get_context_usage` von Claude Code → `ContextDetail` (Teile mit deutschen Namen, MCP-Server, Agents, Anweisungsdateien) |
 | `import/claude-manager.ts` | Übernahme aus dem Claude Manager: Workspaces → Trenner mit Projekten, Accounts mit denselben Ordnern, Sessions aus deren Transkripten, dazu Prompts, Themes, Namen und Pins (`cm-extras.ts`); Kanäle `import:*` in `import-ipc.ts` |
-| `import/cli-import.ts` | Übernahme der Sessions der CLIs selbst: Transkripte von Claude Code und Threads von Codex (`thread/list`) aus allen Accounts, je Ordner ein Projekt; Kanäle `import:cli-*` |
+| `import/cli-import.ts` | Übernahme der Sessions der CLIs selbst: Transkripte von Claude Code, Threads von Codex (`thread/list`) und Unterhaltungen von Antigravity CLI (`session/list`) aus allen Accounts, je Ordner ein Projekt; Kanäle `import:cli-*` |
 | `import/import-plan.ts` | Was beide Übernahmen teilen: Sessions nach Ordnern auf Projekte verteilen (`planGroups`), Titel, `SessionMeta` einer übernommenen Session |
 | `import/claude-sessions.ts` | Transkripte eines Claude-Ordners auflisten, ein Transkript samt Subagents als Chat lesen, oder nur was seit einem Zeitpunkt dazukam |
 | `providers/claude/claude-presence.ts` | Ob eine Claude-Code-Sitzung gerade in einem anderen Prozess offen ist (`<config>/sessions/<pid>.json`) und wo |
@@ -262,6 +262,8 @@ Einstellungen › Accounts und in der Befehlsliste) die Sessions, die die CLIs s
   Kurzfassung aus `claude-transcript.ts`).
 - Codex: `thread/list` über den App-Server jedes Codex-Accounts (`AgentProvider.sessions`). Ein Account,
   dessen Server nicht antwortet, steht in der Vorschau als „Nicht gelesen“.
+- Antigravity CLI: `session/list` über `agy acp` je Account-Ordner (`AgentProvider.sessions`), ohne
+  Unterhaltungen, deren Datenbank fehlt.
 
 Nur eingeschaltete, installierte CLIs zählen, Accounts mit demselben Ordner nur einmal. Sessions, die
 Nexa schon kennt (`knownCliSessions`), bleiben draußen; liegt dieselbe Session in mehreren Ordnern
@@ -271,7 +273,8 @@ Ordner ein neues Projekt unter „Projekte“. In der Vorschau wählt man die Gr
 
 Wie beim Claude Manager liest `SessionService` den Chat erst beim ersten Öffnen: Claude aus dem
 Transkript in `importedFrom`, Codex mit `thread/read` über den App-Server des Accounts in `cli.codex`
-(`AgentProvider.history`, `codexThreadItems`). Die Suche liest so auch noch nie geöffnete Chats. Gibt
+(`AgentProvider.history`, `codexThreadItems`), Antigravity mit `session/load` (`AntigravityRun.replay`,
+Zeiten aus der Datenbank, `stampHistory`). Die Suche liest so auch noch nie geöffnete Chats. Gibt
 die CLI keinen Verlauf heraus, steht eine Warnung im Chat; er geht trotzdem in derselben Session weiter.
 
 ## Abgleich mit Claude Code und Codex
@@ -291,6 +294,11 @@ kennt. Einen Thread hat immer nur ein Prozess geladen (`codex-presence.ts`): Was
 App-Server ihn hielt, ist Nexas eigenes, deshalb setzt auch das Ende eines Codex-Laufs `synced`. Damit die
 TUI den Thread öffnen kann, endet ein Codex-Lauf nach 60 s ohne Turn (`releaseWhenIdle`), der App-Server
 entlädt ihn eine Minute später; der nächste Prompt setzt ihn mit `thread/resume` fort.
+
+Mit `cli.antigravity` (`agy` im Terminal): Ist die Datenbank der Unterhaltung (oder ihr `-wal`) seit
+`CliLink.synced` geändert und hat sie Prompts, die danach gemacht wurden (Zeiten der Schritte), liest
+`AgentProvider.history` mit `since` deren Turns über `session/load`. Nexas eigene Turns enden vor
+`synced`, das jedes Turn-Ende setzt. Wo die Unterhaltung sonst offen ist, sagt Antigravity nicht.
 
 Anlässe: `open()` (der Chat wird geladen), im Renderer der Wechsel in einen schon geladenen Chat, der Fokus
 des Fensters (`ChatView`, höchstens alle 2 s) und „Mit … abgleichen“ im Menü des Chats (`sessions:sync`,
@@ -324,8 +332,9 @@ Renderer), jede CLI zweigt ihre Unterhaltung wie beim Abzweigen an ihrer letzten
 Nachricht der letzten Antwort davor, deren `msg_…` in der ID des Items steht), und der neue Text geht
 mit `send` hinaus. Die alte Unterhaltung kommt nach `earlierCli` und geht so mit dem Chat in den
 Papierkorb. Hat eine CLI vor dem Prompt nicht geantwortet, beginnt sie neu, mit dem Chat davor als
-`<nexa-context>`. Antigravity CLI kann weder abzweigen noch kürzen (ACP kennt beides nicht): Beim Abzweigen und
-Bearbeiten beginnt sie immer neu, mit dem Chat davor als `<nexa-context>`. Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, auch
+`<nexa-context>`. Antigravity CLI kann über ACP weder abzweigen noch kürzen: Nexa kopiert ihre Unterhaltung
+vor dem nächsten Start unter neuer ID und schneidet sie vor dem Prompt ab (`forkAntigravity`,
+`copyConversation` in `antigravity-conversations.ts`, `CliLink.fork.at` ist dort eine Zeit). Bearbeiten lassen sich Prompts des Hauptstrangs unter dem letzten `/clear`, auch
 während der Agent arbeitet: `edit` beendet dann die CLI samt ihrem Turn, Prompts in der Warteschlange
 landen hinter dem bearbeiteten und fallen mit weg. Nur eine Shell im Hintergrund oder ein Agent von vor
 dem Prompt hält es auf, sie stünden sonst als laufend im Chat. Was die Agents an Dateien geändert
@@ -454,8 +463,8 @@ Die Session merkt sich je CLI den gewählten Account (`SessionMeta.accounts`) un
 welchem Account die Sitzung der CLI entstand. Weichen beide ab, kopiert `session-transfer.ts` die
 Unterhaltung (Claude: Transkript, Unterordner, `file-history`; Codex: Rollout unter `sessions/`) in den
 neuen Ordner und setzt sie dort fort (Codex mit `thread/resume { path }`). Klappt das nicht, verfällt
-der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`. Antigravity-Sitzungen kopiert Nexa nicht:
-Der neue Account beginnt immer mit dem Verlauf als `<nexa-context>`.
+der Link und die CLI bekommt den ganzen Verlauf als `<nexa-context>`. Antigravity: die Datenbank der
+Unterhaltung (`copyConversation`, mit `VACUUM INTO`) und ihr `brain/<id>/` in den Ordner des Accounts.
 
 Ein Chat nimmt beim Löschen (`SessionService.remove`, mehrere auf einmal) seine Unterhaltungen mit,
 solange `chat.deleteCliConversations` an ist: Die CLI endet zuerst, dann gehen ihre Dateien

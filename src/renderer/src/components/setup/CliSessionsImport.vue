@@ -13,7 +13,7 @@ import { formatAge } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 /**
- * Taking over the sessions Claude Code and Codex saved in the folders of Nexa's accounts (from the
+ * Taking over the sessions the CLIs saved in the folders of Nexa's accounts (from the
  * terminal, an IDE, their apps): each becomes a chat in the project of its folder and goes on where it
  * left off. Reads first, shows the folders, takes over what the user leaves ticked.
  */
@@ -101,7 +101,7 @@ const resultText = computed(() => {
           Übernommen: {{ resultText }}. Die Chats gehen in ihrer CLI dort weiter, wo sie aufgehört haben.
         </p>
         <p v-else class="text-xs text-muted-foreground">
-          Was du mit Claude Code oder Codex außerhalb von Nexa angefangen hast, im Terminal, in der IDE oder in ihren Apps, kommt als Chat
+          Was du mit Claude Code, Codex oder Antigravity CLI außerhalb von Nexa angefangen hast, im Terminal, in der IDE oder in ihren Apps, kommt als Chat
           ins Projekt seines Ordners und geht dort weiter. Nexa liest die Sessions nur, in den CLIs ändert sich nichts.
         </p>
       </div>

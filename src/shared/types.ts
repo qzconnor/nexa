@@ -472,9 +472,10 @@ export interface CliLink {
   synced?: number
   /**
    * A chat branched off another: `sessionId` is still the other chat's conversation, which the CLI's
-   * next start forks into one of its own (Claude `--fork-session`, Codex `thread/fork`), up to `at`
-   * (Claude: the uuid of the last answer's message, Codex: the last turn's id) so that what the other
-   * chat says meanwhile stays out. Gone once the CLI has named the new conversation.
+   * next start forks into one of its own (Claude `--fork-session`, Codex `thread/fork`, Antigravity a
+   * copy of its database), up to `at` (Claude: the uuid of the last answer's message, Codex: the last
+   * turn's id, Antigravity: a time in ms, before the first prompt made then or later) so that what the
+   * other chat says meanwhile stays out. Gone once the CLI has named the new conversation.
    */
   fork?: { at?: string }
 }

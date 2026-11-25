@@ -187,13 +187,14 @@ export interface AgentProvider {
    */
   usage(account: AccountContext, wake: boolean): Promise<RunUsage | null>
   /**
-   * The conversations saved with the account, for CLIs whose server lists them (Codex); Claude Code's
-   * are its transcript files (import/claude-sessions.ts).
+   * The conversations saved with the account, for CLIs whose server lists them (Codex, Antigravity
+   * CLI); Claude Code's are its transcript files (import/claude-sessions.ts).
    */
   sessions?(account: AccountContext): Promise<CliSessionInfo[]>
   /**
-   * The chat of a conversation saved with the account, for CLIs whose server gives it (Codex).
-   * `since`: only the newest turns, back to the first one that started before it.
+   * The chat of a conversation saved with the account, for CLIs whose server gives it (Codex,
+   * Antigravity CLI). `since`: only the newest turns; Codex's back to the first one that started
+   * before it, Antigravity's those of prompts made after it.
    */
   history?(account: AccountContext, sessionId: string, since?: number): Promise<ChatItem[]>
   /**

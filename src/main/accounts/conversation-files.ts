@@ -69,14 +69,18 @@ export function codexThreadFiles(index: Map<string, string[]>, threadId: string)
 
 /**
  * Antigravity CLI's files of a conversation in a `.gemini` folder: the conversation itself first
- * (`antigravity-cli/conversations/<id>.db`), then its artifacts (`antigravity-cli/brain/<id>/`).
+ * (`antigravity-cli/conversations/<id>.db`, with SQLite's log beside it while it is open or after a
+ * crash), then its artifacts (`antigravity-cli/brain/<id>/`).
  */
 export async function antigravitySessionFiles(dir: string, sessionId: string): Promise<string[]> {
   if (!CONVERSATION_ID.test(sessionId)) return []
   const paths = antigravityPaths(dir)
+  const db = join(paths.conversationsDir, `${sessionId}.db`)
   const found: string[] = []
   for (const [path, kind] of [
-    [join(paths.conversationsDir, `${sessionId}.db`), 'file'],
+    [db, 'file'],
+    [`${db}-wal`, 'file'],
+    [`${db}-shm`, 'file'],
     [join(paths.brainDir, sessionId), 'dir'],
   ] as const) {
     if (await exists(path, kind)) found.push(path)

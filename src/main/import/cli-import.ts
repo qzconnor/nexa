@@ -9,6 +9,7 @@ import type { AppSettings, SessionMeta } from '@shared/types'
 import type { AccountService } from '../accounts/account-service'
 import { pool } from '../lib/pool'
 import { TypedEmitter } from '../lib/typed-emitter'
+import type { CliSessionInfo } from '../providers/provider'
 import { summarizeClaudeTranscript } from '../providers/claude/claude-transcript'
 import type { ProjectService } from '../services/project-service'
 import type { ProviderService } from '../services/provider-service'
@@ -20,7 +21,7 @@ import { importedSessionMeta, isDirectory, planGroups, type CliSession, type Pla
  * Takes over the sessions the CLIs saved in the folders of Nexa's accounts (from the terminal, an IDE,
  * their own apps): each becomes a chat in the project of its folder (one Nexa has, else a new one under
  * „Projekte“) that goes on with the CLI's conversation. Claude Code's are its transcripts, Codex's its
- * app-server lists; the CLIs' files are only read.
+ * app-server lists, Antigravity CLI's its ACP server (`session/list`); the CLIs' files are only read.
  */
 export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] }> {
   private last: PlacedGroup<CliSession>[] | null = null
@@ -42,7 +43,12 @@ export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] 
     const found: { account: Account; configDir: string }[] = []
     for (const account of this.accounts.list()) {
       if (account.provider !== provider) continue
-      const configDir = provider === 'claude' ? this.accounts.claudePaths(account.id).configDir : this.accounts.codexPaths(account.id).configDir
+      const configDir =
+        provider === 'claude'
+          ? this.accounts.claudePaths(account.id).configDir
+          : provider === 'codex'
+            ? this.accounts.codexPaths(account.id).configDir
+            : this.accounts.antigravityPaths(account.id).dir
       const key = folderKey(configDir)
       if (seen.has(key)) continue
       seen.add(key)
@@ -55,6 +61,7 @@ export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] 
     const known = this.sessions.knownCliSessions()
     const claude = this.accountsOf('claude')
     const codex = this.accountsOf('codex')
+    const antigravity = this.accountsOf('antigravity')
     const failed: string[] = []
     const label = (account: Account) => `${PROVIDERS[account.provider].name} (${account.name})`
 
@@ -72,7 +79,7 @@ export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] 
     let knownCount = newest.size - todo.length
     let skipped = 0
     const found: CliSession[] = []
-    const total = todo.length + codex.length
+    const total = todo.length + codex.length + antigravity.length
     let done = 0
     const tick = () => {
       done++
@@ -87,19 +94,18 @@ export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] 
       tick()
     })
 
-    // Codex: the threads its app-server lists for every account's folder.
+    // Codex and Antigravity CLI: the conversations their servers list for every account's folder.
     const threads = new Map<string, CliSession>()
-    for (const { account, configDir } of codex) {
+    for (const { account, configDir } of [...codex, ...antigravity]) {
       try {
-        for (const thread of (await this.providers.sessions('codex', account.id)) ?? []) {
+        for (const thread of (await this.providers.sessions(account.provider, account.id)) ?? []) {
           if (known.has(thread.id)) {
             knownCount++
             continue
           }
-          const { id, cwd, title, firstPrompt, createdAt, updatedAt } = thread
-          const session: CliSession = { provider: 'codex', id, configDir, accountId: account.id, mtimeMs: updatedAt ?? createdAt ?? 0, summary: { cwd, title, firstPrompt, lastPrompt: null, createdAt, updatedAt } }
-          const seen = threads.get(id)
-          if (!seen || session.mtimeMs > seen.mtimeMs) threads.set(id, session)
+          const session = listedSession(account, configDir, thread)
+          const seen = threads.get(thread.id)
+          if (!seen || session.mtimeMs > seen.mtimeMs) threads.set(thread.id, session)
         }
       } catch (error) {
         failed.push(`${label(account)}: ${error instanceof Error ? error.message : String(error)}`)
@@ -148,7 +154,7 @@ export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] 
    * its folder lies in (else one of its own); the chat's id, or null when no account's folder has it.
    */
   async takeOver(id: string): Promise<string | null> {
-    const session = (await this.findClaude(id)) ?? (await this.findCodex(id))
+    const session = (await this.findClaude(id)) ?? (await this.findListed('codex', id)) ?? (await this.findListed('antigravity', id))
     if (!session) return null
     const [group] = planGroups([session], [], this.projects.list(), isDirectory)
     if (!group?.exists) throw new Error(`Den Ordner „${session.summary.cwd}“ dieser Session gibt es nicht mehr.`)
@@ -170,13 +176,18 @@ export class CliSessionImport extends TypedEmitter<{ progress: [ImportProgress] 
     return found
   }
 
-  private async findCodex(id: string): Promise<CliSession | null> {
-    for (const { account, configDir } of this.accountsOf('codex')) {
-      const thread = (await this.providers.sessions('codex', account.id).catch(() => null))?.find((t) => t.id === id)
-      if (!thread) continue
-      const { cwd, title, firstPrompt, createdAt, updatedAt } = thread
-      return { provider: 'codex', id, configDir, accountId: account.id, mtimeMs: updatedAt ?? createdAt ?? 0, summary: { cwd, title, firstPrompt, lastPrompt: null, createdAt, updatedAt } }
+  /** A conversation the server of a CLI lists (Codex, Antigravity CLI), in the first account's folder that has it. */
+  private async findListed(provider: ProviderId, id: string): Promise<CliSession | null> {
+    for (const { account, configDir } of this.accountsOf(provider)) {
+      const thread = (await this.providers.sessions(provider, account.id).catch(() => null))?.find((t) => t.id === id)
+      if (thread) return listedSession(account, configDir, thread)
     }
     return null
   }
+}
+
+/** A conversation from a CLI's list as one to take over. */
+function listedSession(account: Account, configDir: string, thread: CliSessionInfo): CliSession {
+  const { id, cwd, title, firstPrompt, createdAt, updatedAt } = thread
+  return { provider: account.provider, id, configDir, accountId: account.id, mtimeMs: updatedAt ?? createdAt ?? 0, summary: { cwd, title, firstPrompt, lastPrompt: null, createdAt, updatedAt } }
 }
