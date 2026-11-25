@@ -9,7 +9,7 @@ import { IpcEvent, IpcInvoke, type SectionCreateInput, type SectionUpdateInput }
 import type { SectionLayout } from '@shared/sections'
 import { parseThemeFile } from '@shared/themes/file'
 import type { ThemeContent } from '@shared/themes/types'
-import type { AppInfo, PromptTarget, SessionMoveInput } from '@shared/types'
+import type { AppInfo, PromptTarget, SessionCreateInput, SessionMoveInput } from '@shared/types'
 import type { AccountCreateInput, AccountUpdateInput } from '@shared/accounts'
 import { mergeAccounts } from './accounts/account-merge'
 import type { AccountService } from './accounts/account-service'
@@ -353,7 +353,11 @@ export function registerIpc(ctx: AppContext): void {
 
   // Sessions -----------------------------------------------------------------------------------
   handle(IpcInvoke.sessionsList, () => sessions.list())
-  handle(IpcInvoke.sessionsCreate, (_e, input: unknown) => sessions.create(input as never))
+  handle(IpcInvoke.sessionsCreate, (_e, input: unknown) => {
+    // A chat that says it came from a scheduled task is the scheduler's to make, not the window's.
+    const { scheduledTask: _task, ...rest } = (input && typeof input === 'object' ? input : {}) as SessionCreateInput
+    return sessions.create(rest)
+  })
   handle(IpcInvoke.sessionsOpen, (_e, id: unknown) => sessions.open(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsSend, (_e, id: unknown, input: unknown) => sessions.send(str(id, 'Die Session'), input as never))
   handle(IpcInvoke.sessionsEdit, (_e, id: unknown, itemId: unknown, input: unknown) =>
@@ -416,6 +420,11 @@ export function registerIpc(ctx: AppContext): void {
     ctx.notifications.setViewing(windowOf(event).id, typeof sessionId === 'string' && sessionId ? sessionId : null),
   )
   handle(IpcInvoke.notificationsTest, () => ctx.notifications.showTest())
+  handle(IpcInvoke.notificationsAnswer, (_e, id: unknown, answer: unknown) => {
+    const a = (answer && typeof answer === 'object' ? answer : {}) as { kind?: unknown; action?: unknown }
+    const parsed = a.kind === 'action' && typeof a.action === 'string' ? { kind: 'action' as const, action: a.action } : { kind: 'dismissed' as const }
+    ctx.notifications.answerAgent(str(id, 'Die Benachrichtigung'), parsed)
+  })
 
   // Events -------------------------------------------------------------------------------------
   settings.on('changed', (next) => broadcast(IpcEvent.settingsChanged, next))

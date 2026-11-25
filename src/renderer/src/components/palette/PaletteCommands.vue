@@ -4,6 +4,8 @@ import {
   ArchiveRestoreIcon,
   ArrowRightLeftIcon,
   BrushCleaningIcon,
+  CalendarClockIcon,
+  CalendarPlusIcon,
   CircleStopIcon,
   CopyIcon,
   FileDownIcon,
@@ -50,6 +52,7 @@ import { startShellId } from '@/lib/shells'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
+import { useScheduledStore } from '@/stores/scheduled'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useStartCommandsStore } from '@/stores/start-commands'
@@ -70,6 +73,7 @@ const settings = useSettingsStore()
 const ui = useUiStore()
 const startCommands = useStartCommandsStore()
 const terminals = useTerminalsStore()
+const scheduled = useScheduledStore()
 const chat = useChatActions()
 const transfer = useSettingsTransfer()
 
@@ -77,6 +81,12 @@ const transfer = useSettingsTransfer()
 function run(action: () => unknown, keepFocus = false): void {
   emit('done', keepFocus)
   void action()
+}
+
+/** The page of the tasks behind the dialog, so the new one shows in its list once saved. */
+function newTask(): void {
+  ui.view = 'scheduled'
+  scheduled.dialog = { kind: 'new' }
 }
 
 async function addProject(): Promise<void> {
@@ -180,6 +190,18 @@ const switchChoices = computed(() => {
         <CommandItem value="artifacts" filter-text="Artefakte Seiten Dokumente claude.ai veröffentlicht Artifact" @select="run(() => (ui.view = 'artifacts'))">
           <ShapesIcon />
           Artefakte
+        </CommandItem>
+        <CommandItem value="scheduled" filter-text="Geplante Aufgaben Zeitplan wiederkehrend automatisch täglich" @select="run(() => (ui.view = 'scheduled'))">
+          <CalendarClockIcon />
+          Geplante Aufgaben
+        </CommandItem>
+        <CommandItem
+          value="new-scheduled"
+          filter-text="Neue geplante Aufgabe Zeitplan anlegen wiederkehrend"
+          @select="run(newTask, true)"
+        >
+          <CalendarPlusIcon />
+          Neue geplante Aufgabe…
         </CommandItem>
         <CommandItem value="add-project" filter-text="Projekt hinzufügen Ordner öffnen anlegen" @select="run(addProject)">
           <FolderPlusIcon />

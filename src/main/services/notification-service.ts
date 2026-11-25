@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { app, Notification, type BrowserWindow } from 'electron'
+import { app, Notification, type BrowserWindow, type NotificationAction } from 'electron'
 import type { Account } from '@shared/accounts'
+import type { AgentNotification, AgentNotificationAnswer, NotifyOutcome, NotifyRequest } from '@shared/notify'
 import { PROVIDERS } from '@shared/providers'
 import type { NotificationSettings } from '@shared/types'
 import { isPlainObject } from '@shared/utils'
@@ -34,6 +36,21 @@ export interface NotificationDeps {
   /** The app's windows, the main one first: it flashes for a chat no window shows. */
   windows: () => readonly BrowserWindow[]
   open: NotificationTargets
+  /** The agents' notifications as toasts: shown in a window, gone from all once answered. */
+  toasts?: { show(win: BrowserWindow, notification: AgentNotification): void; done(id: string): void }
+}
+
+/** A notification of an agent (`notify`) until it is answered, taken back or replaced. */
+interface AgentEntry {
+  notification: AgentNotification
+  /** The system notification, kept so its click and buttons still arrive. */
+  system: Notification | null
+  /** The windows that show it as a toast. */
+  shownIn: Set<number>
+  /** With buttons the agent waits for the choice. */
+  waiting: boolean
+  settle: (outcome: NotifyOutcome) => void
+  timer: NodeJS.Timeout | null
 }
 
 /**
@@ -53,6 +70,8 @@ export class NotificationService {
   private readonly limitWarnings = new Map<string, Notification>()
   private readonly loginWarnings = new Map<string, Notification>()
   private test: Notification | null = null
+  /** The agents' notifications by id, at most one per chat (a newer one takes the older one's place). */
+  private readonly agentNotes = new Map<string, AgentEntry>()
   private readonly file: string
   /** Limit windows already warned about, kept across restarts. */
   private warned: WarnedWindows = {}
@@ -82,6 +101,7 @@ export class NotificationService {
       sessions.on('changed', (list) => {
         // A removed chat takes its notification along.
         for (const id of [...this.shown.keys()]) if (!list.some((s) => s.id === id)) this.dismiss(id)
+        for (const [id, entry] of this.agentNotes) if (!list.some((s) => s.id === entry.notification.sessionId)) this.settleAgent(id, { kind: 'cancelled' })
       }),
       providers.on('usage', () => this.checkLimits()),
       accounts.on('changed', () => this.checkLogins()),
@@ -101,6 +121,7 @@ export class NotificationService {
 
   dispose(): void {
     for (const off of this.offs.splice(0)) off()
+    for (const id of [...this.agentNotes.keys()]) this.settleAgent(id, { kind: 'cancelled' })
   }
 
   /** A window tells which chat it shows (null: none); that chat's notification is no longer needed. */
@@ -110,10 +131,95 @@ export class NotificationService {
     if (sessionId && this.inFront()?.id === windowId) this.dismiss(sessionId)
   }
 
-  /** A window came to the front: the notification of the chat it shows has been seen. */
+  /**
+   * A window came to the front: the notification of the chat it shows has been seen. An agent that
+   * still waits for a choice gets its buttons there as a toast.
+   */
   windowFocused(windowId: number): void {
     const sessionId = this.viewing.get(windowId)
     if (sessionId) this.dismiss(sessionId)
+    const win = this.deps.windows().find((w) => w.id === windowId && !w.isDestroyed())
+    if (win) for (const entry of this.agentNotes.values()) if (entry.waiting) this.toastIn(entry, win)
+  }
+
+  /**
+   * A notification an agent sends (`notify`): a toast in the window in front, else a system
+   * notification; a click opens the chat. Without buttons it settles at once as `shown`, with them
+   * once the user picks one or dismisses it, the wait runs out or the turn stops (`signal`).
+   */
+  fromAgent(sessionId: string, request: NotifyRequest, signal?: AbortSignal): Promise<NotifyOutcome> {
+    const settings = this.settings()
+    if (!settings.enabled || !settings.fromAgents) return Promise.resolve({ kind: 'off' })
+    const meta = this.deps.sessions.list().find((s) => s.id === sessionId)
+    if (!meta) return Promise.resolve({ kind: 'cancelled' })
+    for (const [id, entry] of this.agentNotes) if (entry.notification.sessionId === sessionId) this.settleAgent(id, { kind: 'replaced' })
+    const notification: AgentNotification = {
+      id: randomUUID(),
+      sessionId,
+      chat: meta.title.trim() || 'Chat',
+      provider: meta.provider,
+      title: request.title,
+      ...(request.message ? { message: request.message } : {}),
+      actions: request.actions,
+    }
+    const waiting = request.actions.length > 0
+    return new Promise<NotifyOutcome>((resolve) => {
+      const entry: AgentEntry = { notification, system: null, shownIn: new Set(), waiting, settle: resolve, timer: null }
+      this.agentNotes.set(notification.id, entry)
+      const front = this.inFront()
+      if (front) this.toastIn(entry, front)
+      else this.systemNote(entry, settings)
+      if (!waiting) {
+        resolve({ kind: 'shown' })
+        return
+      }
+      const minutes = Math.round(request.waitMs / 60_000)
+      entry.timer = setTimeout(() => this.settleAgent(notification.id, { kind: 'timeout', minutes }), request.waitMs)
+      signal?.addEventListener('abort', () => this.settleAgent(notification.id, { kind: 'cancelled' }), { once: true })
+    })
+  }
+
+  /** The user answered a notification of an agent in a window (a button, or closed it). */
+  answerAgent(id: string, answer: AgentNotificationAnswer): void {
+    const entry = this.agentNotes.get(id)
+    if (!entry) return
+    if (answer.kind === 'action' && entry.notification.actions.includes(answer.action)) this.settleAgent(id, { kind: 'action', action: answer.action })
+    else if (answer.kind === 'dismissed') this.settleAgent(id, { kind: 'dismissed' })
+  }
+
+  private toastIn(entry: AgentEntry, win: BrowserWindow): void {
+    if (!this.deps.toasts || entry.shownIn.has(win.id)) return
+    entry.shownIn.add(win.id)
+    this.deps.toasts.show(win, entry.notification)
+  }
+
+  private systemNote(entry: AgentEntry, settings: NotificationSettings): void {
+    if (!Notification.isSupported()) return
+    const { id, sessionId, chat, title, message, actions } = entry.notification
+    const system = this.create(title, message ? [chat, message].join('\n') : chat, settings, actions)
+    // The chat opens; an agent that waits shows its buttons there once the window is in front.
+    system.on('click', () => this.deps.open.chat(sessionId))
+    system.on('action', (details: { actionIndex?: number } | undefined, index?: number) => {
+      const action = actions[details?.actionIndex ?? index ?? -1]
+      if (action) this.settleAgent(id, { kind: 'action', action })
+    })
+    // Gone from the screen into the notification center (`timedOut`), it can still be answered there.
+    system.on('close', (details: { reason?: string } | undefined) => {
+      if (entry.waiting && details?.reason === 'userCanceled') this.settleAgent(id, { kind: 'dismissed' })
+    })
+    entry.system = system
+    system.show()
+    if (entry.waiting && settings.flashTaskbar) this.deps.windows().find((w) => !w.isDestroyed())?.flashFrame(true)
+  }
+
+  private settleAgent(id: string, outcome: NotifyOutcome): void {
+    const entry = this.agentNotes.get(id)
+    if (!entry) return
+    this.agentNotes.delete(id)
+    if (entry.timer) clearTimeout(entry.timer)
+    entry.system?.close()
+    if (entry.shownIn.size) this.deps.toasts?.done(id)
+    entry.settle(outcome)
   }
 
   windowClosed(windowId: number): void {
@@ -136,9 +242,10 @@ export class NotificationService {
   private attention(sessionId: string, attention: Attention): void {
     const settings = this.settings()
     if (!settings.enabled || !wanted(settings, attention)) return
-    if (attention.kind === 'done' && attention.busyMs < Math.max(0, settings.minBusySeconds) * 1000) return
     const meta = this.deps.sessions.list().find((s) => s.id === sessionId)
     if (!meta) return
+    // A scheduled run ran without anyone watching: its end is news however short it was.
+    if (attention.kind === 'done' && !meta.scheduledTask && attention.busyMs < Math.max(0, settings.minBusySeconds) * 1000) return
     const resetsAt =
       attention.kind === 'limit' ? limitReset(this.deps.providers.usage().find((u) => u.accountId === attention.accountId)?.windows ?? []) : undefined
     const { title, detail } = attentionText(attention, PROVIDERS[attention.provider].short, settings.preview, resetsAt)
@@ -253,11 +360,12 @@ export class NotificationService {
     void writeJsonAtomic(this.file, file).catch(() => undefined)
   }
 
-  private create(title: string, body: string, settings: NotificationSettings): Notification {
+  private create(title: string, body: string, settings: NotificationSettings, actions: readonly string[] = []): Notification {
     return new Notification({
       title,
       body,
       silent: !settings.sound,
+      ...(actions.length ? { actions: actions.map((text): NotificationAction => ({ type: 'button', text })) } : {}),
       // Windows shows the icon of the app's shortcut, Linux needs it given.
       ...(process.platform === 'linux' && app.isPackaged ? { icon: join(process.resourcesPath, 'icon.png') } : {}),
     })

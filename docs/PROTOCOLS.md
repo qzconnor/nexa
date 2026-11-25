@@ -1163,3 +1163,29 @@ beantwortet (`SessionService.ask`/`respond`), nicht die CLI. Solange sie offen i
 der Antwort, `McpServerSpec.callTool` bekommt ein `AbortSignal`), verfällt das Formular. Codex wartet höchstens
 `tool_timeout_sec` (900 s). Wie `limits` hat es keinen eigenen Schalter und läuft ohne Rückfrage; es kommt
 nur für Verbindungen, die zu einem Chat gehören.
+
+### Benachrichtigung (`notify`)
+
+`notify { title, message?, actions?, waitMinutes? }` (`mcp/notify-tool.ts`) schickt dem Nutzer eine
+Benachrichtigung über Nexa (`NotificationService.fromAgent`): ist ein Fenster von Nexa vorn, als Toast
+darin, sonst als Meldung des Systems. Ein Klick öffnet den Chat des Aufrufers. `title` höchstens 120
+Zeichen auf einer Zeile, `message` höchstens 600 (Klartext, Zeilenumbrüche bleiben), `actions` höchstens 3
+Knöpfe mit je 40 Zeichen (doppelte fallen weg).
+
+- **Ohne `actions`** kommt sofort zurück, dass sie gezeigt wurde und ein Klick den Chat öffnet.
+- **Mit `actions`** wartet der Aufruf auf die Wahl: `The user picked "<Knopf>".`, `The user dismissed the
+  notification without picking an action.` (Toast geschlossen, Systemmeldung weggeklickt mit
+  `reason: 'userCanceled'`; ins Info-Center gerutscht, `timedOut`, lässt sie sich dort noch beantworten)
+  oder nach `waitMinutes` (Vorgabe 10, höchstens 14: unter den 900 s, die Codex einem Aufruf lässt), dass
+  niemand gewählt hat. Eine neuere Benachrichtigung desselben Chats (je Chat nur eine) beendet das Warten
+  mit einem Hinweis darauf, ein angehaltener Turn (`AbortSignal`) oder gelöschter Chat mit einem Fehler.
+- Knöpfe der Systemmeldung sind Electrons `actions: [{ type: 'button', text }]` (Windows: Toast-XML), das
+  Ereignis `action` nennt `actionIndex`. Kommt ein Fenster nach vorn, während der Agent noch wartet, zeigt
+  es die Knöpfe zusätzlich als Toast (`windowFocused`); was zuerst antwortet, gilt, und alle Toasts gehen
+  weg (`event:agent-notification-done`). Antworten aus dem Fenster gehen über `notifications:answer`.
+- Aus mit Einstellungen › Benachrichtigungen › „Von den Agents“ (`notifications.fromAgents`) oder mit
+  Benachrichtigungen insgesamt; der Agent erfährt dann, dass nichts gezeigt wurde, und sagt es im Chat.
+
+Wie `limits` und `ask_user` ohne eigenen Schalter beim Server und ohne Rückfrage (`NexaToolGrant`,
+`app`), nur für Verbindungen eines Chats. Chats geplanter Aufgaben bekommen im Systemprompt den Hinweis,
+dass niemand zusieht und `notify` der Weg zum Nutzer ist.

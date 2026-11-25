@@ -7,7 +7,7 @@ import { isChatWindow } from '@/lib/chat-window'
 import type { SettingsAnchor } from '@/lib/settings-index'
 import { useChatWindowsStore } from './chat-windows'
 
-export type MainView = 'chat' | 'home' | 'artifacts'
+export type MainView = 'chat' | 'home' | 'artifacts' | 'scheduled'
 export type SettingsSection =
   | 'general'
   | 'appearance'

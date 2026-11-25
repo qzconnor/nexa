@@ -82,6 +82,9 @@ describe('NotificationService', () => {
   let usage: ProviderUsage[]
   let accountList: Account[]
   const open = { chat: vi.fn<(id: string) => void>(), settings: vi.fn<(section: 'usage' | 'accounts') => void>() }
+  /** The agents' notifications shown as toasts, and those taken back. */
+  let toasts: { window: number; id: string; actions: string[] }[]
+  let toastsDone: string[]
 
   async function start(patch: Partial<NotificationSettings> = {}) {
     settings.notifications = { ...settings.notifications, ...patch }
@@ -93,6 +96,10 @@ describe('NotificationService', () => {
       userDataDir: dir,
       windows: () => [win, ...chatWindows] as never,
       open,
+      toasts: {
+        show: (target, notification) => toasts.push({ window: (target as unknown as FakeWindow).id, id: notification.id, actions: notification.actions }),
+        done: (id) => toastsDone.push(id),
+      },
     })
     await service.init()
     return service
@@ -118,6 +125,8 @@ describe('NotificationService', () => {
     settingsService = Object.assign(new Fake<{ changed: [AppSettings] }>(), { get: () => settings })
     open.chat.mockReset()
     open.settings.mockReset()
+    toasts = []
+    toastsDone = []
   })
 
   afterEach(async () => {
@@ -237,5 +246,83 @@ describe('NotificationService', () => {
     await vi.waitFor(async () => expect(await readFile(join(dir, 'notifications.json'), 'utf8')).toContain('2026-11-01'))
     await start()
     expect(created()).toHaveLength(1)
+  })
+
+  it('tells a scheduled run that is done however short it was', async () => {
+    sessions.list = () => [{ ...meta('s1', 'Briefing · 25.11. 7:00'), scheduledTask: { id: 't1', name: 'Briefing' } }]
+    await start()
+    sessions.fire('attention', 's1', done(3_000))
+    expect(texts()).toEqual(['Claude ist fertig | Briefing · 25.11. 7:00\nAlles erledigt.'])
+  })
+
+  describe('notifications of agents', () => {
+    const request = (actions: string[] = []) => ({ title: 'Briefing fertig', message: 'Zwei Issues sind dringend.', actions, waitMs: 60_000 })
+    const action = (index: number) => (created().at(-1)!.handlers.get('action') as unknown as (details: { actionIndex: number }) => void)({ actionIndex: index })
+    const closed = (reason: string) => (created().at(-1)!.handlers.get('close') as unknown as (details: { reason: string }) => void)({ reason })
+
+    it('shows one in the background as a system notification whose click opens the chat', async () => {
+      const service = await start()
+      await expect(service.fromAgent('s1', request())).resolves.toEqual({ kind: 'shown' })
+      expect(texts()).toEqual(['Briefing fertig | Refactoring\nZwei Issues sind dringend.'])
+      created()[0]!.handlers.get('click')!()
+      expect(open.chat).toHaveBeenCalledWith('s1')
+    })
+
+    it('waits for the button the user picks, also when the window comes to the front', async () => {
+      const service = await start()
+      const picked = service.fromAgent('s1', request(['Freigeben', 'Später']))
+      expect((created()[0]!.options as { actions?: unknown }).actions).toEqual([
+        { type: 'button', text: 'Freigeben' },
+        { type: 'button', text: 'Später' },
+      ])
+      // Back in Nexa: the buttons come as a toast there too.
+      win.focused = true
+      service.windowFocused(1)
+      expect(toasts).toMatchObject([{ window: 1, actions: ['Freigeben', 'Später'] }])
+      action(1)
+      await expect(picked).resolves.toEqual({ kind: 'action', action: 'Später' })
+      expect(toastsDone).toEqual([toasts[0]!.id])
+    })
+
+    it('shows a toast while Nexa is in front and takes the answer from it', async () => {
+      const service = await start()
+      win.focused = true
+      const picked = service.fromAgent('s1', request(['Ja']))
+      expect(created()).toHaveLength(0)
+      service.answerAgent(toasts[0]!.id, { kind: 'action', action: 'Nein' })
+      service.answerAgent(toasts[0]!.id, { kind: 'dismissed' })
+      await expect(picked).resolves.toEqual({ kind: 'dismissed' })
+    })
+
+    it('ends the wait when dismissed, replaced, stopped or out of time', async () => {
+      vi.useFakeTimers()
+      try {
+        const service = await start()
+        const dismissed = service.fromAgent('s1', request(['Ja']))
+        closed('timedOut')
+        closed('userCanceled')
+        await expect(dismissed).resolves.toEqual({ kind: 'dismissed' })
+
+        const replaced = service.fromAgent('s1', request(['Ja']))
+        const newer = service.fromAgent('s1', request(['Ja']))
+        await expect(replaced).resolves.toEqual({ kind: 'replaced' })
+
+        const stop = new AbortController()
+        const stopped = service.fromAgent('s2', request(['Ja']), stop.signal)
+        stop.abort()
+        await expect(stopped).resolves.toEqual({ kind: 'cancelled' })
+
+        vi.advanceTimersByTime(60_000)
+        await expect(newer).resolves.toEqual({ kind: 'timeout', minutes: 1 })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('shows nothing while notifications from agents are off', async () => {
+      const service = await start({ fromAgents: false })
+      await expect(service.fromAgent('s1', request(['Ja']))).resolves.toEqual({ kind: 'off' })
+      expect(created()).toHaveLength(0)
+    })
   })
 })

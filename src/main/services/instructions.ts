@@ -7,7 +7,17 @@ import { firstLine } from '@shared/utils'
  * developerInstructions, Antigravity CLI: `_meta.antigravity.systemPrompt.append`, see antigravity-run.ts). Kept
  * short and stable: Claude Code records it once per conversation.
  */
-export function sessionInstructions(options: { renderTools: boolean; browserTools: boolean; chatTools?: boolean; askTool?: boolean; projectName: string }): string {
+export function sessionInstructions(options: {
+  renderTools: boolean
+  browserTools: boolean
+  chatTools?: boolean
+  askTool?: boolean
+  /** `notify` of Nexa's MCP server is there. */
+  notifyTool?: boolean
+  /** The name of the scheduled task that started the chat; nobody watches it work. */
+  scheduledTask?: string
+  projectName: string
+}): string {
   const lines = [
     '# Nexa',
     'You are running inside Nexa, a desktop app that shows this conversation as a chat UI instead of a terminal.',
@@ -18,6 +28,18 @@ export function sessionInstructions(options: { renderTools: boolean; browserTool
       ? ['  For a form with several fields (text, numbers, paths, switches), or when your CLI has no question tool, call ask_user of the `nexa` MCP server instead of ending your turn with a question.']
       : []),
     `- The project is "${options.projectName}". Answer in the language the user writes in.`,
+    ...(options.notifyTool
+      ? [
+          '- notify of the `nexa` MCP server sends the user a notification (a click opens this chat), optionally with buttons whose choice it returns.',
+          '  Use it when the user is likely not watching and something needs them: long work finished, a result they asked to hear about, a decision. Not for every step.',
+        ]
+      : []),
+    ...(options.scheduledTask
+      ? [
+          `- This chat was started by the scheduled task "${options.scheduledTask.replace(/[\r\n"]+/g, ' ')}" in Nexa, on its schedule: nobody watches it. Do the task on your own and end with a short summary of what you found or did.` +
+            (options.notifyTool ? ' Call notify when the result needs the user, so they hear of it.' : ''),
+        ]
+      : []),
   ]
   if (options.renderTools) {
     lines.push(

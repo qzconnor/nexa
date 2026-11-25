@@ -283,6 +283,12 @@ export class SessionService extends TypedEmitter<Events> {
     return count
   }
 
+  /** Whether the chat is there and its CLI works for it (a scheduled run doesn't go into a turn that runs). */
+  isWorking(id: string): boolean {
+    const s = this.sessions.get(id)
+    return !!s && this.atWork(s)
+  }
+
   /** The chat's CLI works for it: a turn runs or waits, prompts wait, or it compacts. */
   private atWork(s: SessionState): boolean {
     const { status, queued, compactingSince } = s.runtime
@@ -392,6 +398,7 @@ export class SessionService extends TypedEmitter<Events> {
       ...(cwd ? { cwd } : {}),
       ...(args.length ? { cliArgs: { [provider]: args } } : {}),
       ...(worktree ? { worktree } : {}),
+      ...(input.scheduledTask ? { scheduledTask: { id: input.scheduledTask.id, name: input.scheduledTask.name } } : {}),
     }
     const s = this.state(meta)
     s.items = []
@@ -442,7 +449,8 @@ export class SessionService extends TypedEmitter<Events> {
     }
     const now = Date.now()
     // The conversations from before a `/clear` stay the old chat's: deleting the new one leaves them.
-    const { pinned: _pinned, archived: _archived, importedFrom: _imported, earlierCli: _earlier, ...rest } = from
+    // A branch is the user's own chat, no run of the task.
+    const { pinned: _pinned, archived: _archived, importedFrom: _imported, earlierCli: _earlier, scheduledTask: _task, ...rest } = from
     const meta: SessionMeta = {
       ...structuredClone(rest),
       id: randomUUID(),
@@ -1480,6 +1488,8 @@ export class SessionService extends TypedEmitter<Events> {
               browserTools: !!mcp && tools.browserTools,
               chatTools: !!mcp && tools.chatTools,
               askTool: !!mcp,
+              notifyTool: !!mcp,
+              scheduledTask: meta.scheduledTask?.name,
               projectName: project.name,
             }),
             // The user's own for the project and the separators around it (`prompts.md`).

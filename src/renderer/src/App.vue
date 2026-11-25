@@ -11,6 +11,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import { Toaster } from '@/components/ui/sonner'
 import { Spinner } from '@/components/ui/spinner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useAgentNotifications } from '@/composables/useAgentNotifications'
 import { useChatActions } from '@/composables/useChatActions'
 import { useShortcuts } from '@/composables/useShortcuts'
 import { useThemeSync } from '@/composables/useThemeSync'
@@ -22,6 +23,7 @@ import { useAppStore } from '@/stores/app'
 import { useChatWindowsStore } from '@/stores/chat-windows'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
+import { useScheduledStore } from '@/stores/scheduled'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemesStore } from '@/stores/themes'
@@ -43,6 +45,8 @@ const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/
 const SettingsImportDialog = defineAsyncComponent(() => import('@/components/settings/SettingsImportDialog.vue'))
 const ThemeEditorDialog = defineAsyncComponent(() => import('@/components/themes/ThemeEditorDialog.vue'))
 const ArtifactsView = defineAsyncComponent(() => import('@/views/ArtifactsView.vue'))
+const ScheduledTaskDialog = defineAsyncComponent(() => import('@/components/scheduled/ScheduledTaskDialog.vue'))
+const ScheduledView = defineAsyncComponent(() => import('@/views/ScheduledView.vue'))
 const SetupView = defineAsyncComponent(() => import('@/views/SetupView.vue'))
 
 const settings = useSettingsStore()
@@ -54,6 +58,7 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const chatWindows = useChatWindowsStore()
+const scheduled = useScheduledStore()
 
 /** Under the title bar, where no button of the chat sits (`--titlebar-height`, main.css). */
 const TOAST_OFFSET = { top: 'calc(var(--titlebar-height) + 0.75rem)', right: '1rem' }
@@ -64,6 +69,8 @@ const { theme } = useThemeSync()
 
 // Ctrl+, the settings, Ctrl+Shift+A/P the quick open, Ctrl+Tab and Ctrl+1–9 the chats (shared/shortcuts.ts).
 useShortcuts(ready)
+// What the agents send with `notify`, as toasts in whichever window main picks.
+useAgentNotifications()
 
 // The chat in view: its notification has been seen, and it gets none while the window is in front.
 watch(
@@ -136,6 +143,10 @@ onMounted(async () => {
       void useUpdatesStore()
         .load()
         .catch((error) => console.error('[updates]', error))
+      // The sidebar counts the tasks that run on their own.
+      void scheduled
+        .load()
+        .catch((error) => console.error('[scheduled]', error))
     }
   } catch (error) {
     fatal.value = errorMessage(error)
@@ -162,6 +173,7 @@ onMounted(async () => {
           <!-- A chat's own window shows that chat and nothing else. -->
           <template v-else-if="!isChatWindow">
             <ArtifactsView v-if="ui.view === 'artifacts'" />
+            <ScheduledView v-else-if="ui.view === 'scheduled'" />
             <!-- Chats stay reachable; only the start page waits for the setup. -->
             <SetupView v-else-if="!settings.settings.setup.done" />
             <HomeView v-else />
@@ -193,6 +205,7 @@ onMounted(async () => {
       <ChatCleanupDialog />
       <WorktreeDialog />
       <SettingsImportDialog />
+      <ScheduledTaskDialog v-if="!isChatWindow" />
     </template>
     <ConfirmDialog />
     <AppTooltip />
