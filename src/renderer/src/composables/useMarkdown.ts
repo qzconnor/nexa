@@ -14,6 +14,10 @@ function createRenderer(breaks: boolean) {
       return html ? `<pre><code class="hljs language-${language}">${html}</code></pre>` : ''
     },
   })
+  // markdown-it drops `file:` links to plain text. The CLIs link files they wrote that way (Antigravity
+  // its walkthroughs, Codex the files it touched); a click never navigates (`handleMarkdownClick`).
+  const defaultValidateLink = md.validateLink.bind(md)
+  md.validateLink = (url) => /^file:/i.test(url.trim()) || defaultValidateLink(url)
   const defaultLinkOpen =
     md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
   md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
@@ -70,13 +74,37 @@ export async function loadFenceLanguages(source: string): Promise<boolean> {
   return loaded.some(Boolean)
 }
 
-/** Opens markdown links in the system browser instead of navigating the app window. */
-export function handleMarkdownClick(event: MouseEvent): void {
+/**
+ * The file a link in an answer points to: an absolute path or a `file://` URL (Windows `file:///C:/…`,
+ * elsewhere `file:///home/…`), without a line anchor (`#L12`); null for anything else. Not a share
+ * (`//server/…`): opening it would make Windows sign in to that server with the user's account.
+ */
+export function linkedFile(href: string): string | null {
+  const match = /^(?:file:\/\/)?(\/?[a-z]:[\\/].*|\/(?!\/).*)$/i.exec(href.trim())
+  if (!match) return null
+  let path = match[1]!.replace(/#L\d+.*$/, '')
+  // `file:///C:/x` leaves `/C:/x`: the drive comes first on Windows.
+  if (/^\/[a-z]:[\\/]/i.test(path)) path = path.slice(1)
+  try {
+    return decodeURI(path)
+  } catch {
+    return path
+  }
+}
+
+/**
+ * Opens markdown links in the system browser instead of navigating the app window; a linked file
+ * through `openFile`, which asks before running a program or script.
+ */
+export function handleMarkdownClick(event: MouseEvent, openFile: (path: string) => Promise<void>): void {
   const anchor = (event.target as HTMLElement | null)?.closest('a')
   if (!anchor) return
   event.preventDefault()
   const href = anchor.getAttribute('href') ?? ''
-  if (/^https?:\/\//i.test(href)) void window.api.app.openExternal(href)
-  // Codex links the files it touched: an absolute path (or file:// URL) opens the file.
-  else if (/^(file:\/\/\/?)?([a-z]:[\\/]|\/)/i.test(href)) void window.api.app.openPath(decodeURI(href.replace(/^file:\/\/\/?/i, '')).replace(/#L\d+.*$/, ''))
+  if (/^https?:\/\//i.test(href)) {
+    void window.api.app.openExternal(href)
+    return
+  }
+  const file = linkedFile(href)
+  if (file) void openFile(file)
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { handleMarkdownClick, loadFenceLanguages, useMarkdown } from '@/composables/useMarkdown'
+import { useOpenFile } from '@/composables/useOpenFile'
 import { sortOrder } from '@/lib/table-sort'
 import { cn } from '@/lib/utils'
 
@@ -10,6 +11,7 @@ import { cn } from '@/lib/utils'
  */
 const props = defineProps<{ text: string; streaming?: boolean; breaks?: boolean; class?: string }>()
 const { render } = useMarkdown(props.breaks ?? false)
+const openFile = useOpenFile()
 const version = ref(0)
 const html = computed(() => {
   void version.value
@@ -53,7 +55,7 @@ function onClick(event: MouseEvent): void {
     sortTable(header)
     return
   }
-  handleMarkdownClick(event)
+  handleMarkdownClick(event, openFile)
 }
 
 function onKeydown(event: KeyboardEvent): void {
