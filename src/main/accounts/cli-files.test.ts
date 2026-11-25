@@ -120,6 +120,7 @@ describe('keyringListsLogin', () => {
     expect(paths.settingsFile.replace(/\\/g, '/')).toBe('/p/k/antigravity-cli/settings.json')
     expect(paths.mcpFile.replace(/\\/g, '/')).toBe('/p/k/config/mcp_config.json')
     expect(paths.conversationsDir.replace(/\\/g, '/')).toBe('/p/k/antigravity-cli/conversations')
+    expect(paths.projectFile.replace(/\\/g, '/')).toBe('/p/k/config/projects/default-cli-project.json')
   })
 })
 

@@ -639,7 +639,9 @@ Chats (`sessions:config-target`).
   Das „+“ (`ComposerAddMenu`) hängt Dateien an (Bilder als Anhang, andere als `@`-Erwähnung), gibt dem
   Chat weitere Ordner (`SessionMeta.dirs`, Chips über der Eingabe) und schaltet unter „Konnektoren“ die
   MCP-Server des Projekts (`Project.mcpOff`; Claude Code im laufenden Prozess, sonst ab dem nächsten
-  Start). Ein fehlgeschlagener Server lässt sich dort neu verbinden, ein abgemeldeter anmelden
+  Start). Antigravity CLI kann einen Server nicht für einen Lauf weglassen: Sein Provider listet die
+  Server aus den Dateien und schaltet sie dort (`AgentProvider.setMcpEnabled`, `McpServerInfo.switchIn`),
+  laufende Chats mit dem Account starten neu. Ein fehlgeschlagener Server lässt sich dort neu verbinden, ein abgemeldeter anmelden
   (`sessions.reconnectMcp`, `sessions.authenticateMcp`: im laufenden Prozess des Chats, sonst über den
   Provider; die Seite öffnet der Browser des Systems), „Konnektoren verwalten“ führt zu claude.ai bzw. zur
   `config.toml` von Codex. „Plugins ›“ (`ComposerPluginsMenu`) zeigt die installierten Plugins der CLI

@@ -100,6 +100,8 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
     setUsage: () => {},
     history: (_id: string, accountId: string, sessionId: string, since?: number) => readHistory(accountId, sessionId, since),
     openElsewhere: async () => elsewhere,
+    switchesMcpItself: () => !!provider.setMcpEnabled,
+    setMcpEnabled: (_id: string, accountId: string, cwd: string, name: string, enabled: boolean) => provider.setMcpEnabled!({ accountId, set: {}, unset: [], accessToken: null }, cwd, name, enabled),
   }
   const mcp = { revoke: vi.fn(), running: false }
   service = new SessionService(
@@ -1036,5 +1038,24 @@ describe('SessionService.restart', () => {
     sink().item({ kind: 'turn', id: 'r2', ts: 22, provider: 'claude', status: 'done' })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(stopped()).toBe(1)
+  })
+
+  it('leaves the switch of an MCP server to a CLI that keeps it in its files, and starts its chat anew', async () => {
+    const switched: unknown[] = []
+    let stopped = 0
+    const run = { alive: true, send: async () => {}, stop: async () => void (stopped++, (run.alive = false)) }
+    const sessions = await start([meta('chat', {})], {
+      start: async (_options, sink) => {
+        sink.runtime({ status: 'idle' })
+        return run as unknown as AgentRun
+      },
+      setMcpEnabled: async (account, cwd, name, enabled) => void switched.push([account.accountId, cwd, name, enabled]),
+    })
+    await sessions.send('chat', { text: 'erste' })
+
+    await sessions.setMcpEnabled('chat', 'docs', false)
+
+    expect(switched).toEqual([['claude-a', CWD, 'docs', false]])
+    expect(stopped).toBe(1)
   })
 })

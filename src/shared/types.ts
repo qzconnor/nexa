@@ -394,7 +394,8 @@ export interface FolderPromptInfo {
 export interface McpServerInfo {
   /** As the CLI names it (`claude.ai ClickUp`, `rea` …). */
   name: string
-  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
+  /** `configured`: set up in the CLI's files, which tells no client whether it connected (Antigravity CLI). */
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled' | 'configured'
   /** Where it comes from: `user`, `project`, `local`, `claudeai` (a connector), `plugin` … */
   scope?: string
   /** How many tools it has, once connected. */
@@ -402,6 +403,12 @@ export interface McpServerInfo {
   error?: string
   /** On for the project's chats (Nexa keeps the ones switched off, `Project.mcpOff`). */
   enabled: boolean
+  /**
+   * `cli`: the switch is the CLI's own (`disabled` in the file of the server's scope), so a server of
+   * the user is off in every project, and in the terminal too (Antigravity CLI, which can't leave one
+   * out for a single run). Absent: Nexa's switch for the project.
+   */
+  switchIn?: 'cli'
 }
 
 /** The page where a signed-out MCP server signs in. */

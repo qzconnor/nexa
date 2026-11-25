@@ -639,7 +639,7 @@ Abgelesen an Antigravity CLI 1.5.16 (`agy`): die Dateien, die es selbst anlegt, 
 | Ebene | MCP-Server | Hooks | Berechtigungen |
 | --- | --- | --- | --- |
 | Nutzer | `<.gemini>/config/mcp_config.json` | `<.gemini>/config/hooks.json` | `<.gemini>/antigravity-cli/settings.json` |
-| Projekt | `<projekt>/.agents/mcp_config.json` | `<projekt>/.agents/hooks.json` | – |
+| Projekt | `<projekt>/.agents/mcp_config.json` | `<projekt>/.agents/hooks.json` | `<.gemini>/config/projects/default-cli-project.json` (für alle Ordner) |
 
 - `<.gemini>` ist der Ordner des Accounts (`--gemini-dir`), sonst `~/.gemini`. Der Ordner heißt noch wie bei
   Gemini CLI, die Dateien darin sind andere.
@@ -649,14 +649,38 @@ Abgelesen an Antigravity CLI 1.5.16 (`agy`): die Dateien, die es selbst anlegt, 
   und `headers` (Streamable HTTP), dazu `disabled`. Andere Schlüssel (Werkzeugfilter …) bleiben, wie sie sind.
 - Berechtigungen: `agentMode` (`""` = Standard, `accept-edits`, `auto`, `plan`), `toolPermission`
   (`request-review`, `proceed-in-sandbox`, `always-proceed`, `strict`), `allowNonWorkspaceAccess` und
-  `permissions.{allow, ask, deny}` mit Regeln der Form `aktion(ziel)`. Regeln eines Projekts legt
-  Antigravity CLI selbst an (`/permissions` im Terminal); Nexa zeigt für Projekte keine Felder.
+  `permissions.{allow, ask, deny}` mit Regeln der Form `aktion(ziel)`.
+- Projektregeln: `/permissions` kennt drei Ebenen: „Project“ (geht vor), „Shared with Antigravity“ und
+  „Global“ (die `settings.json` oben). „Project“ ist kein Ordner, sondern ein Antigravity-Projekt: Jede
+  Sitzung der CLI und von `agy acp` läuft im Projekt `default-cli-project` („CLI Project“, im Log
+  „Conversation using project ID“), in jedem Ordner; nur die Oberfläche im Terminal nimmt mit `--project`
+  ein anderes. Seine Regeln stehen in `<.gemini>/config/projects/default-cli-project.json` doppelt
+  verschachtelt: `{ id, name, projectResources, permissionGrants: { permissionGrants: { allow, deny, ask } } }`.
+  Die Datei legt erst die Oberfläche im Terminal an, `agy acp` nicht; ohne sie schreibt Nexa `id`, `name`
+  und `projectResources: {}` wie Antigravity. Geprüft: Eine `deny`-Regel daraus (`read_file(secret.txt)`)
+  verhindert das Lesen auch über ACP, in einem anderen Ordner. Nexa zeigt sie unter der Ebene Projekt,
+  mit dem Hinweis, dass sie in allen Projekten gelten. Wo „Shared with Antigravity“ seine Regeln ablegt,
+  ist offen: Eine Regel dort landete in keiner Datei unter `<.gemini>` (laut Änderungsprotokoll gehört
+  dazu `<.gemini>/config/config.json`).
 - Hooks: `{ "<name>": { enabled?, "<Ereignis>": […] } }`, also benannte Hooks mit ihren Ereignissen.
   `PreToolUse` und `PostToolUse` halten Gruppen `{ matcher, hooks: [{ type: "command", command, timeout? }] }`
   (Matcher ist ein regulärer Ausdruck auf den Werkzeugnamen), `SessionStart`, `PreInvocation`,
   `PostInvocation` und `Stop` halten die Befehle direkt. `timeout` in Sekunden. Nexa zeigt die Gruppen
   aller benannten Hooks je Ereignis und schreibt jede dorthin zurück, woher sie kam; neue kommen in den
   Hook `nexa`. Ein benannter Hook ohne Ereignisse fällt weg.
+- MCP-Server im „+“-Menü (geprüft mit einem kleinen stdio-Server, der seinen Start mitschreibt):
+  - `agy acp` startet beim `session/new` die Server des Nutzers und die aus `.agents/mcp_config.json` im
+    Ordner der Sitzung. Einen Zustand (verbunden, fehlgeschlagen) nennt es keinem Client, auch `agy mcp
+    list` nur `enabled`/`disabled` aus der Datei des Nutzers. Nexa zeigt die Server deshalb aus den
+    Dateien („Eingerichtet“ oder „Aus“).
+  - `disabled: true` startet den Server trotzdem, das Modell bekommt seine Werkzeuge aber nicht.
+  - Ein Server lässt sich nicht für eine einzelne Sitzung abschalten: Ein Eintrag gleichen Namens mit
+    `disabled: true` in `.agents/mcp_config.json` schaltet den des Nutzers nicht ab (der zuerst gestartete
+    behält den Namen), ein Server gleichen Namens in `mcpServers` von `session/new` ersetzt ihn nicht, und
+    `agy acp` hat kein `--settings`. Nexas eigener Schalter je Projekt (`Project.mcpOff`) wirkt hier also
+    nicht; der Schalter im „+“-Menü setzt `disabled` in der Datei, in der der Server steht
+    (`AgentProvider.setMcpEnabled`). Für Server des Nutzers gilt er damit in allen Projekten und im
+    Terminal, das Menü sagt das. Laufende Chats mit dem Account starten danach neu.
 
 ## Antigravity CLI (`agy acp`)
 

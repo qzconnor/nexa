@@ -13,7 +13,8 @@ import type {
 } from '@shared/types'
 
 /** An MCP server as a CLI reports it; whether it is on for the project is Nexa's. */
-export type McpServerState = Omit<McpServerInfo, 'enabled'>
+/** A server as the CLI tells it; `enabled` only where the switch is the CLI's own (`switchIn: 'cli'`). */
+export type McpServerState = Omit<McpServerInfo, 'enabled'> & { enabled?: boolean }
 import type { AccountEnv } from '../accounts/account-env'
 import type { LoginCommand } from '../accounts/account-login'
 import type { McpCallLog } from '../mcp/call-log'
@@ -164,6 +165,11 @@ export interface AgentProvider {
   commands(account: AccountContext, cwd: string): Promise<CommandOption[]>
   /** The MCP servers the CLI would start in a folder, without a chat of its own running there. */
   mcpServers(account: AccountContext, cwd: string): Promise<McpServerState[]>
+  /**
+   * For CLIs whose servers Nexa can't leave out of a single run (`mcpOff`): switches one in the CLI's
+   * own file where it is set up; its running chats with the account start anew to take it.
+   */
+  setMcpEnabled?(account: AccountContext, cwd: string, name: string, enabled: boolean): Promise<void>
   /** The next look at the MCP servers connects them anew (one that failed, or signed in since). */
   reconnectMcp(account: AccountContext, cwd: string, name: string): Promise<void>
   /** Starts the sign-in of an MCP server without a chat running; null when it needs none. */
