@@ -1,6 +1,14 @@
 import { net } from 'electron'
 import type { Account, AccountKind, AuthState } from '@shared/accounts'
-import { ARTIFACT_URL, type Artifact, type ArtifactAudience, type ArtifactList, type ArtifactListStatus } from '@shared/artifacts'
+import {
+  ARTIFACT_URL,
+  MAX_ARTIFACT_TITLE,
+  artifactTitle,
+  type Artifact,
+  type ArtifactAudience,
+  type ArtifactList,
+  type ArtifactListStatus,
+} from '@shared/artifacts'
 import type { AccountService } from '../accounts/account-service'
 
 /**
@@ -18,10 +26,13 @@ const PAGE_SIZE = 200
 /** Pages per list at most: more than anyone keeps. */
 const MAX_PAGES = 10
 const TIMEOUT_MS = 15_000
+/** How long a delete waits at most for the server to be ready again (409, 429, 503). */
+const MAX_RETRY_AFTER_MS = 10_000
+const RETRYABLE = new Set([409, 429, 503])
 /** An artifact's id as in its link; nothing else goes into a path. */
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/
 const AUDIENCES: readonly ArtifactAudience[] = ['owner', 'users', 'org', 'public']
-const MAX_TITLE = 300
+const MAX_TITLE = MAX_ARTIFACT_TITLE
 const MAX_DESCRIPTION = 1000
 /** Thumbnails come from the artifacts' own host, with a short-lived token in the link, never with the login's. */
 const THUMB_HOST = '.frame.claudeusercontent.com'
@@ -46,6 +57,7 @@ interface Row {
 
 interface Lane {
   rows: Row[]
+  pinsEnabled: boolean
   truncated: boolean
 }
 
@@ -58,11 +70,12 @@ export class ArtifactService {
     private readonly userAgent: string,
     /** The installed Claude Code's version, which it sends along as its own. */
     private readonly clientVersion: () => string | null,
+    private readonly wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   ) {}
 
   /** Own and shared artifacts of the account's login, most recently viewed first. */
   async list(accountId: string): Promise<ArtifactList> {
-    const base: ArtifactList = { accountId, status: 'ok', message: null, artifacts: [], truncated: false, fetchedAt: Date.now() }
+    const base: ArtifactList = { accountId, status: 'ok', message: null, artifacts: [], truncated: false, pinsEnabled: false, fetchedAt: Date.now() }
     if (this.accounts.get(accountId).provider !== 'claude') {
       return { ...base, status: 'unavailable', message: 'Artefakte gibt es nur für Claude-Accounts.' }
     }
@@ -83,7 +96,12 @@ export class ArtifactService {
       const rows = uniqueRows(lanes.flatMap((lane) => lane.rows))
       for (const key of [...this.thumbs.keys()]) if (key.startsWith(`${accountId}\n`)) this.thumbs.delete(key)
       for (const row of rows) this.thumbs.set(`${accountId}\n${row.artifact.id}`, row.thumbs)
-      return { ...base, artifacts: rows.map((row) => row.artifact), truncated: lanes.some((lane) => lane.truncated) }
+      return {
+        ...base,
+        artifacts: rows.map((row) => row.artifact),
+        truncated: lanes.some((lane) => lane.truncated),
+        pinsEnabled: lanes[0]!.pinsEnabled,
+      }
     } catch (error) {
       return { ...base, status: 'error', message: `Die Artefakte ließen sich nicht laden: ${errorText(error)}` }
     }
@@ -110,39 +128,83 @@ export class ArtifactService {
     }
   }
 
+  /** Gives an artifact another title on claude.ai. */
+  async rename(accountId: string, id: string, title: string): Promise<void> {
+    const name = artifactTitle(title)
+    if (!name) throw new Error('Der Titel darf nicht leer sein.')
+    if (name.length > MAX_TITLE) throw new Error(`Der Titel darf höchstens ${MAX_TITLE} Zeichen lang sein.`)
+    const response = await this.send(accountId, 'POST', `/retitle/${checkedId(id)}`, { title: name })
+    if (!response.ok) throw new Error(actionFailure(response.status, 'umbenannt'))
+  }
+
+  /** Deletes an own artifact for good; `gone` when it was deleted already. */
+  async remove(accountId: string, id: string): Promise<'deleted' | 'gone'> {
+    const path = `/${checkedId(id)}`
+    let response = await this.send(accountId, 'DELETE', path)
+    // claude.ai is busy with it (a new version, too many requests): once more after the time it names.
+    if (RETRYABLE.has(response.status)) {
+      const seconds = Number(response.headers.get('retry-after'))
+      await this.wait(Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, MAX_RETRY_AFTER_MS) : 1000)
+      response = await this.send(accountId, 'DELETE', path)
+    }
+    if (response.status === 404) return 'gone'
+    if (!response.ok) throw new Error(actionFailure(response.status, 'gelöscht'))
+    this.thumbs.delete(`${accountId}\n${id}`)
+    return 'deleted'
+  }
+
+  /** Pins an artifact in the sidebar of claude.ai, or takes it off. */
+  async setPinned(accountId: string, id: string, pinned: boolean): Promise<void> {
+    const response = await this.send(accountId, pinned ? 'POST' : 'DELETE', `/favorite/${checkedId(id)}`)
+    if (!response.ok) throw new Error(actionFailure(response.status, pinned ? 'angepinnt' : 'gelöst'))
+  }
+
+  private async send(accountId: string, method: string, path: string, body?: unknown): Promise<Response> {
+    if (this.accounts.get(accountId).provider !== 'claude') throw new Error('Artefakte gibt es nur für Claude-Accounts.')
+    const auth = this.accounts.token(accountId)
+    if (!('token' in auth)) throw new Error(auth.message ?? 'Der Account hat keinen Login bei claude.ai.')
+    try {
+      return await this.request(auth.token, path, method, body)
+    } catch (error) {
+      throw new Error(`claude.ai ist nicht erreichbar: ${errorText(error)}`)
+    }
+  }
+
   /** One list page by page (`all`: the own ones and those opened, `shared`: shared with the login). */
   private async lane(token: string, rel: 'all' | 'shared'): Promise<Lane | number> {
     const rows: Row[] = []
+    let pinsEnabled = false
     let pageToken: string | undefined
     for (let page = 0; page < MAX_PAGES; page++) {
       const query = new URLSearchParams({ rel, kind: 'page,document', sort: 'last_viewed', limit: String(PAGE_SIZE) })
       if (pageToken) query.set('page_token', pageToken)
       const response = await this.request(token, `/artifacts?${query.toString()}`)
       // A later page that fails leaves what was listed so far.
-      if (!response.ok) return page === 0 ? response.status : { rows, truncated: true }
-      const data = (await response.json().catch(() => null)) as { artifacts?: unknown; next_page_token?: unknown } | null
-      if (!data || !Array.isArray(data.artifacts)) return page === 0 ? 502 : { rows, truncated: true }
+      if (!response.ok) return page === 0 ? response.status : { rows, pinsEnabled, truncated: true }
+      const data = (await response.json().catch(() => null)) as { artifacts?: unknown; next_page_token?: unknown; starsEnabled?: unknown } | null
+      if (!data || !Array.isArray(data.artifacts)) return page === 0 ? 502 : { rows, pinsEnabled, truncated: true }
+      if (page === 0) pinsEnabled = data.starsEnabled === true
       for (const raw of data.artifacts) {
         const row = parseRow(raw)
         if (row) rows.push(row)
       }
       pageToken = typeof data.next_page_token === 'string' && data.next_page_token ? data.next_page_token : undefined
-      if (!pageToken) return { rows, truncated: false }
+      if (!pageToken) return { rows, pinsEnabled, truncated: false }
     }
-    return { rows, truncated: true }
+    return { rows, pinsEnabled, truncated: true }
   }
 
   /** The older list: own artifacts and those shared with the login, at most 200. */
   private async frames(token: string): Promise<Lane | number> {
     const response = await this.request(token, `/frames?limit=${PAGE_SIZE}`)
     if (!response.ok) return response.status
-    const data = (await response.json().catch(() => null)) as { frames?: unknown } | null
+    const data = (await response.json().catch(() => null)) as { frames?: unknown; starsEnabled?: unknown } | null
     if (!data || !Array.isArray(data.frames)) return 502
     const rows = data.frames.map((raw) => parseRow(raw)).filter((row) => row !== null)
-    return { rows, truncated: data.frames.length >= PAGE_SIZE }
+    return { rows, pinsEnabled: data.starsEnabled === true, truncated: data.frames.length >= PAGE_SIZE }
   }
 
-  private request(token: string, path: string): Promise<Response> {
+  private request(token: string, path: string, method = 'GET', body?: unknown): Promise<Response> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
       'anthropic-beta': OAUTH_BETA,
@@ -154,8 +216,11 @@ export class ArtifactService {
     }
     const version = this.clientVersion()
     if (version) headers['X-Frame-Client-Version'] = version
+    if (body !== undefined) headers['Content-Type'] = 'application/json'
     return net.fetch(`${API}${path}`, {
+      method,
       headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
       // The token goes to this address only, never on to another one.
       redirect: 'error',
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -202,6 +267,7 @@ function parseRow(raw: unknown): Row | null {
   const kind = r.kind ?? 'page'
   if (kind !== 'page' && kind !== 'document') return null
   const link = openUrl(r.open_url)
+  const mine = r.rel === 'mine'
   return {
     artifact: {
       id,
@@ -210,7 +276,7 @@ function parseRow(raw: unknown): Row | null {
       title: cut(text(r.title)?.trim() || 'Ohne Titel', MAX_TITLE),
       description: nullable(text(r.description)?.trim(), MAX_DESCRIPTION),
       kind,
-      mine: r.rel === 'mine',
+      mine,
       external: r.outside_organization === true,
       audience: AUDIENCES.find((audience) => audience === r.audience) ?? null,
       createdAt: isoDate(r.created_at),
@@ -218,6 +284,8 @@ function parseRow(raw: unknown): Row | null {
       lastViewedAt: isoDate(r.last_viewed_at),
       // Public ones count the views of everyone with the link.
       views: count(r.view_count) ?? count(r.public_view_count),
+      pinned: r.starred === true,
+      renamable: typeof r.renamable === 'boolean' ? r.renamable : mine,
     },
     // The newer list names them in snake case, the older one in camel case.
     thumbs: { light: thumbUrl(r.thumbnail_url ?? r.thumbImgURL), dark: thumbUrl(r.thumbnail_dark_url ?? r.thumbDarkImgURL) },
@@ -264,6 +332,20 @@ export function listFailure(status: number, kind: Account['kind']): { status: Ar
   }
   if (status === 429) return { status: 'error', message: 'Zu viele Anfragen an claude.ai. Versuche es gleich noch einmal.' }
   return { status: 'error', message: `claude.ai antwortete mit HTTP ${status}.` }
+}
+
+function actionFailure(status: number, done: string): string {
+  if (status === 401) return 'Die Anmeldung ist abgelaufen. Ein Chat mit diesem Account erneuert sie, sonst hilft neu anmelden.'
+  if (status === 403) return `Das Artefakt gehört nicht diesem Login und kann nicht ${done} werden.`
+  if (status === 404) return 'Das Artefakt gibt es nicht mehr.'
+  if (status === 429) return 'Zu viele Anfragen an claude.ai. Versuche es gleich noch einmal.'
+  return `Das Artefakt konnte nicht ${done} werden (HTTP ${status}).`
+}
+
+/** An artifact's id, checked before it goes into a path. */
+function checkedId(id: string): string {
+  if (!ID_RE.test(id)) throw new Error('Ungültige Artefakt-ID.')
+  return encodeURIComponent(id)
 }
 
 /** When it was last looked at or changed, for the order of the list. */

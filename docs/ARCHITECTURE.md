@@ -35,7 +35,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `accounts/claude-usage.ts` | Claude-Limits über die OAuth-Usage-Schnittstelle |
 | `accounts/claude-renewal.ts` | Erneuert den Access-Token eines Claude-Browser-Logins mit dem Refresh-Token, unter der Sperre von Claude Code (aus dem Claude Manager) |
 | `accounts/login-renewal.ts` | Wann Nexa erneuert: abgelaufene Claude-Logins vor dem Abfragen der Limits (`chat.keepLoginsFresh`) und „Jetzt erneuern“, siehe „Logins frisch halten“ |
-| `artifacts/artifact-service.ts` | Claudes Artefakte auf claude.ai je Account (Liste, Vorschaubilder als `data:`-URL); Kanäle `artifacts:*` in `artifact-ipc.ts`, Typen und Link-Erkennung in `shared/artifacts.ts` |
+| `artifacts/artifact-service.ts` | Claudes Artefakte auf claude.ai je Account (Liste, Vorschaubilder als `data:`-URL, umbenennen, löschen, anpinnen); Kanäle `artifacts:*` in `artifact-ipc.ts`, Typen und Link-Erkennung in `shared/artifacts.ts` |
+| `mcp-apps/mcp-app-views.ts` | Seiten von MCP-Werkzeugen (MCP Apps): liest die `ui://`-Ressource (`appPageOf`), hält sie unter `nexa-app://<token>/` und liefert sie mit der CSP ihrer Ressource aus; Kanäle `mcp-apps:*` in `mcp-apps-ipc.ts`, siehe „MCP Apps“ |
 | `voice/voice-service.ts` | Spracheingabe: wählt einen Claude-Account mit gültigem Login, streamt die Aufnahme an Claudes Spracherkennung (WebSocket, wie `/voice` in Claude Code) und meldet die Wörter dem Fenster; Kanäle `voice:*` in `voice-ipc.ts`, Typen und Sprachen in `shared/voice.ts` |
 | `accounts/session-transfer.ts` | Kopiert die Unterhaltung einer CLI beim Account-Wechsel in den neuen Ordner |
 | `accounts/conversation-files.ts` | Die Dateien einer Unterhaltung je Config-Ordner (Claude: Transkript, Subagents, Checkpoints; Codex: Rollouts) und ihre Größe, zum Löschen und Aufräumen |
@@ -66,7 +67,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/claude/*` | Claude Code: Prozess je Session, Stream-JSON, Werkzeug-Abbildung |
 | `providers/codex/*` | Codex: ein App-Server je Account für alle seine Sessions, JSON-RPC, Item-Abbildung |
 | `providers/acp/acp-connection.ts` | Agent Client Protocol über JSON-RPC (NDJSON auf stdio): Anfragen, Antworten, Benachrichtigungen, Fehlertext (`errorText`) |
-| `providers/antigravity/*` | Antigravity CLI: ein Prozess je Chat (`agy acp`), Item-Abbildung (`antigravity-items.ts`), Warteschlange der Prompts, Rückfragen und Plan (`antigravity-run.ts`). In der CLI-Wahl der Chats, der Vorgabe für neue Chats und auf der Startseite steht Antigravity erst, wenn Nexa es gefunden hat (`ProviderMeta.untilInstalled`, `offeredProviders`); Einstellungen › CLIs zeigt es immer |
+| `providers/antigravity/*` | Antigravity CLI: ein Prozess je Chat (`agy acp`), Item-Abbildung (`antigravity-items.ts`), Warteschlange der Prompts, Rückfragen und Plan (`antigravity-run.ts`), Zustand der MCP-Server über den lokalen Server des Prozesses (`antigravity-server.ts`). In der CLI-Wahl der Chats, der Vorgabe für neue Chats und auf der Startseite steht Antigravity erst, wenn Nexa es gefunden hat (`ProviderMeta.untilInstalled`, `offeredProviders`); Einstellungen › CLIs zeigt es immer |
 | `lib/secrets.ts` | Ver- und Entschlüsseln von Token und Keys (`safeStorage`) |
 | `lib/shell-env.ts` | Linux: übernimmt beim Start die Umgebung der Login-Shell (PATH mit nvm & Co.), damit die CLIs auch beim Start aus dem Anwendungsmenü gefunden werden |
 | `lib/linux.ts` | Wie die Linux-Version installiert ist (AppImage, deb, rpm); `cliEnv` nimmt mit `withoutAppImageEnv` die Pfade des AppImage-Mounts aus der Umgebung der CLIs |
@@ -572,6 +573,34 @@ zeigt alle Karten mit Treffern untereinander, ohne Tabs.
   Änderungen laufen nacheinander (`serial`), denn jede liest und schreibt die Dateien mehrerer Accounts.
 - Dateien, Befehle und Eigenheiten je CLI: PROTOCOLS.md, „Einstellungen der CLIs“.
 
+## MCP Apps
+
+Ein MCP-Werkzeug kann eine eigene Oberfläche mitbringen (`_meta.ui.resourceUri`, eine `ui://`-Ressource
+mit HTML). Nexa zeigt sie im Chat unter der Zeile des Werkzeugs (Protokolle in `PROTOCOLS.md`, „MCP Apps“).
+
+- **Welche Werkzeuge**: Der Provider setzt `ToolItem.app` (`server`, `tool`, `resourceUri`) und
+  `appResult` (das Ergebnis, wie der Server es gab). Codex nennt die Seite am Item (`mcpAppUi`), bei
+  Claude Code fragt der Run nach `mcp_status` (`attachApp`, ein Ergebnis, das vorher kam, wartet).
+  `chatBlocks` stellt ein solches Werkzeug allein, `MessageList` zeigt `McpAppBlock`.
+- **Seite**: `McpAppBlock` fragt `mcpApps.open`, sobald es in den Blick kommt. Main liest die Ressource
+  über die CLI des Chats (`SessionService.readMcpAppResource`: der laufende Run, sonst ein Prozess nur
+  dafür, `AgentProvider.readMcpResource`) und gibt eine Adresse `nexa-app://<token>/` zurück
+  (`McpAppViews`, die zuletzt gezeigten bis 24 MB). Das Schema liefert die Seite mit der CSP aus ihrem
+  `_meta.ui.csp` (`mcpAppCsp`: eigene Skripte und Styles, von außen nur die genannten Domains, sonst
+  keine Verbindungen); die CSP des Renderers erlaubt Frames nur von `nexa-app:`.
+- **Frame**: `sandbox="allow-scripts allow-forms"` ohne `allow-same-origin`: Die Seite hat keinen Origin,
+  keinen Speicher, keinen Zugriff auf Nexa, und die Rechte der App-Session gelten für Frames nicht
+  (nur Schreiben in die Zwischenablage, `appMay` in `window/main-window.ts`). Nachrichten nimmt
+  `McpAppBlock` nur von seinem Frame (`event.source`) und schickt sie als JSON-Kopie.
+- **Host** (`lib/mcp-app-host.ts`, ohne DOM getestet): beantwortet `ui/initialize` mit Theme,
+  Style-Variablen aus den Farben des Themes, Sprache und Zeitzone, schickt nach `initialized` die Eingabe
+  und das Ergebnis (bzw. `tool-cancelled`), Theme- und Breitenwechsel als `host-context-changed`.
+  `tools/call` geht über `SessionService.callMcpAppTool`, das nur Werkzeuge desselben Servers mit `app` in
+  ihrer `visibility` zulässt; `resources/read` über dieselbe CLI; `ui/open-link` nur http(s) im
+  Standardbrowser; `ui/message` landet im Composer, abgeschickt wird es vom Nutzer. Anzeige nur
+  `inline`, `ui/update-model-context` kennt Nexa nicht (die CLIs nehmen zwischen den Turns keinen
+  Kontext an).
+
 ## Chats in eigenen Fenstern
 
 Ein Chat lässt sich aus dem Hauptfenster lösen (Symbol im Chat-Kopf neben Terminal und Neustart, Menü
@@ -644,7 +673,9 @@ nur er, ohne Seitenleiste, Startseite und Schnellsuche.
   `stores/artifacts.ts` hält Listen und Bilder, solange die App läuft, und fragt
   `SessionService.artifactChats` nach dem Chat jedes Artefakts (liest jeden gespeicherten Chat einmal, bis
   er sich ändert). Ein Klick öffnet den Chat und das Artefakt in dessen Browser-Panel (ein Tab, der es
-  schon zeigt, wird wiederverwendet), ohne Chat im Standardbrowser.
+  schon zeigt, wird wiederverwendet), ohne Chat im Standardbrowser. Das Menü einer Karte benennt eigene
+  Artefakte um, löscht sie (mit Rückfrage) und pinnt sie auf claude.ai an, wenn die Liste Pins kennt
+  (`pinsEnabled`); Anpinnen zeigt der Store sofort und nimmt es zurück, wenn claude.ai ablehnt.
 - Themes: eingebaute in `shared/themes/builtin.ts`, eigene als JSON-Dateien im Ordner `themes` der
   App-Daten (Format des Claude Managers, `ThemeService` überwacht den Ordner). `themes/apply.ts` setzt
   die Tokens, `themes/color-info.ts` beschreibt jede Farbe für den Editor.

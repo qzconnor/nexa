@@ -91,6 +91,21 @@ const PROJECT_LISTS: Record<string, { label: string; description: string; placeh
   'project.ask': { label: 'Immer fragen', description: 'Fragt immer nach, auch wenn eine Regel des Nutzers es erlauben würde.', placeholder: 'z. B. command(git push)' },
 }
 
+/**
+ * The rules Antigravity's CLI and app share (`config/config.json`, `userSettings.globalPermissionGrants`),
+ * „Shared with Antigravity“ in `/permissions`. „Immer erlauben“ in a Remote Control session lands here.
+ */
+const SHARED_GROUP = 'Geteilt mit Antigravity'
+const SHARED_LISTS: Record<string, { label: string; description: string; placeholder: string }> = {
+  'shared.allow': {
+    label: 'Ohne Rückfrage',
+    description: 'Gilt für Antigravity CLI und die Antigravity-App (/permissions › Shared with Antigravity).',
+    placeholder: 'z. B. command(git status)',
+  },
+  'shared.ask': { label: 'Immer fragen', description: 'Fragt immer nach, auch wenn eine andere Regel es erlauben würde.', placeholder: 'z. B. command(git push)' },
+  'shared.deny': { label: 'Verbieten', description: 'Gilt in jedem Modus, auch mit vollen Rechten.', placeholder: 'z. B. read_file(.env)' },
+}
+
 const PROJECT_NOTE =
   'Antigravity CLI öffnet jede Sitzung im selben Antigravity-Projekt („CLI Project“), in jedem Ordner. ' +
   'Diese Regeln gelten deshalb in allen Projekten dieses Accounts und gehen denen des Nutzers vor. Im Terminal: /permissions › Project.'
@@ -104,19 +119,44 @@ function dirOf(account: AccountEnv): string {
 }
 
 /**
- * The files of a scope. The user's permissions are in the CLI's `settings.json`; a folder has none of
- * its own, the project level shows the rules of the Antigravity project instead (`rules`).
+ * The files of a scope. The user's permissions are in the CLI's `settings.json`, with the rules it
+ * shares with Antigravity's app (`shared`); a folder has none of its own, the project level shows the
+ * rules of the Antigravity project instead (`rules`).
  */
 export function antigravityConfigFiles(
   account: AccountEnv,
   scope: CliConfigContext['scope'],
   folder?: string,
-): { mcp: string; hooks: string; settings: string | null; rules: string | null } {
+): { mcp: string; hooks: string; settings: string | null; shared: string | null; rules: string | null } {
   const paths = antigravityPaths(dirOf(account))
-  if (scope === 'user') return { mcp: paths.mcpFile, hooks: paths.hooksFile, settings: paths.settingsFile, rules: null }
+  if (scope === 'user') return { mcp: paths.mcpFile, hooks: paths.hooksFile, settings: paths.settingsFile, shared: paths.sharedConfigFile, rules: null }
   if (scope !== 'project') throw new Error('Diese Ebene hat Antigravity CLI nicht.')
   if (!folder) throw new Error('Für diese Ebene fehlt das Projekt.')
-  return { mcp: join(folder, '.agents', 'mcp_config.json'), hooks: join(folder, '.agents', 'hooks.json'), settings: null, rules: paths.projectFile }
+  return { mcp: join(folder, '.agents', 'mcp_config.json'), hooks: join(folder, '.agents', 'hooks.json'), settings: null, shared: null, rules: paths.projectFile }
+}
+
+/** The shared rules of `config.json` (`userSettings.globalPermissionGrants`), under their own heading. */
+export function antigravitySharedRuleFields(shared: Json | null): PermissionField[] {
+  const user = isPlainObject(shared?.userSettings) ? shared.userSettings : {}
+  const grants = isPlainObject(user.globalPermissionGrants) ? user.globalPermissionGrants : {}
+  return Object.entries(SHARED_LISTS).map(([key, field]): PermissionField => ({ kind: 'list', key, group: SHARED_GROUP, ...field, value: strings(grants[key.slice('shared.'.length)]) }))
+}
+
+/** `config.json` with its shared rules set; an empty list goes, the app's other settings stay. */
+export function withAntigravitySharedRules(data: Json, values: Record<string, PermissionValue>): void {
+  const user: Json = isPlainObject(data.userSettings) ? { ...data.userSettings } : {}
+  const grants: Json = isPlainObject(user.globalPermissionGrants) ? { ...user.globalPermissionGrants } : {}
+  for (const [key, value] of Object.entries(values)) {
+    if (!(key in SHARED_LISTS)) throw new Error(`Die Einstellung „${key}“ kennt Nexa nicht.`)
+    const list = cleanList(value)
+    const sub = key.slice('shared.'.length)
+    if (list.length) grants[sub] = list
+    else delete grants[sub]
+  }
+  if (Object.keys(grants).length) user.globalPermissionGrants = grants
+  else delete user.globalPermissionGrants
+  if (Object.keys(user).length) data.userSettings = user
+  else delete data.userSettings
 }
 
 /** The rules of the Antigravity project's file: it nests them as `permissionGrants.permissionGrants`. */
@@ -209,7 +249,7 @@ function mcpFilesOf(account: AccountEnv, folder: string): { user: string; projec
 
 export async function antigravityMcpServers(account: AccountEnv, folder: string): Promise<McpServerState[]> {
   const files = mcpFilesOf(account, folder)
-  const [user, project] = await Promise.all([readJsonFile(files.user), readJsonFile(files.project)])
+  const [user, project] = await Promise.all([readJsonFile(files.user, { comments: true }), readJsonFile(files.project, { comments: true })])
   return antigravityMcpList(user, project)
 }
 
@@ -361,14 +401,21 @@ export class AntigravityConfig implements CliConfigAdapter {
   async read(ctx: CliConfigContext): Promise<CliConfigRead> {
     const files = antigravityConfigFiles(ctx.account, ctx.scope, ctx.folder)
     const problems: string[] = []
-    const safely = (file: string | null) =>
+    const safely = (file: string | null, comments = false) =>
       file
-        ? readJsonFile(file).catch((error: Error) => {
+        ? readJsonFile(file, { comments }).catch((error: Error) => {
             problems.push(error.message)
             return null
           })
         : Promise.resolve(null)
-    const [mcp, hooks, settings, rules] = await Promise.all([safely(files.mcp), safely(files.hooks), safely(files.settings), safely(files.rules)])
+    // Antigravity takes comments in `mcp_config.json`: shown, though a save refuses to drop them.
+    const [mcp, hooks, settings, shared, rules] = await Promise.all([
+      safely(files.mcp, true),
+      safely(files.hooks),
+      safely(files.settings),
+      safely(files.shared),
+      safely(files.rules),
+    ])
     const servers = mcp && isPlainObject(mcp.mcpServers) ? mcp.mcpServers : {}
     const off = Object.entries(hooks ?? {})
       .filter(([, spec]) => isPlainObject(spec) && spec.enabled === false)
@@ -377,6 +424,7 @@ export class AntigravityConfig implements CliConfigAdapter {
       { label: 'MCP-Server', path: files.mcp, exists: mcp !== null },
       { label: 'Hooks', path: files.hooks, exists: hooks !== null },
       ...(files.settings ? [{ label: 'Berechtigungen', path: files.settings, exists: settings !== null }] : []),
+      ...(files.shared ? [{ label: 'Geteilte Regeln', path: files.shared, exists: shared !== null }] : []),
       ...(files.rules ? [{ label: 'Projektregeln', path: files.rules, exists: rules !== null }] : []),
     ]
     return {
@@ -389,7 +437,9 @@ export class AntigravityConfig implements CliConfigAdapter {
           'Haben Nutzer und Projekt einen Server desselben Namens, behält ihn der zuerst gestartete. ' +
           'Neue Server gelten ab dem nächsten Start der CLI („Chat neu starten“).',
       },
-      permissions: files.settings ? { fields: antigravityPermissionFields(settings) } : { fields: antigravityProjectRuleFields(rules), note: PROJECT_NOTE },
+      permissions: files.settings
+        ? { fields: [...antigravityPermissionFields(settings), ...antigravitySharedRuleFields(shared)] }
+        : { fields: antigravityProjectRuleFields(rules), note: PROJECT_NOTE },
       hooks: {
         events: ANTIGRAVITY_HOOK_EVENTS,
         configs: antigravityHooksOut(hooks),
@@ -424,15 +474,19 @@ export class AntigravityConfig implements CliConfigAdapter {
   }
 
   async exportMcpServers(ctx: CliConfigContext): Promise<McpServerConfig[]> {
-    const data = await readJsonFile(antigravityConfigFiles(ctx.account, ctx.scope, ctx.folder).mcp)
+    const data = await readJsonFile(antigravityConfigFiles(ctx.account, ctx.scope, ctx.folder).mcp, { comments: true })
     const servers = data && isPlainObject(data.mcpServers) ? data.mcpServers : {}
     return Object.entries(servers).map(([name, raw]) => antigravityServerOut(name, raw, true))
   }
 
   async savePermissions(ctx: CliConfigContext, values: Record<string, PermissionValue>): Promise<void> {
     const files = antigravityConfigFiles(ctx.account, ctx.scope, ctx.folder)
-    if (files.settings) await updateJsonFile(files.settings, (data) => withAntigravityPermissions(data, values))
-    else if (files.rules) await updateJsonFile(files.rules, (data) => withAntigravityProjectRules(data, values))
+    const shared = Object.fromEntries(Object.entries(values).filter(([key]) => key in SHARED_LISTS))
+    const own = Object.fromEntries(Object.entries(values).filter(([key]) => !(key in SHARED_LISTS)))
+    if (files.shared && Object.keys(shared).length) await updateJsonFile(files.shared, (data) => withAntigravitySharedRules(data, shared))
+    if (!Object.keys(own).length) return
+    if (files.settings) await updateJsonFile(files.settings, (data) => withAntigravityPermissions(data, own))
+    else if (files.rules) await updateJsonFile(files.rules, (data) => withAntigravityProjectRules(data, own))
   }
 
   async saveHooks(ctx: CliConfigContext, save: HooksSave): Promise<void> {

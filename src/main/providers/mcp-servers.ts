@@ -1,3 +1,4 @@
+import { claudeServerKey, toolUiOf, type McpToolUi } from '@shared/mcp-apps'
 import { isPlainObject } from '@shared/utils'
 import type { McpServerState } from './provider'
 
@@ -23,6 +24,48 @@ export function claudeMcpServers(raw: unknown): McpServerState[] {
       tools: Array.isArray(s.tools) ? s.tools.length : typeof s.toolCount === 'number' ? s.toolCount : undefined,
       error: str(s.error),
     }))
+}
+
+/** The tools with what their descriptors say about pages (MCP Apps), per server. */
+export interface McpToolUis {
+  /** The server as the CLI names it in its own calls. */
+  server: string
+  tools: Map<string, McpToolUi>
+}
+
+/**
+ * The tools of Claude Code's `mcp_status` with their `_meta` (sent while Nexa hosts MCP Apps, see
+ * PROTOCOLS.md), by the server's key in tool names (`mcp__<key>__<tool>`).
+ */
+export function claudeToolUis(raw: unknown): Map<string, McpToolUis> {
+  const list = isPlainObject(raw) && Array.isArray(raw.mcpServers) ? raw.mcpServers.filter(isPlainObject) : []
+  const map = new Map<string, McpToolUis>()
+  for (const s of list) {
+    const name = str(s.name)
+    if (!name || name === NEXA_SERVER) continue
+    const tools = new Map<string, McpToolUi>()
+    for (const t of Array.isArray(s.tools) ? s.tools.filter(isPlainObject) : []) {
+      if (str(t.name)) tools.set(t.name as string, toolUiOf(t._meta))
+    }
+    map.set(claudeServerKey(name), { server: name, tools })
+  }
+  return map
+}
+
+/** The tools of Codex's `mcpServerStatus/list` with what their descriptors say about pages, by server name. */
+export function codexToolUis(raw: unknown): Map<string, McpToolUis> {
+  const list = isPlainObject(raw) && Array.isArray(raw.data) ? raw.data.filter(isPlainObject) : []
+  const map = new Map<string, McpToolUis>()
+  for (const s of list) {
+    const name = str(s.name)
+    if (!name || name === NEXA_SERVER) continue
+    const tools = new Map<string, McpToolUi>()
+    for (const [toolName, t] of Object.entries(isPlainObject(s.tools) ? s.tools : {})) {
+      if (isPlainObject(t)) tools.set(str(t.name) ?? toolName, toolUiOf(t._meta))
+    }
+    map.set(name, { server: name, tools })
+  }
+  return map
 }
 
 /** Codex's `mcpServerStatus/list` (`data[]`): its servers by name with their tools as a map. */

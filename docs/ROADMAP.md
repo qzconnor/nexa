@@ -274,8 +274,10 @@
       (`thread/queue/*`) einen Thread erreicht, den die TUI hält. Und prüfen, wie Nachrichten ankommen, die
       eine Claude-Sitzung von außen per `SendMessage` an einen Chat von Nexa schickt, und sie als solche zeigen.
 
-- [ ] **Sites von Codex** auf der Seite „Artefakte“, sobald der App-Server sie herausgibt (0.169 hat keine
-      Methode dafür). Dazu für Claudes Artefakte: umbenennen, löschen und anpinnen wie im Claude Manager.
+- [ ] **Sites von Codex** auf der Seite „Artefakte“, sobald der App-Server sie herausgibt (0.169 und 0.172
+      haben keine Methode dafür).
+- [x] Claudes Artefakte umbenennen, löschen und auf claude.ai anpinnen wie im Claude Manager, mit Filter
+      „Angepinnt“.
 
 ## Aus dem Claude Manager
 
@@ -308,10 +310,13 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         Projekten; Nexa sagt das dazu.
   - [x] MCP-Server von Antigravity CLI im „+“-Menü: aus den Dateien des Nutzers und des Ordners, mit
         „Eingerichtet“ oder „Aus“ und einem Schalter, der `disabled` in der Datei des Servers setzt.
-  - [ ] Ob ein MCP-Server von Antigravity CLI verbunden ist, im „+“-Menü zeigen, und Server des Nutzers
-        je Projekt abschalten: Antigravity nennt keinem Client den Zustand, und weder `.agents/mcp_config.json`
-        noch `session/new` schalten einen Server des Nutzers für eine Sitzung ab (`PROTOCOLS.md`).
-  - [ ] Die Regeln von „Shared with Antigravity“ (`/permissions`) zeigen: wo sie liegen, ist offen.
+  - [x] Ob ein MCP-Server von Antigravity CLI verbunden ist, im „+“-Menü zeigen (laufender Chat: über den
+        lokalen Server von `agy acp`, `GetMcpServerStates`), mit „Neu verbinden“ (`RefreshMcpServers`).
+  - [ ] Server des Nutzers je Projekt abschalten: geht mit 1.5.17 nicht (weder `.agents/mcp_config.json`
+        noch `session/new` noch ein Schalter von `agy acp`; `ToggleMcpServer` schreibt in die Datei des
+        Nutzers). Vielleicht über einen eigenen Agenten mit `inheritMcp: false` (`agy acp --agent`), ungeprüft.
+  - [x] Die Regeln von „Shared with Antigravity“ (`/permissions`) zeigen und ändern: `config/config.json`,
+        `userSettings.globalPermissionGrants`. Noch nicht gesehen, wie `/permissions` selbst sie schreibt.
   - [ ] Unter macOS und Linux prüfen: Installation (`~/.local/bin` laut `install.sh`), Schlüsselbund
         (`security` bzw. Secret Service über `gdbus`, nach den Konventionen von go-keyring geschrieben) und
         Pfade sind umgesetzt, aber ohne Mac oder Linux nicht ausprobiert.
@@ -322,6 +327,8 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       `rewind_files`, Codex `thread/revert`; `SessionChangesView.vue` im Claude Manager).
 - [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).
 - [ ] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager).
-- [ ] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude
-      `mcp_read_resource`, Codex `mcpServer/resource/read`).
+- [x] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude
+      `mcp_read_resource`/`mcp_call`, Codex `mcpServer/resource/read`/`mcpServer/tool/call`), in einem
+      Frame mit eigener Adresse und CSP. Offen: Vollbild und Bild-im-Bild (`ui/request-display-mode`),
+      `ui/update-model-context`, mit einem echten Server und einem echten Turn prüfen.
 - [ ] Remote Control wie in Claude Desktop (Claude Code `remote-control`, Codex `remoteControl/*`).

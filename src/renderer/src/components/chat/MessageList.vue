@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/stores/settings'
 import AgentCard from './AgentCard.vue'
 import InteractionCard from './InteractionCard.vue'
 import Markdown from './Markdown.vue'
+import McpAppBlock from './McpAppBlock.vue'
 import NoticeRow from './NoticeRow.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import TodoCard from './TodoCard.vue'
@@ -236,6 +237,7 @@ const providerChanges = computed(() => {
         <template v-else-if="block.item.kind === 'tool'">
           <RenderBlock v-if="block.item.render" :spec="block.item.render" />
           <UserShellBlock v-else-if="block.item.byUser" :tool="block.item" :session-id="sessionId" />
+          <McpAppBlock v-else-if="block.item.app" :tool="block.item" :session-id="sessionId" />
           <ToolRow v-else :tool="block.item" />
         </template>
         <AgentCard v-else-if="block.item.kind === 'agent'" :item="block.item" />

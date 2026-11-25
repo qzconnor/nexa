@@ -188,13 +188,53 @@ describe('AntigravityConfig', () => {
     await config.savePermissions(ctx, { 'permissions.allow': ['command(git status)'] })
     const read = await config.read(ctx)
     expect(read.mcp.servers.map((s) => s.name)).toEqual(['docs'])
-    expect(read.files.map((f) => f.exists)).toEqual([true, false, true])
+    expect(read.files.map((f) => [f.label, f.exists])).toEqual([
+      ['MCP-Server', true],
+      ['Hooks', false],
+      ['Berechtigungen', true],
+      ['Geteilte Regeln', false],
+    ])
     expect(JSON.parse(await readFile(join(dir, 'home', 'config', 'mcp_config.json'), 'utf8'))).toEqual({ mcpServers: { docs: { command: 'node', args: ['srv.js'] } } })
     expect(JSON.parse(await readFile(join(dir, 'home', 'antigravity-cli', 'settings.json'), 'utf8'))).toEqual({ permissions: { allow: ['command(git status)'] } })
     await config.saveHooks(ctx, { event: 'Stop', version: read.hooks.version, groups: [{ matcher: null, hooks: [{ type: 'command', command: 'echo fertig' }] }] })
     expect(JSON.parse(await readFile(join(dir, 'home', 'config', 'hooks.json'), 'utf8'))).toEqual({ nexa: { Stop: [{ type: 'command', command: 'echo fertig' }] } })
     await config.removeMcpServer(ctx, 'docs')
     expect((await config.read(ctx)).mcp.servers).toEqual([])
+  })
+
+  it('shows and writes the rules shared with Antigravity’s app in config.json, keeping its other settings', async () => {
+    const ctx = { account, scope: 'user' as const }
+    const file = join(dir, 'home', 'config', 'config.json')
+    await mkdir(join(dir, 'home', 'config'), { recursive: true })
+    await writeFile(file, JSON.stringify({ plugins: { a: 1 }, userSettings: { theme: 'dark', globalPermissionGrants: { allow: ['command(ls)'] } } }))
+    const fields = (await config.read(ctx)).permissions.fields.filter((f) => f.group === 'Geteilt mit Antigravity')
+    expect(fields.map((f) => [f.key, f.value])).toEqual([
+      ['shared.allow', ['command(ls)']],
+      ['shared.ask', []],
+      ['shared.deny', []],
+    ])
+    await config.savePermissions(ctx, { 'shared.deny': ['read_file(.env)'], 'permissions.ask': ['command(git push)'] })
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      plugins: { a: 1 },
+      userSettings: { theme: 'dark', globalPermissionGrants: { allow: ['command(ls)'], deny: ['read_file(.env)'] } },
+    })
+    expect(JSON.parse(await readFile(join(dir, 'home', 'antigravity-cli', 'settings.json'), 'utf8'))).toEqual({ permissions: { ask: ['command(git push)'] } })
+    await config.savePermissions(ctx, { 'shared.allow': [], 'shared.deny': [] })
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ plugins: { a: 1 }, userSettings: { theme: 'dark' } })
+  })
+
+  it('shows an mcp_config.json with comments, but leaves it as it is', async () => {
+    const ctx = { account, scope: 'user' as const }
+    const file = join(dir, 'home', 'config', 'mcp_config.json')
+    const text = '{\n  // docs server\n  "mcpServers": {\n    "docs": { "command": "node", /* local */ "args": ["srv.js",], },\n  },\n}\n'
+    await mkdir(join(dir, 'home', 'config'), { recursive: true })
+    await writeFile(file, text)
+    const read = await config.read(ctx)
+    expect(read.readOnly).toBeUndefined()
+    expect(read.mcp.servers.map((s) => [s.name, s.args])).toEqual([['docs', ['srv.js']]])
+    expect((await antigravityMcpServers(account, join(dir, 'proj'))).map((s) => s.name)).toEqual(['docs'])
+    await expect(config.saveMcpServer(ctx, { name: 'web', transport: 'http', url: 'https://x/mcp' }, null)).rejects.toThrow(/kein gültiges JSON/)
+    expect(await readFile(file, 'utf8')).toBe(text)
   })
 
   it("keeps a project's servers and hooks in its .agents folder, its rules in the Antigravity project", async () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, normalize } from 'node:path'
@@ -7,7 +8,7 @@ import { isPlainObject } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import type { LoginCommand } from '../../accounts/account-login'
 import { antigravitySignedIn, ensureApiKeySettings, refreshAntigravityKeyring } from '../../accounts/antigravity-account'
-import { defaultAntigravityDir } from '../../accounts/cli-files'
+import { antigravityPaths, defaultAntigravityDir } from '../../accounts/cli-files'
 import { AcpConnection } from '../acp/acp-connection'
 import { CliBinary, cliEnv } from '../cli-binary'
 import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
@@ -16,6 +17,7 @@ import { conversationFile, conversationMtime, promptTimes, readSteps } from './a
 import { stampHistory } from './antigravity-history'
 import { commandsOf, modelsOf, pathOf, str, tierOf, usageOfQuota } from './antigravity-items'
 import { AntigravityRun } from './antigravity-run'
+import { AGY_SERVER_TOKEN_ENV, AgyLocalServer, agyLogOf } from './antigravity-server'
 
 const NAME = 'Antigravity CLI'
 
@@ -45,6 +47,16 @@ async function homeFor(accountId: string, dir: string): Promise<string> {
     if (error.code !== 'EEXIST') throw error
   })
   return home
+}
+
+/**
+ * The database of a session the probe started and never prompted, with SQLite's files beside it. Only
+ * a session id as Antigravity names them (a UUID): nothing else of the folder can be meant.
+ */
+async function removeEmptyConversation(dir: string, sessionId: string): Promise<void> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return
+  const db = conversationFile(dir, sessionId)
+  await Promise.all([db, `${db}-wal`, `${db}-shm`].map((file) => unlink(file).catch(() => undefined)))
 }
 
 /**
@@ -110,8 +122,8 @@ export class AntigravityProvider implements AgentProvider {
   }
 
   /**
-   * Starts a session without a prompt to read its models and commands: it costs no quota, and
-   * Antigravity keeps no conversation that never had a prompt.
+   * Starts a session without a prompt to read its models and commands: it costs no quota. Since 1.5.17
+   * Antigravity keeps even such a session as a database; the probe removes it again.
    */
   private async probe(account: AccountEnv): Promise<ModelOption[]> {
     if (!antigravitySignedIn(account)) return []
@@ -127,13 +139,16 @@ export class AntigravityProvider implements AgentProvider {
         exited: () => undefined,
       },
     )
+    let sessionId: string | undefined
     try {
       await this.withTimeout(conn.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'nexa', version: '1' } }))
       const session = await this.withTimeout(conn.request('session/new', { cwd: tmpdir(), mcpServers: [] }))
+      sessionId = str(session.sessionId)
       this.takeTier(account.accountId, tierOf(session._meta))
       return modelsOf(session.configOptions, session.models)
     } finally {
       await conn.stop(1000).catch(() => undefined)
+      if (sessionId) await removeEmptyConversation(this.dirOf(account), sessionId)
     }
   }
 
@@ -162,8 +177,8 @@ export class AntigravityProvider implements AgentProvider {
   }
 
   /**
-   * Antigravity tells no client how its MCP servers are, nor can a run leave one out: the „+“ menu
-   * shows them from its files and switches them there (antigravity-config.ts).
+   * Without a running chat the „+“ menu shows the servers from the files (a running one adds how they
+   * are, antigravity-run.ts); a run can't leave one out, the switch is their `disabled` there.
    */
   async mcpServers(account: AccountContext, cwd: string): Promise<McpServerState[]> {
     return antigravityMcpServers(account, cwd)
@@ -201,21 +216,25 @@ export class AntigravityProvider implements AgentProvider {
       ...(options.permissionMode === 'full' ? ['--dangerously-skip-permissions'] : []),
     ]
     let run: AntigravityRun | null = null
+    // The process's local server takes calls with this token only; Nexa asks it how the MCP servers are.
+    const token = randomUUID()
     const conn = new AcpConnection(
       this.binary.command([...this.argsOf(account, extra), ...options.extraArgs]),
-      { cwd: options.cwd, env: cliEnv(account.set, account.unset), name: NAME },
+      { cwd: options.cwd, env: cliEnv({ ...account.set, [AGY_SERVER_TOKEN_ENV]: token }, account.unset), name: NAME },
       {
         notification: (method, params) => run?.notification(method, params),
         request: (id, method, params) => (run ? run.request(id, method, params) : conn.respondError(id, 'Noch nicht bereit.')),
         exited: (code, stderr) => run?.exited(code, stderr),
       },
     )
+    const logDir = antigravityPaths(this.dirOf(account)).logDir
     run = new AntigravityRun(conn, options, sink, {
       commands: (list) => this.takeCommands(list),
       models: (list) => {
         this.models_ = list
       },
       turnEnded: (limit) => this.afterTurn(account, sink, limit),
+      server: new AgyLocalServer(() => agyLogOf(logDir, conn.pid), token),
     })
     const accountRuns = this.runs.get(account.accountId) ?? new Set<AntigravityRun>()
     this.runs.set(account.accountId, accountRuns)

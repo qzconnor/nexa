@@ -57,8 +57,50 @@ export interface CliConfigAdapter {
 // ---------------------------------------------------------------------------------------------
 // Files
 
-/** A JSON file of a CLI: null when it isn't there; one that can't be read is an error, never `{}`. */
-export async function readJsonFile(file: string): Promise<Json | null> {
+/**
+ * JSON with comments (`//`, `/* *\/`) and trailing commas as plain JSON, strings left as they are:
+ * Antigravity CLI reads its `mcp_config.json` like that.
+ */
+export function jsoncText(text: string): string {
+  let out = ''
+  let i = 0
+  while (i < text.length) {
+    const c = text[i]!
+    if (c === '"') {
+      let j = i + 1
+      while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1
+      out += text.slice(i, j + 1)
+      i = j + 1
+    } else if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++
+    } else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      i = end < 0 ? text.length : end + 2
+    } else if (c === ',') {
+      // A comma before a closing bracket (comments and blanks between) goes.
+      let j = i + 1
+      for (;;) {
+        while (j < text.length && /\s/.test(text[j]!)) j++
+        if (text[j] === '/' && text[j + 1] === '/') while (j < text.length && text[j] !== '\n') j++
+        else if (text[j] === '/' && text[j + 1] === '*') j = text.indexOf('*/', j + 2) < 0 ? text.length : text.indexOf('*/', j + 2) + 2
+        else break
+      }
+      if (text[j] !== '}' && text[j] !== ']') out += c
+      i++
+    } else {
+      out += c
+      i++
+    }
+  }
+  return out
+}
+
+/**
+ * A JSON file of a CLI: null when it isn't there; one that can't be read is an error, never `{}`.
+ * `comments`: for reading only, a file with comments and trailing commas is taken too; saving one
+ * would lose them, so `updateJsonFile` reads strictly.
+ */
+export async function readJsonFile(file: string, { comments = false }: { comments?: boolean } = {}): Promise<Json | null> {
   let text: string
   try {
     text = await readFile(file, 'utf8')
@@ -72,7 +114,12 @@ export async function readJsonFile(file: string): Promise<Json | null> {
   try {
     parsed = JSON.parse(text)
   } catch {
-    throw new Error(`„${basename(file)}“ ist kein gültiges JSON. Nexa ändert die Datei nicht, damit nichts verloren geht.`)
+    try {
+      if (!comments) throw new Error('strict')
+      parsed = JSON.parse(jsoncText(text))
+    } catch {
+      throw new Error(`„${basename(file)}“ ist kein gültiges JSON. Nexa ändert die Datei nicht, damit nichts verloren geht.`)
+    }
   }
   if (!isPlainObject(parsed)) throw new Error(`„${basename(file)}“ enthält kein JSON-Objekt. Nexa ändert die Datei nicht.`)
   return parsed

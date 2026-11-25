@@ -3,6 +3,7 @@ import type { ArtifactsApi } from './artifacts'
 import type { ChatWindowsApi } from './chat-windows'
 import type { CliConfigApi, CliConfigTarget } from './cli-config'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
+import type { McpAppsApi } from './mcp-apps'
 import type { SettingsImportPreview } from './settings-transfer'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
 import type {
@@ -221,6 +222,8 @@ export interface NexaApi {
   cliImport: CliImportApi
   /** Claude's artifacts on claude.ai (shared/artifacts.ts). */
   artifacts: ArtifactsApi
+  /** The pages of MCP tools in the chat (shared/mcp-apps.ts). */
+  mcpApps: McpAppsApi
   /** The microphone in the composer, recognised by Claude (shared/voice.ts). */
   voice: VoiceApi
   /** The projects' start commands, run as shells beside the chats (shared/start-commands.ts). */

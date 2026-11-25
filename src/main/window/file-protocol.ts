@@ -7,9 +7,9 @@ export const FILE_SCHEME = 'nexa-file'
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'])
 
-/** Before the app is ready. */
-export function registerFileScheme(): void {
-  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { secure: true, supportFetchAPI: true, stream: true } }])
+/** Before the app is ready, with the app's other schemes: Electron keeps only the last call's list. */
+export function registerFileScheme(others: Electron.CustomScheme[] = []): void {
+  protocol.registerSchemesAsPrivileged([{ scheme: FILE_SCHEME, privileges: { secure: true, supportFetchAPI: true, stream: true } }, ...others])
 }
 
 /** Serves image files only; anything else is refused. */

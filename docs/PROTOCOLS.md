@@ -142,8 +142,9 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   (`.claude.json` bleibt gleich), Nexa schickt es deshalb nach jedem Start für die Server, die im Projekt
   aus sind. Ohne laufenden Chat fragt Nexa einen kurzen Prozess (`initialize`, gut 2 s warten, bis die
   Server verbunden sind, dann `mcp_status`). Weitere Untertypen, die Nexa noch nicht nutzt:
-  `rewind_files`, `cancel_async_message` (eine eingereihte Nachricht zurücknehmen), `mcp_read_resource`,
-  `apply_flag_settings`, `get_session_cost`, `set_cwd`.
+  `rewind_files`, `cancel_async_message` (eine eingereihte Nachricht zurücknehmen),
+  `apply_flag_settings`, `get_session_cost`, `set_cwd`. `mcp_read_resource` und `mcp_call` siehe
+  „MCP Apps“.
 - **Neu verbinden und Anmelden** (geprüft mit 2.1.330): `mcp_reconnect { serverName }` antwortet ohne
   Inhalt, sobald der Server wieder verbunden ist, sonst mit dem Fehler des Servers.
   `mcp_authenticate { serverName }` antwortet mit `authUrl`, `requiresUserAction` und
@@ -242,6 +243,12 @@ Nexa je Account auf der Seite „Artefakte“ (`main/artifacts/artifact-service.
   UUID). Daran findet Nexa den Chat, aus dem ein Artefakt kam (`artifactLinks`, `artifactChatMap` in
   `shared/artifacts.ts`): den neuesten, in dem das Werkzeug es veröffentlicht hat, sonst den neuesten,
   der den Link nennt.
+- **Umbenennen, löschen, anpinnen** (wie der Claude Manager, mit denselben Kopfzeilen):
+  `POST …/frame/retitle/<id>` mit `{ title }` (bis 300 Zeichen); `DELETE …/frame/<id>`, 404 heißt schon
+  weg, 409, 429 und 503 versucht Nexa einmal wieder (nach `retry-after`, höchstens 10 s);
+  `POST`/`DELETE …/frame/favorite/<id>` pinnt an bzw. löst. Die Liste sagt mit `starsEnabled`, ob der
+  Account Pins hat, je Artefakt `starred` (angepinnt) und `renamable` (fehlt es, darf der Eigentümer
+  umbenennen); löschen darf nur der Eigentümer (`rel: mine`). 403 heißt: nicht erlaubt.
 - Nur mit Browser-Login oder Setup-Token, nicht mit API-Key. Ein abgelaufenes Access-Token erneuert
   Nexa nicht selbst; das tut Claude Code beim nächsten Start mit dem Account.
 
@@ -406,8 +413,9 @@ seine Commits sind schon auf dem Standard-Branch.
 
 ## Codex (`codex app-server`)
 
-Sites (Codex' Gegenstück zu den Artefakten) gibt der App-Server 0.169 nicht heraus: keine Methode
-listet sie, Nexa zeigt sie deshalb (noch) nicht.
+Sites (Codex' Gegenstück zu den Artefakten) gibt der App-Server nicht heraus, auch 0.172 nicht (Schema
+von 0.169, Zeichenketten von 0.172: keine Methode listet sie, nur der Pfad `codex/sites/git` des Backends
+kommt vor). Nexa zeigt sie deshalb (noch) nicht.
 
 Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
 (`codex app-server --listen stdio://`, mit `CODEX_HOME` des Accounts).
@@ -437,6 +445,7 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   und meldet `mcpServer/oauthLogin/completed` (`name`, `success`, `error`). `config/mcpServer/reload`
   (ohne Parameter) liest die Server aus der Konfiguration neu und verbindet sie; Nexa nutzt es für „Neu
   verbinden“ und nach einer Anmeldung. Ein unbekannter Name ergibt „No MCP server named '…' found.“
+  Für MCP Apps siehe den Abschnitt dazu.
 - **Plugins** (geprüft mit 0.169): `plugin/installed { cwds }` liefert `marketplaces[]` (`name`, `path`,
   `interface.displayName`, `plugins[]`) mit den installierten Plugins; `plugin/list` dazu die nicht
   installierten. Je Plugin `id` (`<name>@<marktplatz>`), `name`, `version` (entfernt) bzw. `localVersion`,
@@ -647,7 +656,7 @@ Abgelesen an Antigravity CLI 1.5.16 (`agy`): die Dateien, die es selbst anlegt, 
 
 | Ebene | MCP-Server | Hooks | Berechtigungen |
 | --- | --- | --- | --- |
-| Nutzer | `<.gemini>/config/mcp_config.json` | `<.gemini>/config/hooks.json` | `<.gemini>/antigravity-cli/settings.json` |
+| Nutzer | `<.gemini>/config/mcp_config.json` | `<.gemini>/config/hooks.json` | `<.gemini>/antigravity-cli/settings.json`, geteilte Regeln in `<.gemini>/config/config.json` |
 | Projekt | `<projekt>/.agents/mcp_config.json` | `<projekt>/.agents/hooks.json` | `<.gemini>/config/projects/default-cli-project.json` (für alle Ordner) |
 
 - `<.gemini>` ist der Ordner des Accounts (`--gemini-dir`), sonst `~/.gemini`. Der Ordner heißt noch wie bei
@@ -655,7 +664,10 @@ Abgelesen an Antigravity CLI 1.5.16 (`agy`): die Dateien, die es selbst anlegt, 
 - Nexa schreibt die Dateien selbst (lesen, ändern, atomar schreiben): `agy mcp add` nähme Variablen und
   Header als Argumente, in der Prozessliste lesbar.
 - MCP-Server: `mcpServers.<name>` mit `command`, `args`, `env`, `cwd` (stdio) oder `url` (alt: `serverUrl`)
-  und `headers` (Streamable HTTP), dazu `disabled`. Andere Schlüssel (Werkzeugfilter …) bleiben, wie sie sind.
+  und `headers` (Streamable HTTP), dazu `disabled`. Andere Schlüssel (`enabledTools`, `disabledTools`,
+  `timeoutSeconds`, `tools.eager` …) bleiben, wie sie sind. Antigravity liest die Datei mit Kommentaren
+  (`//`, `/* */`) und Kommas am Ende (1.5.17); Nexa zeigt sie so auch, ändert sie dann aber nicht, weil die
+  Kommentare beim Schreiben verloren gingen (`readJsonFile` mit `comments`, `jsoncText`).
 - Berechtigungen: `agentMode` (`""` = Standard, `accept-edits`, `auto`, `plan`), `toolPermission`
   (`request-review`, `proceed-in-sandbox`, `always-proceed`, `strict`), `allowNonWorkspaceAccess` und
   `permissions.{allow, ask, deny}` mit Regeln der Form `aktion(ziel)`.
@@ -668,9 +680,16 @@ Abgelesen an Antigravity CLI 1.5.16 (`agy`): die Dateien, die es selbst anlegt, 
   Die Datei legt erst die Oberfläche im Terminal an, `agy acp` nicht; ohne sie schreibt Nexa `id`, `name`
   und `projectResources: {}` wie Antigravity. Geprüft: Eine `deny`-Regel daraus (`read_file(secret.txt)`)
   verhindert das Lesen auch über ACP, in einem anderen Ordner. Nexa zeigt sie unter der Ebene Projekt,
-  mit dem Hinweis, dass sie in allen Projekten gelten. Wo „Shared with Antigravity“ seine Regeln ablegt,
-  ist offen: Eine Regel dort landete in keiner Datei unter `<.gemini>` (laut Änderungsprotokoll gehört
-  dazu `<.gemini>/config/config.json`).
+  mit dem Hinweis, dass sie in allen Projekten gelten.
+- Geteilte Regeln („Shared with Antigravity“, abgelesen an 1.5.17): `<.gemini>/config/config.json` ist
+  die Einstellungsdatei, die sich CLI und Antigravity-App teilen (dort auch `plugins`, `skills` …). Die
+  Regeln stehen unter `userSettings.globalPermissionGrants { allow, deny, ask }`, derselbe Typ wie die
+  Projektregeln (`PermissionGrantsConfig`). Belege: die Felder des Typs im Programm, die Meldungen
+  „applyUserSettings: stored shared config permissions: allow=%d deny=%d ask=%d“ und
+  „persistSharedConfigPermissions: failed to save config.json“, und das Änderungsprotokoll („Immer
+  erlauben“ aus einer Remote-Control-Sitzung landet „only to the shared `config.json`“). Ein Schreiben
+  durch `/permissions` selbst ist noch nicht beobachtet. Nexa zeigt die drei Listen unter der Ebene
+  Nutzer unter „Geteilt mit Antigravity“ und schreibt nur diesen Schlüssel, alles andere bleibt.
 - Hooks: `{ "<name>": { enabled?, "<Ereignis>": […] } }`, also benannte Hooks mit ihren Ereignissen.
   `PreToolUse` und `PostToolUse` halten Gruppen `{ matcher, hooks: [{ type: "command", command, timeout? }] }`
   (Matcher ist ein regulärer Ausdruck auf den Werkzeugnamen), `SessionStart`, `PreInvocation`,
@@ -678,10 +697,25 @@ Abgelesen an Antigravity CLI 1.5.16 (`agy`): die Dateien, die es selbst anlegt, 
   aller benannten Hooks je Ereignis und schreibt jede dorthin zurück, woher sie kam; neue kommen in den
   Hook `nexa`. Ein benannter Hook ohne Ereignisse fällt weg.
 - MCP-Server im „+“-Menü (geprüft mit einem kleinen stdio-Server, der seinen Start mitschreibt):
-  - `agy acp` startet beim `session/new` die Server des Nutzers und die aus `.agents/mcp_config.json` im
-    Ordner der Sitzung. Einen Zustand (verbunden, fehlgeschlagen) nennt es keinem Client, auch `agy mcp
-    list` nur `enabled`/`disabled` aus der Datei des Nutzers. Nexa zeigt die Server deshalb aus den
-    Dateien („Eingerichtet“ oder „Aus“).
+  - `agy acp` startet beim `session/new` die Server des Nutzers (1.5.16 auch die aus
+    `.agents/mcp_config.json`; 1.5.17 startete diese bis 15 s danach nicht, vielleicht erst mit dem
+    ersten Prompt). Über ACP nennt es keinen Zustand, auch `agy mcp list` nur `enabled`/`disabled` aus der
+    Datei des Nutzers. Ohne laufenden Chat zeigt Nexa die Server aus den Dateien („Eingerichtet“ oder
+    „Aus“).
+  - **Zustand der MCP-Server** (1.5.17, `antigravity-server.ts`): Jeder `agy acp`-Prozess startet mit der
+    ersten Sitzung einen lokalen HTTP-Server (seinen „Language Server“, Connect-Protokoll mit JSON). Den
+    Port nennt sein Log `<.gemini>/antigravity-cli/log/acp-server-<zeit>-<pid>.log` („Language server
+    listening on random port at <port> for HTTP“, eine Zeile davor die für HTTPS/gRPC); die PID im
+    Namen ist die des Prozesses, den Nexa startet (nicht bei einem Start über `agy.cmd`). Anfragen
+    brauchen einen CSRF-Token im Header `x-codeium-csrf-token` (oder `x-antigravity-csrf-token`), den
+    Nexa dem Prozess mit `ANTIGRAVITY_SERVER_CSRF_TOKEN` vorgibt; ohne ihn 401 „missing CSRF token“.
+    `POST /exa.language_server_pb.LanguageServerService/GetMcpServerStates` mit `{}` liefert
+    `states[]`: `spec` (die Einstellung, `serverName`, `disabled`), `status`
+    (`MCP_SERVER_STATUS_PENDING`, `_READY`, `_ERROR`, `_DISABLED_BY_ADMIN`), `error` (lesbar, z. B.
+    „"x" is not installed or not on PATH“), `tools[]`, `serverInfo`, bei Bedarf `authUrl`. Nur Server aus
+    den Dateien, nicht die aus `session/new` (Nexas eigener). `RefreshMcpServers { serverName }` startet
+    einen Server neu (antwortet `{}`); Nexa nutzt es für „Neu verbinden“. Keine dokumentierte
+    Schnittstelle: Schlägt etwas fehl, zeigt Nexa die Dateien.
   - `disabled: true` startet den Server trotzdem, das Modell bekommt seine Werkzeuge aber nicht.
   - Ein Server lässt sich nicht für eine einzelne Sitzung abschalten: Ein Eintrag gleichen Namens mit
     `disabled: true` in `.agents/mcp_config.json` schaltet den des Nutzers nicht ab (der zuerst gestartete
@@ -746,7 +780,8 @@ Verlauf ab), `session/prompt { sessionId, prompt: ContentBlock[] }`, `session/se
   `_meta.antigravity.tier { id, name }`, den Plan des Logins („Antigravity Starter Quota“). Nexa nimmt die
   Modelle aus `configOptions.model` und die Denkstufen aus den Endungen; Modell und Stufe setzt es mit
   `session/set_config_option` (`model`, `thought_level`). Ohne laufenden Chat startet Nexa eine Sitzung
-  ohne Prompt, um die Modelle zu erfahren (30 s, sonst eine feste Liste).
+  ohne Prompt, um die Modelle zu erfahren (30 s, sonst eine feste Liste). Seit 1.5.17 legt Antigravity
+  auch für sie `conversations/<id>.db` an (knapp 400 KB); Nexa löscht sie danach samt `-wal`/`-shm`.
 - **MCP-Server von Nexa**: `mcpServers: [{ type: 'http', name: 'nexa', url, headers: [{ name:
   'Authorization', value: 'Bearer <token>' }] }]`. Antigravity nennt MCP-Werkzeuge `<server>_<werkzeug>`,
   je nach Herkunft mit `mcp_` davor. Anders als bei Gemini CLI kommen Name und Argumente mit dem Aufruf
@@ -811,8 +846,9 @@ Rückfrage brauchen (`tool-grant.ts`), erlaubt `AntigravityRun` selbst.
   `conversation_summaries.db` (die Liste für `session/list`), `GEMINI.md` und `config/` in `<.gemini>`.
   Beim Löschen legt Nexa die Datei samt `-wal`/`-shm` und den Ordner der Unterhaltung in den Papierkorb
   (`antigravitySessionFiles`).
-- **Fortsetzen** geht nur, wenn es `conversations/<id>.db` gibt (`antigravityResumable`): Eine Sitzung ohne
-  Prompt legt Antigravity nicht ab. Sonst beginnt der Chat neu mit seinem Verlauf als `<nexa-context>`.
+- **Fortsetzen** geht nur, wenn es `conversations/<id>.db` gibt (`antigravityResumable`); bis 1.5.16 legte
+  Antigravity eine Sitzung ohne Prompt nicht ab, 1.5.17 schon. Sonst beginnt der Chat neu mit seinem
+  Verlauf als `<nexa-context>`.
 - **Die Datenbank einer Unterhaltung** (`antigravity-conversations.ts`) läuft im WAL-Modus: Was seit dem
   letzten Checkpoint kam, steht in `<id>.db-wal`, die Zeit der letzten Änderung ist die jüngere der
   beiden Dateien. Tabellen: `trajectory_meta` (`trajectory_id`, `cascade_id` = die ID der
@@ -937,6 +973,48 @@ und den Zeichenketten der Binärdatei.
 - Gemini-Daten aus Nexa 0.x: Accounts von Gemini CLI fallen weg, Chats mit Gemini CLI wechseln zur
   Standard-CLI (ihr Verlauf bleibt), eine Standard-CLI „Gemini“ wird zu Claude Code
   (`provider-migration.ts`).
+
+## MCP Apps
+
+Erweiterung `io.modelcontextprotocol/ui` (SEP-1865, Spezifikation 2026-01-26): Ein Werkzeug nennt in
+`_meta.ui.resourceUri` (älter: `_meta["ui/resourceUri"]`) eine `ui://`-Ressource, eine HTML-Seite
+(`text/html;profile=mcp-app`), die der Host in einem Frame zeigt. `_meta.ui.visibility` sagt, wer das
+Werkzeug aufrufen darf: `model`, `app` oder beide (ohne Angabe beide). Das `_meta.ui` der Ressource nennt
+`csp` (`connectDomains`, `resourceDomains`, `frameDomains`, `baseUriDomains`), `permissions` und
+`prefersBorder`. Wie Nexa sie zeigt: `ARCHITECTURE.md`, „MCP Apps“.
+
+- **Seite ↔ Host**: JSON-RPC 2.0 über `postMessage`. Die Seite fragt `ui/initialize` (Antwort:
+  `protocolVersion`, `hostInfo`, `hostCapabilities`, `hostContext` mit `theme`, `styles.variables`,
+  `displayMode`, `containerDimensions`, `locale`, `timeZone`, `platform` …) und meldet
+  `ui/notifications/initialized`; vorher schickt der Host nichts. Danach `ui/notifications/tool-input
+  { arguments }` (einmal), dann `tool-result` (ein `CallToolResult`) oder `tool-cancelled { reason }`,
+  bei Änderungen `host-context-changed`, zum Schluss die Anfrage `ui/resource-teardown`. Die Seite fragt
+  `tools/call`, `resources/read`, `ping`, `ui/open-link { url }`, `ui/message { role: 'user', content }`,
+  `ui/request-display-mode { mode }`, `ui/update-model-context` und meldet
+  `ui/notifications/size-changed { width, height }` und `notifications/message`. Der Host muss
+  `tools/call` für Werkzeuge ohne `app` in der `visibility` ablehnen und die CSP durchsetzen (ohne
+  Angabe keine Verbindungen).
+- **Claude Code** (geprüft mit 2.1.331, ohne Prompt über Steueranfragen): Mit
+  `CLAUDE_CODE_MCP_APPS_HOST=1` in der Umgebung meldet es den Servern beim `initialize`
+  `extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [...] } }`; Server, die darauf achten,
+  bieten ihre Seiten erst dann an. Nexa setzt die Variable für Chats und für den Prozess, der ohne
+  laufenden Chat liest (`CLAUDE_MCP_APPS_ENV`). `mcp_status` nennt die Werkzeuge samt `_meta`.
+  `mcp_read_resource { serverName, uri }` (der Name wie in `mcp_status`, nur `ui://`) antwortet mit
+  `{ contents: [{ uri, mimeType, text, _meta }] }`. `mcp_call { tool: "mcp__<server>__<werkzeug>",
+  arguments, soft_error_result? }` (der Server wie in Werkzeugnamen: alles außer Buchstaben, Ziffern,
+  `_` und `-` wird `_`) antwortet mit `{ content, structuredContent, _meta }`, `content` als Text für
+  das Modell; die `visibility` prüft es nicht, das tut Nexa. Im Stream steht das Ergebnis eines
+  MCP-Werkzeugs vollständig in `tool_use_result` (`content`, `structuredContent`, `_meta`,
+  `resourceLinks`, bei zu großem Inhalt `structuredContentOmitted`). Ohne Login, mit leerem
+  `CLAUDE_CONFIG_DIR`, gehen alle drei.
+- **Codex** (geprüft mit 0.169): `mcpServerStatus/list` nennt die Werkzeuge mit `_meta`. Das Item
+  `mcpToolCall` hat `mcpAppUi { resourceUri, preferredModelDisplayMode }` (älter `mcpAppResourceUri`),
+  `appContext` und `result { content, structuredContent, _meta }`. `mcpServer/resource/read { threadId?,
+  server, uri, originCallId? }` → `{ contents, originCallId }`; `mcpServer/tool/call { threadId, server,
+  tool, arguments }` → `{ content[], structuredContent, _meta }`, nur mit Thread (ohne laufenden Chat
+  ruft Nexa keine Werkzeuge der Seite auf). Den Servern meldet Codex die Erweiterung nicht: Server, die
+  darauf achten, geben Codex keine Seite.
+- **Antigravity CLI**: ACP kennt keine Seiten von Werkzeugen; Nexa zeigt dort keine.
 
 ## Nexa-MCP-Server
 

@@ -1,5 +1,39 @@
 import { describe, expect, it } from 'vitest'
-import { claudeMcpServers, codexMcpServers } from './mcp-servers'
+import { claudeMcpServers, claudeToolUis, codexMcpServers, codexToolUis } from './mcp-servers'
+
+describe('claudeToolUis', () => {
+  it('keys the servers as tool names do and reads each tool’s page', () => {
+    const map = claudeToolUis({
+      mcpServers: [
+        { name: 'nexa', tools: [{ name: 'render_chart' }] },
+        {
+          name: 'my.weather',
+          tools: [
+            { name: 'show', _meta: { ui: { resourceUri: 'ui://weather/view' } } },
+            { name: 'refresh', _meta: { ui: { resourceUri: 'ui://weather/view', visibility: ['app'] } } },
+            { name: 'plain' },
+          ],
+        },
+      ],
+    })
+    expect([...map.keys()]).toEqual(['my_weather'])
+    const weather = map.get('my_weather')!
+    expect(weather.server).toBe('my.weather')
+    expect(weather.tools.get('show')).toEqual({ resourceUri: 'ui://weather/view', visibility: ['model', 'app'] })
+    expect(weather.tools.get('refresh')?.visibility).toEqual(['app'])
+    expect(weather.tools.get('plain')).toEqual({ resourceUri: null, visibility: ['model', 'app'] })
+  })
+})
+
+describe('codexToolUis', () => {
+  it('reads the tool map of mcpServerStatus/list by the server’s own name', () => {
+    const map = codexToolUis({
+      data: [{ name: 'my.weather', tools: { show: { name: 'show', _meta: { ui: { resourceUri: 'ui://weather/view', visibility: ['model'] } } } } }],
+    })
+    expect(map.get('my.weather')?.tools.get('show')).toEqual({ resourceUri: 'ui://weather/view', visibility: ['model'] })
+    expect(codexToolUis(null).size).toBe(0)
+  })
+})
 
 describe('claudeMcpServers', () => {
   it('lists the servers of mcp_status without Nexa’s own', () => {

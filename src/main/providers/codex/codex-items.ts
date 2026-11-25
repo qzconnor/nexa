@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentItem, AgentStatus, ChatItem, FileChange, ToolItem, ToolStatus, TurnItem, UserItem } from '@shared/chat'
 import { compactionNotice } from '@shared/chat'
+import { appResultOf, uiUri } from '@shared/mcp-apps'
 import { renderSpecOf } from '@shared/render'
 import { firstLine, isPlainObject } from '@shared/utils'
 
@@ -139,6 +140,9 @@ export function codexItem(item: Json, parentId: string | null, completed: boolea
       const server = str(item.server) ?? 'mcp'
       const name = str(item.tool) ?? 'tool'
       const render = renderSpecOf(server, name, item.arguments)
+      // The page Codex took from the tool's descriptor (MCP Apps); the older field where the newer is missing.
+      const resourceUri = render ? null : uiUri(isPlainObject(item.mcpAppUi) ? item.mcpAppUi.resourceUri : undefined) ?? uiUri(item.mcpAppResourceUri)
+      const failed = isPlainObject(item.error)
       return tool({
         tool: render ? 'render' : 'mcp',
         name: `${server}.${name}`,
@@ -147,7 +151,11 @@ export function codexItem(item: Json, parentId: string | null, completed: boolea
         input: item.arguments,
         render,
         output: mcpResultText(item.result, item.error),
-        status: completed ? (isPlainObject(item.error) ? 'error' : toolStatusOf(item.status)) : 'running',
+        status: completed ? (failed ? 'error' : toolStatusOf(item.status)) : 'running',
+        ...(resourceUri ? { app: { server, tool: name, resourceUri } } : {}),
+        ...(resourceUri && completed && (isPlainObject(item.result) || failed)
+          ? { appResult: isPlainObject(item.result) ? appResultOf(item.result, failed) : appResultOf(mcpResultText(item.result, item.error) ?? '', true) }
+          : {}),
       })
     }
     case 'dynamicToolCall': {

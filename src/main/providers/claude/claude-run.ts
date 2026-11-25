@@ -17,13 +17,14 @@ import type {
 import { compactionNotice } from '@shared/chat'
 import type { McpAuthStart, ShellOutput, UsageWindow } from '@shared/types'
 import { renderSpecOf } from '@shared/render'
+import { appResultOf, claudeServerKey, type McpAppToolResult, type McpToolUi } from '@shared/mcp-apps'
 import { isPlainObject, withTimeout } from '@shared/utils'
 import type { CliBinary } from '../cli-binary'
 import { cliEnv } from '../cli-binary'
 import { consoleDecoder } from '../../lib/console-code-page'
 import { claudeToolNames } from '../../mcp/tool-grant'
 import { JsonlProcess } from '../jsonl-process'
-import { claudeMcpServers } from '../mcp-servers'
+import { claudeMcpServers, claudeToolUis, type McpToolUis } from '../mcp-servers'
 import { claudeAuthStart } from '../plugins'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import { TITLE_TIMEOUT_MS, cleanTitle, titleDescription } from '../titles'
@@ -35,6 +36,14 @@ type Json = Record<string, unknown>
 
 /** How long the context's count may take before the card makes do with the last one. */
 const CONTEXT_TIMEOUT_MS = 8000
+
+/**
+ * Nexa shows MCP Apps: Claude Code then tells the servers so (the extension `io.modelcontextprotocol/ui`
+ * in `initialize`, which servers check before they offer pages) and `mcp_status` lists the tools' `_meta`.
+ */
+export const CLAUDE_MCP_APPS_ENV = { CLAUDE_CODE_MCP_APPS_HOST: '1' } as const
+/** An MCP tool the list doesn't know yet (a server connected since): the list is asked again after this long. */
+const TOOL_UIS_STALE_MS = 5000
 
 const MODE_FLAG: Record<PermissionMode, string> = {
   ask: 'default',
@@ -148,6 +157,17 @@ export class ClaudeRun implements AgentRun {
   private stopping = false
   /** The user's MCP servers switched off for the project, as this process knows them. */
   private readonly mcpOff = new Set<string>()
+  /** What the servers' tools say about pages (MCP Apps), from `mcp_status`, by the server's key in tool names. */
+  private toolUis: Map<string, McpToolUis> | null = null
+  private toolUisAt = 0
+  private toolUisLoading: Promise<void> | null = null
+  /**
+   * Results of MCP tools whose page is still being looked up, by tool id: the result can come before
+   * `mcp_status` answers.
+   */
+  private readonly appResults = new Map<string, McpAppToolResult>()
+  /** MCP tools whose page is being looked up, by tool id. */
+  private readonly appLookups = new Set<string>()
 
   constructor(
     binary: CliBinary,
@@ -157,7 +177,7 @@ export class ClaudeRun implements AgentRun {
     this.model = options.model
     this.process = new JsonlProcess(binary.command(claudeArgs(options)), {
       cwd: options.cwd,
-      env: cliEnv({ CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', ...options.account.set }, options.account.unset),
+      env: cliEnv({ CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', ...CLAUDE_MCP_APPS_ENV, ...options.account.set }, options.account.unset),
       onMessage: (m) => this.onMessage(m),
       onExit: (code, stderr) => this.onExit(code, stderr),
     })
@@ -248,6 +268,64 @@ export class ClaudeRun implements AgentRun {
   async reconnectMcp(name: string): Promise<void> {
     if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr.')
     await this.request({ subtype: 'mcp_reconnect', serverName: name })
+  }
+
+  async readMcpResource(server: string, uri: string): Promise<unknown> {
+    if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr.')
+    return this.request({ subtype: 'mcp_read_resource', serverName: server, uri })
+  }
+
+  async callMcpTool(server: string, tool: string, args: Record<string, unknown>): Promise<McpAppToolResult> {
+    if (!this.process.alive) throw new Error('Claude Code läuft nicht mehr.')
+    // `soft_error_result`: a tool that fails says why in its own result, as the page expects it.
+    const answer = await this.request({ subtype: 'mcp_call', tool: `mcp__${claudeServerKey(server)}__${tool}`, arguments: args, soft_error_result: true })
+    return appResultOf(answer)
+  }
+
+  async mcpToolUi(server: string, tool: string): Promise<McpToolUi | null> {
+    return (await this.toolUiOf(claudeServerKey(server), tool))?.ui ?? null
+  }
+
+  /** What a tool's descriptor says about pages, by the server's key in tool names; asks `mcp_status` once more for a tool it doesn't know. */
+  private async toolUiOf(key: string, tool: string): Promise<{ server: string; ui: McpToolUi } | null> {
+    const find = () => {
+      const entry = this.toolUis?.get(key)
+      const ui = entry?.tools.get(tool)
+      return entry && ui ? { server: entry.server, ui } : null
+    }
+    if (!this.toolUis || (!find() && Date.now() - this.toolUisAt > TOOL_UIS_STALE_MS)) await this.loadToolUis()
+    return find()
+  }
+
+  private loadToolUis(): Promise<void> {
+    this.toolUisLoading ??= this.request({ subtype: 'mcp_status' })
+      .then((answer) => {
+        this.toolUis = claudeToolUis(answer)
+        this.toolUisAt = Date.now()
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.toolUisLoading = null
+      })
+    return this.toolUisLoading
+  }
+
+  /** An MCP tool with a page of its own (MCP Apps): the item learns it, with the result if that came first. */
+  private async attachApp(toolId: string, key: string, tool: string): Promise<void> {
+    this.appLookups.add(toolId)
+    try {
+      const found = this.process.alive ? await this.toolUiOf(key, tool) : null
+      const current = this.tools.get(toolId)
+      if (!found?.ui.resourceUri || current?.kind !== 'tool') return
+      const next: ToolItem = { ...current, app: { server: found.server, tool, resourceUri: found.ui.resourceUri } }
+      const result = this.appResults.get(toolId)
+      if (result) next.appResult = result
+      this.tools.set(toolId, next)
+      this.sink.item(next)
+    } finally {
+      this.appLookups.delete(toolId)
+      this.appResults.delete(toolId)
+    }
   }
 
   /**
@@ -556,6 +634,7 @@ export class ClaudeRun implements AgentRun {
     }
     this.tools.set(id, tool)
     this.sink.item(tool)
+    if (view.server && !tool.render && view.shortName) void this.attachApp(id, view.server, view.shortName)
     if (name === 'TodoWrite') {
       const entries = todosOf(input)
       if (entries) this.sink.item({ kind: 'todo', id: `todo:${parentId ?? 'main'}`, ts: now, provider: 'claude', parentId, entries })
@@ -625,6 +704,12 @@ export class ClaudeRun implements AgentRun {
         if (known.tool === 'read' && !isError && text.includes('�')) void this.repairRead(known.id, text)
         const changes = isError ? null : changesFromResult(known.changes, m.tool_use_result)
         if (changes) next.changes = changes
+        // The page of an MCP tool gets the result as the server gave it, beyond the text for the model.
+        if (known.server && !known.render) {
+          const result = appResultOf(m.tool_use_result ?? { content: block.content }, isError)
+          if (known.app) next.appResult = result
+          else if (this.appLookups.has(known.id)) this.appResults.set(known.id, result)
+        }
         // A shell in the foreground ends with its call; one in the background runs on.
         if (next.shell && !next.shell.background && next.shell.status === 'running') {
           next.shell = { ...next.shell, status: isError ? 'error' : 'done', endedAt: now }

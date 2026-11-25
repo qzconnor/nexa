@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionRuntime } from '@shared/chat'
+import type { ChatItem, SessionRuntime } from '@shared/chat'
 import type { CliBinary } from '../cli-binary'
 import type { JsonlProcessOptions } from '../jsonl-process'
 import type { RunOptions, RunSink } from '../provider'
@@ -156,5 +156,76 @@ describe('ClaudeRun prompts', () => {
     stream({ type: 'command_lifecycle', command_uuid: 'p2', state: 'started' })
     expect(taken).toEqual(['p2'])
     expect(runtime.status).toBe('running')
+  })
+})
+
+describe('ClaudeRun MCP Apps', () => {
+  let items: Map<string, ChatItem>
+  let run: ClaudeRun
+  const stream = (message: unknown) => fake.options!.onMessage(message)
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+  const lastRequest = (subtype: string) =>
+    fake.written.findLast((m) => (m as { request?: { subtype?: string } }).request?.subtype === subtype) as { request_id: string; request: Record<string, unknown> }
+  const answer = (subtype: string, response: unknown) =>
+    stream({ type: 'control_response', response: { subtype: 'success', request_id: lastRequest(subtype).request_id, response } })
+  const STATUS = {
+    mcpServers: [
+      {
+        name: 'my.weather',
+        status: 'connected',
+        tools: [
+          { name: 'show', _meta: { ui: { resourceUri: 'ui://weather/view' } } },
+          { name: 'refresh', _meta: { ui: { resourceUri: 'ui://weather/view', visibility: ['app'] } } },
+        ],
+      },
+    ],
+  }
+
+  beforeEach(() => {
+    fake.written = []
+    items = new Map()
+    const sink: RunSink = {
+      item: (item) => void items.set(item.id, item),
+      delta: () => {},
+      runtime: () => {},
+      cliSession: () => {},
+      usage: () => {},
+      taken: () => {},
+      exited: () => {},
+    }
+    run = new ClaudeRun(binary, options, sink)
+  })
+
+  it('gives an MCP tool its page from mcp_status, with the result as the server gave it', async () => {
+    stream({ type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'mcp__my_weather__show', input: { city: 'Berlin' } }] } })
+    // The result may come before mcp_status answers: it waits for the page.
+    stream({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: '21 °C' }] }] },
+      tool_use_result: { content: [{ type: 'text', text: '21 °C' }], structuredContent: { temp: 21 } },
+    })
+    answer('mcp_status', STATUS)
+    await tick()
+    expect(items.get('t1')).toMatchObject({
+      app: { server: 'my.weather', tool: 'show', resourceUri: 'ui://weather/view' },
+      appResult: { content: [{ type: 'text', text: '21 °C' }], structuredContent: { temp: 21 } },
+      status: 'done',
+    })
+  })
+
+  it('reads pages and calls tools by the server’s names', async () => {
+    const read = run.readMcpResource('my.weather', 'ui://weather/view')
+    expect(lastRequest('mcp_read_resource').request).toMatchObject({ serverName: 'my.weather', uri: 'ui://weather/view' })
+    answer('mcp_read_resource', { contents: [{ uri: 'ui://weather/view', text: '<p>hi</p>' }] })
+    await expect(read).resolves.toEqual({ contents: [{ uri: 'ui://weather/view', text: '<p>hi</p>' }] })
+
+    const call = run.callMcpTool('my.weather', 'refresh', { city: 'Köln' })
+    expect(lastRequest('mcp_call').request).toMatchObject({ tool: 'mcp__my_weather__refresh', arguments: { city: 'Köln' }, soft_error_result: true })
+    answer('mcp_call', { content: 'Aktualisiert', structuredContent: { temp: 18 } })
+    await expect(call).resolves.toEqual({ content: [{ type: 'text', text: 'Aktualisiert' }], structuredContent: { temp: 18 } })
+
+    const ui = run.mcpToolUi('my.weather', 'refresh')
+    answer('mcp_status', STATUS)
+    await expect(ui).resolves.toEqual({ resourceUri: 'ui://weather/view', visibility: ['app'] })
   })
 })

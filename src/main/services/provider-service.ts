@@ -1,5 +1,6 @@
 import { canLogin, type AccountLoginState, type LoginRenewResult } from '@shared/accounts'
 import { PROVIDER_IDS, type ChatItem, type ProviderId } from '@shared/chat'
+import type { McpAppToolResult, McpToolUi } from '@shared/mcp-apps'
 import { PROVIDERS } from '@shared/providers'
 import type {
   AppSettings,
@@ -165,6 +166,24 @@ export class ProviderService extends TypedEmitter<Events> {
 
   authenticateMcp(id: ProviderId, accountId: string, cwd: string, name: string): Promise<McpAuthStart | null> {
     return this.providers[id].authenticateMcp(this.context(accountId), cwd, name)
+  }
+
+  /** A resource of an MCP server (MCP Apps) without a chat running, for CLIs that can read one so. */
+  async readMcpResource(id: ProviderId, accountId: string, cwd: string, server: string, uri: string): Promise<unknown> {
+    const provider = this.providers[id]
+    if (!provider.readMcpResource) throw new Error(`${PROVIDERS[id].name} zeigt keine Oberflächen von MCP-Werkzeugen.`)
+    return provider.readMcpResource(this.context(accountId), cwd, server, uri)
+  }
+
+  async callMcpTool(id: ProviderId, accountId: string, cwd: string, server: string, tool: string, args: Record<string, unknown>): Promise<McpAppToolResult> {
+    const provider = this.providers[id]
+    if (!provider.callMcpTool) throw new Error(`${PROVIDERS[id].name} ruft Werkzeuge erst wieder auf, wenn der Chat läuft. Schick eine Nachricht, dann geht es.`)
+    return provider.callMcpTool(this.context(accountId), cwd, server, tool, args)
+  }
+
+  async mcpToolUi(id: ProviderId, accountId: string, cwd: string, server: string, tool: string): Promise<McpToolUi | null> {
+    const provider = this.providers[id]
+    return provider.mcpToolUi ? provider.mcpToolUi(this.context(accountId), cwd, server, tool) : null
   }
 
   /** The plugins the CLI has installed for a folder with this account (`accountId` resolved already). */

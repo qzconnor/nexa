@@ -1,4 +1,5 @@
 import type { ChatItem, ContextDetail, InteractionResponse, PermissionMode, ProviderId, SessionRuntime } from '@shared/chat'
+import type { McpAppToolResult, McpToolUi } from '@shared/mcp-apps'
 import type {
   CommandOption,
   McpAuthStart,
@@ -129,6 +130,12 @@ export interface AgentRun {
    * null when it needs none (signed in already).
    */
   authenticateMcp?(name: string): Promise<McpAuthStart | null>
+  /** A resource of an MCP server the CLI is connected to (MCP Apps: a tool's `ui://` page), as `resources/read` answers. */
+  readMcpResource?(server: string, uri: string): Promise<unknown>
+  /** Calls a tool of an MCP server for a tool's page (MCP Apps `tools/call`), outside the model's turn. */
+  callMcpTool?(server: string, tool: string, args: Record<string, unknown>): Promise<McpAppToolResult>
+  /** What a tool's descriptor says about pages; null for a tool the server doesn't list. */
+  mcpToolUi?(server: string, tool: string): Promise<McpToolUi | null>
   /**
    * Loads the plugins again after one was switched; false when the CLI takes them only at its start
    * (the next prompt starts it anew).
@@ -174,6 +181,12 @@ export interface AgentProvider {
   reconnectMcp(account: AccountContext, cwd: string, name: string): Promise<void>
   /** Starts the sign-in of an MCP server without a chat running; null when it needs none. */
   authenticateMcp(account: AccountContext, cwd: string, name: string): Promise<McpAuthStart | null>
+  /** `AgentRun.readMcpResource` without a chat running, from a CLI started for it. */
+  readMcpResource?(account: AccountContext, cwd: string, server: string, uri: string): Promise<unknown>
+  /** `AgentRun.callMcpTool` without a chat running, for CLIs that can call a tool without a conversation. */
+  callMcpTool?(account: AccountContext, cwd: string, server: string, tool: string, args: Record<string, unknown>): Promise<McpAppToolResult>
+  /** `AgentRun.mcpToolUi` without a chat running. */
+  mcpToolUi?(account: AccountContext, cwd: string, server: string, tool: string): Promise<McpToolUi | null>
   /** The CLI's own settings (MCP servers, permissions, hooks) to read and change, for CLIs Nexa can edit them for. */
   readonly config?: CliConfigAdapter
   /** The plugins installed for a folder, each on or off. */

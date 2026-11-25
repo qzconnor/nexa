@@ -6,7 +6,8 @@ import type { ModelOption } from '@shared/types'
 import { RENDER_SERVER, renderSpecOf } from '@shared/render'
 import { isPlainObject } from '@shared/utils'
 import { AcpError, errorText } from '../acp/acp-connection'
-import type { AgentRun, RunInput, RunOptions, RunSink } from '../provider'
+import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
+import { antigravityMcpServers } from './antigravity-config'
 import {
   ANTIGRAVITY_MODES,
   appendsSystemPrompt,
@@ -28,6 +29,7 @@ import {
   toolView,
   type Json,
 } from './antigravity-items'
+import { withAgyMcpStates, type AgyLocalServer } from './antigravity-server'
 
 /** What the run needs of its ACP connection (acp/acp-connection.ts; a fake in tests). */
 export interface AcpLike {
@@ -126,6 +128,8 @@ export class AntigravityRun implements AgentRun {
       models?(models: ModelOption[]): void
       /** A turn ended (not by the user's cancel); `limit`: at the quota of the login. */
       turnEnded?(limit: boolean): void
+      /** The process's local server (antigravity-server.ts), for how its MCP servers are. */
+      server?: AgyLocalServer
     } = {},
   ) {
     this.mode = options.permissionMode
@@ -451,6 +455,20 @@ export class AntigravityRun implements AgentRun {
 
   private async applyMode(): Promise<void> {
     await this.conn.request('session/set_mode', { sessionId: this.sessionId, modeId: ANTIGRAVITY_MODES[this.mode] })
+  }
+
+  /** The servers of the files with how the process's local server says they are; without it, the files alone. */
+  async mcpServers(): Promise<McpServerState[]> {
+    const list = await antigravityMcpServers(this.options.account, this.options.cwd)
+    const states = this.alive && this.hooks.server ? await this.hooks.server.call('GetMcpServerStates').catch(() => null) : null
+    return states ? withAgyMcpStates(list, states) : list
+  }
+
+  /** Starts one server anew (`RefreshMcpServers`), e.g. after it failed. */
+  async reconnectMcp(name: string): Promise<void> {
+    if (!this.alive) throw new Error('Antigravity CLI läuft nicht mehr.')
+    if (!this.hooks.server) throw new Error('Antigravity CLI verbindet Server erst mit dem nächsten Start neu.')
+    await this.hooks.server.call('RefreshMcpServers', { serverName: name })
   }
 
   async stop(): Promise<void> {

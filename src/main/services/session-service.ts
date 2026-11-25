@@ -21,6 +21,7 @@ import {
 } from '@shared/chat'
 import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
 import type { WorktreeBaseChoice } from '@shared/files'
+import type { McpAppRef, McpAppToolResult } from '@shared/mcp-apps'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { redactSecrets } from '@shared/redact'
 import { plainOutput } from '@shared/terminal'
@@ -1626,6 +1627,37 @@ export class SessionService extends TypedEmitter<Events> {
     const { provider, accountId, cwd, live } = this.cliTarget(id)
     if (live?.authenticateMcp) return live.authenticateMcp(name)
     return this.providers.authenticateMcp(provider, accountId, cwd, name)
+  }
+
+  /** A tool item's page (MCP Apps) and the chat's CLI, which reaches the page's server. */
+  private async appTarget(id: string, itemId: string): Promise<ReturnType<SessionService['cliTarget']> & { app: McpAppRef }> {
+    const s = await this.loaded(id)
+    const item = s.items.find((i) => i.id === itemId)
+    if (item?.kind !== 'tool' || !item.app) throw new Error('Dieses Werkzeug hat keine Oberfläche.')
+    // After a switch to another CLI the server is that CLI's no longer.
+    if (item.provider !== s.meta.provider) throw new Error('Die Oberfläche gehört zu einer anderen CLI als der, mit der der Chat jetzt läuft.')
+    return { ...this.cliTarget(id), app: item.app }
+  }
+
+  /** A resource of a page's server (the page itself without `uri`): from the running CLI, else from one started for it. */
+  async readMcpAppResource(id: string, itemId: string, uri?: string): Promise<unknown> {
+    const { provider, accountId, cwd, live, app } = await this.appTarget(id, itemId)
+    const target = uri ?? app.resourceUri
+    if (live?.readMcpResource) return live.readMcpResource(app.server, target)
+    return this.providers.readMcpResource(provider, accountId, cwd, app.server, target)
+  }
+
+  /**
+   * A tool a page calls: only one of the page's own server that the server offers to pages
+   * (`visibility` with `app`), as the spec asks of hosts.
+   */
+  async callMcpAppTool(id: string, itemId: string, tool: string, args: Record<string, unknown>): Promise<McpAppToolResult> {
+    const { provider, accountId, cwd, live, app } = await this.appTarget(id, itemId)
+    const ui = live?.mcpToolUi ? await live.mcpToolUi(app.server, tool) : await this.providers.mcpToolUi(provider, accountId, cwd, app.server, tool)
+    if (!ui) throw new Error(`Das Werkzeug „${tool}“ gibt es auf dem Server nicht.`)
+    if (!ui.visibility.includes('app')) throw new Error(`Das Werkzeug „${tool}“ ist nicht für die Oberfläche freigegeben.`)
+    if (live?.callMcpTool) return live.callMcpTool(app.server, tool, args)
+    return this.providers.callMcpTool(provider, accountId, cwd, app.server, tool, args)
   }
 
   /** Whose settings „Konnektoren verwalten“ opens for a chat: its CLI and account, for its folder. */

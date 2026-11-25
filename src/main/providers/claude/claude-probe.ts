@@ -17,6 +17,8 @@ export interface ProbeOptions {
   requests?: Json[]
   /** How long to wait after `initialize` before the other requests (MCP servers connect meanwhile). */
   delayMs?: number
+  /** More environment variables, under the account's own. */
+  env?: Record<string, string>
   /**
    * How long the process stays after the answers: Claude Code connects the MCP servers after
    * `initialize` and reports the commands again with their prompts (`system/commands_changed`).
@@ -60,7 +62,7 @@ export function probeClaude(binary: CliBinary, account: AccountEnv, options: Pro
         binary.command(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence', ...(options.args ?? [])]),
         {
           cwd: options.cwd,
-          env: cliEnv(account.set, account.unset),
+          env: cliEnv({ ...options.env, ...account.set }, account.unset),
           onMessage: (m) => {
             if (!isPlainObject(m)) return
             if (m.type === 'system' && m.subtype === 'commands_changed') {
@@ -98,11 +100,11 @@ export interface ClaudeControl {
  * takes a while, like an MCP server's sign-in, whose answer from the browser the process receives.
  * Resolves once it answered `initialize`.
  */
-export function openClaudeControl(binary: CliBinary, account: AccountEnv, cwd: string): Promise<ClaudeControl> {
+export function openClaudeControl(binary: CliBinary, account: AccountEnv, cwd: string, env: Record<string, string> = {}): Promise<ClaudeControl> {
   const pending = new Map<string, { resolve: (value: Json) => void; reject: (error: Error) => void }>()
   const proc = new JsonlProcess(binary.command(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence']), {
     cwd,
-    env: cliEnv(account.set, account.unset),
+    env: cliEnv({ ...env, ...account.set }, account.unset),
     onMessage: (m) => {
       if (!isPlainObject(m) || m.type !== 'control_response' || !isPlainObject(m.response)) return
       const id = typeof m.response.request_id === 'string' ? m.response.request_id : ''

@@ -16,11 +16,13 @@ const artifact = (id: string, patch: Partial<Artifact> = {}): Artifact => ({
   updatedAt: null,
   lastViewedAt: null,
   views: null,
+  pinned: false,
+  renamable: true,
   ...patch,
 })
 
 const list = [
-  artifact('quartalsbericht', { description: 'Zahlen für Q3' }),
+  artifact('quartalsbericht', { description: 'Zahlen für Q3', pinned: true }),
   artifact('geteilt', { mine: false, description: 'Von der Kollegin' }),
   artifact('ubersicht', { title: 'Übersicht der Dienste' }),
 ]
@@ -29,6 +31,10 @@ describe('filterArtifacts', () => {
   it('keeps the own or the shared ones', () => {
     expect(filterArtifacts(list, 'mine', '').map((a) => a.id)).toEqual(['quartalsbericht', 'ubersicht'])
     expect(filterArtifacts(list, 'shared', '').map((a) => a.id)).toEqual(['geteilt'])
+  })
+
+  it('keeps the pinned ones', () => {
+    expect(filterArtifacts(list, 'pinned', '').map((a) => a.id)).toEqual(['quartalsbericht'])
   })
 
   it('searches title, description and the chat, without minding accents', () => {

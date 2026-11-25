@@ -5,7 +5,8 @@ import type { CommandOption, McpAuthStart, ModelDefaults, ModelOption, PluginInf
 import { isPlainObject, withTimeout } from '@shared/utils'
 import type { AccountEnv } from '../../accounts/account-env'
 import { CliBinary, type ResolvedCommand } from '../cli-binary'
-import { codexMcpServers } from '../mcp-servers'
+import type { McpToolUi } from '@shared/mcp-apps'
+import { codexMcpServers, codexToolUis } from '../mcp-servers'
 import { byPluginName, codexAuthStart, codexPlugins } from '../plugins'
 import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { TITLE_INSTRUCTIONS, TITLE_TIMEOUT_MS, cleanTitle, titleRequest } from '../titles'
@@ -209,6 +210,16 @@ export class CodexProvider implements AgentProvider {
   /** The MCP servers of the account's config, as its app-server runs them (the same for every folder). */
   async mcpServers(account: AccountContext): Promise<McpServerState[]> {
     return codexMcpServers(await this.server(account).client.request('mcpServerStatus/list', {}))
+  }
+
+  /** Without a thread: the account's app-server reads it from the servers of its config. */
+  async readMcpResource(account: AccountContext, _cwd: string, server: string, uri: string): Promise<unknown> {
+    return this.server(account).client.request('mcpServer/resource/read', { server, uri })
+  }
+
+  async mcpToolUi(account: AccountContext, _cwd: string, server: string, tool: string): Promise<McpToolUi | null> {
+    const raw = await this.server(account).client.request('mcpServerStatus/list', { serverName: server, detail: 'toolsAndAuthOnly' })
+    return codexToolUis(raw).get(server)?.tools.get(tool) ?? null
   }
 
   /** Codex reads its MCP servers' config again and connects them anew, for all threads of the account. */

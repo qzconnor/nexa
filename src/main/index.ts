@@ -26,6 +26,8 @@ import { AccountService } from './accounts/account-service'
 import { APP_NAME, userDataFolder } from './lib/app-folder'
 import { AUTOSTART_ARG, setLaunchAtLogin } from './lib/login-item'
 import { loadShellEnv } from './lib/shell-env'
+import { MCP_APP_SCHEME_PRIVILEGES, McpAppViews } from './mcp-apps/mcp-app-views'
+import { registerMcpAppsIpc } from './mcp-apps/mcp-apps-ipc'
 import { NexaMcpServer } from './mcp/mcp-server'
 import { ChatTools } from './mcp/chat-tools'
 import { LimitsTool } from './mcp/limits-tool'
@@ -62,7 +64,9 @@ app.setPath('userData', userDataFolder(app.getPath('appData'), !app.isPackaged))
 // Development builds have an ID of their own: sharing the installed app's, a Start Menu shortcut to
 // electron.exe gave the installed app Electron's icon and name in the taskbar.
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'local.nexa' : 'local.nexa.dev')
-registerFileScheme()
+registerFileScheme([MCP_APP_SCHEME_PRIVILEGES])
+// The pages of MCP tools in the chat (MCP Apps), each at an address of its own.
+const mcpAppViews = new McpAppViews()
 
 // Started through the `nx` command: a running instance takes the request over.
 const launchRequest = readLaunchRequest(process.argv)
@@ -77,6 +81,7 @@ if (!app.requestSingleInstanceLock(launchRequest ? { ...launchRequest } : undefi
 async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<void>): Promise<void> {
   await Promise.all([app.whenReady(), shellEnv])
   handleFileProtocol()
+  mcpAppViews.handle()
   const userDataDir = app.getPath('userData')
 
   const settings = new SettingsService(userDataDir)
@@ -238,6 +243,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // Claude's artifacts on claude.ai, listed with the login of each account (page „Artefakte“).
   const claudeVersion = () => /\d+\.\d+\.\d+/.exec(providers.list().find((p) => p.id === 'claude')?.version ?? '')?.[0] ?? null
   registerArtifactsIpc(new ArtifactService(artifactAccounts(accounts), `nexa/${app.getVersion()}`, claudeVersion), sessions)
+  // The pages MCP tools bring along, read and called through the chat's CLI.
+  registerMcpAppsIpc(mcpAppViews, sessions)
   // The microphone in the composer: Claude's speech recognition with a Claude account's login, for every
   // CLI; without a Claude login there is none.
   const voice = new VoiceService({

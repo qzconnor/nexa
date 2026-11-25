@@ -73,6 +73,36 @@ describe('codexThreadItems', () => {
     expect(agent).toMatchObject({ kind: 'agent', description: 'Prüfe die Tests', status: 'done', result: 'Alle bestanden.' })
   })
 
+  it('gives an MCP tool with a page its page and result (MCP Apps)', () => {
+    const [tool, older, plain] = codexThreadItems({
+      turns: [
+        turn('turn-1', [
+          {
+            type: 'mcpToolCall',
+            id: 'm1',
+            server: 'weather',
+            tool: 'show',
+            status: 'completed',
+            arguments: { city: 'Berlin' },
+            mcpAppUi: { resourceUri: 'ui://weather/view', preferredModelDisplayMode: null },
+            result: { content: [{ type: 'text', text: '21 °C' }], structuredContent: { temp: 21 }, _meta: null },
+            error: null,
+          },
+          { type: 'mcpToolCall', id: 'm2', server: 'weather', tool: 'show', status: 'inProgress', arguments: {}, mcpAppResourceUri: 'ui://weather/old', result: null, error: null },
+          { type: 'mcpToolCall', id: 'm3', server: 'weather', tool: 'plain', status: 'completed', arguments: {}, result: { content: [] }, error: null },
+        ]),
+      ],
+    })
+    expect(tool).toMatchObject({
+      kind: 'tool',
+      app: { server: 'weather', tool: 'show', resourceUri: 'ui://weather/view' },
+      appResult: { content: [{ type: 'text', text: '21 °C' }], structuredContent: { temp: 21 } },
+    })
+    expect(older).toMatchObject({ app: { resourceUri: 'ui://weather/old' } })
+    expect(older).not.toHaveProperty('appResult')
+    expect(plain).not.toHaveProperty('app')
+  })
+
   it('tells a turn that hit the plan’s limit', () => {
     const items = codexThreadItems({ turns: [turn('turn-1', [], { status: 'failed', error: { message: 'Limit erreicht', codexErrorInfo: 'usageLimitExceeded' } })] })
     expect(items).toMatchObject([{ kind: 'turn', status: 'error', error: 'Limit erreicht', limit: true }])

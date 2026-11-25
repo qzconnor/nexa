@@ -2,7 +2,19 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cleanList, entriesIn, entriesOut, hookConfigsOut, hookGroupsIn, isSecretEntry, readJsonFile, updateJsonFile, versionOf, withHookEvent } from './cli-config'
+import { cleanList, entriesIn, entriesOut, hookConfigsOut, hookGroupsIn, isSecretEntry, jsoncText, readJsonFile, updateJsonFile, versionOf, withHookEvent } from './cli-config'
+
+describe('jsoncText', () => {
+  it('drops comments and trailing commas, never inside strings', () => {
+    const text = '{\n  // a\n  "url": "https://x//y", /* b */\n  "s": "a /* not */ b, }",\n  "list": [1, 2, /* c */ ],\n  "q": "say \\"hi\\" // still",\n}'
+    expect(JSON.parse(jsoncText(text))).toEqual({ url: 'https://x//y', s: 'a /* not */ b, }', list: [1, 2], q: 'say "hi" // still' })
+  })
+
+  it('leaves plain JSON as it is', () => {
+    const text = '{"a":[1,2],"b":{"c":"d"}}'
+    expect(jsoncText(text)).toBe(text)
+  })
+})
 
 describe('isSecretEntry', () => {
   it('knows secrets by name and shape', () => {
