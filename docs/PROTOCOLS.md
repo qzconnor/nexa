@@ -571,7 +571,7 @@ hörbar und gibt Aufgaben an Codex weiter. Nexa nutzt es nicht, die Spracheingab
 ## Einstellungen der CLIs
 
 Was Einstellungen › CLI-Konfiguration liest und schreibt (`providers/<id>/<id>-config.ts`). Geprüft mit
-Claude Code 2.1 und Codex 0.169.
+Claude Code 2.1, Codex 0.169 und Gemini CLI 0.71.1.
 
 ### Claude Code
 
@@ -628,6 +628,50 @@ Claude Code 2.1 und Codex 0.169.
   erneut, dessen Inhalt vorher vertraut war (nur verschoben) oder vorher nicht da war (in Nexa angelegt
   oder geändert); was sich außerhalb von Nexa geändert hat, bleibt unvertraut. Veraltete Schlüssel des
   Ereignisses entfernt es.
+
+### Gemini CLI
+
+Abgelesen an Gemini CLI 0.71.1: `docs/reference/configuration.md`, `docs/tools/mcp-server.md` und
+`docs/hooks/reference.md` im Paket sowie der Code (`addMcpServer`, `createUrlTransport`,
+`McpServerEnablementManager`, `updateSettingsFilePreservingFormat`).
+
+| Ebene | Datei (MCP-Server, Berechtigungen, Hooks) |
+| --- | --- |
+| Nutzer | `<GEMINI_CLI_HOME>/.gemini/settings.json`, ohne eigenen Ordner `~/.gemini/settings.json` |
+| Projekt | `<projekt>/.gemini/settings.json` |
+
+- Die System-Ebenen (`C:\ProgramData\gemini-cli\system-defaults.json` bzw. `settings.json`, unter Linux
+  `/etc/gemini-cli/…`) gelten für alle Nutzer des Rechners und sind Sache der Administration; Nexa zeigt
+  sie nicht. Ist der Projektordner der Benutzerordner, sind Projekt und Nutzer dieselbe Datei (Gemini CLI
+  lehnt `--scope project` dort ab); Nexa zeigt die Projekt-Ebene dann nur.
+- Gemini CLI liest die Datei mit Kommentaren (`strip-json-comments`) und schreibt sie mit `comment-json`,
+  das sie erhält. Nexa schreibt die Datei selbst (lesen, ändern, atomar schreiben): `gemini mcp add`
+  nimmt Variablen und Header als Argumente (in der Prozessliste lesbar) und schneidet `-e KEY=a=b` am
+  zweiten „=“ ab. Kommentare kann Nexa nicht erhalten: Eine Datei mit Kommentaren zeigt es nur
+  (`readOnly`, mit „Öffnen“).
+- MCP-Server: `mcpServers.<name>` mit `command`, `args`, `env`, `cwd` (stdio) oder `url` und `type`
+  (`http` Streamable HTTP, `sse`), dazu `headers`. Gemini wählt in dieser Reihenfolge: `httpUrl` (alt,
+  Streamable HTTP), `url` mit `type`, `url` allein (Streamable HTTP), `command`. Nexa schreibt `url` mit
+  `type` wie `gemini mcp add`; ein vorhandenes `httpUrl` bleibt, solange der Server HTTP bleibt. `timeout` (Millisekunden),
+  `trust` (keine Rückfragen für den Server), `description`, `includeTools`/`excludeTools` und OAuth-Felder
+  bleiben, wie sie sind.
+- Namen mit „_“ nimmt Nexa für neue Server nicht: Gemini benennt Werkzeuge `mcp_<server>_<werkzeug>`, und
+  seine Regeln lesen den Server nur bis zum ersten „_“ (Warnung in der Doku).
+- Ein- und Ausschalten wie `gemini mcp enable|disable`: `<.gemini>/mcp-server-enablement.json` mit
+  `{ "<name in Kleinbuchstaben>": { "enabled": false } }`, Einschalten entfernt den Eintrag. Die Datei gilt
+  für den Account, also für Server desselben Namens auf jeder Ebene. Kann Gemini sie nicht lesen, startet
+  es keinen Server; Nexa zeigt dann keine Schalter und überschreibt sie nicht.
+- Berechtigungen: `general.defaultApprovalMode` (`default`, `auto_edit`, `plan`; YOLO gibt es nur beim
+  Start), `tools.allowed` (ohne Rückfrage, z. B. `run_shell_command(git)`), `tools.confirmationRequired`
+  (immer fragen), `tools.exclude` (Werkzeug fehlt ganz) und `context.includeDirectories`. Ein geleerter
+  Bereich (`tools`, `general` …) fällt weg.
+- Hooks: `hooks.<Ereignis>: [{ matcher?, sequential?, hooks: [{ type: "command", command, name?,
+  timeout?, description? }] }]`, `timeout` in **Millisekunden** (Nexa zeigt Sekunden und rechnet um).
+  Ereignisse: `BeforeTool`, `AfterTool` (Matcher ist ein regulärer Ausdruck auf den Werkzeugnamen),
+  `BeforeAgent`, `AfterAgent`, `BeforeModel`, `AfterModel`, `BeforeToolSelection`, `SessionStart`
+  (`startup`, `resume`, `clear`), `SessionEnd`, `PreCompress` (`auto`, `manual`), `Notification`.
+  `hooksConfig.enabled: false` schaltet alle aus (Nexa sagt es). Hooks eines Projekts erkennt Gemini CLI an
+  Name und Befehl und warnt vor einem neuen; ein Vertrauen wie bei Codex gibt es nicht.
 
 ## Gemini CLI (`gemini --acp`)
 

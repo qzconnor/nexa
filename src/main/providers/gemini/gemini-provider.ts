@@ -8,6 +8,7 @@ import { readJsonSync } from '../../lib/json-file'
 import { CliBinary, cliEnv } from '../cli-binary'
 import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { AcpConnection } from './acp-connection'
+import { GeminiConfig } from './gemini-config'
 import { parseModelList } from './gemini-items'
 import { GeminiRun } from './gemini-run'
 
@@ -45,6 +46,8 @@ const FALLBACK_MODELS: ModelOption[] = [
 export class GeminiProvider implements AgentProvider {
   readonly id = 'gemini' as const
   readonly binary: CliBinary
+  /** Its `settings.json` files, written by Nexa itself (see gemini-config.ts). */
+  readonly config = new GeminiConfig()
   private models_: { models: ModelOption[]; at: number } | null = null
   private modelsLoading: Promise<ModelOption[]> | null = null
   private commands_: CommandOption[] | null = null

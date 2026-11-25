@@ -277,8 +277,9 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         sie meldet, als Todo-Karte zeigen.
   - [ ] Limits und Kontingente (Gemini CLI nennt sie keinem Client) und 429 als Limit mit Reset markieren.
   - [ ] Titel vom Modell (ACP kann das Modell nicht nebenher fragen).
-  - [ ] MCP-Server und Erweiterungen von Gemini CLI im „+“-Menü (Liste, Schalter je Projekt über
-        `mcpOff`, Erweiterungen als Plugins), Einstellungen der CLI im UI.
+  - [ ] MCP-Server und Erweiterungen von Gemini CLI im „+“-Menü (Liste mit Zustand, Schalter je Projekt
+        über `mcpOff`, Erweiterungen als Plugins). Bearbeiten lassen sie sich schon unter Einstellungen ›
+        CLI-Konfiguration.
   - [ ] Sitzungen von Gemini CLI übernehmen (Import, `nx -r <id>`) und Abgleich, wenn sie außerhalb von
         Nexa weiterlaufen.
   - [ ] Abzweigen, Bearbeiten und Accountwechsel auf derselben Sitzung statt neu mit `<nexa-context>`
