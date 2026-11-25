@@ -5,6 +5,7 @@ import {
   changesOf,
   commandOutput,
   commandsOf,
+  isQuotaError,
   mcpToolOf,
   modelsOf,
   pathOf,
@@ -14,6 +15,7 @@ import {
   stepsOf,
   tierOf,
   toolView,
+  usageOfQuota,
 } from './antigravity-items'
 
 /** `session/new` of Antigravity CLI 1.5.16, as recorded (its model list shortened). */
@@ -168,5 +170,78 @@ describe('errorText', () => {
   it('takes the innermost message of an error wrapped in JSON', () => {
     expect(errorText('{"error":{"message":"{\\"error\\":{\\"message\\":\\"quota\\"}}"}}')).toBe('quota')
     expect(errorText('plain')).toBe('plain')
+  })
+})
+
+/** `agy -p "/usage" --output-format json` of Antigravity CLI 1.5.17, as recorded (descriptions shortened). */
+const USAGE = {
+  conversation_id: '',
+  status: 'SUCCESS',
+  response: 'Gemini Models\tWeekly Limit Remaining\t90%\t2026-12-02T01:12:40Z\n…',
+  command: {
+    name: 'usage',
+    data: {
+      description: 'Within each group, models share a weekly limit and a 5-hour limit. …',
+      groups: [
+        {
+          name: 'Gemini Models',
+          description: 'Models within this group: Gemini 4 Hydrogen, Gemini 3.8 Flash',
+          buckets: [
+            {
+              id: 'gemini-weekly',
+              name: 'Weekly Limit Remaining',
+              description: 'You have used some of your weekly limit, it will fully refresh in 6 days, 17 hours.',
+              window: 'weekly',
+              remaining_fraction: 0.9034007787704468,
+              reset_time: '2026-12-02T01:12:40Z',
+            },
+          ],
+        },
+        {
+          name: 'Claude and GPT models',
+          description: 'Models within this group: Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B',
+          buckets: [
+            { id: '3p-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
+            { id: '3p-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
+          ],
+        },
+      ],
+    },
+  },
+}
+
+describe('usageOfQuota', () => {
+  it('makes a window of each bucket, named by its group, the shorter one of a group first', () => {
+    expect(usageOfQuota(USAGE)).toEqual({
+      limited: false,
+      windows: [
+        { key: 'gemini-weekly', label: 'Gemini · Woche', usedPercent: 9.7, resetsAt: Date.parse('2026-12-02T01:12:40Z'), windowMinutes: 10080 },
+        // A bucket nobody used yet resets at the epoch: no reset to tell.
+        { key: '3p-5h', label: 'Claude/GPT · 5 Stunden', usedPercent: 0, resetsAt: undefined, windowMinutes: 300 },
+        { key: '3p-weekly', label: 'Claude/GPT · Woche', usedPercent: 0, resetsAt: undefined, windowMinutes: 10080 },
+      ],
+    })
+  })
+
+  it('is at the limit when a bucket is used up, and skips disabled ones', () => {
+    const groups = [{ name: 'Gemini Models', buckets: [{ id: 'g', window: 'weekly', remaining_fraction: 0, reset_time: '2026-12-02T01:12:40Z' }, { id: 'off', disabled: true, remaining_fraction: 0 }] }]
+    const usage = usageOfQuota({ command: { name: 'usage', data: { groups } } })
+    expect(usage?.limited).toBe(true)
+    expect(usage?.windows.map((w) => w.key)).toEqual(['g'])
+  })
+
+  it('is null without buckets (an API key, an error)', () => {
+    expect(usageOfQuota({ status: 'ERROR' })).toBeNull()
+    expect(usageOfQuota(null)).toBeNull()
+  })
+})
+
+describe('isQuotaError', () => {
+  it('knows the quota of the login and its credits, not the capacity of a model', () => {
+    expect(isQuotaError('You have exhausted your quota on this model.')).toBe(true)
+    expect(isQuotaError('Error 429, Status: RESOURCE_EXHAUSTED')).toBe(true)
+    expect(isQuotaError('Your AI credits balance is too low to continue.')).toBe(true)
+    expect(isQuotaError('MODEL_CAPACITY_EXHAUSTED: no capacity available for this model')).toBe(false)
+    expect(isQuotaError('Error 400, Message: API key not valid.')).toBe(false)
   })
 })

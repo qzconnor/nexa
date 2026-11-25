@@ -122,6 +122,9 @@ describe('windowName', () => {
     expect(windowName({ key: 'weekly_scoped:Opus 4', label: 'Opus 4 · Woche' })).toBe('week, Opus 4')
     expect(windowName({ key: 'seven_day_sonnet', label: 'Woche Sonnet' })).toBe('week, Sonnet')
     expect(windowName({ key: 'odd', label: 'Sonderlimit' })).toBe('Sonderlimit')
+    // Antigravity's windows per group of models.
+    expect(windowName({ key: 'gemini-weekly', label: 'Gemini · Woche', windowMinutes: 10080 })).toBe('week, Gemini')
+    expect(windowName({ key: '3p-5h', label: 'Claude/GPT · 5 Stunden', windowMinutes: 300 })).toBe('5 hours, Claude/GPT')
   })
 })
 

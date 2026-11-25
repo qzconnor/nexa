@@ -1,5 +1,5 @@
 import type { FileChange, PermissionMode, TodoEntry, ToolKind } from '@shared/chat'
-import type { ModelOption } from '@shared/types'
+import type { ModelOption, UsageWindow } from '@shared/types'
 import { RENDER_SERVER } from '@shared/render'
 import { firstLine, isPlainObject } from '@shared/utils'
 
@@ -219,6 +219,69 @@ export function modelsOf(configOptions: unknown, models: unknown): ModelOption[]
 export function tierOf(meta: unknown): string | undefined {
   const antigravity = isPlainObject(meta) && isPlainObject(meta.antigravity) ? meta.antigravity : null
   return isPlainObject(antigravity?.tier) ? str(antigravity.tier.name) : undefined
+}
+
+/** A bucket's `window` as minutes: `5h`, `weekly`, `daily`; undefined for one Nexa doesn't know. */
+function windowMinutes(window: string | undefined): number | undefined {
+  if (window === 'weekly') return 7 * 24 * 60
+  if (window === 'daily') return 24 * 60
+  const match = /^(\d+)([hm])$/.exec(window ?? '')
+  return match ? Number(match[1]) * (match[2] === 'h' ? 60 : 1) : undefined
+}
+
+function windowLabel(minutes: number | undefined, name: string): string {
+  if (minutes === 7 * 24 * 60) return 'Woche'
+  if (minutes === 24 * 60) return 'Tag'
+  if (minutes && minutes % 60 === 0) return minutes === 60 ? '1 Stunde' : `${minutes / 60} Stunden`
+  return minutes ? `${minutes} min` : name
+}
+
+/** „Claude and GPT models“ → „Claude/GPT“: the group's name, short enough for the title bar. */
+function groupLabel(name: string): string {
+  return name.replace(/\s+models?$/i, '').replace(/\s+and\s+/gi, '/').trim() || name
+}
+
+/**
+ * The quota of the login, as `agy -p "/usage" --output-format json` tells it (`command.data`): groups
+ * of models that share their limits, each with its buckets (`remaining_fraction`, `reset_time`; a
+ * bucket nobody used yet resets at the epoch). As Nexa's windows `<group> · <window>`, the shorter
+ * window of a group first. Null when the output names no bucket.
+ */
+export function usageOfQuota(output: unknown): { windows: UsageWindow[]; limited: boolean } | null {
+  const command = isPlainObject(output) && isPlainObject(output.command) ? output.command : null
+  const data = isPlainObject(command?.data) ? command.data : null
+  const groups = Array.isArray(data?.groups) ? data.groups.filter(isPlainObject) : []
+  const windows: UsageWindow[] = []
+  for (const group of groups) {
+    const name = groupLabel(str(group.name) ?? '')
+    const buckets = Array.isArray(group.buckets) ? group.buckets.filter(isPlainObject) : []
+    const own: UsageWindow[] = []
+    for (const bucket of buckets) {
+      // Antigravity shows a disabled bucket dimmed, without a bar: it limits nothing.
+      if (bucket.disabled === true || typeof bucket.remaining_fraction !== 'number') continue
+      const minutes = windowMinutes(str(bucket.window))
+      const reset = Date.parse(str(bucket.reset_time) ?? '')
+      own.push({
+        key: str(bucket.id) ?? `${name}:${str(bucket.window) ?? own.length}`,
+        label: name ? `${name} · ${windowLabel(minutes, str(bucket.name) ?? '')}` : windowLabel(minutes, str(bucket.name) ?? ''),
+        usedPercent: Math.min(100, Math.max(0, Math.round((1 - bucket.remaining_fraction) * 1000) / 10)),
+        resetsAt: Number.isFinite(reset) && reset > 0 ? reset : undefined,
+        windowMinutes: minutes,
+      })
+    }
+    own.sort((a, b) => (a.windowMinutes ?? Infinity) - (b.windowMinutes ?? Infinity))
+    windows.push(...own)
+  }
+  return windows.length ? { windows, limited: windows.some((w) => w.usedPercent >= 100) } : null
+}
+
+/**
+ * An error that says the login's quota (or its AI credits) is used up: „You have exhausted your quota
+ * on this model.“, „individual quota reached“, `RESOURCE_EXHAUSTED`, „Your AI credits balance is too
+ * low to continue.“ (strings of agy 1.5.17). The model's capacity running out is no limit of the account.
+ */
+export function isQuotaError(text: string): boolean {
+  return /quota|RESOURCE_EXHAUSTED|credits balance is too low/i.test(text) && !/capacity/i.test(text)
 }
 
 /** Whether the agent adds to its system prompt (`initialize`: `_meta.antigravity.systemPrompt.append`). */

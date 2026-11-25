@@ -212,7 +212,7 @@ const TREE = [
       {
         id: 'usage.antigravity',
         title: 'Antigravity CLI',
-        keywords: 'Verbrauch Usage Tokens Antworten Dashboard Statistik Google Antigravity agy',
+        keywords: 'Verbrauch Usage Limits Kontingent Quota Auslastung 5 Stunden Woche Reset Tokens Antworten Dashboard Statistik Google Gemini Antigravity agy',
       },
       { id: 'usage.days', title: 'Tokens pro Tag', keywords: 'Verbrauch Diagramm Chart Verlauf Tage Statistik Dashboard' },
     ],

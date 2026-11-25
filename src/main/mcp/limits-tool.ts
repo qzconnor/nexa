@@ -79,6 +79,14 @@ export function localTime(ms: number, now?: number): string {
 
 /** An English name for a limit window (the app's labels are German). */
 export function windowName(window: Pick<UsageWindow, 'key' | 'label' | 'windowMinutes'>): string {
+  // A window of a group of models (Antigravity: „Gemini · Woche“): its group after the window's name,
+  // unless the key named it already (Claude: `weekly_scoped:Opus 4`, „Opus 4 · Woche“).
+  const at = window.label.indexOf(' · ')
+  if (at > 0) {
+    const group = window.label.slice(0, at)
+    const name = windowName({ ...window, label: window.label.slice(at + 3) })
+    return name.includes(group) ? name : `${name}, ${group}`
+  }
   const minutes = window.windowMinutes
   if (window.key === 'five_hour' || minutes === 300) return '5 hours'
   if (window.key === 'seven_day' || minutes === 10080) return 'week'
