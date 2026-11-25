@@ -8,6 +8,7 @@ import AccountDot from '@/components/accounts/AccountDot.vue'
 import CliConfigHooks from '@/components/cli-config/CliConfigHooks.vue'
 import CliConfigMcp from '@/components/cli-config/CliConfigMcp.vue'
 import CliConfigPermissions from '@/components/cli-config/CliConfigPermissions.vue'
+import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -92,7 +93,12 @@ const showFolder = (path: string) => void attempt(() => window.api.app.showItem(
           :options="providerOptions"
           aria-label="CLI"
           @update:model-value="(provider: ProviderId) => store.select({ provider })"
-        />
+        >
+          <template #option="{ option }">
+            <ProviderIcon :provider="option.value" class="size-3.5" />
+            {{ option.label }}
+          </template>
+        </SegmentedControl>
       </SettingField>
 
       <SettingField anchor="cliConfig.account" label="Account" description="Jeder Account hat seinen eigenen Konfigurationsordner.">
