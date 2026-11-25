@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { cn } from '@/lib/utils'
 import { useBrowsersStore } from '@/stores/browsers'
+import { useChatWindowsStore } from '@/stores/chat-windows'
 import { useUiStore } from '@/stores/ui'
 import BrowserPane from './BrowserPane.vue'
 
@@ -14,10 +15,14 @@ import BrowserPane from './BrowserPane.vue'
  * screenshots, the clicks on it nor the chat's live picture of it (BrowserCard) would work.
  */
 const browsers = useBrowsersStore()
+const chatWindows = useChatWindowsStore()
 const ui = useUiStore()
 
-/** Loaded tabs only (see `awake`); never sorted otherwise, a moved page would load again. */
-const panes = computed(() => browsers.tabs.filter((t) => browsers.awake.has(t.id)))
+/**
+ * Loaded tabs only (see `awake`); never sorted otherwise, a moved page would load again. Only those of
+ * chats this window shows: a page exists once, in the window of its chat (shared/chat-windows.ts).
+ */
+const panes = computed(() => browsers.tabs.filter((t) => browsers.awake.has(t.id) && !chatWindows.elsewhere(t.sessionId)))
 
 const onScreen = (id: string) => ui.view === 'chat' && browsers.visibleTab === id
 const driven = (id: string) => browsers.controls.get(id)?.active === true || browsers.controls.get(id)?.busy === true

@@ -3,7 +3,9 @@ import { ref, shallowRef, watch } from 'vue'
 import type { SettingsImportPreview } from '@shared/settings-transfer'
 import type { ThemeContent } from '@shared/themes/types'
 import type { PromptTarget } from '@shared/types'
+import { isChatWindow } from '@/lib/chat-window'
 import type { SettingsAnchor } from '@/lib/settings-index'
+import { useChatWindowsStore } from './chat-windows'
 
 export type MainView = 'chat' | 'home' | 'artifacts'
 export type SettingsSection =
@@ -128,6 +130,11 @@ export const useUiStore = defineStore('ui', () => {
 
   /** Opens the quick open in a mode; its shortcut again while it shows that mode closes it, as in VS Code. */
   function openPalette(prefix: PalettePrefix = ''): void {
+    // A chat's own window has none: the main window opens it.
+    if (isChatWindow) {
+      void useChatWindowsStore().toMain({ kind: 'palette', query: prefix })
+      return
+    }
     if (paletteOpen.value && palettePrefix(paletteQuery.value) === prefix) {
       paletteOpen.value = false
       return

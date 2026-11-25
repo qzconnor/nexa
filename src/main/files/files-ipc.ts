@@ -2,6 +2,7 @@ import { isAbsolute } from 'node:path'
 import type { FileTreeWatch, TimedTouch } from '@shared/files'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { broadcast, handle } from '../ipc'
+import { perWindow } from '../lib/per-window'
 import { isCommitHash, isTreePath, type FileTreeService } from './file-tree-service'
 import type { GitService } from './git-service'
 
@@ -58,10 +59,14 @@ export function registerFilesIpc(
   git: GitService,
   history: (sessionId: string) => Promise<TimedTouch[]>,
 ): void {
+  // Each window (the main one, chats in their own) watches what it shows; the services watch all of it.
+  const watchGit = perWindow((cwds: string[]) => git.watch(cwds))
+  const watchTrees = perWindow((trees: FileTreeWatch[]) => files.watch(trees))
+
   handle(FilesInvoke.gitBranch, (_e, cwd: unknown) => git.branch(requireString(cwd, 'cwd')))
-  handle(FilesInvoke.gitWatch, (_e, cwds: unknown) => {
+  handle(FilesInvoke.gitWatch, (event, cwds: unknown) => {
     if (!Array.isArray(cwds) || cwds.length > MAX_WATCHED_FOLDERS) throw new Error('Ungültiger Parameter: cwds')
-    return git.watch(cwds.map((cwd) => requireString(cwd, 'cwds')))
+    return watchGit(event.sender, cwds.map((cwd) => requireString(cwd, 'cwds')))
   })
   handle(FilesInvoke.gitWebUrl, (_e, cwd: unknown) => git.webUrl(requireString(cwd, 'cwd')))
   handle(FilesInvoke.gitMainWorktree, (_e, cwd: unknown) => git.mainWorktree(requireString(cwd, 'cwd')))
@@ -71,7 +76,7 @@ export function registerFilesIpc(
   handle(FilesInvoke.list, (_e, dir: unknown) => files.list(requirePath(dir, 'dir')))
   handle(FilesInvoke.status, (_e, root: unknown) => files.status(requirePath(root, 'root')))
   handle(FilesInvoke.searchList, (_e, root: unknown) => files.searchList(requirePath(root, 'root')))
-  handle(FilesInvoke.watch, (_e, trees: unknown) => files.watch(treesOf(trees)))
+  handle(FilesInvoke.watch, (event, trees: unknown) => watchTrees(event.sender, treesOf(trees)))
   handle(FilesInvoke.reviewBase, (_e, root: unknown) => files.reviewBase(requirePath(root, 'root')))
   handle(FilesInvoke.diff, (_e, root: unknown, path: unknown, full: unknown, base: unknown) => {
     // A file of the tree: relative to its folder, never above it.

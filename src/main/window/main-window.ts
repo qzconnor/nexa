@@ -1,37 +1,41 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, screen, session, shell, type WebContents, type WebFrameMain } from 'electron'
+import { CHAT_WINDOW_PARAM } from '@shared/chat-windows'
 import type { AppSettings, WindowState } from '@shared/types'
 import { normalizeZoom } from '@shared/zoom'
 import { readJsonSync, writeJsonAtomic } from '../lib/json-file'
 import { guardBrowserGuests } from './browser-guests'
+import { chatWindowPlace, onScreen, type SavedBounds } from './window-place'
 
 export const TITLE_BAR_HEIGHT = 40
-/** The smallest window at 100 %; scaled up, the layout needs as many CSS pixels and so more of the screen. */
-const MIN_WIDTH = 760
-const MIN_HEIGHT = 520
 /** Windows and Linux draw the caption buttons over the page (Window Controls Overlay); macOS has its own. */
 const captionButtons = process.platform === 'win32' || process.platform === 'linux'
 
-interface SavedBounds {
-  x: number
-  y: number
-  width: number
-  height: number
-  maximized: boolean
+/** The main window, or a chat's own window (shared/chat-windows.ts). */
+export type AppWindowKind = 'main' | 'chat'
+
+/**
+ * The smallest window at 100 %; scaled up, the layout needs as many CSS pixels and so more of the
+ * screen. A chat's own window has no sidebar and may be narrow, to stand beside other windows.
+ */
+const MIN_SIZE: Record<AppWindowKind, { width: number; height: number }> = {
+  main: { width: 760, height: 520 },
+  chat: { width: 440, height: 420 },
+}
+
+/** A saved place, with the position only while it is still on a connected display. */
+function placeOnScreen(saved: SavedBounds): Partial<SavedBounds> {
+  const areas = screen.getAllDisplays().map((d) => d.workArea)
+  return onScreen(saved, areas) ? saved : { width: saved.width, height: saved.height, maximized: saved.maximized }
 }
 
 function restoreBounds(file: string): Partial<SavedBounds> {
   const saved = readJsonSync<SavedBounds>(file)
   if (!saved || typeof saved.width !== 'number' || typeof saved.height !== 'number') return {}
-  // Only reuse the position if it is still on a connected display.
-  const visible = screen.getAllDisplays().some((d) => {
-    const a = d.workArea
-    return saved.x < a.x + a.width - 100 && saved.x + saved.width > a.x + 100 && saved.y >= a.y - 10 && saved.y < a.y + a.height - 60
-  })
-  return visible ? saved : { width: saved.width, height: saved.height, maximized: saved.maximized }
+  return placeOnScreen(saved)
 }
 
-const appWindows = new WeakSet<BrowserWindow>()
+const appWindows = new WeakMap<BrowserWindow, AppWindowKind>()
 
 /** What the app's pages may use: the clipboard. Electron would grant them everything. */
 const APP_PERMISSIONS = new Set(['clipboard-read', 'clipboard-sanitized-write'])
@@ -69,6 +73,10 @@ export function openAppWindows(): BrowserWindow[] {
   return BrowserWindow.getAllWindows().filter((win) => appWindows.has(win) && !win.isDestroyed())
 }
 
+export function windowKind(win: BrowserWindow): AppWindowKind | null {
+  return appWindows.get(win) ?? null
+}
+
 export function windowState(win: BrowserWindow): WindowState {
   return { maximized: win.isMaximized(), focused: win.isFocused(), fullscreen: win.isFullScreen() }
 }
@@ -87,7 +95,7 @@ export function setWindowZoom(win: BrowserWindow, percent: number): void {
   const zoom = normalizeZoom(percent) / 100
   win.webContents.setZoomFactor(zoom)
   if (captionButtons) win.setTitleBarOverlay({ height: titleBarHeight(zoom) })
-  const { minWidth, minHeight } = minimumSize(zoom)
+  const { minWidth, minHeight } = minimumSize(appWindows.get(win) ?? 'main', zoom)
   // Not larger than the screen: the window could no longer be placed on it.
   const area = screen.getDisplayMatching(win.getBounds()).workAreaSize
   win.setMinimumSize(Math.min(minWidth, area.width), Math.min(minHeight, area.height))
@@ -96,24 +104,70 @@ export function setWindowZoom(win: BrowserWindow, percent: number): void {
 const titleBarHeight = (zoom: number) => Math.round(TITLE_BAR_HEIGHT * zoom)
 
 /** Scaled down, the minimum of 100 % stays: it leaves the layout more room than it needs then. */
-function minimumSize(zoom: number): { minWidth: number; minHeight: number } {
+function minimumSize(kind: AppWindowKind, zoom: number): { minWidth: number; minHeight: number } {
   const factor = Math.max(1, zoom)
-  return { minWidth: Math.round(MIN_WIDTH * factor), minHeight: Math.round(MIN_HEIGHT * factor) }
+  return { minWidth: Math.round(MIN_SIZE[kind].width * factor), minHeight: Math.round(MIN_SIZE[kind].height * factor) }
 }
 
 /** `hidden`: the window only appears with `revealWindow` (started at login into the notification area). */
 export function createMainWindow(settings: AppSettings, userDataDir: string, { hidden = false } = {}): BrowserWindow {
   const boundsFile = join(userDataDir, 'window-state.json')
   const saved = restoreBounds(boundsFile)
+  const win = createAppWindow(settings, 'main', { width: 1280, height: 860, ...saved }, { hidden })
+  trackBounds(win, (bounds) => void writeJsonAtomic(boundsFile, bounds).catch(() => undefined))
+  return win
+}
+
+/**
+ * A chat's own window, where it was last (`saved`) or beside `near` (the main window). `onBounds`
+ * hears where the user puts it.
+ */
+export function createChatWindow(
+  settings: AppSettings,
+  sessionId: string,
+  saved: SavedBounds | null,
+  near: BrowserWindow | null,
+  onBounds: (bounds: SavedBounds) => void,
+): BrowserWindow {
+  const nearBounds = near && !near.isDestroyed() ? near.getNormalBounds() : null
+  const area = (nearBounds ? screen.getDisplayMatching(nearBounds) : screen.getPrimaryDisplay()).workArea
+  const place = saved ? { ...chatWindowPlace(nearBounds, area), ...placeOnScreen(saved) } : chatWindowPlace(nearBounds, area)
+  const win = createAppWindow(settings, 'chat', place, { query: { [CHAT_WINDOW_PARAM]: sessionId } })
+  trackBounds(win, onBounds)
+  return win
+}
+
+/** Remembers where the user puts a window, a moment after the last move. */
+function trackBounds(win: BrowserWindow, save: (bounds: SavedBounds) => void): void {
+  let saveTimer: NodeJS.Timeout | null = null
+  const saveBounds = () => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      if (win.isDestroyed()) return
+      save({ ...win.getNormalBounds(), maximized: win.isMaximized() })
+    }, 500)
+  }
+  win.on('resize', saveBounds)
+  win.on('move', saveBounds)
+  win.on('maximize', saveBounds)
+  win.on('unmaximize', saveBounds)
+}
+
+function createAppWindow(
+  settings: AppSettings,
+  kind: AppWindowKind,
+  place: Partial<SavedBounds>,
+  { hidden = false, query }: { hidden?: boolean; query?: Record<string, string> },
+): BrowserWindow {
   const isWin = process.platform === 'win32'
   const zoom = normalizeZoom(settings.appearance.zoom) / 100
 
   const win = new BrowserWindow({
-    x: saved.x,
-    y: saved.y,
-    width: saved.width ?? 1280,
-    height: saved.height ?? 860,
-    ...minimumSize(zoom),
+    x: place.x,
+    y: place.y,
+    width: place.width,
+    height: place.height,
+    ...minimumSize(kind, zoom),
     show: false,
     title: 'Nexa',
     backgroundColor: isWin && settings.appearance.material !== 'none' ? '#00000000' : '#141416',
@@ -135,11 +189,11 @@ export function createMainWindow(settings: AppSettings, userDataDir: string, { h
       webviewTag: true,
     },
   })
-  appWindows.add(win)
+  appWindows.set(win, kind)
   guardAppSession()
   guardBrowserGuests(win)
   win.setMenu(null)
-  if (saved.maximized) {
+  if (place.maximized) {
     // Maximizing also shows the window, so a hidden one does it when it appears.
     if (hidden) win.once('show', () => win.maximize())
     else win.maximize()
@@ -158,21 +212,12 @@ export function createMainWindow(settings: AppSettings, userDataDir: string, { h
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
 
-  let saveTimer: NodeJS.Timeout | null = null
-  const saveBounds = () => {
-    if (saveTimer) clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      if (win.isDestroyed()) return
-      const b = win.getNormalBounds()
-      void writeJsonAtomic(boundsFile, { ...b, maximized: win.isMaximized() } satisfies SavedBounds).catch(() => undefined)
-    }, 500)
+  if (process.env.ELECTRON_RENDERER_URL) {
+    const url = new URL(process.env.ELECTRON_RENDERER_URL)
+    for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value)
+    void win.loadURL(url.toString())
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'), { query })
   }
-  win.on('resize', saveBounds)
-  win.on('move', saveBounds)
-  win.on('maximize', saveBounds)
-  win.on('unmaximize', saveBounds)
-
-  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else void win.loadFile(join(__dirname, '../renderer/index.html'))
   return win
 }

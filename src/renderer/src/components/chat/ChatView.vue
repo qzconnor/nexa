@@ -15,6 +15,8 @@ import {
   RefreshCwIcon,
   RotateCwIcon,
   SearchIcon,
+  SquareArrowDownLeftIcon,
+  SquareArrowOutUpRightIcon,
   SquareTerminalIcon,
   TerminalIcon,
   Trash2Icon,
@@ -52,6 +54,7 @@ import { useDomFind } from '@/composables/useDomFind'
 import { provideProjectPath } from '@/composables/useProjectPath'
 import { useStickToBottom } from '@/composables/useStickToBottom'
 import type { AppCommand } from '@/lib/chat-commands'
+import { isChatWindow } from '@/lib/chat-window'
 import { attempt } from '@/lib/errors'
 import { andList, formatDuration } from '@/lib/format'
 import { runErrorToShow } from '@/lib/run-error'
@@ -392,6 +395,14 @@ function remove(): void {
   if (meta.value) void chatActions.remove(meta.value)
 }
 
+// ── A window of its own: out of the main window, or back into it ──
+
+const popOutLabel = isChatWindow ? 'Zurück ins Hauptfenster' : 'In eigenem Fenster öffnen'
+const popOutHint = isChatWindow ? 'Zurück ins Hauptfenster: der Chat erscheint dort wieder' : 'In eigenem Fenster öffnen: nur dieser Chat, neben anderen Fenstern'
+function popOut(): void {
+  if (meta.value) void chatActions.popOut(meta.value)
+}
+
 const restarting = ref(false)
 async function restart(): Promise<void> {
   if (!meta.value || restarting.value) return
@@ -552,6 +563,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           >
             <RotateCwIcon :class="cn(restarting && 'animate-spin')" />
           </Button>
+          <Button variant="ghost" size="icon-sm" :aria-label="popOutLabel" v-tooltip.bottom="popOutHint" @click="popOut">
+            <SquareArrowDownLeftIcon v-if="isChatWindow" />
+            <SquareArrowOutUpRightIcon v-else />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" size="icon-sm" aria-label="Mehr">
@@ -569,6 +584,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <DropdownMenuItem @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
               <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
               <DropdownMenuItem :disabled="restarting" @select="restart"><RotateCwIcon /> Chat neu starten</DropdownMenuItem>
+              <DropdownMenuItem @select="popOut">
+                <SquareArrowDownLeftIcon v-if="isChatWindow" />
+                <SquareArrowOutUpRightIcon v-else />
+                {{ popOutLabel }}
+              </DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.end(meta)"><PowerIcon /> Chat beenden</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</DropdownMenuItem>

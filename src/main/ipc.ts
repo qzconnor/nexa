@@ -412,8 +412,8 @@ export function registerIpc(ctx: AppContext): void {
     return ctx.command.setRegistered(registered)
   })
 
-  handle(IpcInvoke.notificationsViewing, (_e, sessionId: unknown) =>
-    ctx.notifications.setViewing(typeof sessionId === 'string' && sessionId ? sessionId : null),
+  handle(IpcInvoke.notificationsViewing, (event, sessionId: unknown) =>
+    ctx.notifications.setViewing(windowOf(event).id, typeof sessionId === 'string' && sessionId ? sessionId : null),
   )
   handle(IpcInvoke.notificationsTest, () => ctx.notifications.showTest())
 

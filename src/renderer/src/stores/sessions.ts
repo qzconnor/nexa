@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
 import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
+import { useChatWindowsStore } from './chat-windows'
 import { useProjectsStore } from './projects'
 
 /** The chat of an opened session. */
@@ -63,7 +64,8 @@ export const useSessionsStore = defineStore('sessions', () => {
       const previous = runtimes.get(event.sessionId)
       runtimes.set(event.sessionId, event.runtime)
       const finished = previous && (previous.status === 'running' || previous.status === 'waiting') && event.runtime.status === 'idle'
-      if (finished && event.sessionId !== activeId.value) unread.add(event.sessionId)
+      // A chat in a window of its own is on screen there.
+      if (finished && event.sessionId !== activeId.value && !useChatWindowsStore().elsewhere(event.sessionId)) unread.add(event.sessionId)
       return
     }
     const chat = chats.get(event.sessionId)
@@ -94,6 +96,9 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function open(id: string): Promise<void> {
+    // A chat in another window shows there: its own window, or (from a chat's own window) the main window.
+    const windows = useChatWindowsStore()
+    if (windows.elsewhere(id)) return windows.show(id)
     activeId.value = id
     unread.delete(id)
     if (chats.get(id)?.loaded) {
