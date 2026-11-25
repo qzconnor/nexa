@@ -243,6 +243,11 @@ export interface AntigravityPaths {
   mcpFile: string
   hooksFile: string
   /**
+   * The settings Antigravity's app and CLI share; its `userSettings.globalPermissionGrants` are the
+   * rules `/permissions` shows as „Shared with Antigravity“.
+   */
+  sharedConfigFile: string
+  /**
    * The Antigravity project every CLI and ACP session uses (`default-cli-project`, in any folder):
    * its permission rules, which `/permissions` calls „Project“ and puts before all others.
    */
@@ -272,6 +277,7 @@ export function antigravityPaths(dir: string): AntigravityPaths {
     brainDir: join(dir, 'antigravity-cli', 'brain'),
     mcpFile: join(dir, 'config', 'mcp_config.json'),
     hooksFile: join(dir, 'config', 'hooks.json'),
+    sharedConfigFile: join(dir, 'config', 'config.json'),
     projectFile: join(dir, 'config', 'projects', `${ANTIGRAVITY_DEFAULT_PROJECT.id}.json`),
     tokenFile: join(dir, 'antigravity-cli', 'antigravity-oauth-token'),
     logDir: join(dir, 'antigravity-cli', 'log'),

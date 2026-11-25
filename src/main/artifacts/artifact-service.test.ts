@@ -8,17 +8,23 @@ const { ArtifactService, artifactToken, listFailure, parseArtifact, thumbUrl } =
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
+const waited: number[] = []
+
 function service(kind: Account['kind'] = 'oauth', provider: Account['provider'] = 'claude') {
   return new ArtifactService(
     { get: () => ({ id: 'a', kind, provider }) as Account, token: () => ({ token: 'tok' }) },
     'nexa/test',
     () => '2.1.330',
+    async (ms) => {
+      waited.push(ms)
+    },
   )
 }
 
 // A function returned from the hook would run as its cleanup.
 beforeEach(() => {
   fetchMock.mockReset()
+  waited.length = 0
 })
 
 describe('parseArtifact', () => {
@@ -48,7 +54,14 @@ describe('parseArtifact', () => {
       updatedAt: null,
       lastViewedAt: new Date(1_763_000_000_000).toISOString(),
       views: 7,
+      pinned: false,
+      renamable: true,
     })
+  })
+
+  it('reads pins, and whether a shared one may be renamed as claude.ai says', () => {
+    expect(parseArtifact({ id: 'pinned-1', rel: 'shared', starred: true })).toMatchObject({ pinned: true, renamable: false })
+    expect(parseArtifact({ id: 'shared-2', rel: 'shared', renamable: true })).toMatchObject({ pinned: false, renamable: true })
   })
 
   it('takes the link claude.ai names, on claude.ai only', () => {
@@ -164,5 +177,55 @@ describe('ArtifactService.list', () => {
     await s.list('a')
     expect(await s.thumbnail('a', 'with-thumb', true)).toBe('data:image/png;base64,AQID')
     expect(fetchMock.mock.calls.at(-1)![0]).toBe('https://t.frame.claudeusercontent.com/a.png')
+  })
+})
+
+describe('ArtifactService actions', () => {
+  it('says whether claude.ai offers pins to the login', async () => {
+    fetchMock.mockImplementation(async (url) => json(200, { artifacts: [], starsEnabled: url.includes('rel=all') }))
+    expect((await service().list('a')).pinsEnabled).toBe(true)
+  })
+
+  it('renames with the title on one line, and refuses an empty or too long one before asking', async () => {
+    fetchMock.mockResolvedValue(json(200, {}))
+    await service().rename('a', 'own-1', '  Neuer\n Titel ')
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('https://api.anthropic.com/api/frame/retitle/own-1')
+    expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ title: 'Neuer Titel' }), redirect: 'error' })
+    expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json', Authorization: 'Bearer tok' })
+    await expect(service().rename('a', 'own-1', '   ')).rejects.toThrow('leer')
+    await expect(service().rename('a', 'own-1', 'x'.repeat(301))).rejects.toThrow('300')
+    await expect(service().rename('a', '../frames', 'Titel')).rejects.toThrow('Ungültige')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('deletes once more after the time a busy server names, and knows one already gone', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 409, headers: { 'retry-after': '3' } })).mockResolvedValueOnce(new Response(null, { status: 204 }))
+    expect(await service().remove('a', 'own-1')).toBe('deleted')
+    expect(waited).toEqual([3000])
+    expect(fetchMock.mock.calls.map(([url, init]) => `${init?.method} ${url}`)).toEqual([
+      'DELETE https://api.anthropic.com/api/frame/own-1',
+      'DELETE https://api.anthropic.com/api/frame/own-1',
+    ])
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }))
+    expect(await service().remove('a', 'own-1')).toBe('gone')
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 403 }))
+    await expect(service().remove('a', 'shared-1')).rejects.toThrow('gehört nicht diesem Login')
+  })
+
+  it('pins and unpins', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }))
+    const s = service()
+    await s.setPinned('a', 'own-1', true)
+    await s.setPinned('a', 'own-1', false)
+    expect(fetchMock.mock.calls.map(([url, init]) => `${init?.method} ${url}`)).toEqual([
+      'POST https://api.anthropic.com/api/frame/favorite/own-1',
+      'DELETE https://api.anthropic.com/api/frame/favorite/own-1',
+    ])
+  })
+
+  it('changes nothing for Codex accounts', async () => {
+    await expect(service('oauth', 'codex').setPinned('a', 'own-1', true)).rejects.toThrow('nur für Claude')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

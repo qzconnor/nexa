@@ -225,8 +225,9 @@ export function chatBlocks(items: readonly ChatItem[], parentId: string | null, 
         continue
       }
       browser = null
-      // The user's own commands (`!`) aren't the agent's work: each stands alone, with its output.
-      if (item.render || item.byUser) {
+      // The user's own commands (`!`) aren't the agent's work: each stands alone, with its output; so
+      // does a tool with a page of its own (MCP Apps), too large to fold into a group.
+      if (item.render || item.byUser || item.app) {
         group = null
         blocks.push({ type: 'item', item })
         continue

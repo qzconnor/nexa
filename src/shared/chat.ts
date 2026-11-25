@@ -5,6 +5,8 @@
  * which CLI produced it, and a session can move from one CLI to another.
  */
 
+import type { McpAppRef, McpAppToolResult } from './mcp-apps'
+
 export type ProviderId = 'claude' | 'codex' | 'antigravity'
 export const PROVIDER_IDS: readonly ProviderId[] = ['claude', 'codex', 'antigravity']
 
@@ -104,6 +106,10 @@ export interface ToolItem extends ItemBase {
   server?: string
   /** Something Nexa draws in the chat (its own MCP tools). */
   render?: RenderSpec
+  /** The tool's own page (MCP Apps), shown in the chat in a sandboxed frame. */
+  app?: McpAppRef
+  /** The tool's result as its page gets it; the CLI's text alone is `output`. */
+  appResult?: McpAppToolResult
   exitCode?: number | null
   /** A command the CLI runs as a task of its own (Claude Code's shells): what became of the process. */
   shell?: ShellState

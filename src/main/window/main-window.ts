@@ -37,16 +37,18 @@ function restoreBounds(file: string): Partial<SavedBounds> {
 
 const appWindows = new WeakMap<BrowserWindow, AppWindowKind>()
 
-/** What the app's pages may use: the clipboard. Electron would grant them everything. */
-const APP_PERMISSIONS = new Set(['clipboard-read', 'clipboard-sanitized-write'])
 let appSessionGuarded = false
 
 /**
- * The microphone, for the voice input in the composer: the app's page itself (no frame in it), and
- * sound only, never the camera or the screen.
+ * What the app's pages may use; Electron would grant them everything. The clipboard, and the
+ * microphone for the voice input in the composer (sound only, never the camera or the screen). Frames
+ * in the page (MCP Apps, servers' own code) may only write to the clipboard: reading it, or the
+ * microphone, is the app's page itself.
  */
-function audioOnly(permission: string, mediaTypes: readonly string[], mainFrame: boolean): boolean {
-  return mainFrame && permission === 'media' && mediaTypes.length > 0 && mediaTypes.every((type) => type === 'audio')
+function appMay(permission: string, mediaTypes: readonly string[], mainFrame: boolean): boolean {
+  if (permission === 'clipboard-sanitized-write') return true
+  if (!mainFrame) return false
+  return permission === 'clipboard-read' || (permission === 'media' && mediaTypes.length > 0 && mediaTypes.every((type) => type === 'audio'))
 }
 
 function guardAppSession(): void {
@@ -54,10 +56,10 @@ function guardAppSession(): void {
   appSessionGuarded = true
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
     const mediaTypes = 'mediaTypes' in details ? (details.mediaTypes ?? []) : []
-    callback(APP_PERMISSIONS.has(permission) || audioOnly(permission, mediaTypes, details.isMainFrame))
+    callback(appMay(permission, mediaTypes, details.isMainFrame))
   })
   session.defaultSession.setPermissionCheckHandler((_contents, permission, _origin, details) => {
-    return APP_PERMISSIONS.has(permission) || audioOnly(permission, details.mediaType === 'audio' ? ['audio'] : [], details.isMainFrame)
+    return appMay(permission, details.mediaType === 'audio' ? ['audio'] : [], details.isMainFrame)
   })
 }
 

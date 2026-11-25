@@ -6,6 +6,7 @@ import { CliConfigEvent, CliConfigInvoke } from '@shared/cli-config'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
+import { McpAppsInvoke } from '@shared/mcp-apps'
 import { StartCommandsEvent, StartCommandsInvoke } from '@shared/start-commands'
 import { TerminalsEvent, TerminalsInvoke } from '@shared/terminals'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
@@ -68,6 +69,14 @@ const api: NexaApi = {
     list: (accountId) => invoke(ArtifactsInvoke.list, accountId),
     thumbnail: (accountId, id, dark) => invoke(ArtifactsInvoke.thumbnail, accountId, id, dark),
     chats: () => invoke(ArtifactsInvoke.chats),
+    rename: (accountId, id, title) => invoke(ArtifactsInvoke.rename, accountId, id, title),
+    remove: (accountId, id) => invoke(ArtifactsInvoke.remove, accountId, id),
+    setPinned: (accountId, id, pinned) => invoke(ArtifactsInvoke.setPinned, accountId, id, pinned),
+  },
+  mcpApps: {
+    open: (sessionId, itemId) => invoke(McpAppsInvoke.open, sessionId, itemId),
+    callTool: (sessionId, itemId, name, args) => invoke(McpAppsInvoke.callTool, sessionId, itemId, name, args),
+    readResource: (sessionId, itemId, uri) => invoke(McpAppsInvoke.readResource, sessionId, itemId, uri),
   },
   voice: {
     start: (input) => invoke(VoiceInvoke.start, input),

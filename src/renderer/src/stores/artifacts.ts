@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { ArtifactList } from '@shared/artifacts'
+import { artifactTitle, type Artifact, type ArtifactList } from '@shared/artifacts'
 
 const key = (...parts: (string | boolean)[]) => parts.join('\n')
 
@@ -73,5 +73,34 @@ export const useArtifactsStore = defineStore('artifacts', () => {
     return thumbnails.value[key(accountId, id, dark)]
   }
 
-  return { lists, loading, chats, searching, load, loadChats, requestThumbnail, thumbnailOf }
+  function update(accountId: string, id: string, patch: Partial<Artifact>): void {
+    const list = lists.value[accountId]
+    if (list) list.artifacts = list.artifacts.map((artifact) => (artifact.id === id ? { ...artifact, ...patch } : artifact))
+  }
+
+  async function rename(accountId: string, id: string, title: string): Promise<void> {
+    await window.api.artifacts.rename(accountId, id, title)
+    update(accountId, id, { title: artifactTitle(title) })
+  }
+
+  /** Deletes it for good; one that was gone already leaves the list too. */
+  async function remove(accountId: string, id: string): Promise<'deleted' | 'gone'> {
+    const result = await window.api.artifacts.remove(accountId, id)
+    const list = lists.value[accountId]
+    if (list) list.artifacts = list.artifacts.filter((artifact) => artifact.id !== id)
+    return result
+  }
+
+  /** Pinned at once, taken back if claude.ai refuses. */
+  async function setPinned(accountId: string, id: string, pinned: boolean): Promise<void> {
+    update(accountId, id, { pinned })
+    try {
+      await window.api.artifacts.setPinned(accountId, id, pinned)
+    } catch (error) {
+      update(accountId, id, { pinned: !pinned })
+      throw error
+    }
+  }
+
+  return { lists, loading, chats, searching, load, loadChats, requestThumbnail, thumbnailOf, rename, remove, setPinned }
 })

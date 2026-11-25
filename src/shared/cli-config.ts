@@ -144,6 +144,8 @@ interface PermissionFieldBase {
   description?: string
   /** Why it can't be changed here (written in a form Nexa doesn't edit). */
   locked?: string
+  /** A heading the field stands under, with the fields after it that name the same one. */
+  group?: string
 }
 
 /** A permission setting of a CLI; the window draws it by its kind, the adapter knows where it goes. */

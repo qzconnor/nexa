@@ -40,7 +40,8 @@ const fromToggle = (value: Toggle): boolean | null => (value === 'unset' ? null 
 
 <template>
   <div class="flex flex-col gap-5">
-    <template v-for="field in permissions.fields" :key="field.key">
+    <template v-for="(field, i) in permissions.fields" :key="field.key">
+      <h4 v-if="field.group && field.group !== permissions.fields[i - 1]?.group" class="-mb-2 border-t pt-4 text-sm font-medium">{{ field.group }}</h4>
       <Field :orientation="field.kind === 'list' ? 'vertical' : 'horizontal'" class="gap-x-6 gap-y-2">
         <FieldContent>
           <FieldLabel>

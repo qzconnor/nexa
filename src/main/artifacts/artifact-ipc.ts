@@ -15,4 +15,11 @@ export function registerArtifactsIpc(artifacts: ArtifactService, sessions: Sessi
     artifacts.thumbnail(str(accountId, 'Account'), str(id, 'Artefakt'), dark === true),
   )
   handle(ArtifactsInvoke.chats, () => sessions.artifactChats())
+  handle(ArtifactsInvoke.rename, (_e, accountId: unknown, id: unknown, title: unknown) =>
+    artifacts.rename(str(accountId, 'Account'), str(id, 'Artefakt'), typeof title === 'string' ? title : ''),
+  )
+  handle(ArtifactsInvoke.remove, (_e, accountId: unknown, id: unknown) => artifacts.remove(str(accountId, 'Account'), str(id, 'Artefakt')))
+  handle(ArtifactsInvoke.setPinned, (_e, accountId: unknown, id: unknown, pinned: unknown) =>
+    artifacts.setPinned(str(accountId, 'Account'), str(id, 'Artefakt'), pinned === true),
+  )
 }

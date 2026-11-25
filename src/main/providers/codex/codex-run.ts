@@ -4,7 +4,8 @@ import { compactionNotice } from '@shared/chat'
 import type { CommandOption } from '@shared/types'
 import { firstLine, isPlainObject } from '@shared/utils'
 import { codexToolApprovals } from '../../mcp/tool-grant'
-import { codexMcpServers } from '../mcp-servers'
+import { appResultOf, type McpAppToolResult, type McpToolUi } from '@shared/mcp-apps'
+import { codexMcpServers, codexToolUis } from '../mcp-servers'
 import type { AgentRun, McpServerState, RunInput, RunOptions, RunSink } from '../provider'
 import type { CodexClient, CodexServerRequest } from './codex-client'
 import { agentStatusOf, codexItem, codexTurnItem, COLLAB_TITLES, commandView, reasoningText, str, type Json } from './codex-items'
@@ -277,6 +278,20 @@ export class CodexRun implements AgentRun {
   /** A thread takes its servers from the config it was started with: the next prompt resumes it anew. */
   async setMcpEnabled(): Promise<boolean> {
     return false
+  }
+
+  /** Through the thread, whose config named the server. */
+  async readMcpResource(server: string, uri: string): Promise<unknown> {
+    return this.client.request('mcpServer/resource/read', { threadId: this.threadId, server, uri })
+  }
+
+  async callMcpTool(server: string, tool: string, args: Record<string, unknown>): Promise<McpAppToolResult> {
+    return appResultOf(await this.client.request('mcpServer/tool/call', { threadId: this.threadId, server, tool, arguments: args }))
+  }
+
+  async mcpToolUi(server: string, tool: string): Promise<McpToolUi | null> {
+    const raw = await this.client.request('mcpServerStatus/list', { threadId: this.threadId, serverName: server, detail: 'toolsAndAuthOnly' })
+    return codexToolUis(raw).get(server)?.tools.get(tool) ?? null
   }
 
   async stop(): Promise<void> {

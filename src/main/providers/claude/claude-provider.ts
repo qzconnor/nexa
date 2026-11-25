@@ -5,12 +5,13 @@ import type { CommandOption, McpAuthStart, ModelDefaults, ModelOption, PluginInf
 import { firstLine, isPlainObject } from '@shared/utils'
 import { fetchClaudeUsage } from '../../accounts/claude-usage'
 import { CliBinary, cliEnv, type ResolvedCommand } from '../cli-binary'
-import { claudeMcpServers } from '../mcp-servers'
+import { appResultOf, claudeServerKey, type McpAppToolResult, type McpToolUi } from '@shared/mcp-apps'
+import { claudeMcpServers, claudeToolUis } from '../mcp-servers'
 import { byPluginName, claudeAuthStart, claudeManifest, claudePlugins, claudePluginToggleError } from '../plugins'
 import type { AccountContext, AgentProvider, AgentRun, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { ClaudeConfig } from './claude-config'
 import { claudeCommands, claudeModels, openClaudeControl, probeClaude, type ClaudeControl } from './claude-probe'
-import { ClaudeRun } from './claude-run'
+import { CLAUDE_MCP_APPS_ENV, ClaudeRun } from './claude-run'
 
 /** The MCP servers of a folder without a running chat are asked again after this. */
 const MCP_TTL_MS = 60_000
@@ -20,6 +21,8 @@ const MCP_CONNECT_MS = 2500
 const AUTH_ANSWER_MS = 30_000
 /** How long a process waits for the browser's answer to a sign-in it started. */
 const AUTH_WAIT_MS = 5 * 60_000
+/** How long the process for the pages of chats that don't run stays without a page asking it something. */
+const APP_CONTROL_IDLE_MS = 3 * 60_000
 
 async function readJson(path: string): Promise<unknown> {
   try {
@@ -62,6 +65,7 @@ export class ClaudeProvider implements AgentProvider {
   private readonly backoff = new Map<string, number>()
   /** By account and folder. */
   private readonly mcpCache = new Map<string, { servers: McpServerState[]; at: number }>()
+  private readonly appControls = new Map<string, { control: Promise<ClaudeControl>; timer: ReturnType<typeof setTimeout> | undefined }>()
 
   constructor(private readonly settings: () => ProviderSettings) {
     this.binary = new CliBinary(
@@ -226,6 +230,55 @@ export class ClaudeProvider implements AgentProvider {
     return start
   }
 
+  async readMcpResource(account: AccountContext, cwd: string, server: string, uri: string): Promise<unknown> {
+    return (await this.appControl(account, cwd)).request({ subtype: 'mcp_read_resource', serverName: server, uri })
+  }
+
+  async callMcpTool(account: AccountContext, cwd: string, server: string, tool: string, args: Record<string, unknown>): Promise<McpAppToolResult> {
+    const control = await this.appControl(account, cwd)
+    return appResultOf(await control.request({ subtype: 'mcp_call', tool: `mcp__${claudeServerKey(server)}__${tool}`, arguments: args, soft_error_result: true }))
+  }
+
+  async mcpToolUi(account: AccountContext, cwd: string, server: string, tool: string): Promise<McpToolUi | null> {
+    const control = await this.appControl(account, cwd)
+    return claudeToolUis(await control.request({ subtype: 'mcp_status' })).get(claudeServerKey(server))?.tools.get(tool) ?? null
+  }
+
+  /**
+   * A Claude Code process for the pages of chats that don't run (MCP Apps), per account and folder:
+   * it holds the servers' connections while a page is used, and ends after a while without one.
+   */
+  private async appControl(account: AccountContext, cwd: string): Promise<ClaudeControl> {
+    const key = `${account.accountId}\0${cwd}`
+    let entry = this.appControls.get(key)
+    if (!entry) {
+      const control = openClaudeControl(this.binary, account, cwd, CLAUDE_MCP_APPS_ENV).then(async (c) => {
+        // The servers connect after `initialize`.
+        await new Promise((resolve) => setTimeout(resolve, MCP_CONNECT_MS))
+        return c
+      })
+      entry = { control, timer: undefined }
+      this.appControls.set(key, entry)
+    }
+    const current = entry
+    clearTimeout(current.timer)
+    current.timer = setTimeout(() => {
+      if (this.appControls.get(key) === current) this.appControls.delete(key)
+      void current.control.then((c) => c.stop()).catch(() => undefined)
+    }, APP_CONTROL_IDLE_MS)
+    try {
+      const control = await current.control
+      if (control.alive) return control
+    } catch (error) {
+      if (this.appControls.get(key) === current) this.appControls.delete(key)
+      throw error
+    }
+    // It ended meanwhile: a new one.
+    if (this.appControls.get(key) === current) this.appControls.delete(key)
+    clearTimeout(current.timer)
+    return this.appControl(account, cwd)
+  }
+
   private async awaitSignIn(control: ClaudeControl, name: string): Promise<void> {
     const until = Date.now() + AUTH_WAIT_MS
     while (control.alive && Date.now() < until) {
@@ -300,7 +353,12 @@ export class ClaudeProvider implements AgentProvider {
     }
   }
 
-  async dispose(): Promise<void> {}
+  async dispose(): Promise<void> {
+    const entries = [...this.appControls.values()]
+    this.appControls.clear()
+    for (const entry of entries) clearTimeout(entry.timer)
+    await Promise.allSettled(entries.map((entry) => entry.control.then((c) => c.stop())))
+  }
 }
 
 function planName(type: string): string {

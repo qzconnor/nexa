@@ -3,7 +3,7 @@ import { CheckIcon, ChevronDownIcon, CloudOffIcon, RefreshCwIcon, SearchIcon, Sh
 import { until } from '@vueuse/core'
 import { computed, onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
-import { chatOfArtifact, type Artifact } from '@shared/artifacts'
+import { MAX_ARTIFACT_TITLE, chatOfArtifact, type Artifact } from '@shared/artifacts'
 import AccountDot from '@/components/accounts/AccountDot.vue'
 import ArtifactCard from '@/components/artifacts/ArtifactCard.vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
@@ -27,8 +27,8 @@ import { useUiStore } from '@/stores/ui'
 
 /**
  * The pages and documents Claude published on claude.ai with its Artifact tool, per account: shown
- * beside the chat they came from, in the default browser, or their link copied. Codex has no such
- * list (yet): its app-server doesn't give out its Sites.
+ * beside the chat they came from, in the default browser, or their link copied; pinned, renamed and
+ * deleted on claude.ai. Codex has no such list (yet): its app-server doesn't give out its Sites.
  */
 const accounts = useAccountsStore()
 const store = useArtifactsStore()
@@ -81,12 +81,17 @@ const chatTitle = (artifact: Artifact) => {
 
 const filter = ref<ArtifactFilter>('all')
 const query = ref('')
-const filterOptions = [
+const filterOptions = computed(() => [
   { value: 'all' as const, label: 'Alle' },
   { value: 'mine' as const, label: 'Eigene' },
   { value: 'shared' as const, label: 'Geteilt' },
   { value: 'chats' as const, label: 'Aus Chats' },
-]
+  ...(list.value?.pinsEnabled ? [{ value: 'pinned' as const, label: 'Angepinnt' }] : []),
+])
+// Another account without pins: the filter would show nothing and offer no way back.
+watch(filterOptions, (options) => {
+  if (!options.some((o) => o.value === filter.value)) filter.value = 'all'
+})
 const shown = computed(() => (list.value ? filterArtifacts(list.value.artifacts, filter.value, query.value, chatTitle) : []))
 const summary = computed(() => {
   const total = list.value?.artifacts.length ?? 0
@@ -140,6 +145,40 @@ function goToChat(artifact: Artifact): void {
 async function copy(artifact: Artifact): Promise<void> {
   await navigator.clipboard.writeText(artifact.url)
   toast.success('Link kopiert')
+}
+
+function setPinned(artifact: Artifact, pinned: boolean): void {
+  void attempt(() => store.setPinned(accountId.value, artifact.id, pinned), pinned ? 'Anpinnen fehlgeschlagen' : 'Lösen fehlgeschlagen')
+}
+
+async function rename(artifact: Artifact): Promise<void> {
+  const id = accountId.value
+  const title = await ui.ask({
+    title: 'Artefakt umbenennen',
+    description: 'Der Titel ändert sich auf claude.ai, auch für alle, mit denen es geteilt ist.',
+    input: { value: artifact.title },
+    confirmText: 'Umbenennen',
+  })
+  if (!title?.trim() || title.trim() === artifact.title) return
+  if (title.trim().length > MAX_ARTIFACT_TITLE) {
+    toast.error(`Der Titel darf höchstens ${MAX_ARTIFACT_TITLE} Zeichen lang sein.`)
+    return
+  }
+  await attempt(() => store.rename(id, artifact.id, title), 'Umbenennen fehlgeschlagen')
+}
+
+async function remove(artifact: Artifact): Promise<void> {
+  const id = accountId.value
+  const ok = await ui.confirm({
+    title: `„${artifact.title}“ löschen?`,
+    description: 'Das Artefakt verschwindet von claude.ai, auch für alle, mit denen es geteilt ist. Das lässt sich nicht rückgängig machen.',
+    confirmText: 'Löschen',
+    destructive: true,
+  })
+  if (!ok) return
+  const result = await attempt(() => store.remove(id, artifact.id), 'Löschen fehlgeschlagen')
+  if (result === 'deleted') toast.success(`„${artifact.title}“ gelöscht`)
+  else if (result === 'gone') toast.info(`„${artifact.title}“ war schon gelöscht`)
 }
 
 function resetFilters(): void {
@@ -259,6 +298,7 @@ function resetFilters(): void {
             :artifact="artifact"
             :account-id="accountId"
             :dark="dark"
+            :pins-enabled="list?.pinsEnabled ?? false"
             :chat="chatTitle(artifact)"
             :now="now"
             @open="open(artifact)"
@@ -266,6 +306,9 @@ function resetFilters(): void {
             @external="external(artifact)"
             @chat="goToChat(artifact)"
             @copy="copy(artifact)"
+            @pin="setPinned(artifact, $event)"
+            @rename="rename(artifact)"
+            @remove="remove(artifact)"
           />
         </div>
 

@@ -10,6 +10,10 @@ import {
   LockIcon,
   MessageSquareIcon,
   PanelRightIcon,
+  PencilIcon,
+  PinIcon,
+  PinOffIcon,
+  Trash2Icon,
   UsersIcon,
 } from '@lucide/vue'
 import { useIntersectionObserver } from '@vueuse/core'
@@ -23,17 +27,20 @@ import { useArtifactsStore } from '@/stores/artifacts'
 /**
  * An artifact as claude.ai shows it: the top of the page in a window, below its title, owner, time
  * and views, and the chat it came from. A click shows it beside that chat (without one in the default
- * browser), the menu has the rest. The thumbnail is fetched once the card comes into view.
+ * browser), the menu has the rest: pinning on claude.ai, renaming and deleting, as far as the login
+ * may. The thumbnail is fetched once the card comes into view.
  */
 const props = defineProps<{
   artifact: Artifact
   accountId: string
   dark: boolean
+  /** claude.ai offers pinning to this login. */
+  pinsEnabled: boolean
   /** The title of the chat it came from; null without one. */
   chat: string | null
   now: number
 }>()
-const emit = defineEmits<{ open: []; panel: []; external: []; chat: []; copy: [] }>()
+const emit = defineEmits<{ open: []; panel: []; external: []; chat: []; copy: []; pin: [pinned: boolean]; rename: []; remove: [] }>()
 
 const store = useArtifactsStore()
 const root = ref<HTMLElement | null>(null)
@@ -89,13 +96,20 @@ const audience = computed(() => (props.artifact.audience ? AUDIENCES[props.artif
           <div v-for="i in 6" :key="i" class="aspect-square rounded-md bg-muted" />
         </div>
       </div>
-      <span
-        v-if="artifact.kind === 'document'"
-        class="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[0.7rem] font-medium backdrop-blur"
-      >
-        <FileTextIcon class="size-3" />
-        Dokument
-      </span>
+      <div v-if="artifact.kind === 'document' || artifact.pinned" class="absolute top-2 left-2 flex items-center gap-1">
+        <span
+          v-if="artifact.pinned"
+          class="flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[0.7rem] font-medium backdrop-blur"
+          v-tooltip="'Auf claude.ai angepinnt'"
+        >
+          <PinIcon class="size-3" />
+          Angepinnt
+        </span>
+        <span v-if="artifact.kind === 'document'" class="flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[0.7rem] font-medium backdrop-blur">
+          <FileTextIcon class="size-3" />
+          Dokument
+        </span>
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
           <Button
@@ -115,6 +129,18 @@ const audience = computed(() => (props.artifact.audience ? AUDIENCES[props.artif
           </template>
           <DropdownMenuItem @select="emit('external')"><ExternalLinkIcon /> Im Standardbrowser öffnen</DropdownMenuItem>
           <DropdownMenuItem @select="emit('copy')"><LinkIcon /> Link kopieren</DropdownMenuItem>
+          <template v-if="pinsEnabled || artifact.renamable">
+            <DropdownMenuSeparator />
+            <DropdownMenuItem v-if="pinsEnabled" @select="emit('pin', !artifact.pinned)">
+              <component :is="artifact.pinned ? PinOffIcon : PinIcon" />
+              {{ artifact.pinned ? 'Nicht mehr anpinnen' : 'Auf claude.ai anpinnen' }}
+            </DropdownMenuItem>
+            <DropdownMenuItem v-if="artifact.renamable" @select="emit('rename')"><PencilIcon /> Umbenennen …</DropdownMenuItem>
+          </template>
+          <template v-if="artifact.mine">
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" @select="emit('remove')"><Trash2Icon /> Löschen …</DropdownMenuItem>
+          </template>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

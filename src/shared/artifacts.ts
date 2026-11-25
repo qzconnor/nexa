@@ -9,7 +9,13 @@ export const ArtifactsInvoke = {
   list: 'artifacts:list',
   thumbnail: 'artifacts:thumbnail',
   chats: 'artifacts:chats',
+  rename: 'artifacts:rename',
+  remove: 'artifacts:remove',
+  setPinned: 'artifacts:set-pinned',
 } as const
+
+/** Longest title claude.ai takes. */
+export const MAX_ARTIFACT_TITLE = 300
 
 /** The address of an artifact the list names none for. */
 export const ARTIFACT_URL = 'https://claude.ai/code/artifact/'
@@ -35,6 +41,10 @@ export interface Artifact {
   lastViewedAt: string | null
   /** How often it was opened; null where the list doesn't say. */
   views: number | null
+  /** Pinned in the sidebar of claude.ai. */
+  pinned: boolean
+  /** The login may give it another title (its own, or where claude.ai says so). */
+  renamable: boolean
 }
 
 export type ArtifactAudience = 'owner' | 'users' | 'org' | 'public'
@@ -55,6 +65,8 @@ export interface ArtifactList {
   artifacts: Artifact[]
   /** There were more than Nexa lists. */
   truncated: boolean
+  /** claude.ai offers pinning to this login. */
+  pinsEnabled: boolean
   fetchedAt: number
 }
 
@@ -64,6 +76,17 @@ export interface ArtifactsApi {
   thumbnail(accountId: string, id: string, dark: boolean): Promise<string | null>
   /** The chat each artifact came from, by the id in its link: the newest chat that names it. */
   chats(): Promise<Record<string, string>>
+  /** Another title on claude.ai, for everyone it is shared with. */
+  rename(accountId: string, id: string, title: string): Promise<void>
+  /** Deletes an own artifact for good; `gone` when it was deleted already. */
+  remove(accountId: string, id: string): Promise<'deleted' | 'gone'>
+  /** Pins it in the sidebar of claude.ai, or takes it off. */
+  setPinned(accountId: string, id: string, pinned: boolean): Promise<void>
+}
+
+/** A title as claude.ai keeps it: one line, without spaces around it. */
+export function artifactTitle(title: string): string {
+  return title.replace(/\s+/g, ' ').trim()
 }
 
 /** `claude.ai/artifact/<shortId>` as the Artifact tool reports it, `claude.ai/code/artifact/<id>` from Claude Code on the web. */

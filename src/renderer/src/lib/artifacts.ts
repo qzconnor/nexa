@@ -1,8 +1,8 @@
 import type { Artifact } from '@shared/artifacts'
 import { containsTerms, searchText } from '@/lib/search'
 
-/** The page's filters: all, those the login made, those shared with it, those from a chat of Nexa's. */
-export type ArtifactFilter = 'all' | 'mine' | 'shared' | 'chats'
+/** The page's filters: all, those the login made, those shared with it, those from a chat of Nexa's, those pinned on claude.ai. */
+export type ArtifactFilter = 'all' | 'mine' | 'shared' | 'chats' | 'pinned'
 
 /**
  * The artifacts that pass the filter and hold every word of the search in their title, description
@@ -18,6 +18,7 @@ export function filterArtifacts(
   return artifacts.filter((artifact) => {
     if (filter === 'mine' && !artifact.mine) return false
     if (filter === 'shared' && artifact.mine) return false
+    if (filter === 'pinned' && !artifact.pinned) return false
     const chat = chatTitle(artifact)
     if (filter === 'chats' && chat === null) return false
     return !terms.length || containsTerms(searchText(artifact.title, artifact.description, chat), terms)
