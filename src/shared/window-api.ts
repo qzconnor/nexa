@@ -99,6 +99,7 @@ export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): D
       plugins: (id) => invoke(IpcInvoke.sessionsPlugins, id),
       setPlugin: (id, pluginId, enabled) => invoke(IpcInvoke.sessionsSetPlugin, id, pluginId, enabled),
       sync: (id) => invoke(IpcInvoke.sessionsSync, id),
+      seen: (id) => invoke(IpcInvoke.sessionsSeen, id),
       update: (id, patch) => invoke(IpcInvoke.sessionsUpdate, id, patch),
       remove: (ids) => invoke(IpcInvoke.sessionsRemove, ids),
       storage: () => invoke(IpcInvoke.sessionsStorage),

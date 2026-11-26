@@ -438,6 +438,8 @@ export function registerIpc(ctx: AppContext): void {
     sessions.setPluginEnabled(str(id, 'Die Session'), str(pluginId, 'Das Plugin'), enabled === true),
   )
   handle(IpcInvoke.sessionsSync, (_e, id: unknown) => sessions.syncCli(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsSeen, (_e, id: unknown) => sessions.seen(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsInbox, () => sessions.inbox())
   handle(IpcInvoke.sessionsUpdate, (_e, id: unknown, patch: unknown) => sessions.update(str(id, 'Die Session'), (patch ?? {}) as never))
   handle(IpcInvoke.sessionsRemove, (_e, ids: unknown) => sessions.remove(idList(ids, 'Die Sessions')))
   handle(IpcInvoke.sessionsStorage, () => sessions.storage())

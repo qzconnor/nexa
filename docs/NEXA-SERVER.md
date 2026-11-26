@@ -1,7 +1,7 @@
 # nexa-server: Remote Control, PWA und Settings-Sync
 
-Konzept vom 26.11.2026. Gebaut ist Phase 1: der Server (eigenes Repo `nexa-server`) und die Kopplung in
-der App (Einstellungen › Geräte). Was hier als **Ungeprüft** markiert ist, stammt aus Doku oder
+Konzept vom 26.11.2026. Gebaut sind Phase 1, der Server (eigenes Repo `nexa-server`) mit der Kopplung in
+der App (Einstellungen › Geräte), und Phase 2, Remote Control von Desktop zu Desktop. Was hier als **Ungeprüft** markiert ist, stammt aus Doku oder
 Erinnerung, nicht aus einem Versuch.
 
 ## Ziel
@@ -151,9 +151,28 @@ Von Desktop zu Desktop **gebaut** (Protokoll in `PROTOCOLS.md`, „Remote Contro
 
 ## PWA
 
-- Der `nexa-server` liefert sie aus (`/app`). Nichts zu installieren, kein App Store.
-- Sie nutzt die Chat-Komponenten aus `src/renderer/src`. Diese Komponenten erwarten `window.api`; die PWA
-  bekommt dafür eine Umsetzung von `NexaApi` über das Relay, beschränkt auf das, was Chats brauchen.
+Entschieden am 26.11.2026:
+
+- **Ein Projekt mit dem Server.** Die PWA liegt im Repo `nexa-server`, wird mit ihm gebaut und liegt im
+  selben Docker-Image. Der Server liefert sie unter `/app` aus, auf derselben Adresse wie `/v1/ws`. Nichts
+  zu installieren, kein App Store.
+- **Per Umgebungsvariable schaltbar** (`NEXA_PWA`, ab Werk aus). Die PWA hält die Schlüssel des Namespace,
+  ihren Code liefert aber der Server: Wer ihn übernimmt, könnte eine veränderte PWA ausliefern und die
+  Schlüssel abgreifen. Für die PWA ist der Server also nicht blind, anders als für die Desktops, deren Code
+  aus der installierten App kommt. Wer sie nicht braucht, lässt sie aus. Später denkbar: dieselbe PWA unter
+  einer festen, vom Server getrennten Adresse.
+- **Eigene Oberfläche fürs Handy**, nicht die Komponenten der App (die hängen an Stores und `window.api`).
+  Kopiert und gleich gehalten wie `protocol.ts`: die Themes (`shared/themes`), das Modell der Chats
+  (`shared/chat.ts`), Remote Control (`shared/remote.ts`), Umschlag, Mitglieder und Kopplungscode
+  (`shared/nexa-server`). Gleicher Look über dieselben Theme-Tokens; das Theme wählt man in der PWA.
+- **Aufbau**: unten eine Leiste mit „Inbox“ und „Chats“.
+  - *Inbox* (Startseite): die Chats aller Rechner, die Aufmerksamkeit brauchen, in Abschnitten: „Wartet auf
+    dich“ (Rückfrage, Freigabe, Plan, direkt dort beantwortbar), „Fehler und Limit“, „Fertig, ungelesen“,
+    „Läuft gerade“.
+  - *Chats*: Rechner, Projekte und Chats wie in der Seitenleiste; ein Chat als eigene Seite mit Eingabe.
+- **Koppeln per QR-Code**: Der Code ist ein Link `https://<server>/app#nexa1:…`. Der Kopplungscode steht
+  hinter dem `#`, der nie an den Server geht (er enthält den Schlüssel des Namespace). Die App zeigt ihn
+  unter „Gerät hinzufügen“, wenn der Server die PWA ausliefert (`/v1/info`).
 - **Web Push mit VAPID**: Jeder Server erzeugt seine eigenen VAPID-Schlüssel und spricht die Push-Dienste
   von Apple, Google und Mozilla direkt an. Kein Entwicklerkonto, kein zentrales Gateway. Ungeprüft: iOS ab
   16.4, nur wenn die PWA auf dem Home-Bildschirm liegt.
@@ -163,6 +182,15 @@ Von Desktop zu Desktop **gebaut** (Protokoll in `PROTOCOLS.md`, „Remote Contro
   stille Pushes gibt es nicht.
 - Anlass für Push wie bei den Benachrichtigungen auf dem Desktop (`NotificationSettings`): Antwort fertig,
   wartet auf Bestätigung, Limit.
+
+Was die App als Host dafür hat (`PROTOCOLS.md`, „Remote Control“):
+
+- Geräte mit der Rolle `controller` sind keine Rechner (`hasChats`): nicht in der Seitenleiste, keine
+  Chats von ihnen, keine Ziele für `chat_*`.
+- Den Lesestand je Chat auf dem Host (`finishedAt`, `seenAt`, `sessions:seen`), an alle Geräte gemeldet,
+  damit „Fertig, ungelesen“ überall gleich ist.
+- Den Stand für die Inbox in einer Antwort (`sessions:inbox`), mit den offenen Rückfragen.
+- Noch offen: der QR-Code unter „Gerät hinzufügen“; später die verschlüsselten Benachrichtigungen für Push.
 
 ## Settings-Sync
 
@@ -203,14 +231,14 @@ Secrets), Berechtigungen und Hooks der CLIs. Logins und Tokens der Accounts nie.
 2. Remote Control von Desktop zu Desktop. **Gebaut** (die anderen Geräte in der Seitenleiste, ihre Chats
    wie die eigenen bedient, mit Dock und neuen Chats); offen sind Bilder im Verlauf und die Werkzeuge
    `chat_*` über Geräte hinweg.
-3. PWA als Steuerung, mit Web Push für Rückfragen und Berechtigungen.
+3. PWA als Steuerung (siehe „PWA“): zuerst Koppeln, Inbox, Chats lesen und Prompts senden, dann QR-Code,
+   dann Web Push für Rückfragen und Berechtigungen.
 4. Settings-Sync.
 
 ## Offene Fragen
 
-- Eigenes Repo `nexa-server` oder Monorepo mit `nexa-app`? Vorerst eigenes Repo; Protokoll und Anmeldung
-  sind in die App kopiert. Mit der PWA (geteilte Chat-Komponenten) stellt sich die Frage neu.
-- Wird die PWA im Repo von Nexa gebaut und ins Image des Servers kopiert, oder im Server-Repo?
+- Eigenes Repo `nexa-server` oder Monorepo mit `nexa-app`? Eigenes Repo, mit der PWA darin (siehe „PWA“);
+  geteilter Code wird kopiert und gleich gehalten.
 - Kann eine steuernde Instanz auch Dateien, Diffs und die Shell des Hosts sehen, oder zunächst nur Chats?
 - Abgleich der Projekte: gleiche Projekte auf mehreren Rechnern erkennen (Git-Remote?), oder nie?
 - Wie verhält sich die eigene Fernsteuerung von Claude Code (`remote-control`) und Codex (`remoteControl/*`)

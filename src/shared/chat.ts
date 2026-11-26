@@ -485,3 +485,8 @@ export type SessionEvent =
 export function isPendingInteraction(item: ChatItem): item is InteractionItem {
   return item.kind === 'interaction' && item.state === 'pending'
 }
+
+/** A chat that finished a turn no window has shown since (`SessionMeta.finishedAt`, `seenAt`). */
+export function isUnread(meta: { finishedAt?: number; seenAt?: number }): boolean {
+  return (meta.finishedAt ?? 0) > (meta.seenAt ?? 0)
+}

@@ -551,6 +551,13 @@ export interface SessionMeta {
   archived?: boolean
   /** First words of the last prompt or answer, for the sidebar. */
   preview?: string
+  /**
+   * When the chat last finished a turn, and when a window of any device last showed it (`sessions:seen`):
+   * kept by the device the chat is on, so unread (`isUnread`) is the same on all of them, the phone's
+   * inbox included.
+   */
+  finishedAt?: number
+  seenAt?: number
   cli: Partial<Record<ProviderId, CliLink>>
   /**
    * The CLIs' conversations from before each `/clear`, the oldest first: no CLI goes on with them, but
