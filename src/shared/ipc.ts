@@ -2,6 +2,8 @@ import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput
 import type { ArtifactsApi } from './artifacts'
 import type { ChatWindowsApi } from './chat-windows'
 import type { CliConfigApi, CliConfigTarget } from './cli-config'
+import type { ChatChanges, RewindPreview, RewindResult } from './checkpoints'
+import type { FileDiff } from './files'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent, SessionRuntime } from './chat'
 import type { McpAppsApi } from './mcp-apps'
 import type { AgentNotification, AgentNotificationAnswer } from './notify'
@@ -153,6 +155,13 @@ export const IpcInvoke = {
   sessionsClear: 'sessions:clear',
   sessionsExportMarkdown: 'sessions:export-markdown',
   sessionsLastAnswer: 'sessions:last-answer',
+  sessionsChanges: 'sessions:changes',
+  /** A picture of a chat's prompts, for another device's window (main/window/file-protocol.ts); no call of the window API. */
+  sessionsImage: 'sessions:image',
+  sessionsChangeDiff: 'sessions:change-diff',
+  sessionsRewindPreview: 'sessions:rewind-preview',
+  sessionsRewind: 'sessions:rewind',
+  sessionsRewindUndo: 'sessions:rewind-undo',
 
   notificationsViewing: 'notifications:viewing',
   notificationsTest: 'notifications:test',
@@ -454,6 +463,19 @@ export interface NexaApi {
     exportMarkdown(id: string): Promise<string | null>
     /** What the agent said last in the chat; null before it said anything. */
     lastAnswer(id: string): Promise<string | null>
+    /**
+     * What each prompt of the chat changed in its folders (Nexa's checkpoints) and the rewind that can be
+     * taken back; `live`: with what the running turn changed so far.
+     */
+    changes(id: string, live?: boolean): Promise<ChatChanges>
+    /** One file's change by a prompt, as a patch; `full` with the whole file around it. */
+    changeDiff(id: string, promptId: string, path: string, full: boolean): Promise<FileDiff>
+    /** What rewinding the files to before a prompt would do (not while the chat works). */
+    rewindPreview(id: string, promptId: string): Promise<RewindPreview>
+    /** Puts the files the agent changed from that prompt on back as they were before it. */
+    rewind(id: string, promptId: string): Promise<RewindResult>
+    /** Takes the chat's last rewind of files back. */
+    rewindUndo(id: string): Promise<RewindResult>
     onChanged(cb: (list: SessionMeta[]) => void): Unsubscribe
     onEvent(cb: (event: SessionEvent) => void): Unsubscribe
     onShow(cb: (id: string) => void): Unsubscribe

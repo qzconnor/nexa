@@ -1,7 +1,8 @@
-import { defineStore } from 'pinia'
 import { reactive, watch } from 'vue'
 import type { GitBranch } from '@shared/files'
 import { useAppStore } from './app'
+import { apiOf, scopedStore } from './device'
+import { useDevicesStore } from './devices'
 
 export interface GitRepo {
   /** Null outside a repository or without git. */
@@ -15,9 +16,11 @@ export interface GitRepo {
 /**
  * Branch and web page of the repositories the shown tabs work in, by folder. Components hold the
  * folders they show (`useGitBranch`); main watches their repositories for checkouts while one does.
+ * Each device has its own (`scopedStore`): another device's folders are read there, by Remote Control.
  */
-export const useGitStore = defineStore('git', () => {
+export const useGitStore = scopedStore('git', (device) => {
   const app = useAppStore()
+  const api = apiOf(device)
   /** Missing while the folder is loaded for the first time. */
   const repos = reactive(new Map<string, GitRepo>())
   /** How many components hold each folder. */
@@ -32,9 +35,9 @@ export const useGitStore = defineStore('git', () => {
     const id = ++loads
     pending.set(dir, id)
     const [branch, webUrl, mainWorktree] = await Promise.all([
-      window.api.git.branch(dir).catch(() => null),
-      window.api.git.webUrl(dir).catch(() => null),
-      window.api.git.mainWorktree(dir).catch(() => null),
+      api.git.branch(dir).catch(() => null),
+      api.git.webUrl(dir).catch(() => null),
+      api.git.mainWorktree(dir).catch(() => null),
     ])
     if (pending.get(dir) !== id) return
     pending.delete(dir)
@@ -62,7 +65,10 @@ export const useGitStore = defineStore('git', () => {
     const key = JSON.stringify(dirs)
     if (!force && key === watching) return
     watching = key
-    void window.api.git.watch(dirs).catch(() => {})
+    // Not taken (another device not reachable): sent again once it is.
+    void api.git.watch(dirs).catch(() => {
+      if (watching === key) watching = ''
+    })
   }
 
   function hold(dir: string): void {
@@ -88,10 +94,29 @@ export const useGitStore = defineStore('git', () => {
     },
   )
 
-  window.api.git.onBranchChanged((dir, branch) => {
+  api.git.onBranchChanged((dir, branch) => {
     const repo = repos.get(dir)
     if (repo) repo.branch = branch
   })
+
+  // Another device watches its repositories for this one only while this one watches it: once that
+  // ended (offline, run out, let in again), the branches are read anew and the watch is sent again.
+  if (device) {
+    const again = () => {
+      for (const dir of holders.keys()) void load(dir)
+      sendWatch(true)
+    }
+    window.api.remote.onResync((id) => {
+      if (id === device) again()
+    })
+    const devices = useDevicesStore()
+    watch(
+      () => devices.devices.find((d) => d.id === device)?.state === 'ready',
+      (ready, before) => {
+        if (ready && before === false) again()
+      },
+    )
+  }
 
   return { repos, hold, release }
 })

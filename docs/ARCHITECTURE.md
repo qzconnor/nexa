@@ -71,14 +71,14 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/antigravity/*` | Antigravity CLI: ein Prozess je Chat (`agy acp`), Item-Abbildung (`antigravity-items.ts`), Warteschlange der Prompts, Rückfragen und Plan (`antigravity-run.ts`), Zustand der MCP-Server über den lokalen Server des Prozesses (`antigravity-server.ts`). In der CLI-Wahl der Chats, der Vorgabe für neue Chats und auf der Startseite steht Antigravity erst, wenn Nexa es gefunden hat (`ProviderMeta.untilInstalled`, `offeredProviders`); Einstellungen › CLIs zeigt es immer |
 | `lib/secrets.ts` | Ver- und Entschlüsseln von Token und Keys (`safeStorage`) |
 | `server-link/*` | Kopplung mit einem selbst gehosteten nexa-server (Einstellungen › Geräte, Konzept in `NEXA-SERVER.md`): `server-link-service.ts` koppelt mit Einladung oder Kopplungscode (`POST /v1/join`), hält Zustand und Geräteliste für das Fenster und speichert alles in `nexa-server.json` (`link-store.ts`, die privaten Schlüssel und die Schlüssel des Namespace über `safeStorage`); `connection.ts` ist der WebSocket mit Anmeldung, Anfragen nach `id`, Neuverbindung mit wachsender Pause und den Schließcodes, die nicht neu verbinden (4401, 4403, 4409); `membership.ts` führt die eigene Liste anerkannter Geräte und wechselt den Schlüssel nach einer Entfernung (siehe PROTOCOLS.md, „nexa-server“). Kanäle `server-link:*` in `server-link-ipc.ts`; `fake-server.ts` ist ein kleiner nexa-server nur für die Tests |
-| `remote/*` | Remote Control über den nexa-server (PROTOCOLS.md, „Remote Control“): `remote-host.ts` führt die Aufrufe der Fenster-API aus, die andere Geräte machen (`invoke`), mit den Handlern der eigenen Fenster (`invokeHandler` in `ipc.ts`) und nur so weit, wie die Stufe des Geräts und die Liste der Kanäle reichen (`channelLevel`, Einstellungen › Geräte › Fernsteuerung); es schickt den beobachtenden Geräten die Ereignisse der Fenster (`onBroadcast`), gebündelt, Listen als Änderungen. `remote-client.ts` stellt die Aufrufe dieses Geräts, ordnet die Antworten zu, setzt die Listen wieder zusammen und hält die Beobachtung am Leben; `remote.ts` verbindet beide mit `ServerLinkService`, `remote-ipc.ts` mit dem Fenster (Kanäle `remote:*`, Bilder eines Prompts mit `remote:upload-image`). Die Nachrichten gehen über `server-link/device-channel.ts`: nur für die beiden Geräte verschlüsselt, signiert, in Reihenfolge, zu große in Teilen (`rc.part`) |
+| `remote/*` | Remote Control über den nexa-server (PROTOCOLS.md, „Remote Control“): `remote-host.ts` führt die Aufrufe der Fenster-API aus, die andere Geräte machen (`invoke`), mit den Handlern der eigenen Fenster (`invokeHandler` in `ipc.ts`) und nur so weit, wie die Stufe des Geräts und die Liste der Kanäle reichen (`channelLevel`, Einstellungen › Geräte › Fernsteuerung); es schickt den beobachtenden Geräten die Ereignisse der Fenster (`onBroadcast`), gebündelt, Listen als Änderungen. `remote-client.ts` stellt die Aufrufe dieses Geräts, ordnet die Antworten zu, setzt die Listen wieder zusammen und hält die Beobachtung am Leben; `remote.ts` verbindet beide mit `ServerLinkService`, `remote-ipc.ts` mit dem Fenster (Kanäle `remote:*`, Bilder eines Prompts mit `remote:upload-image`). `remote-chats.ts` trägt die Nachrichten zwischen Chats über Geräte hinweg (`chats.*`, Typen und Prüfung in `shared/remote-chats.ts`): `RemoteChatsHost` beantwortet die Werkzeuge der anderen Geräte, nach der Stufe nur bestätigten, nur mit der eigenen Einstellung „Nachrichten zwischen Chats“, mit der Kette (`MAX_CHAT_CHAIN`) und Grenzen je Chat und Gerät; `DeviceChats` stellt die Anfragen der eigenen Werkzeuge über `RemoteClient` und gibt dem Agent in Worten, was nicht ging. Die Nachrichten gehen über `server-link/device-channel.ts`: nur für die beiden Geräte verschlüsselt, signiert, in Reihenfolge, zu große in Teilen (`rc.part`) |
 | `shared/nexa-server/*` | Für Desktop und spätere PWA, nur WebCrypto: `protocol.ts` und `auth.ts` aus dem Repo nexa-server kopiert (gleich halten), `server-messages.ts` prüft, was der Server schickt, `envelope.ts` verschlüsselt und signiert die Nachrichten zwischen Geräten, `members.ts` die Regeln für Mitglieder und Schlüssel, `pairing-code.ts` Adresse und Kopplungscode |
 | `lib/shell-env.ts` | Linux: übernimmt beim Start die Umgebung der Login-Shell (PATH mit nvm & Co.), damit die CLIs auch beim Start aus dem Anwendungsmenü gefunden werden |
 | `lib/linux.ts` | Wie die Linux-Version installiert ist (AppImage, deb, rpm); `cliEnv` nimmt mit `withoutAppImageEnv` die Pfade des AppImage-Mounts aus der Umgebung der CLIs |
 | `services/notification-service.ts` | Windows-Meldungen zu Chats, die fertig sind, etwas fragen oder am Limit stehen (`SessionService`-Ereignis `attention`), blinkende Taskleiste; Warnung bei fast verbrauchten Limits (`lib/near-limit.ts`) und abgelaufenem Login, gemerkt in `notifications.json`; Texte in `lib/notification-text.ts`. Dazu die Benachrichtigungen der Agents (`notify`): Toast im Fenster vorn oder Meldung des Systems mit Knöpfen |
 | `services/auto-switch.ts` | Am Limit eines Accounts (`attention` `limit`): den verlassenen Account bis zu seinem Reset sperren, mit `chat.autoSwitch` beim nächsten freien Account derselben CLI weitermachen, sonst bis zum ersten Reset warten (`SessionRuntime.resume`); gemerkt in `auto-switch.json`, siehe „Accounts“ |
 | `services/update-service.ts` | Updates aus den GitHub-Releases (electron-updater, Suche nach 10 s und alle 4 h), Versionshinweise über die GitHub-API bzw. den Atom-Feed; Kanäle `updates:*` in `updates-ipc.ts` |
-| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex); `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `ask-tool.ts` zeigt mit `ask_user` ein Formular im Chat des Aufrufers und wartet auf die Antwort (`SessionService.ask`, ebenso immer dabei); `notify-tool.ts` schickt mit `notify` eine Benachrichtigung, die zum Chat führt, auf Wunsch mit Knöpfen, deren Wahl der Agent abwartet (`NotificationService.fromAgent`, ebenso immer dabei); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen; `call-log.ts` merkt sich die Argumente der Aufrufe eines ACP-Chats für Agents, die sie nicht nennen (Antigravity nennt sie, Nexa leert das Protokoll dort nur) |
+| `mcp/*` | Nexa-MCP-Server (Streamable HTTP): `render_*`, `browser_*`, `chat_*` mit `sessions_search` und `limits` (`nexa-tools.ts`), ein Token je Run nennt den Chat (`McpCaller`); `chat-tools.ts` lässt die Agents andere Chats beim Namen finden, durchsuchen (`SessionService.search`), lesen, anschreiben und anlegen (über `SessionService.sendFromChat`, auch Claude ↔ Codex), auch die der gekoppelten Geräte („Gerät › Titel“, ID `<Instanz>:<Session>`, über `DeviceChatPeers` aus `remote/remote-chats.ts`), wobei ein Name zuerst unter den eigenen Chats gesucht wird; `limits-tool.ts` nennt die Limits des Accounts, mit dem der Chat läuft, und die der anderen Accounts (immer dabei, solange der Server läuft); `ask-tool.ts` zeigt mit `ask_user` ein Formular im Chat des Aufrufers und wartet auf die Antwort (`SessionService.ask`, ebenso immer dabei); `notify-tool.ts` schickt mit `notify` eine Benachrichtigung, die zum Chat führt, auf Wunsch mit Knöpfen, deren Wahl der Agent abwartet (`NotificationService.fromAgent`, ebenso immer dabei); `tool-grant.ts` legt fest, welche Werkzeuge die CLIs ohne Rückfrage nutzen; `call-log.ts` merkt sich die Argumente der Aufrufe eines ACP-Chats für Agents, die sie nicht nennen (Antigravity nennt sie, Nexa leert das Protokoll dort nur) |
 | `browser/browser-tabs.ts` | Tabs der Browser je Chat (`browser-tabs.json`): welche Seiten, welche gezeigt, wer sie geöffnet hat |
 | `browser/browser-control.ts` | Aus dem Claude Manager: steuert die Seiten für die Agents über das DevTools-Protokoll (`page-driver.ts`, Frames, Netzwerk, Routen, Dialoge, Emulation), Protokoll, Übernehmen |
 | `browser/browser-tools/*` | Die `browser_*`-Werkzeuge (aus dem Claude Manager), `BROWSER_INSTRUCTIONS` für den Server |
@@ -92,7 +92,8 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `files/worktree-setup.ts` | Was ein neuer Worktree mitbekommt: Dateien aus `.worktreeinclude` (Muster, Auswahl, sicheres Kopieren) und `worktree.baseRef` aus den Einstellungen von Claude Code |
 | `files/activity-tracker.ts` | Leitet aus den Werkzeug-Items der Sessions ab, was der Agent mit Dateien tut (live und aus dem Verlauf) |
 | `files/file-activity.ts`, `files/shell-files.ts` | Shell-Befehle: welche Dateien sie nennen, schreiben, ob sie committen |
-| `files/files-ipc.ts` | Kanäle `files:*` und `git:*` mit Prüfung der Pfade |
+| `files/files-ipc.ts` | Kanäle `files:*` und `git:*` mit Prüfung der Pfade; ein anderes Gerät erreicht nur die Ordner der Chats (`files/remote-roots.ts`) |
+| `files/checkpoints.ts` | Nexas Checkpoints für alle CLIs: die Ordner eines Chats vor jedem Prompt und am Ende seines Turns in einem Schatten-Repository je Ordner (Datenordner `checkpoints/`), was jeder Prompt geändert hat, Zurückspulen mit Vorschau und Zurücknehmen; siehe „Checkpoints“ und PROTOCOLS.md, „Checkpoints (Nexa)“ |
 | `window/*` | Hauptfenster und Fenster der Chats (`createAppWindow`, Art je Fenster: `windowKind`), Fensterzustand, Material (Mica/Acryl), Datei-Protokoll |
 | `window/chat-windows.ts` | Chats in eigenen Fenstern: welches Fenster welchen Chat zeigt, Übergabe von Entwurf und Panels, Rückfrage beim Schließen, Lage je Chat und die beim Beenden offenen in `chat-windows.json`; Kanäle `chat-windows:*` in `chat-windows-ipc.ts`, siehe „Chats in eigenen Fenstern“ |
 | `window/window-place.ts` | Lage eines Fensters: gemerkte Bounds nur, wenn sie auf einem Bildschirm liegen, das Fenster eines Chats sonst versetzt neben dem Hauptfenster |
@@ -348,7 +349,31 @@ vor dem nächsten Start unter neuer ID und schneidet sie vor dem Prompt ab (`for
 während der Agent arbeitet: `edit` beendet dann die CLI samt ihrem Turn, Prompts in der Warteschlange
 landen hinter dem bearbeiteten und fallen mit weg. Nur eine Shell im Hintergrund oder ein Agent von vor
 dem Prompt hält es auf, sie stünden sonst als laufend im Chat. Was die Agents an Dateien geändert
-haben, bleibt.
+haben, bleibt; zurückspulen lässt es sich mit den Checkpoints.
+
+## Checkpoints (Änderungen je Prompt)
+
+Keine CLI gibt Nexa die Dateien vor einem Prompt zurück (Claude Code sichert in `-p` nichts, Codex'
+`thread/revert` lässt die Dateien, ACP kennt es nicht; PROTOCOLS.md, „Checkpoints“). `files/checkpoints.ts`
+hält die Ordner eines Chats deshalb selbst fest, für Claude Code, Codex, Antigravity CLI und jede CLI, die
+dazukommt, ohne dass ihr Provider etwas davon weiß:
+
+- **Wann** (`SessionService`): `send` beginnt vor einem Prompt, der einen Turn beginnt, einen Checkpoint
+  (`beginCheckpoint`, der Prompt wartet höchstens `CHECKPOINT_WAIT_MS`), das Item `turn` beendet ihn
+  (`endCheckpoint`) und schreibt die Zahlen an den Turn (`TurnItem.fileChanges`). `fork` kopiert die
+  Checkpoints, `edit` streicht die der wegfallenden Prompts, `remove` löscht sie. Einstellung
+  „Checkpoints der Dateien“ (`chat.checkpoints`, an).
+- **Anzeige**: Unter dem Turn „3 Dateien +12 −4“ (`TurnFooter`), das den Dialog „Änderungen je Prompt“
+  (`PromptChangesDialog`) an seinem Prompt öffnet; ebenso „…“ im Chat-Kopf und `/rewind`. Der Dialog zeigt
+  die Prompts mit ihren Dateien und jede Änderung als Diff (`DiffView` des Chats, `sessions:change-diff`).
+  `ChatView` lädt die Liste (`sessions:changes`), wenn ein Prompt, ein gezählter Turn oder ein
+  Zurückspulen dazukommt, und reicht sie per `provideChatChanges` an Prompts und Turns weiter.
+- **Zurückspulen** (Symbol links neben einem Prompt mit Checkpoint, oder im Dialog): erst die Vorschau
+  (`sessions:rewind-preview`: was zurückgesetzt, wiederhergestellt oder gelöscht wird, was seit dem letzten
+  Turn auch außerhalb geändert wurde), dann `sessions:rewind`. Nicht während der Chat arbeitet. Der Chat
+  bleibt, wie er ist; ein Hinweis (`NoticeItem.rewind`) steht im Verlauf, und mit dem nächsten Prompt
+  erfährt die CLI davon (`rewindContext`, `<nexa-rewind>`). „Rückgängig“ im Toast oder „Zurücknehmen“ im
+  Dialog (`sessions:rewind-undo`) setzt die Dateien wieder auf den Stand davor.
 
 ### Shell-Modus (`!`)
 
@@ -605,6 +630,11 @@ mit HTML). Nexa zeigt sie im Chat unter der Zeile des Werkzeugs (Protokolle in `
   Standardbrowser; `ui/message` landet im Composer, abgeschickt wird es vom Nutzer. Anzeige nur
   `inline`, `ui/update-model-context` kennt Nexa nicht (die CLIs nehmen zwischen den Turns keinen
   Kontext an).
+- **Andere Geräte**: Im Chat eines anderen Geräts holt main die Seite von dort (`mcp-apps:open-remote` →
+  `mcp-apps:page`, mit dem Ergebnis des Werkzeugs, das der Verlauf von dort nicht mitbringt), prüft sie wie
+  eine eigene und stellt sie unter einer eigenen Adresse bereit (`McpAppViews.openRemote`). `tools/call`
+  und `resources/read` der Seite gehen an das Gerät (`apiOf(device).mcpApps`), `tools/call` nur mit Stufe
+  „Alles“.
 
 ## Chats in eigenen Fenstern
 
@@ -700,7 +730,11 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   liest den Verlauf jedes Chats einmal (importierte, noch nie geöffnete aus dem Verlauf ihrer CLI)
   und hält ihn, bis sich der Chat ändert. Treffer färbt `useMatchHighlight` über die CSS Custom Highlight
   API. Eine Einstellung öffnet den Dialog an ihrer Karte oder Zeile (`ui.settingsAnchor`). Die Textsuche
-  (Groß-/Kleinschreibung und Akzente egal) liegt in `shared/search.ts`, für Main und Renderer.
+  (Groß-/Kleinschreibung und Akzente egal) liegt in `shared/search.ts`, für Main und Renderer. Die Chats
+  der anderen Geräte aus der Seitenleiste stehen mit Bildschirm-Symbol und Gerätenamen dabei (auch der
+  Name findet sie) und öffnen sich wie dort; ihre Verläufe durchsucht jedes Gerät selbst
+  (`apiOf(…).sessions.search`, nur online), ein Gerät, das nicht antwortet, kostet nur seine Treffer.
+  Projekte eines anderen Geräts für einen neuen Chat nur mit Stufe „Prompts senden“ (`lib/device-chats.ts`).
 - `stores/accounts.ts`: Accounts, laufende Logins, Vorgabe je CLI, Account eines Chats (`sessionAccount`).
 - **Artefakte** (`views/ArtifactsView.vue`, `ui.view = 'artifacts'`, Eintrag unter „Neuer Chat“): Claudes
   Artefakte des gewählten Accounts als Karten mit Vorschaubild, Suche und Filtern (`lib/artifacts.ts`).
@@ -727,16 +761,42 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   Welches Gerät eine Komponente zeigt, sagt das nächste `DeviceScope` über ihr (`provideDevice`,
   `useDevice`); ohne eins ist es dieses. Stores reichen ihr Gerät ausdrücklich weiter, rein lokale rufen
   die Stores mit `null` auf. Was auf Dateien, Fenster, Terminals, Browser oder Dialoge dieses Geräts geht
-  (Dateibaum, Startbefehle, Terminal, eigenes Fenster, „Ordner öffnen“, Markdown-Export), bieten die
-  Komponenten bei einem anderen Gerät nicht an. `stores/devices.ts` lädt ein Gerät, sobald es online ist
+  (Startbefehle, Terminal, eigenes Fenster, „Ordner öffnen“, Markdown-Export), bieten die Komponenten bei
+  einem anderen Gerät nicht an. `stores/devices.ts` lädt ein Gerät, sobald es online ist
   und dieses lässt (`hello`), meldet die offenen Chats als Beobachtung (`remote.watch`) und liest neu, wenn
-  das Gerät den Faden verlor (`onResync`). Von einem Gerät bleiben höchstens 4 Chats geladen.
+  das Gerät den Faden verlor (`onResync`). Von einem Gerät bleiben höchstens 4 Chats geladen. Bilder in
+  Prompts eines anderen Geräts lädt das Fenster über `nexa-file://device?…` (`fileImageUrl` mit
+  `ImageSource`); main holt sie dort mit `sessions:image`, das nur Bilder aus Prompts dieses Chats
+  herausgibt (`SessionService.promptImage`).
   `useShownDeviceStore` merkt sich, wessen Chat oder Startseite der Hauptbereich zeigt; ein Chat eines
   Geräts schließt den offenen der anderen. Welche Geräte gerade die Chats dieses Geräts offen haben,
   steht unter Einstellungen › Geräte › Fernsteuerung, mit „Trennen“ (Stufe „Aus“). Ein Gerät lässt sich
-  hier ausblenden (Kontextmenü in der Seitenleiste, „…“ unter Einstellungen › Geräte; `ui.hiddenDevices`,
+  hier ausblenden (Kontextmenü in der Seitenleiste, Schalter neben „…“ unter Einstellungen › Geräte; `ui.hiddenDevices`,
   `nexa.hiddenDevices` im `localStorage`): Es fehlt dann in der Seitenleiste und unter „Angeheftet“ und
   wird weder geladen noch beobachtet, wie ein entferntes. Wieder eingeblendet liest es alles neu.
+  Strg+Tab und Strg+1–9 zählen die Chats der Geräte mit, wie die Seitenleiste sie zeigt („Angeheftet“
+  aller Geräte, dann dieses, dann jedes andere; `data-chat-key`), ist sie ausgeblendet, dieses Gerät vor
+  den anderen. Strg+Umschalt+T legt den neuen Chat auf dem Gerät des offenen an, auf einem anderen nur
+  mit Stufe „Prompts senden“, sonst ein Hinweis. `useChatActions(device)` und `useSessionsStore(device)`
+  bedienen dafür ein Gerät auch ohne `DeviceScope`.
+- **Dateien eines anderen Geräts** (Dateibaum, „Alle Änderungen“, Änderungen einer Datei, Branch in der
+  Titelleiste): Im Chat eines anderen Geräts arbeiten sie auf dessen Ordnern, ab Stufe „Lesen“. Die
+  Stores `file-tree` und `git` sind je Gerät (`scopedStore`), die Komponenten nehmen `useDeviceApi()`;
+  über die Leitung gehen die Kanäle `files:*` und `git:branch`/`web-url`/`main-worktree`/`watch` sowie die
+  Ereignisse `event:files-changed`, `event:files-touched` und `event:git-branch-changed`. Lesen, Suchen, Diffs und das
+  Überwachen brauchen „Lesen“; Anlegen, Umbenennen, Papierkorb, Vormerken und Verwerfen „Voll“, darunter
+  bietet die Oberfläche sie nicht an; „Im Chat erwähnen“ braucht „Prompts senden“. Öffnen mit dem
+  Standardprogramm, im Explorer zeigen und Herausziehen bleiben eigenen Chats vorbehalten. Trenner und
+  Namensregeln folgen dem System des Geräts, am Pfad erkannt (`separatorOf`, `/` vorne: POSIX). Auf dem
+  gesteuerten Gerät prüft `files-ipc.ts` jeden Pfad eines anderen Geräts (`remoteCaller`): Er muss in
+  einem Ordner seiner Chats liegen (Projektordner, Arbeitsordner, Worktree und zusätzliche Ordner der
+  Chats, `chatFolders`/`inFolders` in `files/remote-roots.ts`), relative Pfade und `..` führen nicht
+  hinaus. Was ein Gerät überwacht, führt main getrennt von den eigenen Fenstern als eigenen Absender
+  (`remoteSender` in `lib/per-window.ts`) und nur, solange es beobachtet; endet die Beobachtung
+  (abgelaufen, offline, Stufe gesenkt, Neustart mit `fresh`), lässt `RemoteHost` mit `dropped` los
+  (`endRemoteSender`), und das Gerät meldet seine Ordner nach `onResync` neu. Ereignisse bekommt nur,
+  wer den Ordner überwacht oder den Chat offen hat; Änderungen eines Ordners warten gebündelt
+  (`remote/remote-files.ts`).
 - **Abgleich mit anderen Geräten** (Einstellungen › Geräte, `settings.remote.sync`, Gruppen und Stufen in
   `shared/remote-sync.ts`): je Punkt, ob dieses und ein gesteuertes Gerät dasselbe zeigen (Auf- und
   Zuklappen, Reihenfolge, Anheften, Archiv, Namen, Vorgaben der Startseite, Anzeige im Chat). Was nicht
@@ -776,8 +836,10 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   unter Einstellungen › Allgemein › Aktivität im Dateibaum eingestellt (`general.activitySeconds`, Auswahl
   `ACTIVITY_CHOICES`; Vorgabe Lesen und Suchen 1 Minute, Commit 2, Schreiben 5; der Timer-Knopf in den
   Filtern öffnet die Karte). Der Store räumt sie höchstens sekündlich weg, kürzer eingestellt sofort. Die Filter (Änderungen, Aktivität) zeigen nur, wenn etwas da ist;
-  sonst steht der ganze Baum da. Gefiltert gleitet, was kommt, herein und, was geht, hinaus
-  (`file-tree-enter`/`-leave` in `main.css`, Zeilen behalten ihren Platz, bis sie ausgeblendet sind).
+  sonst steht der ganze Baum da. Gefiltert kommt, was neu ist, aus dem Hintergrund nach vorn (wächst
+  und wird scharf), und was geht, sinkt zurück (wird kleiner und verblasst), jeweils an seinem Platz statt
+  seitlich (`file-tree-enter`/`-leave` in `main.css`, skaliert wird `.file-tree-pill` um den Anfang des
+  Namens; Zeilen behalten ihren Platz, bis sie ausgeblendet sind).
 - **Browser** (`components/browser/*`, aus dem Claude Manager): `BrowserPanel` rechts im Chat (Tabs, Breite,
   Platz für die Seite), `BrowserToggle` im Chat-Kopf. Die Seiten selbst (`BrowserPane` mit `<webview>`)
   liegen in `BrowserLayer` in `App.vue` über dem Inhalt: ein `<webview>` lädt neu, wenn es den Parent

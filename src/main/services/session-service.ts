@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { extname, join, resolve } from 'node:path'
 import { systemAccountId } from '@shared/accounts'
 import { artifactChatMap, artifactLinks, type ArtifactMentions } from '@shared/artifacts'
 import type { CliConfigTarget } from '@shared/cli-config'
@@ -14,6 +14,7 @@ import {
   type InteractionItem,
   type InteractionRequest,
   type InteractionResponse,
+  type NoticeItem,
   type ProviderId,
   type SessionEvent,
   type SessionResume,
@@ -24,7 +25,8 @@ import {
   type UserItem,
 } from '@shared/chat'
 import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
-import type { WorktreeBaseChoice } from '@shared/files'
+import type { ChatChanges, RewindPreview, RewindResult } from '@shared/checkpoints'
+import type { FileDiff, WorktreeBaseChoice } from '@shared/files'
 import type { McpAppRef, McpAppToolResult } from '@shared/mcp-apps'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { redactSecrets } from '@shared/redact'
@@ -56,6 +58,7 @@ import { claudePaths, codexPaths } from '../accounts/cli-files'
 import { claudeSessionFiles, codexRollouts, codexThreadFiles, diskSize, antigravityResumable, antigravitySessionFiles } from '../accounts/conversation-files'
 import { relocateClaudeSession } from '../accounts/session-move'
 import { copyClaudeSession, copyCodexThread, ensureClaudeSession, ensureCodexThread, findClaudeTranscript, findCodexRollout } from '../accounts/session-transfer'
+import type { Checkpoints } from '../files/checkpoints'
 import type { GitService } from '../files/git-service'
 import { readClaudeChat, readClaudeChatSince } from '../import/claude-sessions'
 import { readJsonGuardedSync, writeJsonAtomic } from '../lib/json-file'
@@ -70,7 +73,7 @@ import { forkPoint } from '../providers/claude/claude-transcript'
 import { codexTurnsFromOutside } from '../providers/codex/codex-items'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { folderPromptText } from './folder-prompts'
-import { chatMessage, handoffContext, sessionInstructions, userShellContext } from './instructions'
+import { chatMessage, handoffContext, rewindContext, sessionInstructions, userShellContext } from './instructions'
 import type { ProjectService } from './project-service'
 import type { ProviderService } from './provider-service'
 import { chatTexts, findInChat, type ChatText } from './session-search'
@@ -175,6 +178,12 @@ function conversationLookup(search: boolean): ConversationLookup {
 }
 
 /** The main thread's todo list as the chat shows it, for a run to go on from (`RunOptions.todos`). */
+/** The detail of a rewind's note: how many files, and how many of them it couldn't write. */
+function rewindDetail(files: number, failed: number): string {
+  const done = files === 1 ? '1 Datei' : `${files} Dateien`
+  return failed ? `${done}, ${failed} ließen sich nicht schreiben` : done
+}
+
 function mainTodos(items: readonly ChatItem[] | null | undefined): TodoEntry[] | undefined {
   const todo = items?.findLast((item) => item.kind === 'todo' && item.id === 'todo:main')
   return todo?.kind === 'todo' ? todo.entries : undefined
@@ -195,6 +204,14 @@ const MAX_SEARCH_HITS = 200
 const USER_SHELL_TOOL = 'NexaShell'
 /** Output of a `!` command the chat keeps: its end (a server logging for hours would fill the transcript). */
 const MAX_USER_SHELL_OUTPUT = 100_000
+/**
+ * How long a prompt waits for the checkpoint before it: the next ones take a moment, the first one
+ * of a big folder longer; past this the prompt goes and the checkpoint is taken while the agent starts.
+ */
+const CHECKPOINT_WAIT_MS = 5_000
+/** The pictures of prompts another device's window may fetch, and how big. */
+const PROMPT_IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' }
+const MAX_PROMPT_IMAGE_BYTES = 20 * 1024 * 1024
 /**
  * Messages between chats in a row without the user: enough for asking, answering and a few rounds of
  * review, while two agents that keep answering each other stop before they use up the limits.
@@ -237,6 +254,8 @@ export class SessionService extends TypedEmitter<Events> {
     private readonly trash: (path: string) => Promise<void>,
     /** Makes and removes the chats' worktrees; without it there are none. */
     private readonly git: WorktreeGit | null = null,
+    /** What each prompt changed in the chat's folders; without it nothing is kept. */
+    private readonly checkpoints: Checkpoints | null = null,
   ) {
     super()
     this.file = join(dataDir, 'sessions.json')
@@ -477,6 +496,8 @@ export class SessionService extends TypedEmitter<Events> {
       { kind: 'notice', id: randomUUID(), ts: now, provider: meta.provider, level: 'info', text: `Abgezweigt von „${from.title}“` },
     ]
     await this.store.rewrite(meta.id, items)
+    // Its prompts are the old chat's too: what they changed, and rewinding to them.
+    await this.checkpoints?.copy(from.id, meta.id).catch((error) => console.warn('[checkpoints] not copied', error))
     const fork = this.state(meta)
     fork.items = items
     fork.index = new Map(items.map((item, i) => [item.id, i]))
@@ -531,6 +552,7 @@ export class SessionService extends TypedEmitter<Events> {
     for (const item of s.items.splice(at)) s.index.delete(item.id)
     s.outside = undefined
     delete meta.context
+    await this.checkpoints?.keep(id, new Set(s.items.filter((i) => i.kind === 'user').map((i) => i.id))).catch(() => undefined)
     await this.store.rewrite(id, s.items)
     this.emit('event', { type: 'truncated', sessionId: id, length: at })
     this.setRuntime(s, { ...IDLE })
@@ -674,7 +696,7 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   /** Whether the chat's CLI is at rest: no turn, question, shell or agent of it that still runs. */
-  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' | 'leeren' = 'verschieben'): void {
+  private requireAtRest(s: SessionState, action: 'verschieben' | 'abzweigen' | 'leeren' | 'zurückspulen' = 'verschieben'): void {
     const status = s.runtime.status
     if (status === 'running' || status === 'starting' || status === 'waiting') {
       throw new Error(`Der Chat arbeitet gerade. Sobald er fertig ist, lässt er sich ${action}.`)
@@ -1098,6 +1120,8 @@ export class SessionService extends TypedEmitter<Events> {
     const since = Math.max(meta.contextFrom ?? 0, s.items.findLastIndex((i) => i.kind === 'user') + 1)
     const shells = s.items.slice(since).filter((i): i is ToolItem => i.kind === 'tool' && !!i.byUser)
     const shellContext = userShellContext(shells)
+    // Files the user rewound since: what the CLI remembers having written is gone.
+    const rewound = rewindContext(s.items.slice(since).filter((i): i is NoticeItem => i.kind === 'notice' && !!i.rewind))
     // What this CLI hasn't seen of the chat yet (another CLI answered meanwhile); nothing from before a `/clear`.
     const link = meta.cli[provider]
     const unseen = s.items
@@ -1122,6 +1146,8 @@ export class SessionService extends TypedEmitter<Events> {
     // Into the chat where the CLI takes it up (`taken`), as in the CLIs: until then it waits below.
     if (steer) this.setRuntime(s, { ...s.runtime, queued: [...(s.runtime.queued ?? []), user] })
     else this.put(s, user)
+    // The folders as they are before the prompt; a prompt into the running turn is part of its prompt's.
+    const checkpoint = steer ? null : this.beginCheckpoint(s, user.id, this.cwdOf(meta, project))
     // The first line stands until the model's title comes (autoTitle), or for good when that's off.
     // After a `/clear` the chat is about something new: its first prompt names it again, unless the user did.
     const first = meta.titleSource === 'auto' && s.items.slice(meta.contextFrom ?? 0).filter((i) => i.kind === 'user').length === 1
@@ -1137,7 +1163,9 @@ export class SessionService extends TypedEmitter<Events> {
     }
     try {
       const message = from ? chatMessage(from.origin, text) : text
-      await run.send({ id: user.id, text: [context, shellContext, message].filter(Boolean).join('\n\n'), images: input.images })
+      // Not before the checkpoint: the agent would change files before they are kept.
+      await checkpoint
+      await run.send({ id: user.id, text: [context, shellContext, rewound, message].filter(Boolean).join('\n\n'), images: input.images })
     } catch (error) {
       // It never reached the CLI: it stays in the chat as written, as any prompt that failed.
       this.takeQueued(s, user.id)
@@ -1226,6 +1254,33 @@ export class SessionService extends TypedEmitter<Events> {
     }
     // Should the CLI fail to start, the chat stays with the message and the error, as one the user started.
     await this.sendFromChat(fromId, meta.id, input.text)
+    return meta
+  }
+
+  /**
+   * What a message of this chat to a chat on another device carries (Remote Control, `chats.send`):
+   * where it comes from and its place in the chain, refused past `MAX_CHAT_CHAIN` as here. The
+   * receiving device keeps the place, so that the limit holds across devices.
+   */
+  chatOrigin(fromId: string): { origin: ChatOrigin; chain: number } {
+    const sender = this.get(fromId)
+    const chain = this.nextChain(sender)
+    return { origin: { sessionId: fromId, title: sender.meta.title, provider: sender.runProvider ?? sender.meta.provider }, chain }
+  }
+
+  /**
+   * A new chat that the agent of a chat on another device starts here (`chats.new`), in `projectId`
+   * with the defaults of the CLI as `newFromChat`; its first prompt is the message, marked with `from`.
+   */
+  async newFromDevice(input: { projectId: string; provider: ProviderId; text: string; title?: string }, from: { origin: ChatOrigin; chain: number }): Promise<SessionMeta> {
+    if (!this.providers.isReady(input.provider)) throw new Error(`${PROVIDERS[input.provider].name} is not installed.`)
+    const meta = await this.create({ projectId: input.projectId, provider: input.provider })
+    const title = input.title?.trim()
+    if (title) {
+      meta.title = title
+      meta.titleSource = 'user'
+    }
+    await this.send(meta.id, { text: input.text }, from)
     return meta
   }
 
@@ -1423,6 +1478,8 @@ export class SessionService extends TypedEmitter<Events> {
         }
         if (item.kind === 'turn') {
           this.emit('turnEnded', meta.id)
+          // A prompt that waited starts its turn now: its checkpoint begins where this one ends.
+          void this.endCheckpoint(s, item.id, s.runtime.queued?.[0]?.id)
           if (current() && item.status !== 'interrupted') {
             if (item.limit) this.emit('attention', meta.id, { kind: 'limit', provider, accountId, message: item.error ?? null })
             // Prompts wait: the CLI goes on with them right away, it isn't done.
@@ -1708,6 +1765,13 @@ export class SessionService extends TypedEmitter<Events> {
     // After a switch to another CLI the server is that CLI's no longer.
     if (item.provider !== s.meta.provider) throw new Error('Die Oberfläche gehört zu einer anderen CLI als der, mit der der Chat jetzt läuft.')
     return { ...this.cliTarget(id), app: item.app }
+  }
+
+  /** What the tool of a page (MCP Apps) returned, as the page gets it; null while it runs or without. */
+  async mcpAppResult(id: string, itemId: string): Promise<McpAppToolResult | null> {
+    const s = await this.loaded(id)
+    const item = s.items.find((i) => i.id === itemId)
+    return item?.kind === 'tool' && item.app ? (item.appResult ?? null) : null
   }
 
   /** A resource of a page's server (the page itself without `uri`): from the running CLI, else from one started for it. */
@@ -2023,6 +2087,7 @@ export class SessionService extends TypedEmitter<Events> {
       if (s.mcpToken) this.mcp.revoke(s.mcpToken)
       this.sessions.delete(id)
       await this.store.remove(id)
+      await this.checkpoints?.forget(id).catch((error) => console.warn('[checkpoints] not removed', error))
       result.removed.push(id)
       for (const file of files) {
         // Two chats of one conversation (a fork that ran on with it) name the same files.
@@ -2196,6 +2261,126 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   // ------------------------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------------------------
+  // Checkpoints: what each prompt changed in the chat's folders (main/files/checkpoints.ts)
+
+  /** The folders a chat's agent works in: its own and those added to it. */
+  private rootsOf(meta: SessionMeta, cwd: string): string[] {
+    return [cwd, ...(meta.dirs ?? [])]
+  }
+
+  /**
+   * Keeps the chat's folders as they are before a prompt. Waited for at most `CHECKPOINT_WAIT_MS` (the
+   * first one of a big folder hashes every file): a prompt is never held up long for it.
+   */
+  private beginCheckpoint(s: SessionState, promptId: string, cwd: string): Promise<void> | null {
+    if (!this.checkpoints || !this.settings().chat.checkpoints) return null
+    const taken = this.checkpoints.begin(s.meta.id, promptId, this.rootsOf(s.meta, cwd)).catch((error) => console.warn('[checkpoints] not begun', error))
+    return Promise.race([taken, new Promise<void>((resolve) => setTimeout(resolve, CHECKPOINT_WAIT_MS))])
+  }
+
+  /** At a turn's end: what its prompt changed, counted below the turn. */
+  private async endCheckpoint(s: SessionState, turnId: string, next: string | undefined): Promise<void> {
+    if (!this.checkpoints) return
+    const summary = await this.checkpoints.end(s.meta.id, next).catch((error) => {
+      console.warn('[checkpoints] not ended', error)
+      return null
+    })
+    if (!summary || !this.sessions.has(s.meta.id)) return
+    const at = s.index.get(turnId)
+    const turn = at === undefined ? undefined : s.items?.[at]
+    if (turn?.kind === 'turn') this.put(s, { ...turn, fileChanges: summary })
+  }
+
+  /**
+   * A picture of the chat's prompts, for the window of another device (Remote Control): only one a
+   * prompt of this chat has, so a device that may read the chat can't read other files with it.
+   */
+  async promptImage(id: string, path: string): Promise<{ type: string; data: string } | null> {
+    const s = await this.loaded(id)
+    const key = folderKey(path)
+    const prompts = [...(s.items ?? []), ...(s.runtime.queued ?? [])]
+    if (!prompts.some((i) => i.kind === 'user' && i.images?.some((image) => folderKey(image) === key))) return null
+    const type = PROMPT_IMAGE_TYPES[extname(path).toLowerCase()]
+    const info = type ? await stat(path).catch(() => null) : null
+    if (!type || !info?.isFile() || info.size > MAX_PROMPT_IMAGE_BYTES) return null
+    return { type, data: (await readFile(path)).toString('base64') }
+  }
+
+  /**
+   * What each prompt of the chat changed in its folders, and the rewind that can be taken back; `live`
+   * with what the running turn changed so far.
+   */
+  async changes(id: string, live = false): Promise<ChatChanges> {
+    this.get(id)
+    const disabled = !this.settings().chat.checkpoints
+    if (!this.checkpoints) return { prompts: [], undo: null, disabled: true }
+    return { ...(await this.checkpoints.changes(id, live)), ...(disabled ? { disabled } : {}) }
+  }
+
+  /** One file's change by a prompt, as a patch. */
+  async changeDiff(id: string, promptId: string, path: string, full: boolean): Promise<FileDiff> {
+    this.get(id)
+    if (!this.checkpoints) throw new Error('Checkpoints gibt es hier nicht.')
+    return this.checkpoints.diff(id, promptId, path, full)
+  }
+
+  /** What rewinding the files to before a prompt would do; not while the chat works. */
+  async rewindPreview(id: string, promptId: string): Promise<RewindPreview> {
+    const s = await this.loaded(id)
+    this.requireAtRest(s, 'zurückspulen')
+    if (!this.checkpoints) throw new Error('Checkpoints gibt es hier nicht.')
+    // A turn whose end never came (the CLI ended): its checkpoint ends now.
+    await this.checkpoints.end(id)
+    return this.checkpoints.preview(id, promptId)
+  }
+
+  /**
+   * Puts the files the agent changed from a prompt on back as they were before it. The conversation
+   * stays; the CLI hears of it with the next prompt (`rewindContext`), the chat in a note.
+   */
+  async rewindFiles(id: string, promptId: string): Promise<RewindResult> {
+    const s = await this.loaded(id)
+    this.requireAtRest(s, 'zurückspulen')
+    if (!this.checkpoints) throw new Error('Checkpoints gibt es hier nicht.')
+    await this.checkpoints.end(id)
+    const result = await this.checkpoints.rewind(id, promptId)
+    const at = s.index.get(promptId)
+    const prompt = at === undefined ? undefined : s.items?.[at]
+    const title = prompt?.kind === 'user' ? firstLine(prompt.text, 60) || 'Bild' : 'einem Prompt'
+    this.put(s, {
+      kind: 'notice',
+      id: randomUUID(),
+      ts: Date.now(),
+      provider: s.meta.provider,
+      level: result.failed.length ? 'warning' : 'info',
+      text: `Dateien auf den Stand vor „${title}“ zurückgespult`,
+      detail: rewindDetail(result.files, result.failed.length),
+      rewind: { promptId, prompt: title, files: result.rels },
+    })
+    return { files: result.files, failed: result.failed }
+  }
+
+  /** Takes the last rewind of the chat's files back. */
+  async rewindUndo(id: string): Promise<RewindResult> {
+    const s = await this.loaded(id)
+    this.requireAtRest(s, 'zurückspulen')
+    if (!this.checkpoints) throw new Error('Checkpoints gibt es hier nicht.')
+    const last = s.items?.findLast((i): i is NoticeItem => i.kind === 'notice' && !!i.rewind && !i.rewind.undone)
+    const result = await this.checkpoints.undo(id)
+    this.put(s, {
+      kind: 'notice',
+      id: randomUUID(),
+      ts: Date.now(),
+      provider: s.meta.provider,
+      level: result.failed.length ? 'warning' : 'info',
+      text: 'Zurückspulen der Dateien zurückgenommen',
+      detail: rewindDetail(result.files, result.failed.length),
+      rewind: { promptId: last?.rewind?.promptId ?? '', prompt: last?.rewind?.prompt ?? '', files: last?.rewind?.files ?? [], undone: true },
+    })
+    return result
+  }
 
   private put(s: SessionState, item: ChatItem): void {
     if (!s.items) s.items = []

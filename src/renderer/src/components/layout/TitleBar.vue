@@ -10,11 +10,13 @@ import { isChatWindow } from '@/lib/chat-window'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useShownDeviceStore } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import DeviceScope from './DeviceScope.vue'
 import TitleBarNotifications from './TitleBarNotifications.vue'
 import TitleBarSearch from './TitleBarSearch.vue'
 import TitleBarUsage from './TitleBarUsage.vue'
@@ -68,6 +70,10 @@ const subfolder = computed(() => {
 function openProject(): void {
   if (cwd.value && !shownDevice.device) void window.api.app.openPath(cwd.value)
 }
+
+/** Another device's branch is read there: only while it lets this one read its folders. */
+const devices = useDevicesStore()
+const showBranch = computed(() => devices.can(shownDevice.device, 'read'))
 </script>
 
 <template>
@@ -128,8 +134,10 @@ function openProject(): void {
             <span class="shrink-[0.25] truncate font-medium">{{ project.name }}</span>
             <span v-if="subfolder" class="truncate">/ {{ subfolder }}</span>
           </button>
-          <!-- The branch is read from this device's disk. -->
-          <GitBranchChip v-if="!shownDevice.device" :cwd="cwd ?? project.path" class="min-w-0" />
+          <!-- The branch is read from the disk of the device the chat is on. -->
+          <DeviceScope v-if="showBranch" :key="shownDevice.device ?? ''" :device="shownDevice.device">
+            <GitBranchChip :cwd="cwd ?? project.path" class="min-w-0" />
+          </DeviceScope>
         </template>
       </div>
       <TitleBarSearch v-if="!isChatWindow" />

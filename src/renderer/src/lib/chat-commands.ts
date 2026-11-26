@@ -14,6 +14,7 @@ export type AppCommandId =
   | 'fork'
   | 'compact'
   | 'diff'
+  | 'rewind'
   | 'rename'
   | 'model'
   | 'effort'
@@ -48,6 +49,7 @@ export const APP_COMMANDS: readonly AppCommand[] = [
   { id: 'fork', aliases: ['branch'], argumentHint: '[Name]', description: 'Chat abzweigen: ein neuer Chat geht von hier aus weiter, dieser bleibt, wie er ist' },
   { id: 'compact', description: 'Kontext zusammenfassen, damit wieder Platz ist', only: 'codex' },
   { id: 'diff', description: 'Änderungen im Ordner des Chats zeigen (Git)' },
+  { id: 'rewind', aliases: ['checkpoint'], description: 'Änderungen je Prompt zeigen und die Dateien auf den Stand vor einem Prompt zurückspulen' },
   { id: 'rename', argumentHint: '[Name]', description: 'Chat umbenennen' },
   { id: 'model', argumentHint: '[Modell]', description: 'Modell wählen' },
   { id: 'effort', argumentHint: '[Stufe]', description: 'Denkaufwand einstellen' },

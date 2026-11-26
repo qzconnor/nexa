@@ -4,8 +4,9 @@ import { IpcInvoke } from '@shared/ipc'
 import { channelLevel } from '@shared/remote'
 import { RemoteInvoke, RemoteIpcEvent, type RemoteWatch } from '@shared/remote-ipc'
 import { broadcast, handle, invokeHandler, onBroadcast } from '../ipc'
-import { perWindow } from '../lib/per-window'
-import { createRemote, type RemoteLink } from './remote'
+import { endRemoteSender, perWindow } from '../lib/per-window'
+import { createRemote, type RemoteDeps, type RemoteLink } from './remote'
+import type { RemoteClient } from './remote-client'
 
 const IMAGE_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -28,17 +29,22 @@ export interface RegisterRemoteDeps {
   link: RemoteLink
   version: string
   log?: (message: string) => void
+  /** Requests of other devices' chat tools (`chats.*`, `RemoteChatsHost`). */
+  chats?: RemoteDeps['chats']
 }
 
 /**
  * Remote Control (`createRemote`) with the window's side: the window API of other devices, their
- * events, who controls this one. The host's side answers with the windows' own handlers.
+ * events, who controls this one. The host's side answers with the windows' own handlers. `client`
+ * also carries the chat tools' requests to the other devices (`DeviceChats`).
  */
-export function registerRemote(deps: RegisterRemoteDeps): { dispose(): void } {
+export function registerRemote(deps: RegisterRemoteDeps): { client: RemoteClient; dispose(): void } {
   const remote = createRemote({ ...deps, invoke: invokeHandler, onBroadcast })
   const { host, client } = remote
   const offs = [
     host.on('changed', (controllers) => broadcast(RemoteIpcEvent.controllers, controllers)),
+    // The folders a device's file panel watched here, as a window of its own, go with its watch.
+    host.on('dropped', (device) => endRemoteSender(device)),
     client.on('events', (instance, events) => broadcast(RemoteIpcEvent.events, instance, events)),
     client.on('resync', (instance) => broadcast(RemoteIpcEvent.resync, instance)),
     client.on('info', (instance, info) => broadcast(RemoteIpcEvent.info, instance, info)),
@@ -66,6 +72,7 @@ export function registerRemote(deps: RegisterRemoteDeps): { dispose(): void } {
   handle(RemoteInvoke.disconnect, (_e, instance: unknown) => host.disconnect(text(instance, 'instance', 64)))
 
   return {
+    client,
     dispose() {
       for (const off of offs) off()
       remote.dispose()

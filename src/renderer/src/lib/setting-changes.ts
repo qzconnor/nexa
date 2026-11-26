@@ -46,6 +46,7 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'chat.showThinking': { anchor: 'chat.showThinking' },
   'chat.collapseDiffs': { anchor: 'chat.collapseDiffs' },
   'chat.autoTitles': { anchor: 'chat.autoTitles' },
+  'chat.checkpoints': { anchor: 'chat.checkpoints' },
   'chat.enterSends': { anchor: 'chat.enterSends' },
   'chat.promptSuggestions': { anchor: 'chat.promptSuggestions' },
   'chat.releaseIdleMinutes': { anchor: 'chat.releaseIdleMinutes', label: 'CLI nach Ruhe beenden' },

@@ -17,6 +17,7 @@ import {
   FolderPlusIcon,
   GitForkIcon,
   HistoryIcon,
+  MonitorIcon,
   PanelLeftIcon,
   PencilIcon,
   PinIcon,
@@ -46,10 +47,13 @@ import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList, CommandS
 import { useChatActions } from '@/composables/useChatActions'
 import { useSettingsTransfer } from '@/composables/useSettingsTransfer'
 import { SETTINGS } from '@/composables/useSettingsSearch'
+import { chatSources, startsChats } from '@/lib/device-chats'
 import { attempt } from '@/lib/errors'
+import { chatKey } from '@/lib/session-tree'
 import type { SettingsEntry } from '@/lib/settings-index'
 import { startShellId } from '@/lib/shells'
 import { useAccountsStore } from '@/stores/accounts'
+import { useDevicesStore } from '@/stores/devices'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useScheduledStore } from '@/stores/scheduled'
@@ -74,6 +78,7 @@ const ui = useUiStore()
 const startCommands = useStartCommandsStore()
 const terminals = useTerminalsStore()
 const scheduled = useScheduledStore()
+const devices = useDevicesStore()
 const chat = useChatActions()
 const transfer = useSettingsTransfer()
 
@@ -153,6 +158,24 @@ const worktreeRequest = computed(() => {
   if (!project) return null
   return { projectId: project.id, folder: (meta.value && sessions.cwdOf(meta.value)) || project.path }
 })
+
+/**
+ * A new chat in every project of this device, and of every other one shown in the sidebar that lets
+ * this one start chats there (Remote Control); the hidden ones are not among `devices.devices`.
+ */
+const projectChoices = computed(() =>
+  chatSources(devices.devices)
+    .filter(startsChats)
+    .flatMap(({ id, name }) =>
+      useProjectsStore(id).projects.map((project) => ({ key: id ? chatKey(id, project.id) : project.id, device: id, deviceName: name, project })),
+    ),
+)
+
+/** The start page of the project's device, as its „Neuer Chat“ in the sidebar opens it. */
+function newChatIn(choice: { device: string | null; project: { id: string } }): void {
+  if (choice.device) useChatActions(choice.device).newChat(choice.project.id)
+  else chat.newChat(choice.project.id)
+}
 
 /** Every account of the CLIs that are on, but the one the chat runs with: the chat can go on with it. */
 const switchChoices = computed(() => {
@@ -411,16 +434,20 @@ const switchChoices = computed(() => {
       <!-- A new chat in every project, only while searching, as in the Claude Manager's recent folders. -->
       <CommandGroup heading="Neuer Chat in Projekt" search-only>
         <CommandItem
-          v-for="project in projects.projects"
-          :key="project.id"
-          :value="`project-${project.id}`"
-          :filter-text="`Neuer Chat in ${project.name} ${project.path}`"
+          v-for="choice in projectChoices"
+          :key="choice.key"
+          :value="`project-${choice.key}`"
+          :filter-text="`Neuer Chat in ${choice.project.name} ${choice.project.path} ${choice.deviceName ?? ''}`"
           search-only
-          @select="run(() => chat.newChat(project.id))"
+          @select="run(() => newChatIn(choice))"
         >
           <FolderIcon />
-          <span class="min-w-0 truncate">Neuer Chat in {{ project.name }}</span>
-          <CommandShortcut class="max-w-[45%] truncate tracking-normal">{{ project.path }}</CommandShortcut>
+          <span class="min-w-0 truncate">Neuer Chat in {{ choice.project.name }}</span>
+          <span v-if="choice.deviceName" class="flex min-w-0 shrink items-center gap-1 text-xs text-muted-foreground" :title="`Auf ${choice.deviceName}`">
+            <MonitorIcon class="size-3" />
+            <span class="truncate">{{ choice.deviceName }}</span>
+          </span>
+          <CommandShortcut class="max-w-[45%] truncate tracking-normal">{{ choice.project.path }}</CommandShortcut>
         </CommandItem>
       </CommandGroup>
     </CommandList>

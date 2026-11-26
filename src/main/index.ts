@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme, powerMonitor, shell, type MessageBoxOptions } from 'electron'
 import { ChatWindowsEvent, type MainWindowRequest } from '@shared/chat-windows'
-import { IpcEvent } from '@shared/ipc'
+import { IpcEvent, IpcInvoke } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { findTheme } from '@shared/themes/builtin'
 import { trayChats, type TrayMenuAction } from '@shared/tray-menu'
@@ -16,6 +16,8 @@ import { CommandIntegration } from './command-integration'
 import { FileActivityTracker } from './files/activity-tracker'
 import { FileTreeService } from './files/file-tree-service'
 import { registerFilesIpc } from './files/files-ipc'
+import { chatFolders } from './files/remote-roots'
+import { Checkpoints } from './files/checkpoints'
 import { GitService } from './files/git-service'
 import { ClaudeManagerImport } from './import/claude-manager'
 import { CliSessionImport } from './import/cli-import'
@@ -28,7 +30,7 @@ import { APP_NAME, userDataFolder } from './lib/app-folder'
 import { AUTOSTART_ARG, setLaunchAtLogin } from './lib/login-item'
 import { loadShellEnv } from './lib/shell-env'
 import { MCP_APP_SCHEME_PRIVILEGES, McpAppViews } from './mcp-apps/mcp-app-views'
-import { registerMcpAppsIpc } from './mcp-apps/mcp-apps-ipc'
+import { registerMcpAppsIpc, registerRemoteMcpAppsIpc } from './mcp-apps/mcp-apps-ipc'
 import { NexaMcpServer } from './mcp/mcp-server'
 import { ChatTools } from './mcp/chat-tools'
 import { AskTool } from './mcp/ask-tool'
@@ -44,7 +46,7 @@ import { ProjectService } from './services/project-service'
 import { ProviderService } from './services/provider-service'
 import { UsageSamples } from './services/usage-samples'
 import { NotificationService } from './services/notification-service'
-import { SessionService } from './services/session-service'
+import { MAX_CHAT_CHAIN, SessionService } from './services/session-service'
 import { SettingsService } from './services/settings-service'
 import { StartCommands } from './services/start-commands'
 import { registerStartCommandsIpc } from './services/start-commands-ipc'
@@ -55,13 +57,14 @@ import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
 import { shellLaunch } from './services/user-shells'
 import { registerRemote } from './remote/remote-ipc'
+import { DeviceChats, RemoteChatsHost } from './remote/remote-chats'
 import { registerServerLinkIpc } from './server-link/server-link-ipc'
 import { ServerLinkService } from './server-link/server-link-service'
 import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { ChatWindows } from './window/chat-windows'
 import { registerChatWindowsIpc } from './window/chat-windows-ipc'
-import { handleFileProtocol, registerFileScheme } from './window/file-protocol'
+import { handleFileProtocol, registerFileScheme, setRemoteImages, type RemoteImage } from './window/file-protocol'
 import { createChatWindow, createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
 import { AppTray } from './window/tray'
 import { TrayMenu } from './window/tray-menu'
@@ -124,6 +127,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     (tools) => grantFor(tools, browserTools),
     (path) => shell.trashItem(path),
     git,
+    new Checkpoints(join(userDataDir, 'checkpoints')),
   )
   let promptSuggestions = settings.get().chat.promptSuggestions
   settings.on('changed', (next) => {
@@ -303,10 +307,16 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const fileActivity = new FileActivityTracker(files)
   sessions.on('tool', (sessionId, item, cwd) => fileActivity.tool(sessionId, item, cwd))
   sessions.on('turnEnded', (sessionId) => fileActivity.turnEnded(sessionId))
-  registerFilesIpc(files, git, async (sessionId) => {
-    const history = await sessions.history(sessionId)
-    return history ? fileActivity.history(history.items, history.cwd) : []
-  })
+  registerFilesIpc(
+    files,
+    git,
+    async (sessionId) => {
+      const history = await sessions.history(sessionId)
+      return history ? fileActivity.history(history.items, history.cwd) : []
+    },
+    // What another device's file panel may reach here.
+    () => chatFolders(projects.list(), sessions.list()),
+  )
   await api.init()
   await notifications.init()
   await autoSwitch.init()
@@ -326,7 +336,42 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // and the next attempt could be a minute away.
   const serverLink = new ServerLinkService({ userDataDir, log: (message) => console.info('[nexa-server]', message) })
   registerServerLinkIpc(serverLink)
-  const remote = registerRemote({ link: serverLink, version: app.getVersion(), log: (message) => console.info('[remote]', message) })
+  // Messages between chats across devices (`chats.*`): this device answers the chat tools of the
+  // others as far as its setting and their level go, and its own chat tools reach their chats.
+  const remoteChats = new RemoteChatsHost({
+    enabled: () => settings.get().tools.chatTools,
+    link: { trusted: (id) => serverLink.device(id)?.trusted ?? false, deviceName: (id) => serverLink.device(id)?.name ?? null },
+    chats: {
+      list: () => sessions.peerChats(),
+      items: async (id) => (await sessions.history(id))?.items ?? null,
+      search: (query) => sessions.search(query),
+      projects: () => projects.list(),
+      send: (to, text, from) => sessions.send(to, { text }, from),
+      create: async (input, from) => {
+        const meta = await sessions.newFromDevice(input, from)
+        return { id: meta.id, title: meta.title }
+      },
+    },
+    maxChain: MAX_CHAT_CHAIN,
+  })
+  const remote = registerRemote({
+    link: serverLink,
+    version: app.getVersion(),
+    log: (message) => console.info('[remote]', message),
+    chats: (from, request) => remoteChats.handle(from, request),
+  })
+  // Pictures of another device's chats come from there; it gives out only those of the chat's prompts.
+  setRemoteImages((device, sessionId, path) => remote.client.invoke(device, IpcInvoke.sessionsImage, [sessionId, path]) as Promise<RemoteImage | null>)
+  registerRemoteMcpAppsIpc(mcpAppViews, (device, channel, args) => remote.client.invoke(device, channel, args))
+  chatTools.setDevices(
+    new DeviceChats({
+      request: (device, m, p) => remote.client.request(device, m, p),
+      devices: () => serverLink.getState().devices.flatMap((d) => (!d.self && d.trusted ? [{ id: d.id, name: d.name, online: d.online }] : [])),
+      selfName: () => serverLink.self()?.name ?? null,
+      outgoing: (from) => sessions.chatOrigin(from),
+      projectOf: (from) => sessions.peerChats().find((chat) => chat.id === from)?.project ?? null,
+    }),
+  )
   void serverLink.init().catch((error: unknown) => console.warn('[nexa-server] init failed', error))
   powerMonitor.on('resume', () => serverLink.retryNow())
 

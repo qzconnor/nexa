@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ClockIcon, PencilIcon } from '@lucide/vue'
+import { ClockIcon, PencilIcon, RotateCcwIcon } from '@lucide/vue'
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import type { UserItem } from '@shared/chat'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { useChatChanges } from '@/composables/useChatChanges'
 import { attempt } from '@/lib/errors'
-import { fileImageUrl } from '@/lib/tools'
+import { fileImageUrl, type ImageSource } from '@/lib/tools'
 import { cn } from '@/lib/utils'
+import { useDevicesStore } from '@/stores/devices'
+import { useServerLinkStore } from '@/stores/server-link'
+import { useDevice } from '@/stores/device'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import Markdown from './Markdown.vue'
@@ -20,7 +24,7 @@ import MessageActions from './MessageActions.vue'
  * in the chat where it did, as any other. Its pictures open large in Nexa's viewer. An `editable` one
  * can be changed in place and sent anew: what came after it goes (`sessions.edit`), while the agent
  * works (`busy`) its answer too. A message from another chat's agent (`from`) is outlined instead of
- * filled and names that chat, which it opens. The first one waiting can go now (`sendNow`): that stops
+ * filled and names that chat (with its device, if another one), which it opens. The first one waiting can go now (`sendNow`): that stops
  * the turn, and the CLI takes the waiting prompts up at once (Claude Code as a turn of their own,
  * Antigravity CLI from Nexa's queue).
  */
@@ -35,18 +39,43 @@ const props = defineProps<{
 }>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
-/** The sending chat as it is called now (renamed since, perhaps); gone: as it was called then. */
+/** Its files as they were before it (Nexa's checkpoints): rewinding to there. */
+const changes = useChatChanges()
+/** In a chat of another device, its pictures are there. */
+const device = useDevice()
+const imageSource = computed<ImageSource | null>(() => (device && props.sessionId ? { device, sessionId: props.sessionId } : null))
+const rewindable = computed(() => !props.queued && !!props.sessionId && !!changes?.has(props.item.id))
+const link = useServerLinkStore()
+const devices = useDevicesStore()
+/**
+ * The chats of the sending chat's device: this window's own for a chat of the same device; for one of
+ * another device (`from.device`) that device's, as long as this window shows its chats; else none.
+ */
+const senderSessions = computed(() => {
+  const device = props.item.from?.device
+  if (!device) return sessions
+  if (device.id === link.state?.instance) return useSessionsStore(null)
+  return devices.devices.some((d) => d.id === device.id && d.state === 'ready') ? useSessionsStore(device.id) : null
+})
+/** The sending chat as it is called now (renamed since, perhaps); gone or out of reach: as it was called then. */
 const sender = computed(() => {
   const from = props.item.from
   if (!from) return null
-  const meta = sessions.get(from.sessionId)
+  const meta = senderSessions.value?.get(from.sessionId)
   return { ...from, title: meta?.title ?? from.title, exists: !!meta }
+})
+const senderTip = computed(() => {
+  const s = sender.value
+  if (!s) return ''
+  if (s.device) return `Vom Agent eines Chats auf „${s.device.name}“ gesendet, nicht von dir.${s.exists ? ' Klicken öffnet ihn.' : ''}`
+  return s.exists ? 'Von einem anderen Chat gesendet, nicht von dir. Klicken öffnet ihn.' : 'Von einem anderen Chat gesendet, den es nicht mehr gibt.'
 })
 
 function openSender(): void {
-  if (!sender.value?.exists) return
+  const target = senderSessions.value
+  if (!sender.value?.exists || !target) return
   ui.view = 'chat'
-  void attempt(() => sessions.open(sender.value!.sessionId), 'Session ließ sich nicht öffnen')
+  void attempt(() => target.open(sender.value!.sessionId), 'Session ließ sich nicht öffnen')
 }
 const viewing = ref<number | null>(null)
 const editing = ref(false)
@@ -108,11 +137,11 @@ function onKey(event: KeyboardEvent): void {
       type="button"
       :disabled="!sender.exists"
       class="flex max-w-[85%] items-center gap-1.5 rounded-md text-[0.72rem] text-muted-foreground outline-none enabled:hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-      v-tooltip="sender.exists ? 'Von einem anderen Chat gesendet, nicht von dir. Klicken öffnet ihn.' : 'Von einem anderen Chat gesendet, den es nicht mehr gibt.'"
+      v-tooltip="senderTip"
       @click="openSender"
     >
       <ProviderIcon :provider="sender.provider" class="size-3 shrink-0" />
-      <span class="truncate">Nachricht von „{{ sender.title }}“</span>
+      <span class="truncate">Nachricht von „{{ sender.title }}“<template v-if="sender.device"> auf {{ sender.device.name }}</template></span>
     </button>
     <!-- Images of different heights sit on the message, not centred in their row above it. -->
     <div v-if="item.images?.length" :class="cn('flex max-w-[85%] flex-wrap items-end justify-end gap-2', queued && 'opacity-60')">
@@ -124,7 +153,7 @@ function onKey(event: KeyboardEvent): void {
         aria-label="Bild groß ansehen"
         @click="viewing = i"
       >
-        <img :src="fileImageUrl(image)" alt="" draggable="false" class="block max-h-40 max-w-60 rounded-lg border object-cover" />
+        <img :src="fileImageUrl(image, imageSource)" alt="" draggable="false" class="block max-h-40 max-w-60 rounded-lg border object-cover" />
       </button>
     </div>
     <div v-if="editing" class="flex w-full max-w-[85%] flex-col gap-1.5 rounded-2xl rounded-br-md bg-secondary p-2 ring-1 ring-ring/40">
@@ -179,6 +208,17 @@ function onKey(event: KeyboardEvent): void {
         >
           <PencilIcon />
         </Button>
+        <Button
+          v-if="rewindable"
+          variant="ghost"
+          size="icon-xs"
+          class="text-muted-foreground"
+          aria-label="Dateien zurückspulen"
+          v-tooltip="'Dateien auf den Stand vor diesem Prompt zurückspulen'"
+          @click="changes?.rewind(item.id)"
+        >
+          <RotateCcwIcon />
+        </Button>
       </div>
     </div>
     <div v-if="queued" class="flex items-center gap-1.5 text-[0.72rem] text-muted-foreground">
@@ -202,6 +242,6 @@ function onKey(event: KeyboardEvent): void {
     <span v-else-if="showProvider" class="flex items-center gap-1 text-[0.7rem] text-muted-foreground">
       an <ProviderIcon :provider="item.provider" class="size-3" />
     </span>
-    <ImageViewer v-if="item.images?.length" v-model:index="viewing" :images="item.images" />
+    <ImageViewer v-if="item.images?.length" v-model:index="viewing" :images="item.images" :source="imageSource" />
   </div>
 </template>

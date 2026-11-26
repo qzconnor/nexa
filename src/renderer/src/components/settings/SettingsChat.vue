@@ -148,6 +148,13 @@ function cleanUp(): void {
       >
         <Switch :model-value="s.chat.autoTitles" @update:model-value="(v: boolean) => update({ chat: { autoTitles: v } })" />
       </SettingField>
+      <SettingField
+        anchor="chat.checkpoints"
+        label="Checkpoints der Dateien"
+        description="Nexa merkt sich vor jedem Prompt, wie die Dateien des Chats aussehen: Was ein Prompt geändert hat, lässt sich ansehen und zurückspulen, mit jeder CLI. Nexa legt die Stände in seinem Datenordner ab, das Repository des Projekts bleibt unberührt."
+      >
+        <Switch :model-value="s.chat.checkpoints" @update:model-value="(v: boolean) => update({ chat: { checkpoints: v } })" />
+      </SettingField>
     </SettingsSection>
 
     <SettingsSection anchor="chat.processes" title="Prozesse" description="Was die CLIs der Chats an Speicher belegen.">
@@ -280,7 +287,7 @@ function cleanUp(): void {
       <SettingField
         anchor="chat.chatTools"
         label="Nachrichten zwischen Chats"
-        description="Die Agents schreiben deinen anderen Chats, auch von Claude zu Codex und zurück, lesen deren Antworten, durchsuchen frühere Chats und legen neue an. Jeder Chat behält seine eigenen Freigaben. Gilt für neue Chats und nach „Chat neu starten“."
+        description="Die Agents schreiben deinen anderen Chats, auch von Claude zu Codex und zurück, lesen deren Antworten, durchsuchen frühere Chats und legen neue an. Jeder Chat behält seine eigenen Freigaben. Gilt für neue Chats und nach „Chat neu starten“. Auch die Chats gekoppelter Geräte, soweit deren Einstellung und Fernsteuerung es zulassen; Agents anderer Geräte erreichen die Chats hier nur, wenn das hier an ist."
       >
         <Switch :model-value="s.tools.chatTools" @update:model-value="(v: boolean) => updateTools({ chatTools: v })" />
       </SettingField>

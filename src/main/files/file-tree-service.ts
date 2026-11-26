@@ -73,7 +73,7 @@ const MAX_PATCH_CHARS = 4 * 1024 * 1024
 /** An image bigger than this shows no preview. */
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 /** Images the diff shows as such, by extension; SVG is text and shows as its source. */
-const IMAGE_TYPES: Record<string, string> = {
+export const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',

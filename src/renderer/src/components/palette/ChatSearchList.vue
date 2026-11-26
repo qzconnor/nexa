@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArchiveIcon, ChevronRightIcon, CircleHelpIcon, FolderIcon, PinIcon, SearchIcon } from '@lucide/vue'
+import { ArchiveIcon, ChevronRightIcon, CircleHelpIcon, FolderIcon, MonitorIcon, PinIcon, SearchIcon } from '@lucide/vue'
 import { refDebounced } from '@vueuse/core'
 import { injectListboxRootContext, ListboxContent, ListboxFilter, ListboxGroup, ListboxGroupLabel, ListboxItem } from 'reka-ui'
 import { computed, nextTick, onMounted, watch } from 'vue'
@@ -12,9 +12,13 @@ import { Spinner } from '@/components/ui/spinner'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
 import { useSessionSearch } from '@/composables/useSessionSearch'
+import { chatSources, matchChats, recentChats, searchedDevices, startsChats, type ChatEntry, type ChatMatch } from '@/lib/device-chats'
 import { formatRelative } from '@/lib/format'
 import { containsTerms, searchText } from '@/lib/search'
+import { chatKey } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
+import { useShownDeviceStore } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
@@ -30,23 +34,37 @@ const MAX_PROJECTS = 6
  * The chats and projects, searched by title, project and folder and through the conversations: the
  * quick open's mode without a prefix, like VS Code's "Go to File". Lives inside a ListboxRoot, whose
  * keyboard navigation it drives from the input. Before anything is typed it offers the other modes
- * and the latest chats.
+ * and the latest chats. Those of the other devices shown in the sidebar (Remote Control) come along,
+ * marked with their device, and open there as from the sidebar.
  */
 const emit = defineEmits<{ done: [] }>()
 /** What is typed; a prefix (`>`, `?`) switches the quick open to another mode. */
 const query = defineModel<string>('query', { required: true })
 
-const projects = useProjectsStore()
-const sessions = useSessionsStore()
 const ui = useUiStore()
-const chat = useChatActions()
+const devices = useDevicesStore()
+const shown = useShownDeviceStore()
 const listbox = injectListboxRootContext()
 // Every 30 seconds: `formatRelative` takes a time up to 45 seconds ago as just now.
 const now = useClock(30_000)
 
+/** This device and every other one whose chats are loaded here (the hidden ones are not among them). */
+const sources = computed(() => chatSources(devices.devices))
+
+/** Each device's chat actions, made once: the rows ask them for their state on every render. */
+const actions = new Map<string, ReturnType<typeof useChatActions>>()
+function actionsOf(device: string | null): ReturnType<typeof useChatActions> {
+  let found = actions.get(device ?? '')
+  if (!found) actions.set(device ?? '', (found = useChatActions(device)))
+  return found
+}
+
 /** Titles are filtered on every key, the conversations shortly after typing stops. */
 const terms = computed(() => searchTerms(query.value))
-const { hits, searching, prepare } = useSessionSearch(refDebounced(query, 150))
+const { hits, searching, prepare } = useSessionSearch(
+  refDebounced(query, 150),
+  computed(() => searchedDevices(sources.value)),
+)
 
 onMounted(() => {
   prepare()
@@ -54,55 +72,64 @@ onMounted(() => {
 })
 
 /** Where a chat works: its project, and the folder in it if it isn't the project's own. */
-function placeOf(meta: SessionMeta): string {
-  const project = projects.get(meta.projectId)
+function placeOf(device: string | null, meta: SessionMeta): string {
+  const project = useProjectsStore(device).get(meta.projectId)
   if (!project) return ''
   const sub = meta.cwd ? subfolderSegments(meta.cwd, project.path).join('/') : ''
   return sub ? `${project.name} / ${sub}` : project.name
 }
 
-/** Every chat with the text its title search runs on. */
-const indexed = computed(() =>
-  sessions.metas.map((meta) => ({ meta, text: searchText(meta.title, meta.preview, placeOf(meta), meta.cwd) })),
-)
-
-interface ChatRow {
-  meta: SessionMeta
-  /** Set when only the conversation matched. */
-  hit: SessionSearchHit | null
-  named: boolean
+interface IndexedChat extends ChatEntry {
+  device: string | null
+  /** Another device's name. */
+  deviceName?: string
 }
 
-const chatMatches = computed<ChatRow[]>(() => {
-  if (terms.value.length === 0) return []
-  const rows: ChatRow[] = []
-  for (const { meta, text } of indexed.value) {
-    const named = containsTerms(text, terms.value)
-    const hit = hits.value.get(meta.id) ?? null
-    if (named || hit) rows.push({ meta, hit: named ? null : hit, named })
-  }
-  // Matches in the title before those in the conversation, archived ones after, each newest first.
-  return rows.sort(
-    (a, b) =>
-      Number(b.named) - Number(a.named) || Number(!!a.meta.archived) - Number(!!b.meta.archived) || b.meta.updatedAt - a.meta.updatedAt,
-  )
-})
+/** Every chat of every device with the text its title search runs on; a device's name finds its chats too. */
+const indexed = computed<IndexedChat[]>(() =>
+  sources.value.flatMap(({ id, name }) =>
+    useSessionsStore(id).metas.map((meta) => ({
+      key: chatKey(id, meta.id),
+      device: id,
+      deviceName: name,
+      meta,
+      text: searchText(meta.title, meta.preview, placeOf(id, meta), meta.cwd, name),
+    })),
+  ),
+)
+
+type ChatRow = ChatMatch<IndexedChat>
+
+const chatMatches = computed<ChatRow[]>(() => matchChats(indexed.value, terms.value, hits.value))
 
 const chatRows = computed<ChatRow[]>(() =>
   terms.value.length
     ? chatMatches.value.slice(0, MAX_CHATS)
-    : sessions.metas
-        .filter((meta) => !meta.archived)
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .slice(0, RECENT_CHATS)
-        .map((meta) => ({ meta, hit: null, named: true })),
+    : recentChats(indexed.value, RECENT_CHATS).map((item) => ({ ...item, hit: null, named: true })),
 )
 const hiddenChats = computed(() => (terms.value.length ? chatMatches.value.length - chatRows.value.length : 0))
 
-/** Projects by name and folder, only while searching: a new chat in one is a step away. */
-const projectRows = computed<Project[]>(() =>
+interface ProjectRow {
+  key: string
+  device: string | null
+  deviceName?: string
+  project: Project
+}
+
+/**
+ * Projects by name and folder, only while searching: a new chat in one is a step away. Another
+ * device's only if it lets this one start chats there.
+ */
+const projectRows = computed<ProjectRow[]>(() =>
   terms.value.length
-    ? projects.projects.filter((p) => containsTerms(searchText(p.name, p.path), terms.value)).slice(0, MAX_PROJECTS)
+    ? sources.value
+        .filter(startsChats)
+        .flatMap(({ id, name }) =>
+          useProjectsStore(id)
+            .projects.filter((p) => containsTerms(searchText(p.name, p.path, name), terms.value))
+            .map((project) => ({ key: chatKey(id, project.id), device: id, deviceName: name, project })),
+        )
+        .slice(0, MAX_PROJECTS)
     : [],
 )
 
@@ -116,24 +143,30 @@ watch([chatRows, projectRows], () => {
   })
 })
 
-function chatCount(project: Project): string {
-  const count = sessions.byProject(project.id).length
+function chatCount(row: ProjectRow): string {
+  const count = useSessionsStore(row.device).byProject(row.project.id).length
   return count === 1 ? '1 Chat' : `${count} Chats`
 }
+
+const stateOf = (row: ChatRow) => actionsOf(row.device).state(row.meta.id)
+
+/** On screen: the main area shows this chat of this device. */
+const isOpen = (row: ChatRow) => ui.view === 'chat' && shown.device === row.device && useSessionsStore(row.device).activeId === row.meta.id
 
 /** Who wrote the message a snippet is from. */
 function speaker(hit: SessionSearchHit): string {
   return hit.role === 'user' ? 'Du' : PROVIDERS[hit.provider].short
 }
 
-function openChat(meta: SessionMeta): void {
+/** On its device, as its row in the sidebar opens it. */
+function openChat(row: ChatRow): void {
   emit('done')
-  void chat.open(meta.id)
+  void actionsOf(row.device).open(row.meta.id)
 }
 
-function openProject(project: Project): void {
+function openProject(row: ProjectRow): void {
   emit('done')
-  chat.newChat(project.id)
+  actionsOf(row.device).newChat(row.project.id)
 }
 
 /** The other modes of the quick open, offered before anything is typed. */
@@ -184,18 +217,18 @@ const groupLabelClass = 'px-2 pt-2 pb-1 text-xs font-medium text-muted-foregroun
         {{ terms.length ? 'Chats' : 'Letzte Chats' }}
         <span v-if="terms.length" class="tabular-nums">· {{ chatMatches.length }}</span>
       </ListboxGroupLabel>
-      <ListboxItem v-for="row in chatRows" :key="row.meta.id" :value="`chat:${row.meta.id}`" :class="rowClass" @select="openChat(row.meta)">
+      <ListboxItem v-for="row in chatRows" :key="row.key" :value="`chat:${row.key}`" :class="rowClass" @select="openChat(row)">
         <span class="relative flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <Spinner v-if="chat.state(row.meta.id) === 'running'" class="size-4 text-primary" />
+          <Spinner v-if="stateOf(row) === 'running'" class="size-4 text-primary" />
           <ProviderIcon v-else :provider="row.meta.provider" class="size-4" />
           <span
-            v-if="chat.state(row.meta.id) && chat.state(row.meta.id) !== 'running'"
+            v-if="stateOf(row) && stateOf(row) !== 'running'"
             :class="
               cn(
                 'absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-popover',
-                chat.state(row.meta.id) === 'waiting' && 'bg-warning',
-                chat.state(row.meta.id) === 'unread' && 'bg-primary',
-                chat.state(row.meta.id) === 'error' && 'bg-destructive',
+                stateOf(row) === 'waiting' && 'bg-warning',
+                stateOf(row) === 'unread' && 'bg-primary',
+                stateOf(row) === 'error' && 'bg-destructive',
               )
             "
           />
@@ -204,10 +237,12 @@ const groupLabelClass = 'px-2 pt-2 pb-1 text-xs font-medium text-muted-foregroun
           <span class="flex min-w-0 items-center gap-2">
             <span class="min-w-0 truncate text-sm font-medium">{{ row.meta.title }}</span>
             <PinIcon v-if="row.meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
-            <span
-              v-if="ui.view === 'chat' && sessions.activeId === row.meta.id"
-              class="shrink-0 rounded-sm bg-primary/10 px-1.5 text-[11px] leading-4 font-medium text-primary"
-            >
+            <!-- Another device's chat, as „Angeheftet“ in the sidebar marks it. -->
+            <span v-if="row.deviceName" class="flex max-w-[40%] shrink-0 items-center gap-1 text-[11px] text-muted-foreground" :title="`Auf ${row.deviceName}`">
+              <MonitorIcon class="size-3 shrink-0" />
+              <span class="truncate">{{ row.deviceName }}</span>
+            </span>
+            <span v-if="isOpen(row)" class="shrink-0 rounded-sm bg-primary/10 px-1.5 text-[11px] leading-4 font-medium text-primary">
               Offen
             </span>
             <span v-if="row.meta.archived" class="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
@@ -219,7 +254,7 @@ const groupLabelClass = 'px-2 pt-2 pb-1 text-xs font-medium text-muted-foregroun
             <span class="font-medium text-foreground/80">{{ speaker(row.hit) }}:</span>
             {{ row.hit.snippet }}
           </span>
-          <span v-else class="truncate text-xs text-muted-foreground">{{ placeOf(row.meta) }}</span>
+          <span v-else class="truncate text-xs text-muted-foreground">{{ placeOf(row.device, row.meta) }}</span>
         </span>
         <span class="shrink-0 text-xs text-muted-foreground tabular-nums">{{ formatRelative(row.meta.updatedAt, now) }}</span>
       </ListboxItem>
@@ -231,15 +266,21 @@ const groupLabelClass = 'px-2 pt-2 pb-1 text-xs font-medium text-muted-foregroun
 
     <ListboxGroup v-if="projectRows.length">
       <ListboxGroupLabel :class="groupLabelClass">Projekte</ListboxGroupLabel>
-      <ListboxItem v-for="project in projectRows" :key="project.id" :value="`project:${project.id}`" :class="rowClass" @select="openProject(project)">
+      <ListboxItem v-for="row in projectRows" :key="row.key" :value="`project:${row.key}`" :class="rowClass" @select="openProject(row)">
         <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
           <FolderIcon class="size-4" />
         </span>
         <span class="flex min-w-0 flex-1 flex-col">
-          <span class="truncate text-sm font-medium">{{ project.name }}</span>
-          <span class="truncate text-xs text-muted-foreground">{{ project.path }}</span>
+          <span class="flex min-w-0 items-center gap-2">
+            <span class="min-w-0 truncate text-sm font-medium">{{ row.project.name }}</span>
+            <span v-if="row.deviceName" class="flex max-w-[40%] shrink-0 items-center gap-1 text-[11px] text-muted-foreground" :title="`Auf ${row.deviceName}`">
+              <MonitorIcon class="size-3 shrink-0" />
+              <span class="truncate">{{ row.deviceName }}</span>
+            </span>
+          </span>
+          <span class="truncate text-xs text-muted-foreground">{{ row.project.path }}</span>
         </span>
-        <span class="shrink-0 text-xs text-muted-foreground group-data-highlighted/row:hidden">{{ chatCount(project) }}</span>
+        <span class="shrink-0 text-xs text-muted-foreground group-data-highlighted/row:hidden">{{ chatCount(row) }}</span>
         <span class="hidden shrink-0 text-xs text-muted-foreground group-data-highlighted/row:inline">Neuer Chat</span>
       </ListboxItem>
     </ListboxGroup>

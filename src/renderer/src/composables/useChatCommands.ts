@@ -45,6 +45,8 @@ export function useChatCommands(options: {
   startRename: () => void
   /** `/status`'s dialog. */
   showStatus: () => void
+  /** `/rewind`'s dialog: what each prompt changed in the files. */
+  showChanges: () => void
 }) {
   const sessions = useSessionsStore()
   const accounts = useAccountsStore()
@@ -207,6 +209,8 @@ export function useChatCommands(options: {
         return chat.exportMarkdown(meta.id)
       case 'status':
         return options.showStatus()
+      case 'rewind':
+        return options.showChanges()
       case 'resume':
         return ui.openPalette('')
       case 'tasks':

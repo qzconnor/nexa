@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, SessionEvent } from '@shared/chat'
+import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { IpcEvent, IpcInvoke } from '@shared/ipc'
 import { parseRemoteResponse, RemoteKind, REMOTE_TEXT_LIMIT, WATCH_TTL_MS, type RemoteEvent, type RemoteLevel, type RemoteResponse } from '@shared/remote'
 import type { SessionDetail, SessionMeta } from '@shared/types'
@@ -37,6 +38,8 @@ function setup(levels: Record<string, RemoteLevel> = { laptop: 'read' }, enabled
   }
   const items = new Map<string, ChatItem[]>([['c1', [user('u1'), assistant('a1', 'Antwort')]]])
   const calls: { ch: string; args: unknown[] }[] = []
+  /** Who each call was for. */
+  const callers: string[] = []
   const handlers: Record<string, (...args: unknown[]) => unknown> = {
     [IpcInvoke.sessionsList]: () => [meta('c1'), meta('c2')],
     [IpcInvoke.sessionsOpen]: (id): SessionDetail => ({ meta: meta(id as string), items: items.get(id as string) ?? [], runtime: { status: 'idle', connected: false } }),
@@ -69,8 +72,9 @@ function setup(levels: Record<string, RemoteLevel> = { laptop: 'read' }, enabled
         state.levels[id] = 'off'
       },
     },
-    invoke: async (ch, args) => {
+    invoke: async (ch, args, from) => {
       calls.push({ ch, args })
+      callers.push(from)
       const handler = handlers[ch]
       if (!handler) throw new Error(`no handler for ${ch}`)
       return handler(...args)
@@ -91,7 +95,7 @@ function setup(levels: Record<string, RemoteLevel> = { laptop: 'read' }, enabled
   const bundles = (to = 'laptop') => sent.filter((s) => s.kind === RemoteKind.events && s.to === to).map((s) => (s.data as { events: RemoteEvent[] }).events)
   const events = (to = 'laptop') => bundles(to).flat()
   const fire = (event: SessionEvent) => host.onBroadcast(IpcEvent.sessionEvent, [event])
-  return { host, state, sent, calls, items, ask, invoke, bundles, events, fire }
+  return { host, state, sent, calls, callers, handlers, items, ask, invoke, bundles, events, fire }
 }
 
 beforeEach(() => {
@@ -482,6 +486,70 @@ describe('RemoteHost', () => {
     fire({ type: 'delta', sessionId: 'c1', itemId: 'a1', field: 'text', text: 'x' })
     await vi.advanceTimersByTimeAsync(150)
     expect(host.controllers()).toEqual([])
+  })
+
+  it('sends the file panel’s events only to devices that watch the folder or have the chat open, joined per folder', async () => {
+    const { ask, invoke, host, events, handlers } = setup({ laptop: 'read', tablet: 'read' })
+    handlers[FilesInvoke.watch] = () => undefined
+    handlers[FilesInvoke.gitWatch] = () => undefined
+    await ask('watch', { ids: ['c1'] })
+    await ask('watch', { ids: [] }, 'tablet')
+    expect(await invoke(FilesInvoke.watch, [[{ root: 'C:\\dev', dirs: [''] }]])).toEqual({ re: expect.any(String), r: null })
+    await invoke(FilesInvoke.gitWatch, [['C:\\dev']])
+
+    host.onBroadcast(FilesEvent.changed, ['C:\\dev', ['src'], false, false])
+    host.onBroadcast(FilesEvent.changed, ['C:\\other', [''], true, false])
+    host.onBroadcast(FilesEvent.touched, ['c1', [{ path: 'C:\\dev\\a.ts', kind: 'read' }]])
+    host.onBroadcast(FilesEvent.touched, ['c2', [{ path: 'C:\\dev\\b.ts', kind: 'read' }]])
+    host.onBroadcast(FilesEvent.changed, ['C:\\dev', ['lib'], true, false])
+    host.onBroadcast(FilesEvent.gitBranchChanged, ['C:\\dev', { name: 'main', detached: false }])
+    host.onBroadcast(FilesEvent.gitBranchChanged, ['C:\\other', { name: 'main', detached: false }])
+    await vi.advanceTimersByTimeAsync(150)
+    expect(events()).toEqual([
+      { ch: FilesEvent.touched, args: ['c1', [{ path: 'C:\\dev\\a.ts', kind: 'read' }]] },
+      { ch: FilesEvent.changed, args: ['C:\\dev', ['src', 'lib'], true, false] },
+      { ch: FilesEvent.gitBranchChanged, args: ['C:\\dev', { name: 'main', detached: false }] },
+    ])
+    expect(events('tablet')).toEqual([])
+  })
+
+  it('starts watching folders only for a device that watches, with who asks', async () => {
+    const { ask, invoke, calls, callers, handlers } = setup({ laptop: 'read' })
+    handlers[FilesInvoke.watch] = () => undefined
+    handlers[FilesInvoke.list] = () => ({ entries: [], omitted: 0 })
+    expect(await invoke(FilesInvoke.watch, [[{ root: 'C:\\dev', dirs: [''] }]])).toEqual({ re: expect.any(String), r: null })
+    expect(calls).toEqual([])
+    await ask('watch', { ids: [] })
+    await invoke(FilesInvoke.watch, [[{ root: 'C:\\dev', dirs: [''] }]])
+    await invoke(FilesInvoke.list, ['C:\\dev'])
+    expect(calls.map((c) => c.ch)).toEqual([FilesInvoke.watch, FilesInvoke.list])
+    expect(callers).toEqual(['laptop', 'laptop'])
+  })
+
+  it('lets go of what a device watched once its watch ends or starts anew', async () => {
+    const { ask, invoke, host, state, events, handlers } = setup({ laptop: 'read' })
+    handlers[FilesInvoke.watch] = () => undefined
+    const dropped: string[] = []
+    host.on('dropped', (id) => dropped.push(id))
+    await ask('watch', { ids: [] })
+    await invoke(FilesInvoke.watch, [[{ root: 'C:\\dev', dirs: [''] }]])
+    expect(await ask('watch', { ids: [] })).toMatchObject({ r: { renewed: true } })
+    expect(dropped).toEqual([])
+
+    // A fresh start: what it watched goes, until it asks again.
+    await ask('watch', { ids: [], fresh: true })
+    expect(dropped).toEqual(['laptop'])
+    host.onBroadcast(FilesEvent.changed, ['C:\\dev', [''], true, false])
+    await vi.advanceTimersByTimeAsync(150)
+    expect(events()).toEqual([])
+
+    await ask('unwatch')
+    await ask('watch', { ids: [] })
+    host.onDeviceStatus('laptop', false)
+    await ask('watch', { ids: [] })
+    state.levels.laptop = 'off'
+    host.onRemoteChanged()
+    expect(dropped).toEqual(['laptop', 'laptop', 'laptop', 'laptop'])
   })
 
   it('stops everything when disposed', async () => {

@@ -47,6 +47,17 @@ describe('McpAppViews', () => {
     expect(read).toHaveBeenCalledTimes(2)
   })
 
+  it('serves a page of another device’s chat apart from this device’s', async () => {
+    const views = new McpAppViews()
+    const local = await views.open('s1', 'tool-1', async () => page('<p>hier</p>'))
+    const fetch = vi.fn(async () => ({ html: '<p>dort</p>', meta: {} }))
+    const remote = await views.openRemote('laptop', 's1', 'tool-1', fetch)
+    expect(remote.url).not.toBe(local.url)
+    expect(await views.respond(remote.url).text()).toBe('<p>dort</p>')
+    await views.openRemote('laptop', 's1', 'tool-1', fetch)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('serves nothing at unknown addresses or other paths', async () => {
     const views = new McpAppViews()
     const { url } = await views.open('s1', 'tool-1', async () => page('<p>hi</p>'))

@@ -6,7 +6,7 @@ import { groupState, type ChatState, type GroupState } from '@/lib/chat-state'
 import { attempt, toastError } from '@/lib/errors'
 import { foldersOf, projectTree } from '@/lib/session-tree'
 import { useChatWindowsStore } from '@/stores/chat-windows'
-import { useDevice, useDeviceApi, useShownDeviceStore } from '@/stores/device'
+import { apiOf, useDevice, useShownDeviceStore } from '@/stores/device'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
@@ -16,15 +16,16 @@ export type { ChatState } from '@/lib/chat-state'
 
 /**
  * What the sidebar's chats and the quick open do with a chat, in one place: with the chats of the
- * device the component shows (`useDevice`), this one's or another's.
+ * device the component shows (`useDevice`), this one's or another's; or of `of`, for the quick open
+ * and the shortcuts, which list every device's chats outside any `DeviceScope`.
  */
-export function useChatActions() {
-  const sessions = useSessionsStore()
-  const projects = useProjectsStore()
+export function useChatActions(of?: string | null) {
+  const device = of === undefined ? useDevice() : of
+  const sessions = useSessionsStore(device)
+  const projects = useProjectsStore(device)
   const ui = useUiStore()
-  const removal = useChatRemoval()
-  const device = useDevice()
-  const api = useDeviceApi()
+  const removal = useChatRemoval(device)
+  const api = apiOf(device)
   const shown = useShownDeviceStore()
 
   function state(id: string): ChatState {

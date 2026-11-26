@@ -32,7 +32,9 @@ import { absolutePath, baseName, gitDecorations, parentPath, STATUS_CLASS, STATU
 import { spanOfComment, type ReviewComment } from '@/lib/review-comments'
 import { hasLanguage, highlightDiff, languageOf, loadLanguage } from '@/lib/syntax'
 import { cn } from '@/lib/utils'
-import { SEPARATOR, useFileTreeStore } from '@/stores/file-tree'
+import { useDevice, useDeviceApi } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
+import { useFileTreeStore } from '@/stores/file-tree'
 import DiffLineRow from './DiffLineRow.vue'
 import ImageDiff from './ImageDiff.vue'
 import ReviewBar from './ReviewBar.vue'
@@ -62,11 +64,19 @@ const openPath = useOpenFile()
 const { colors, fontSize, rowHeight, font } = useDiffStyle()
 // The tree of the folder: git's state for the file's mark, and the folders watched for changes.
 const model = useFileTreeModel(() => props.root)
+/**
+ * The file is on the device of the chat (`useDevice`): its calls go there. Staging and discarding
+ * change its files, which another device allows only with its full level; it opens only here.
+ */
+const device = useDevice()
+const api = useDeviceApi()
+const devices = useDevicesStore()
+const canWrite = computed(() => devices.can(device, 'full'))
 
 const name = computed(() => baseName(props.path))
 const dir = computed(() => parentPath(props.path))
 const icon = computed(() => fileIcon(props.path, { dir: false, link: false, broken: false }))
-const absolute = computed(() => absolutePath(props.root, props.path, SEPARATOR))
+const absolute = computed(() => absolutePath(props.root, props.path, fileTree.separatorOf(props.root)))
 const state = computed(() => gitDecorations(model.value.git).file(props.path))
 
 // ── Loading, and again whenever the file or git's state changes ──
@@ -98,7 +108,7 @@ async function load(): Promise<void> {
   const of = `${root}\0${path}\0${full.value}`
   loading.value = true
   try {
-    const next = await window.api.files.diff(root, path, full.value)
+    const next = await api.files.diff(root, path, full.value)
     if (id !== request) return
     error.value = null
     // The same as before (asked again after a commit, say): nothing is parsed, highlighted or loaded again.
@@ -119,7 +129,7 @@ async function load(): Promise<void> {
 
 async function loadWhole(id: number, root: string, path: string): Promise<void> {
   try {
-    const all = await window.api.files.diff(root, path, true)
+    const all = await api.files.diff(root, path, true)
     if (id !== request) return
     whole.value = all.patch && !all.tooLarge ? Object.freeze(parsePatch(all.patch).lines) : null
   } catch {
@@ -186,7 +196,7 @@ watch([() => props.root, dir], ([root, folder]) => {
 })
 
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
-const offChanged = window.api.files.onChanged((root, dirs, _git, repo) => {
+const offChanged = api.files.onChanged((root, dirs, _git, repo) => {
   if (root !== props.root || !(repo || dirs.includes(dir.value))) return
   if (reloadTimer) clearTimeout(reloadTimer)
   reloadTimer = setTimeout(() => {
@@ -427,7 +437,8 @@ const gitActions = useGitActions()
 
 /** Sections go one by one where the changes show as git wrote them; a new, deleted or moved file goes whole. */
 const hunksApart = computed(
-  () => mode.value === 'diff' && !full.value && !!diff.value?.repo && !/^(new file|deleted file|rename from) /m.test(diff.value.patch),
+  () =>
+    canWrite.value && mode.value === 'diff' && !full.value && !!diff.value?.repo && !/^(new file|deleted file|rename from) /m.test(diff.value.patch),
 )
 /** The number of each section by the index of its row. */
 const hunkNumbers = computed(() => {
@@ -530,7 +541,7 @@ const iconButton =
       </span>
       <Spinner v-if="loading && diff" class="size-[12px] shrink-0 text-muted-foreground" />
       <!-- Like the buttons of a changed file in VS Code's source control. -->
-      <template v-if="state">
+      <template v-if="state && canWrite">
         <Tooltip>
           <TooltipTrigger as-child>
             <button type="button" aria-label="Vormerken" :class="iconButton" @click="onFile('stage')">
@@ -579,7 +590,7 @@ const iconButton =
         </TooltipTrigger>
         <TooltipContent>{{ full ? 'Nur die Änderungen zeigen' : 'Ganze Datei zeigen' }}</TooltipContent>
       </Tooltip>
-      <Tooltip>
+      <Tooltip v-if="!device">
         <TooltipTrigger as-child>
           <button type="button" aria-label="Datei öffnen" :class="iconButton" :disabled="mode === 'missing'" @click="openFile">
             <ExternalLinkIcon class="size-[16px]" />
@@ -607,7 +618,7 @@ const iconButton =
       <span class="font-medium text-foreground">
         {{ mode === 'binary' ? 'Binärdatei, keine Textansicht.' : mode === 'tooLarge' ? 'Zu groß, um sie hier zu zeigen.' : 'Die Datei gibt es nicht.' }}
       </span>
-      <button v-if="mode !== 'missing'" type="button" class="cursor-pointer text-foreground underline-offset-2 hover:underline" @click="openFile">
+      <button v-if="mode !== 'missing' && !device" type="button" class="cursor-pointer text-foreground underline-offset-2 hover:underline" @click="openFile">
         Mit dem Standardprogramm öffnen
       </button>
     </div>

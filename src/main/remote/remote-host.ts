@@ -20,10 +20,12 @@ import {
   type RemoteRequest,
   type RemoteResponse,
 } from '@shared/remote'
+import type { RemoteChatRequest } from '@shared/remote-chats'
 import type { RemoteController } from '@shared/remote-ipc'
 import type { SessionDetail } from '@shared/types'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { MessageTooLargeError } from '../server-link/device-channel'
+import { FILES_EVENTS, isFilesEventFor, NO_FILES_WATCH, queueFilesEvent, watchedBy, type FilesWatch } from './remote-files'
 
 /** Events are bundled this long before they go, so streamed text costs a message per bundle. */
 const BATCH_MS = 100
@@ -47,8 +49,10 @@ export interface RemoteHostDeps {
     /** What the server takes, as it said at login. */
     limits(): ServerLimits
   }
-  /** A call of the window API, answered by the handlers the windows use (`invokeHandler`). */
-  invoke(channel: string, args: unknown[]): Promise<unknown>
+  /** A call of the window API by `from`, answered by the handlers the windows use (`invokeHandler`). */
+  invoke(channel: string, args: unknown[], from: string): Promise<unknown>
+  /** A request of another device's chat tools (`chats.*`, remote-chats.ts), past the level; none: refused. */
+  chats?: (from: string, request: RemoteChatRequest) => Promise<unknown>
   version: string
   log?: (message: string) => void
 }
@@ -62,9 +66,12 @@ interface Watcher {
   flush: ReturnType<typeof setTimeout> | null
   /** What the device has of each list event (`LIST_EVENTS`): its entries by id, as JSON. */
   lists: Map<string, Map<string, string>>
+  /** The folders whose changes and branch the device gets (its file panel). */
+  files: FilesWatch
 }
 
-class Refused extends Error {
+/** A refusal with its code for the asking device (else a thrown error goes as `failed`). */
+export class Refused extends Error {
   constructor(readonly body: RemoteErrorBody) {
     super(body.message)
   }
@@ -76,7 +83,11 @@ class Refused extends Error {
  * and sends the devices that watch it its windows' events, bundled. Off until the user turns it on
  * (Einstellungen › Geräte); every call is checked here, whatever the other side believes.
  */
-export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteController[]] }> {
+export class RemoteHost extends TypedEmitter<{
+  changed: [controllers: RemoteController[]]
+  /** What the device watched of the files goes: it stopped watching, or starts anew (`fresh`). */
+  dropped: [device: string]
+}> {
   private readonly watchers = new Map<string, Watcher>()
   /** Message ids of sent bundles, with the device they went to. */
   private readonly sent = new Map<string, string>()
@@ -133,6 +144,10 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
       const event = args[0] as SessionEvent
       for (const watcher of this.watchers.values()) {
         if (event.type === 'runtime' || watcher.ids.has(event.sessionId)) this.queueSession(watcher, event)
+      }
+    } else if (FILES_EVENTS.has(channel)) {
+      for (const watcher of this.watchers.values()) {
+        if (isFilesEventFor(channel, args, watcher.files, watcher.ids)) watcher.queue = queueFilesEvent(watcher.queue, channel, args)
       }
     } else {
       // The newest state of a list or the settings is all that counts: it replaces one still waiting.
@@ -195,6 +210,10 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
         return null
       case 'invoke':
         return this.invoke(from, request.p.ch, request.p.args)
+      default:
+        // `chats.*`: the setting „Nachrichten zwischen Chats“ and the other checks follow there.
+        if (!this.deps.chats) throw new Refused({ code: 'forbidden', message: 'messages between chats are not available there.' })
+        return this.deps.chats(from, request)
     }
   }
 
@@ -203,9 +222,19 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
       // Bytes don't go as JSON: the picture comes as base64.
       const [data, mime] = args
       if (typeof data !== 'string' || data.length > MAX_IMAGE_BASE64) throw new Refused({ code: 'bad-request', message: 'no picture' })
-      return this.deps.invoke(channel, [Buffer.from(data, 'base64'), mime])
+      return this.deps.invoke(channel, [Buffer.from(data, 'base64'), mime], from)
     }
-    const result = await this.deps.invoke(channel, args)
+    const watched = watchedBy(channel, args)
+    if (watched) {
+      // Without a watch of the device its file events wouldn't go to it, and nothing would end its
+      // watching of folders: none begins. Once it watches it reads anew (`renewed` false) and asks again.
+      const watcher = this.watchers.get(from)
+      if (!watcher) return null
+      await this.deps.invoke(channel, args, from)
+      watcher.files = { ...watcher.files, ...watched }
+      return null
+    }
+    const result = await this.deps.invoke(channel, args, from)
     if (channel !== IpcInvoke.sessionsOpen) return result
     // From now on the chat's events go to the device; what still waited for it is in the answer, which
     // leaves before the next bundle (a chat still loading on the other side ignores what came before).
@@ -223,14 +252,17 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
   private watch(from: string, ids: string[], fresh: boolean): boolean {
     let watcher = this.watchers.get(from)
     if (watcher && fresh) {
-      // The device starts anew: its lists come whole again, nothing waiting from before.
+      // The device starts anew: its lists come whole again, nothing waiting from before, and it asks
+      // again for the folders it shows.
       watcher.lists.clear()
       watcher.queue = []
+      watcher.files = NO_FILES_WATCH
+      this.emit('dropped', from)
     }
     const existed = !!watcher
     if (watcher) clearTimeout(watcher.expiry)
     else {
-      watcher = { ids: new Set(), since: Date.now(), expiry: undefined as never, queue: [], flush: null, lists: new Map() }
+      watcher = { ids: new Set(), since: Date.now(), expiry: undefined as never, queue: [], flush: null, lists: new Map(), files: NO_FILES_WATCH }
       this.watchers.set(from, watcher)
     }
     watcher.ids = new Set(ids)
@@ -248,6 +280,7 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
     clearTimeout(watcher.expiry)
     if (watcher.flush) clearTimeout(watcher.flush)
     this.watchers.delete(id)
+    this.emit('dropped', id)
     if (announce) this.emit('changed', this.controllers())
   }
 

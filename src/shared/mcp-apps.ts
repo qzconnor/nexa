@@ -25,6 +25,10 @@ export const McpAppsInvoke = {
   callTool: 'mcp-apps:call-tool',
   /** A resource of the page's server (`resources/read`). */
   readResource: 'mcp-apps:read-resource',
+  /** The page of a tool item with the tool's result, for another device's window (Remote Control). */
+  page: 'mcp-apps:page',
+  /** The page of a tool item of another device's chat, fetched from there and served here. */
+  openRemote: 'mcp-apps:open-remote',
 } as const
 
 export type McpAppVisibility = 'model' | 'app'
@@ -66,8 +70,17 @@ export interface McpAppOpened {
   prefersBorder: boolean | null
 }
 
+/** A page as the host gives it to another device (`mcp-apps:page`): the chat there doesn't carry results. */
+export interface McpAppRemotePage {
+  html: string
+  meta: Record<string, unknown>
+  result: McpAppToolResult | null
+}
+
 export interface McpAppsApi {
   open(sessionId: string, itemId: string): Promise<McpAppOpened>
+  /** The page of a tool item in a chat of another device, with the tool's result (which its chat there leaves out). */
+  openRemote(device: string, sessionId: string, itemId: string): Promise<McpAppOpened & { result: McpAppToolResult | null }>
   callTool(sessionId: string, itemId: string, name: string, args: Record<string, unknown>): Promise<McpAppToolResult>
   readResource(sessionId: string, itemId: string, uri: string): Promise<unknown>
 }

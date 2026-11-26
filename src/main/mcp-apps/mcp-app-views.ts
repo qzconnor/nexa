@@ -61,8 +61,19 @@ export class McpAppViews {
   private readonly tokens = new Map<string, string>()
 
   /** The address of a tool item's page, read with `read` unless Nexa still holds it. */
-  async open(sessionId: string, itemId: string, read: () => Promise<unknown>): Promise<McpAppOpened> {
-    const key = `${sessionId}\n${itemId}`
+  open(sessionId: string, itemId: string, read: () => Promise<unknown>): Promise<McpAppOpened> {
+    return this.serve(`${sessionId}\n${itemId}`, async () => appPageOf(await read()))
+  }
+
+  /**
+   * The address of a page of another device's chat (`fetch` gets it from there): served from here, with
+   * the CSP it asks for, as the pages of this device's chats are.
+   */
+  openRemote(device: string, sessionId: string, itemId: string, fetch: () => Promise<McpAppPage>): Promise<McpAppOpened> {
+    return this.serve(`${device}\n${sessionId}\n${itemId}`, fetch)
+  }
+
+  private async serve(key: string, fetch: () => Promise<McpAppPage>): Promise<McpAppOpened> {
     const held = this.tokens.get(key)
     const view = held ? this.views.get(held) : undefined
     if (held && view) {
@@ -71,7 +82,7 @@ export class McpAppViews {
       this.views.set(held, view)
       return { url: this.url(held), prefersBorder: view.prefersBorder }
     }
-    const page = appPageOf(await read())
+    const page = await fetch()
     const token = randomUUID()
     const prefersBorder = prefersBorderOf(page.meta)
     this.views.set(token, { key, html: page.html, csp: mcpAppCsp(cspOf(page.meta)), prefersBorder })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem } from './chat'
-import { FilesInvoke } from './files-ipc'
+import { FilesEvent, FilesInvoke } from './files-ipc'
 import { IpcEvent, IpcInvoke } from './ipc'
 import {
   applyDiff,
@@ -40,12 +40,33 @@ describe('channelLevel', () => {
     expect(channelLevel(IpcInvoke.sessionsOpen, ['c1'])).toBe('read')
     expect(channelLevel(IpcInvoke.sessionsSend, ['c1', { text: 'Los' }])).toBe('prompt')
     expect(channelLevel(IpcInvoke.projectsArrange, [])).toBe('prompt')
-    expect(channelLevel(FilesInvoke.searchList, ['F:\\nexa'])).toBe('prompt')
     expect(channelLevel(IpcInvoke.appSaveImage, ['aGFsbG8=', 'image/png'])).toBe('prompt')
     expect(channelLevel(IpcInvoke.settingsUpdate, [{}])).toBe('full')
     expect(channelLevel(IpcInvoke.sessionsRespond, [])).toBe('full')
     expect(channelLevel(IpcInvoke.sessionsRunShell, [])).toBe('full')
     expect(channelLevel(IpcInvoke.projectsRemove, ['p1'])).toBe('full')
+  })
+
+  it('lets the file panel read the chats’ folders and change their files only with the full level', () => {
+    const read = [
+      FilesInvoke.list,
+      FilesInvoke.status,
+      FilesInvoke.searchList,
+      FilesInvoke.watch,
+      FilesInvoke.diff,
+      FilesInvoke.reviewBase,
+      FilesInvoke.grep,
+      FilesInvoke.history,
+      FilesInvoke.gitBranch,
+      FilesInvoke.gitWatch,
+      FilesInvoke.gitWebUrl,
+      FilesInvoke.gitMainWorktree,
+    ]
+    for (const ch of read) expect(channelLevel(ch, ['F:\\nexa'])).toBe('read')
+    const write = [FilesInvoke.create, FilesInvoke.rename, FilesInvoke.trash, FilesInvoke.stage, FilesInvoke.unstage, FilesInvoke.discard, FilesInvoke.hunk]
+    for (const ch of write) expect(channelLevel(ch, ['F:\\nexa', 'a.ts'])).toBe('full')
+    // Whether a folder can get a worktree is the host's own business.
+    expect(channelLevel(FilesInvoke.gitWorktreeCheck, ['F:\\nexa'])).toBeNull()
   })
 
   it('lets nothing else through: the host’s windows, dialogs, files and terminals stay its own', () => {
@@ -224,6 +245,27 @@ describe('parseRemoteEvents', () => {
     ])
   })
 
+  it('takes the file panel’s events only in the shapes it reads', () => {
+    const changed = { ch: FilesEvent.changed, args: ['F:\\nexa', ['', 'src'], true, false] }
+    const touched = { ch: FilesEvent.touched, args: ['s', [{ path: 'F:\\nexa\\a.ts', kind: 'write' }]] }
+    const branch = { ch: FilesEvent.gitBranchChanged, args: ['F:\\nexa', { name: 'main', detached: false }] }
+    const noBranch = { ch: FilesEvent.gitBranchChanged, args: ['F:\\nexa', null] }
+    const events = parseRemoteEvents({
+      events: [
+        changed,
+        touched,
+        branch,
+        noBranch,
+        { ch: FilesEvent.changed, args: ['F:\\nexa', 'src', true, false] },
+        { ch: FilesEvent.changed, args: [1, [], true, false] },
+        { ch: FilesEvent.touched, args: ['s', [{ path: 1, kind: 'write' }]] },
+        { ch: FilesEvent.touched, args: ['s'] },
+        { ch: FilesEvent.gitBranchChanged, args: ['F:\\nexa', 'main'] },
+      ],
+    })
+    expect(events).toEqual([changed, touched, branch, noBranch])
+  })
+
   it('refuses what has no events at all', () => {
     expect(parseRemoteEvents(null)).toBeNull()
     expect(parseRemoteEvents({ events: 'x' })).toBeNull()
@@ -306,9 +348,11 @@ describe('slimItem', () => {
     expect(slim.output!.endsWith('ENDE')).toBe(true)
     expect(slim.output!.startsWith('… (gekürzt)\n')).toBe(true)
     expect(slim.output!.length).toBeLessThan(REMOTE_TEXT_LIMIT + 20)
-    expect(slim.app).toBeUndefined()
+    // The page's reference stays: the window fetches the page (and the result) from the device.
+    expect(slim.app).toEqual({ resourceUri: 'ui://x', server: 'srv' })
     const withImage = slimItem({ ...user('u1'), images: ['C:\\bild.png'] } as ChatItem) as Extract<ChatItem, { kind: 'user' }>
-    expect(withImage.images).toBeUndefined()
+    // The pictures stay as their paths there: the window fetches them with `sessions:image`.
+    expect(withImage.images).toEqual(['C:\\bild.png'])
     expect(withImage.text).toBe('Hallo')
   })
 

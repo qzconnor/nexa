@@ -14,9 +14,9 @@ const UNDO_MS = 8000
  * Deleting chats: they leave every list at once and go for good when the toast does, unless
  * „Rückgängig“ was clicked; only then do their CLIs' conversations go into the recycle bin.
  */
-export function useChatRemoval() {
-  const sessions = useSessionsStore()
-  const settings = useSettingsStore()
+export function useChatRemoval(device?: string | null) {
+  const sessions = useSessionsStore(device)
+  const settings = useSettingsStore(device)
   const ui = useUiStore()
 
   /** Several chats are confirmed first: a slip in a list takes more than one. Whether they went. */

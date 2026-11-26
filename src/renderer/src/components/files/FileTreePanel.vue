@@ -87,7 +87,9 @@ import { separatorValue } from '@/lib/separator-keys'
 import { isMenuKey, openMenuBelow } from '@/lib/tab-keys'
 import { cn } from '@/lib/utils'
 import { useComposerStore } from '@/stores/composer'
-import { DEFAULT_TREE_WIDTH, MAX_TREE_WIDTH, MIN_TREE_WIDTH, SEPARATOR, useFileTreeStore, type TreeTarget } from '@/stores/file-tree'
+import { useDevice, useDeviceApi } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
+import { DEFAULT_TREE_WIDTH, MAX_TREE_WIDTH, MIN_TREE_WIDTH, useFileTreeStore, type TreeTarget } from '@/stores/file-tree'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import FileContentResults from './FileContentResults.vue'
@@ -116,8 +118,20 @@ const ui = useUiStore()
 const composer = useComposerStore()
 const openPath = useOpenFile()
 const model = useFileTreeModel(() => props.target.root)
+/**
+ * The tree is of the folder on the device of the chat (`useDevice`): its calls go there. Changing its
+ * files takes that device's full level, a mention its prompt level; what opens in this computer's
+ * programs (Explorer, the default program, dragging out) is only for this device's own trees.
+ */
+const device = useDevice()
+const api = useDeviceApi()
+const devices = useDevicesStore()
+const local = device === null
+const canWrite = computed(() => devices.can(device, 'full'))
+const canPrompt = computed(() => devices.can(device, 'prompt'))
 
-const windows = isWindows
+/** Paths of the folder's system: another device may run another one. */
+const windows = computed(() => (local ? isWindows : fileTree.separatorOf(props.target.root) === '\\'))
 const explorer = fileManagerLabel
 const rootName = computed(() => folderName(props.target.root))
 
@@ -175,7 +189,7 @@ const changesTooltip = computed(() => summary.value.map((item) => `${STATUS_LABE
 const recorded = computed(() => {
   const files = new Map<string, TouchRecord>()
   for (const [absolute, record] of fileTree.activityOf(props.target.id) ?? []) {
-    const path = treePathOf(props.target.root, absolute, windows)
+    const path = treePathOf(props.target.root, absolute, windows.value)
     if (path) files.set(path, record)
   }
   return files
@@ -446,7 +460,7 @@ const touched = computed(() => {
   const files = new Map<string, FileTouchKind>()
   const folders = new Map<string, FileTouchKind>()
   for (const [absolute, touch] of list) {
-    const path = treePathOf(props.target.root, absolute, windows)
+    const path = treePathOf(props.target.root, absolute, windows.value)
     if (!path) continue
     files.set(path, touch.kind)
     for (const dir of ancestors(path)) {
@@ -557,7 +571,7 @@ function select(path: string | null, scroll = true) {
   if (path && scroll) void nextTick(() => revealRow(path))
 }
 
-const abs = (path: string) => absolutePath(props.target.root, path, SEPARATOR)
+const abs = (path: string) => absolutePath(props.target.root, path, fileTree.separatorOf(props.target.root))
 
 function toggleDir(path: string, open?: boolean) {
   const m = model.value
@@ -648,11 +662,11 @@ function onRowClick(row: TreeRow) {
 }
 
 function onRowDoubleClick(row: TreeRow) {
-  if (row.kind === 'entry' && !row.entry.dir) openFile(row.path)
+  if (local && row.kind === 'entry' && !row.entry.dir) openFile(row.path)
 }
 
 function onDragStart(event: DragEvent, row: TreeRow) {
-  if (row.kind !== 'entry' || !event.dataTransfer) return
+  if (!local || row.kind !== 'entry' || !event.dataTransfer) return
   const path = abs(row.path)
   event.dataTransfer.setData(FILE_TREE_DRAG_TYPE, path)
   event.dataTransfer.setData('text/plain', path)
@@ -716,11 +730,11 @@ function onListKeydown(event: KeyboardEvent) {
       } else showDiff(current.path)
       break
     case 'F2':
-      if (!current || isGone(current.path)) return
+      if (!current || isGone(current.path) || !canWrite.value) return
       rename(current.path, current.entry.dir)
       break
     case 'Delete':
-      if (!current || isGone(current.path)) return
+      if (!current || isGone(current.path) || !canWrite.value) return
       void trash(current.path, current.entry.dir)
       break
     case 'Escape':
@@ -894,7 +908,7 @@ async function trash(path: string, dir: boolean) {
   const inside = (other: string) => other === path || other.startsWith(`${path}/`)
   const next = list.slice(index + 1).find((row) => !inside(row.path)) ?? list[index - 1]
   const done = await attempt(async () => {
-    await window.api.files.trash(props.target.root, path)
+    await api.files.trash(props.target.root, path)
     return true
   }, 'Nicht in den Papierkorb verschoben')
   if (!done) return
@@ -997,16 +1011,18 @@ const iconButton =
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" class="w-60">
-          <DropdownMenuItem @select="create('file', '')">
-            <FilePlusIcon />
-            Neue Datei…
-          </DropdownMenuItem>
-          <DropdownMenuItem @select="create('folder', '')">
-            <FolderPlusIcon />
-            Neuer Ordner…
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem @select="openFolder('')">
+          <template v-if="canWrite">
+            <DropdownMenuItem @select="create('file', '')">
+              <FilePlusIcon />
+              Neue Datei…
+            </DropdownMenuItem>
+            <DropdownMenuItem @select="create('folder', '')">
+              <FolderPlusIcon />
+              Neuer Ordner…
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </template>
+          <DropdownMenuItem v-if="local" @select="openFolder('')">
             <FolderOpenIcon />
             Im {{ explorer }} öffnen
           </DropdownMenuItem>
@@ -1214,7 +1230,7 @@ const iconButton =
                 :aria-level="view.row.depth + 1"
                 :aria-expanded="view.row.entry.dir ? view.row.expanded : undefined"
                 :aria-selected="selected === view.row.path"
-                draggable="true"
+                :draggable="local"
                 :class="
                   cn(
                     'group/row absolute inset-x-0 top-0 cursor-pointer',
@@ -1241,14 +1257,14 @@ const iconButton =
                   :data-touch="view.touch ?? view.touchInside ?? undefined"
                   :class="
                     cn(
-                      'absolute inset-x-[6px] inset-y-px flex items-center rounded-md pr-1.5 transition-[background-color,box-shadow] duration-300',
+                      'file-tree-pill absolute inset-x-[6px] inset-y-px flex items-center rounded-md pr-1.5 transition-[background-color,box-shadow] duration-300',
                       selected === view.row.path
                         ? cn('bg-foreground/8 shadow-sm ring-1', listFocused ? 'ring-ring/60' : 'ring-foreground/12')
                         : 'group-hover/row:bg-foreground/5',
                       view.touch && 'file-tree-touch-row',
                     )
                   "
-                  :style="{ paddingLeft: `${PAD + view.row.depth * INDENT}px` }"
+                  :style="{ paddingLeft: `${PAD + view.row.depth * INDENT}px`, '--row-start': `${PAD + view.row.depth * INDENT + CHEVRON}px` }"
                 >
                   <span class="flex shrink-0 justify-center" :style="{ width: `${CHEVRON}px` }">
                     <ChevronRightIcon
@@ -1344,7 +1360,7 @@ const iconButton =
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent class="w-64" @close-auto-focus="onMenuCloseFocus">
-        <ContextMenuItem v-if="menuTarget.path" @select="mention(menuTarget.path, menuTarget.dir)">
+        <ContextMenuItem v-if="menuTarget.path && canPrompt" @select="mention(menuTarget.path, menuTarget.dir)">
           <AtSignIcon />
           Im Chat erwähnen
         </ContextMenuItem>
@@ -1352,23 +1368,25 @@ const iconButton =
           <GitCompareIcon />
           Änderungen zeigen
         </ContextMenuItem>
-        <ContextMenuItem v-if="!menuTarget.dir" @select="openFile(menuTarget.path)">
-          <ExternalLinkIcon />
-          Mit Standardprogramm öffnen
-        </ContextMenuItem>
-        <ContextMenuItem v-else @select="openFolder(menuTarget.path)">
-          <FolderOpenIcon />
-          Im {{ explorer }} öffnen
-        </ContextMenuItem>
-        <ContextMenuItem v-if="menuTarget.path" @select="showItem(menuTarget.path)">
-          <SearchIcon />
-          Im {{ explorer }} zeigen
-        </ContextMenuItem>
+        <template v-if="local">
+          <ContextMenuItem v-if="!menuTarget.dir" @select="openFile(menuTarget.path)">
+            <ExternalLinkIcon />
+            Mit Standardprogramm öffnen
+          </ContextMenuItem>
+          <ContextMenuItem v-else @select="openFolder(menuTarget.path)">
+            <FolderOpenIcon />
+            Im {{ explorer }} öffnen
+          </ContextMenuItem>
+          <ContextMenuItem v-if="menuTarget.path" @select="showItem(menuTarget.path)">
+            <SearchIcon />
+            Im {{ explorer }} zeigen
+          </ContextMenuItem>
+        </template>
         <ContextMenuItem v-if="searching && menuTarget.path" @select="showInTree(menuTarget.path, false)">
           <ListTreeIcon />
           Im Baum zeigen
         </ContextMenuItem>
-        <template v-if="menuState">
+        <template v-if="menuState && canWrite">
           <ContextMenuSeparator />
           <ContextMenuItem @select="onGit('stage', menuTarget.path)">
             <PlusIcon />
@@ -1383,16 +1401,18 @@ const iconButton =
             {{ menuState.status === 'deleted' ? 'Wiederherstellen…' : 'Änderungen verwerfen…' }}
           </ContextMenuItem>
         </template>
-        <ContextMenuSeparator />
-        <ContextMenuItem @select="create('file', menuFolder)">
-          <FilePlusIcon />
-          Neue Datei…
-        </ContextMenuItem>
-        <ContextMenuItem @select="create('folder', menuFolder)">
-          <FolderPlusIcon />
-          Neuer Ordner…
-        </ContextMenuItem>
-        <template v-if="menuTarget.path && !isGone(menuTarget.path)">
+        <template v-if="canWrite">
+          <ContextMenuSeparator />
+          <ContextMenuItem @select="create('file', menuFolder)">
+            <FilePlusIcon />
+            Neue Datei…
+          </ContextMenuItem>
+          <ContextMenuItem @select="create('folder', menuFolder)">
+            <FolderPlusIcon />
+            Neuer Ordner…
+          </ContextMenuItem>
+        </template>
+        <template v-if="canWrite && menuTarget.path && !isGone(menuTarget.path)">
           <ContextMenuItem @select="rename(menuTarget.path, menuTarget.dir)">
             <PencilIcon />
             Umbenennen…

@@ -14,6 +14,7 @@ import {
   PencilIcon,
   PowerIcon,
   RefreshCwIcon,
+  RotateCcwIcon,
   RotateCwIcon,
   SearchIcon,
   SquareArrowDownLeftIcon,
@@ -27,6 +28,7 @@ import { useElementSize, useEventListener } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import { computed, nextTick, ref, watch } from 'vue'
 import { PROVIDER_IDS, type AgentItem, type ChatItem, type TodoItem } from '@shared/chat'
+import type { ChatChanges } from '@shared/checkpoints'
 import type { SessionUpdateInput } from '@shared/types'
 import { PROVIDERS } from '@shared/providers'
 import BrowserFind from '@/components/browser/BrowserFind.vue'
@@ -75,6 +77,8 @@ import { useUiStore } from '@/stores/ui'
 import AgentDock from './AgentDock.vue'
 import AgentThread from './AgentThread.vue'
 import ChatStatusDialog from './ChatStatusDialog.vue'
+import PromptChangesDialog from './PromptChangesDialog.vue'
+import { provideChatChanges } from '@/composables/useChatChanges'
 import Composer from './Composer.vue'
 import LimitBanner from './LimitBanner.vue'
 import MessageList from './MessageList.vue'
@@ -142,7 +146,9 @@ watch(terminalOpen, (open, before) => {
 
 const area = ref<HTMLElement | null>(null)
 const { width: areaWidth } = useElementSize(area)
-const treeTarget = computed(() => (device ? null : fileTree.targetOf(meta.value?.id)))
+/** Another device's chat has its files there (Remote Control): shown while that device lets this one read them. */
+const canRead = computed(() => devices.can(device, 'read'))
+const treeTarget = computed(() => (canRead.value ? fileTree.targetOf(meta.value?.id) : null))
 const treeShown = computed(() => fileTree.open && !!treeTarget.value)
 /** The tree takes at most a share of the chat's area, so the chat keeps room. */
 const treeMax = computed(() => Math.max(180, Math.round(areaWidth.value * MAX_TREE_SHARE)))
@@ -391,7 +397,68 @@ function update(patch: SessionUpdateInput): void {
 
 const composer = ref<InstanceType<typeof Composer> | null>(null)
 const statusOpen = ref(false)
-const commands = useChatCommands({ meta, items, cwd, composer, startRename: () => void startRename(), showStatus: () => (statusOpen.value = true) })
+
+// ── What each prompt changed in the files (Nexa's checkpoints), and rewinding to before one ──
+
+const changes = ref<ChatChanges | null>(null)
+const changesOpen = ref(false)
+const changesFocus = ref<string | null>(null)
+const changesRewind = ref<string | null>(null)
+const checkpointed = computed(() => new Set(changes.value?.prompts.filter((p) => !p.unavailable).map((p) => p.promptId)))
+
+/** `live` only while the dialog shows: the running turn's files need a snapshot of the folders now. */
+async function loadChanges(): Promise<void> {
+  const id = meta.value?.id
+  if (!id) return
+  const next = await api.sessions.changes(id, changesOpen.value).catch(() => null)
+  if (meta.value?.id === id) changes.value = next
+}
+
+// A turn's end counts what its prompt changed (`fileChanges`), a prompt begins a checkpoint, a rewind leaves a note.
+const changeStamp = computed(() => {
+  const list = items.value
+  const last = list.findLast((i) => i.kind === 'user' || (i.kind === 'turn' && !!i.fileChanges) || (i.kind === 'notice' && !!i.rewind))
+  return `${meta.value?.id ?? ''}|${last?.id ?? ''}|${last?.kind === 'turn' ? (last.fileChanges?.files ?? 0) : ''}`
+})
+watch(changeStamp, () => void loadChanges(), { immediate: true })
+watch(
+  () => meta.value?.id,
+  () => {
+    changes.value = null
+    changesOpen.value = false
+  },
+)
+
+/** The prompt a turn answered: the last one before it with a checkpoint (prompts joining the turn have none). */
+function promptOfTurn(turnId: string): string | null {
+  const list = items.value
+  const at = list.findIndex((i) => i.id === turnId)
+  for (let i = at - 1; i >= 0; i--) {
+    const item = list[i]!
+    if (item.kind === 'user' && checkpointed.value.has(item.id)) return item.id
+    if (item.kind === 'turn') break
+  }
+  return null
+}
+
+function openChanges(at?: { promptId?: string; turnId?: string }): void {
+  changesFocus.value = at?.promptId ?? (at?.turnId ? promptOfTurn(at.turnId) : null)
+  changesRewind.value = null
+  changesOpen.value = true
+  void loadChanges()
+}
+
+provideChatChanges({
+  has: (promptId) => checkpointed.value.has(promptId),
+  show: openChanges,
+  rewind: (promptId) => {
+    changesFocus.value = promptId
+    changesRewind.value = promptId
+    changesOpen.value = true
+  },
+})
+
+const commands = useChatCommands({ meta, items, cwd, composer, startRename: () => void startRename(), showStatus: () => (statusOpen.value = true), showChanges: () => openChanges() })
 
 function runCommand(input: { command: AppCommand; args: string }): void {
   void commands.run(input.command, input.args)
@@ -510,7 +577,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <!-- Header -->
       <div class="flex h-11 shrink-0 items-center gap-2 border-b px-4">
         <Button
-          v-if="!device"
+          v-if="canRead"
           variant="ghost"
           size="icon-sm"
           :class="cn('-ml-2', treeShown && 'bg-muted')"
@@ -614,6 +681,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit {{ syncNames }} abgleichen</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
               <DropdownMenuItem v-if="!device" @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
+              <DropdownMenuItem @select="openChanges()"><RotateCcwIcon /> Änderungen je Prompt …</DropdownMenuItem>
               <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
               <DropdownMenuItem :disabled="restarting" @select="restart"><RotateCwIcon /> Chat neu starten</DropdownMenuItem>
               <DropdownMenuItem v-if="!device" @select="popOut">
@@ -694,7 +762,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               </li>
               <li>Bilder einfügen oder ins Feld ziehen hängt sie an</li>
               <li v-if="deviceName">Der Chat läuft auf {{ deviceName }}</li>
-              <li v-if="treeTarget">Dateien aus dem Baum ins Feld ziehen erwähnt sie · <Kbd>Strg</Kbd> + <Kbd>Umschalt</Kbd> + <Kbd>E</Kbd></li>
+              <li v-if="treeTarget && !device">Dateien aus dem Baum ins Feld ziehen erwähnt sie · <Kbd>Strg</Kbd> + <Kbd>Umschalt</Kbd> + <Kbd>E</Kbd></li>
+              <li v-else-if="treeTarget">Die Dateien des Chats zeigt <Kbd>Strg</Kbd> + <Kbd>Umschalt</Kbd> + <Kbd>E</Kbd></li>
             </ul>
           </div>
         </div>
@@ -828,5 +897,15 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <BrowserPanel :session-id="meta.id" />
     </template>
     <ChatStatusDialog v-model:open="statusOpen" :meta="meta" :runtime="runtime" :cwd="cwd" />
+    <PromptChangesDialog
+      v-model:open="changesOpen"
+      :session-id="meta.id"
+      :items="items"
+      :state="changes"
+      :focus="changesFocus"
+      :rewind-to="changesRewind"
+      :busy="busy"
+      @changed="loadChanges"
+    />
   </div>
 </template>
