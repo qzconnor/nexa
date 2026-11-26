@@ -122,6 +122,45 @@ describe('Remote Control over the server', () => {
     ])
   })
 
+  it('stays within a server that takes only small messages, without losing the connection', async () => {
+    server.limits = { maxMessageBytes: 48 * 1024, rateLimit: 100 }
+    const { desktop, laptop } = await pair()
+    expect(desktop.link.limits()).toEqual({ maxMessageBytes: 48 * 1024, rateLimit: 100 })
+    await desktop.link.setRemoteEnabled(true)
+    // A long chat with long answers, umlauts and all.
+    for (let i = 0; i < 60; i++) desktop.sessions.items.push({ kind: 'assistant', id: `x${i}`, ts: 10 + i, provider: 'claude', text: 'Größe '.repeat(2_000) })
+    const client = laptop.remote.client
+    const events: RemoteEvent[] = []
+    client.on('events', (_instance, list) => events.push(...list))
+    client.setWatch([{ instance: desktop.instance, ids: ['c1'] }])
+
+    const page = await client.request(desktop.instance, 'open', { id: 'c1' })
+    expect(page.total).toBe(62)
+    expect(page.items.length).toBeGreaterThan(0)
+    expect(page.start).toBeGreaterThan(0)
+    const older = await client.request(desktop.instance, 'open', { id: 'c1', before: page.start })
+    expect(older.start).toBeLessThan(page.start)
+
+    // An answer far larger than a message: it arrives cut, as an event.
+    desktop.sessions.fire({ type: 'item', sessionId: 'c1', item: { kind: 'assistant', id: 'big', ts: 99, provider: 'claude', text: 'Ü'.repeat(200_000) } })
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'item' && e.item.id === 'big')).toBe(true))
+    expect(server.oversized).toBe(0)
+    expect(laptop.link.getState().status).toBe('online')
+    expect(desktop.link.getState().status).toBe('online')
+  })
+
+  it('tells a device that doesn’t keep up apart from one that isn’t connected', async () => {
+    const { desktop, laptop } = await pair()
+    server.busy.add(desktop.instance)
+    await expect(laptop.remote.client.request(desktop.instance, 'hello', {})).rejects.toMatchObject({ body: { code: 'busy' } })
+  })
+
+  it('takes the defaults of a server that doesn’t name its limits', async () => {
+    server.limits = null
+    const { desktop } = await pair()
+    expect(desktop.link.limits()).toEqual({ maxMessageBytes: 1024 * 1024, rateLimit: 100 })
+  })
+
   it('stops answering a device whose level the host takes away', async () => {
     const { desktop, laptop } = await pair()
     await desktop.link.setRemoteEnabled(true)

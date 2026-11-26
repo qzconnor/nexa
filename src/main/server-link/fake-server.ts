@@ -1,5 +1,5 @@
 import { verifyAuth } from '@shared/nexa-server/auth'
-import { BROADCAST, CloseCode, parseClientMessage, type InstanceInfo, type ServerMessage } from '@shared/nexa-server/protocol'
+import { BROADCAST, CloseCode, parseClientMessage, type InstanceInfo, type ServerLimits, type ServerMessage } from '@shared/nexa-server/protocol'
 import type { SocketLike } from './connection'
 
 /**
@@ -17,6 +17,12 @@ export class FakeServer {
   info: unknown = { name: 'nexa-server', version: '0.1.0', protocol: 1 }
   /** The server's clock, for tests of a device whose clock is off. */
   now = (): number => Date.now()
+  /** As `ready` tells them (null: it doesn't, like a server from before `limits`); the size is enforced. */
+  limits: ServerLimits | null = { maxMessageBytes: 1024 * 1024, rateLimit: 100 }
+  /** Instances that don't keep up with reading: what is sent to them gets `busy`. */
+  readonly busy = new Set<string>()
+  /** Connections closed for a message over the limit. */
+  oversized = 0
   private counter = 0
 
   invite(): string {
@@ -65,6 +71,11 @@ export class FakeServer {
   }
 
   handle(socket: FakeSocket, text: string): void {
+    // Like `maxPayload` of the real one: a message too large closes the connection (1009).
+    if (new TextEncoder().encode(text).length > (this.limits?.maxMessageBytes ?? 1024 * 1024)) {
+      this.oversized++
+      return socket.drop(1009)
+    }
     const parsed = parseClientMessage(text)
     if (!parsed.ok) return socket.deliver({ t: 'error', re: parsed.re, code: 'bad-request', message: parsed.message })
     const msg = parsed.msg
@@ -78,7 +89,8 @@ export class FakeServer {
         info.online = true
         // Like the real one, which stamps the login before `ready`.
         info.lastSeen = this.now()
-        socket.deliver({ t: 'ready', instance: info.id, namespace: 'test', instances: [...this.instances.values()] })
+        const ready = { t: 'ready', instance: info.id, namespace: 'test', instances: [...this.instances.values()] }
+        socket.deliver((this.limits ? { ...ready, limits: this.limits } : ready) as ServerMessage)
         this.broadcast({ t: 'instance', event: 'online', instance: info }, info.id)
       })
       return
@@ -92,6 +104,7 @@ export class FakeServer {
         if (msg.to === BROADCAST) return this.broadcast(relayed, from)
         const target = this.connected(msg.to)
         if (!target) return socket.deliver({ t: 'error', re: msg.id, code: 'unreachable', message: 'not connected' })
+        if (this.busy.has(msg.to)) return socket.deliver({ t: 'error', re: msg.id, code: 'busy', message: 'does not keep up' })
         return target.deliver(relayed)
       }
       case 'invite':

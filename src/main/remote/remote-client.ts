@@ -16,6 +16,13 @@ import { MessageTooLargeError } from '../server-link/device-channel'
 
 /** How long an answer may take: the host may first read a long chat from disk (`open`). */
 const REQUEST_TIMEOUT_MS = 20_000
+/** Refusals of the server kept for requests that don't wait yet; they come right after the send. */
+const EARLY_KEPT = 64
+
+/** What the server's refusal (`busy`, `unknown-instance`, else `unreachable`) means for a request. */
+function sendFailure(code: string): RemoteErrorCode {
+  return code === 'busy' ? 'busy' : code === 'unknown-instance' ? 'gone' : 'unreachable'
+}
 
 export class RemoteError extends Error {
   constructor(readonly body: RemoteErrorBody) {
@@ -59,6 +66,8 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
    */
   private readonly fresh = new Set<string>()
   private renewTimer: ReturnType<typeof setInterval> | null = null
+  /** What the server refused to pass on before its request was waiting for an answer, by message id. */
+  private readonly early = new Map<string, string>()
 
   constructor(private readonly deps: RemoteClientDeps) {
     super()
@@ -74,6 +83,11 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
       throw error
     }
     if (!id) throw RemoteError.of(this.deps.link.online() ? 'unreachable' : 'offline')
+    const failed = this.early.get(id)
+    if (failed !== undefined) {
+      this.early.delete(id)
+      throw RemoteError.of(sendFailure(failed))
+    }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
@@ -99,12 +113,20 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
     }
   }
 
-  /** The server couldn't pass a request on (the device went offline meanwhile). */
-  onSendFailed(id: string): void {
+  /**
+   * The server couldn't pass a request on: `code` as it said (`busy`: the device doesn't keep up,
+   * `unknown-instance`: it was removed, else it isn't connected).
+   */
+  onSendFailed(id: string, code: string): void {
     const pending = this.pending.get(id)
-    if (!pending) return
+    if (!pending) {
+      // Before the request knew its id (`request` still on its way back from sending): it looks here.
+      this.early.set(id, code)
+      if (this.early.size > EARLY_KEPT) this.early.delete(this.early.keys().next().value!)
+      return
+    }
     this.settle(id, pending)
-    pending.reject(RemoteError.of('unreachable'))
+    pending.reject(RemoteError.of(sendFailure(code)))
   }
 
   /**

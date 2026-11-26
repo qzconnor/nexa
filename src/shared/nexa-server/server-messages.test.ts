@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseServerMessage } from './server-messages'
+import { DEFAULT_SERVER_LIMITS, parseServerMessage } from './server-messages'
 
 const info = {
   id: 'hIkscegBGIQ_aBh56MTtOw',
@@ -16,12 +16,21 @@ const parse = (data: unknown) => parseServerMessage(JSON.stringify(data))
 describe('parseServerMessage', () => {
   it('reads the login', () => {
     expect(parse({ t: 'hello', v: 1, nonce: 'abc' })).toEqual({ t: 'hello', v: 1, nonce: 'abc' })
-    expect(parse({ t: 'ready', instance: info.id, namespace: 'connor', instances: [info] })).toEqual({
+    const limits = { maxMessageBytes: 256 * 1024, rateLimit: 20 }
+    expect(parse({ t: 'ready', instance: info.id, namespace: 'connor', instances: [info], limits })).toEqual({
       t: 'ready',
       instance: info.id,
       namespace: 'connor',
       instances: [{ ...info, name: 'Desktop' }],
+      limits,
     })
+  })
+
+  it('takes the server’s limits within sense, and its defaults from a server that doesn’t name them', () => {
+    const ready = (limits?: unknown) => parse({ t: 'ready', instance: info.id, namespace: 'connor', instances: [info], limits })
+    expect(ready()).toMatchObject({ limits: DEFAULT_SERVER_LIMITS })
+    expect(ready({ maxMessageBytes: 10, rateLimit: 0.5 })).toMatchObject({ limits: DEFAULT_SERVER_LIMITS })
+    expect(ready({ maxMessageBytes: 64 * 1024 })).toMatchObject({ limits: { maxMessageBytes: 64 * 1024, rateLimit: DEFAULT_SERVER_LIMITS.rateLimit } })
   })
 
   it('keeps only known fields of an instance and refuses odd ones', () => {

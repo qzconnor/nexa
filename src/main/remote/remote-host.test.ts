@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, SessionEvent } from '@shared/chat'
 import { RemoteKind, WATCH_TTL_MS, type RemoteEvent, type RemoteLevel, type RemoteResponse } from '@shared/remote'
 import type { SessionDetail, SessionMeta } from '@shared/types'
+import { MessageTooLargeError, payloadLimit } from '../server-link/device-channel'
 import { RemoteHost, type RemoteHostDeps } from './remote-host'
 
 const meta = (id: string, extra: Partial<SessionMeta> = {}): SessionMeta =>
@@ -17,16 +18,18 @@ interface Sent {
 
 function setup(levels: Record<string, RemoteLevel> = { laptop: 'read' }, enabled = true) {
   const sent: Sent[] = []
-  const state = { enabled, levels: { ...levels } }
+  const state = { enabled, levels: { ...levels }, limits: { maxMessageBytes: 1024 * 1024, rateLimit: 100 }, tooLarge: false }
   const items = new Map<string, ChatItem[]>([['c1', [user('u1'), assistant('a1', 'Antwort')]]])
   const metas = [meta('c1'), meta('c2', { archived: true })]
   const calls: string[] = []
   const deps: RemoteHostDeps = {
     link: {
       sendToDevice: async (to, kind, data) => {
+        if (state.tooLarge && kind === RemoteKind.events) throw new MessageTooLargeError(2_000_000)
         sent.push({ to, kind, data })
         return `m${sent.length}`
       },
+      limits: () => state.limits,
       selfName: () => 'Desktop',
       deviceName: (id) => (id === 'laptop' ? 'Laptop' : null),
       level: (id) => (state.enabled ? (state.levels[id] ?? 'off') : 'off'),
@@ -176,6 +179,54 @@ describe('RemoteHost', () => {
     host.onSessionsChanged()
     await vi.advanceTimersByTimeAsync(2_100)
     expect(events()).toEqual([{ type: 'chats' }])
+  })
+
+  it('makes pages and lists as large as the server’s messages allow', async () => {
+    const { ask, items, state } = setup()
+    // 150 answers of 1 000 umlauts each: 2 000 bytes apiece in UTF-8, 300 KB together.
+    items.set('c1', Array.from({ length: 150 }, (_, i) => assistant(`a${i}`, 'ä'.repeat(1_000))))
+    const full = (await ask('open', { id: 'c1' })) as { r: { items: unknown[]; start: number } }
+    expect(full.r.items).toHaveLength(150)
+
+    state.limits = { maxMessageBytes: 32 * 1024, rateLimit: 100 }
+    const small = (await ask('open', { id: 'c1' })) as { r: { items: unknown[]; start: number } }
+    expect(new TextEncoder().encode(JSON.stringify(small.r)).length).toBeLessThanOrEqual(payloadLimit(32 * 1024) + 200)
+    expect(small.r.items.length).toBeLessThan(20)
+    expect(small.r.start).toBe(150 - small.r.items.length)
+  })
+
+  it('bundles less often when the server allows few messages a second', async () => {
+    const { ask, host, events, state } = setup()
+    state.limits = { maxMessageBytes: 1024 * 1024, rateLimit: 4 }
+    await ask('watch', { ids: ['c1'] })
+    host.onSessionEvent({ type: 'delta', sessionId: 'c1', itemId: 'a1', field: 'text', text: 'x' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(events()).toEqual([])
+    await vi.advanceTimersByTimeAsync(600)
+    expect(events()).toHaveLength(1)
+  })
+
+  it('ends the watch of a device a bundle didn’t reach, so it reads its chats anew', async () => {
+    const { ask, host, sent } = setup()
+    await ask('watch', { ids: ['c1'] })
+    host.onSessionEvent({ type: 'delta', sessionId: 'c1', itemId: 'a1', field: 'text', text: 'x' })
+    await vi.advanceTimersByTimeAsync(150)
+    const bundle = sent.findIndex((s) => s.kind === RemoteKind.events)
+    // An answer that failed is no bundle: the watch stays.
+    host.onSendFailed('m1')
+    expect(host.controllers()).toHaveLength(1)
+    host.onSendFailed(`m${bundle + 1}`)
+    expect(host.controllers()).toEqual([])
+    expect(await ask('watch', { ids: ['c1'] })).toMatchObject({ r: { renewed: false } })
+  })
+
+  it('ends the watch when an event is too large to send', async () => {
+    const { ask, host, state } = setup()
+    await ask('watch', { ids: ['c1'] })
+    state.tooLarge = true
+    host.onSessionEvent({ type: 'delta', sessionId: 'c1', itemId: 'a1', field: 'text', text: 'x' })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(host.controllers()).toEqual([])
   })
 
   it('takes a device’s level away with „Trennen“', async () => {

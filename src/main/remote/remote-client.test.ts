@@ -65,11 +65,22 @@ describe('RemoteClient', () => {
 
     const lost = client.request('desktop', 'chats', {})
     await vi.advanceTimersByTimeAsync(0)
-    client.onSendFailed(sent[1].id)
+    client.onSendFailed(sent[1].id, 'unreachable')
     await expect(lost).rejects.toMatchObject({ body: { code: 'unreachable' } })
 
     link.up = false
     await expect(client.request('desktop', 'chats', {})).rejects.toMatchObject({ body: { code: 'offline' } })
+  })
+
+  it('tells a device that doesn’t keep up from one that was removed', async () => {
+    const { client, sent } = setup()
+    const busy = client.request('desktop', 'chats', {})
+    const gone = client.request('old-laptop', 'chats', {})
+    await vi.advanceTimersByTimeAsync(0)
+    client.onSendFailed(sent[0].id, 'busy')
+    client.onSendFailed(sent[1].id, 'unknown-instance')
+    await expect(busy).rejects.toThrow(/kommt gerade nicht hinterher/)
+    await expect(gone).rejects.toMatchObject({ body: { code: 'gone' } })
   })
 
   it('watches what the windows show, renews it, and stops for devices no longer shown', async () => {
