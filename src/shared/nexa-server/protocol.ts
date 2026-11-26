@@ -3,7 +3,7 @@
  * validation and the constants both sides need. Free of Node APIs on purpose, so the desktop app and the
  * PWA can take this file over unchanged. `docs/PROTOCOL.md` describes the same in prose.
  *
- * Copied unchanged from nexa-server (`src/protocol.ts`, commit 514ec89) apart from this paragraph; keep
+ * Copied unchanged from nexa-server (`src/protocol.ts`, as of nexa-server#2) apart from this paragraph; keep
  * both the same. The server's side (`parseClientMessage`) stays in, so a diff shows only real changes.
  */
 
@@ -74,6 +74,8 @@ export interface ServerInfo {
   name: 'nexa-server'
   version: string
   protocol: typeof PROTOCOL_VERSION
+  /** Whether this server serves the web app at `/app` (`NEXA_PWA`); a QR link to it only works then. */
+  pwa: boolean
 }
 
 /** Body of `POST /v1/join`. */
