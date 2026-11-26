@@ -15,11 +15,13 @@ import { useUiStore } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
 import DeviceScope from './DeviceScope.vue'
 import SidebarDevice from './SidebarDevice.vue'
+import SidebarPinned from './SidebarPinned.vue'
 import SidebarTree from './SidebarTree.vue'
 
 /**
- * A new chat, the artifacts and scheduled tasks, and the projects with their chats (SidebarTree): this
- * device's, and below them those of every other device it controls (Remote Control), each the same.
+ * A new chat, the artifacts and scheduled tasks, the pinned chats of all devices (SidebarPinned), and
+ * the projects with their chats (SidebarTree): this device's, and below them those of every other
+ * device it controls (Remote Control), each the same.
  */
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
@@ -93,6 +95,7 @@ useListKeys(nav)
     </div>
 
     <nav ref="nav" class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <SidebarPinned :now="now" />
       <SidebarTree :now="now" />
       <DeviceScope v-for="d in devices.devices" :key="d.id" :device="d.id">
         <SidebarDevice :device="d" :now="now" />

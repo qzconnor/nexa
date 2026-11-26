@@ -83,7 +83,7 @@
 - [x] Eingabe während der Arbeit des Agents wie sonst: kein gestrichelter Rahmen und kein eigener Knopf
       „In die laufende Antwort“ mehr, die Nachricht zeigt „Wartet“ im Chat
 - [x] Angeheftete Chats wie im Claude Manager ganz oben über den Trennern („Angeheftet“, die neuesten
-      zuerst, mit Projekt), zusätzlich weiter in ihrem Projekt
+      zuerst, mit Projekt), zusätzlich weiter in ihrem Projekt; per Drag & Drop sortierbar
 - [x] Rückfragen: Optionen untereinander statt zweispaltig; beantwortet stehen Fragen und Antworten
       untereinander und vollständig statt abgeschnitten in einer Zeile
 - [x] `/clear` im selben Chat statt in einem neuen: Name, Pin und Platz bleiben, jede CLI fängt eine neue
@@ -389,6 +389,9 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
             in Teilen (`rc.part`). Gegen den Test-Server geprüft, ungeprüft mit zwei Rechnern.
       - [x] Abgleich fein einstellbar (Einstellungen › Geräte, in Gruppen): Auf- und Zuklappen, Reihenfolge,
             Anheften, Archiv, Namen, Vorgaben der Startseite und Anzeige im Chat gemeinsam oder je Gerät.
+      - [x] „Angeheftet“ oben mit den angehefteten Chats aller Geräte in einer Liste (andere Geräte mit
+            Bildschirm-Symbol), per Drag & Drop sortierbar; neu Angeheftetes kommt oben dazu. Die
+            Reihenfolge bleibt auf diesem Gerät (`nexa.pinnedOrder`).
       - [ ] Bilder und Dateien im Verlauf eines Chats vom anderen Gerät zeigen (bisher Pfade dort).
       - [ ] Schnellsuche (Strg+K) und Tastenkürzel über die Chats der anderen Geräte.
       - [ ] Dateibaum, Änderungen und MCP Apps eines Chats auf einem anderen Gerät.

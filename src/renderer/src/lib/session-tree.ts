@@ -113,6 +113,51 @@ export function pinnedChats(sessions: readonly SessionMeta[], projectIds: Readon
   return sessions.filter((m) => m.pinned && !m.archived && projectIds.has(m.projectId)).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/** A chat named across devices: `<device>:<id>`, this device's with an empty device. */
+export const chatKey = (device: string | null, id: string): string => `${device ?? ''}:${id}`
+
+/**
+ * The pinned chats of every device in the order the user dragged them into (`order`, by `chatKey`).
+ * One that isn't in it was pinned since: those come first, the latest on top, so a new pin shows.
+ */
+export function orderPinned<T extends { key: string; meta: SessionMeta }>(rows: readonly T[], order: readonly string[]): T[] {
+  const at = new Map(order.map((key, i) => [key, i]))
+  const fresh = rows.filter((r) => !at.has(r.key)).sort((a, b) => b.meta.updatedAt - a.meta.updatedAt)
+  const placed = rows.filter((r) => at.has(r.key)).sort((a, b) => at.get(a.key)! - at.get(b.key)!)
+  return [...fresh, ...placed]
+}
+
+/**
+ * The order after `moved` was dropped before `before` (null: at the end) of the list `shown`. A key of
+ * `order` that isn't shown belongs to a device not loaded right now: it stays behind the shown key it
+ * followed, so the device's chats come back where they were. `keep` says which of those stay at all
+ * (not those of a device that is loaded: its chat was deleted or let go).
+ */
+export function movePinned(
+  order: readonly string[],
+  shown: readonly string[],
+  moved: string,
+  before: string | null,
+  keep: (key: string) => boolean,
+): string[] {
+  const list = shown.filter((key) => key !== moved)
+  const at = before === null ? -1 : list.indexOf(before)
+  list.splice(at < 0 ? list.length : at, 0, moved)
+
+  const visible = new Set(shown)
+  const behind = new Map<string | null, string[]>()
+  let anchor: string | null = null
+  for (const key of order) {
+    if (visible.has(key)) {
+      // Not behind the moved one: that would take them along to its new place.
+      if (key !== moved) anchor = key
+      continue
+    }
+    if (keep(key)) behind.set(anchor, [...(behind.get(anchor) ?? []), key])
+  }
+  return [...(behind.get(null) ?? []), ...list.flatMap((key) => [key, ...(behind.get(key) ?? [])])]
+}
+
 /** The chats of a project or folder with those in the folders below. */
 export function chatsIn(node: ProjectTree): SessionMeta[] {
   return [...node.sessions, ...node.folders.flatMap(chatsIn)]

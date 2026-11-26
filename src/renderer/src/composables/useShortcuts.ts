@@ -5,6 +5,7 @@ import { chatAt, cycleChat, matchAppShortcut, type AppShortcut } from '@shared/s
 import { DEFAULT_ZOOM, normalizeZoom, stepZoom } from '@shared/zoom'
 import { isChatWindow } from '@/lib/chat-window'
 import { attempt } from '@/lib/errors'
+import { chatKey } from '@/lib/session-tree'
 import { useShownDeviceStore } from '@/stores/device'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
@@ -14,9 +15,6 @@ import { useChatActions } from './useChatActions'
 
 /** A chat's row in the sidebar (SidebarSession), with its device and id (`data-chat-key`). */
 const CHAT_ROW = '[data-chat-row]'
-
-/** A chat named across devices: `<device>:<id>`, this device's with an empty device. */
-const chatKey = (device: string | null, id: string) => `${device ?? ''}:${id}`
 
 /**
  * The window's keyboard shortcuts (src/shared/shortcuts.ts). `ready`: the window shows its content;

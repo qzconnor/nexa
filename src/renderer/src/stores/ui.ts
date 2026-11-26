@@ -1,3 +1,4 @@
+import { useEventListener } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { ref, shallowRef, watch } from 'vue'
 import type { SettingsImportPreview } from '@shared/settings-transfer'
@@ -105,6 +106,22 @@ export const useUiStore = defineStore('ui', () => {
   /** The pinned chats on top of the sidebar; they are there to be seen, so open until folded. */
   const pinnedOpen = ref(stored<'open' | 'folded'>('nexa.pinned', 'open') === 'open')
   watch(pinnedOpen, (open) => remember('nexa.pinned', open ? 'open' : 'folded'))
+  /**
+   * The order the user dragged the pinned chats on top into, by `chatKey` (lib/session-tree.ts). It
+   * mixes the chats of several devices, so it stays on this one. Shared by the windows of the app.
+   */
+  const pinnedOrder = ref<string[]>(parseList(stored('nexa.pinnedOrder', '[]')))
+  useEventListener('storage', (event: StorageEvent) => {
+    if (event.key === 'nexa.pinnedOrder') pinnedOrder.value = parseList(event.newValue ?? '[]')
+  })
+  function arrangePinned(order: readonly string[]): void {
+    pinnedOrder.value = [...order]
+    remember('nexa.pinnedOrder', JSON.stringify(pinnedOrder.value))
+  }
+  /** A chat pinned or let go: out of the order, so pinned again it comes on top as one pinned anew. */
+  function forgetPinned(key: string): void {
+    if (pinnedOrder.value.includes(key)) arrangePinned(pinnedOrder.value.filter((k) => k !== key))
+  }
   /** Other devices folded in the sidebar (Remote Control): open by default, their chats are why they are there. */
   const foldedDevices = ref(new Set<string>(parseList(stored('nexa.foldedDevices', '[]'))))
   function toggleDevice(id: string): void {
@@ -229,6 +246,9 @@ export const useUiStore = defineStore('ui', () => {
     openFolders,
     toggleFolder,
     pinnedOpen,
+    pinnedOrder,
+    arrangePinned,
+    forgetPinned,
     foldedDevices,
     toggleDevice,
     settingsOpen,
