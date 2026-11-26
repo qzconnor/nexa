@@ -11,6 +11,8 @@ import {
   parseRemoteRequest,
   RemoteKind,
   REMOTE_EVENTS,
+  remoteWindow,
+  SESSIONS_OLDER,
   slimItem,
   WATCH_TTL_MS,
   type RemoteErrorBody,
@@ -224,6 +226,7 @@ export class RemoteHost extends TypedEmitter<{
       if (typeof data !== 'string' || data.length > MAX_IMAGE_BASE64) throw new Refused({ code: 'bad-request', message: 'no picture' })
       return this.deps.invoke(channel, [Buffer.from(data, 'base64'), mime], from)
     }
+    if (channel === SESSIONS_OLDER) return this.older(from, args)
     const watched = watchedBy(channel, args)
     if (watched) {
       // Without a watch of the device its file events wouldn't go to it, and nothing would end its
@@ -245,7 +248,20 @@ export class RemoteHost extends TypedEmitter<{
       if (watcher.ids.size < MAX_WATCHED_CHATS) watcher.ids.add(id)
       watcher.queue = watcher.queue.filter((e) => e.ch !== IpcEvent.sessionEvent || !('args' in e) || isOther(e.args[0] as SessionEvent, id))
     }
-    return { ...detail, items: detail.items.map((item) => slimItem(item)) }
+    // A long chat's newest items only: all of them can be tens of megabytes, more than a request gets through in time.
+    const { items, older } = remoteWindow(detail.items, detail.items.length)
+    return { ...detail, items, older }
+  }
+
+  /** The items before one of a chat, about as many as `sessions:open` gave. */
+  private async older(from: string, args: unknown[]): Promise<unknown> {
+    const [id, before] = args
+    if (typeof id !== 'string' || typeof before !== 'string') throw new Refused({ code: 'bad-request', message: 'session and item expected' })
+    // The chat as the host has it now (the same call that opened it here, without its watch).
+    const detail = (await this.deps.invoke(IpcInvoke.sessionsOpen, [id], from)) as SessionDetail
+    const end = detail.items.findIndex((item) => item.id === before)
+    if (end === -1) throw new Refused({ code: 'not-found', message: 'no such item in the chat' })
+    return remoteWindow(detail.items, end)
   }
 
   /** Sets what `from` watches; whether it watched before (else it may have missed events). */

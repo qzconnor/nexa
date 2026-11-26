@@ -1443,6 +1443,15 @@ fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht. Typen, Liste d
 - **Was nicht mitgeht**: lange Texte über die Textgrenze (64 KB) in Items, die der Host nach UTF-8-Bytes
   kürzt (`slimItem`): Prompts und Antworten bei der vierfachen Grenze, Ausgaben von Werkzeugen von vorn
   (das Ende zählt); die Ergebnisse der Werkzeuge mit Seite (`appResult`), die mit der Seite kommen.
+- **Lange Chats in Seiten**: `sessions:open` bringt nur die neuesten Items, etwa 1 MB davon
+  (`remoteWindow`, `REMOTE_ITEMS_BYTES`), und in `older` die Zahl der Items davor. Ein Chat mit Tausenden
+  Werkzeugaufrufen hat auch gekürzt Dutzende MB, in Teilen über den Server dauerte das länger als die
+  30 s einer Anfrage („Das Gerät hat nicht geantwortet“). Die Items davor holt die Steuerung beim
+  Hochscrollen mit **`sessions:older`** `[sessionId, itemId]` → `{ items, older }`, Stufe `read`: die
+  Items vor diesem, wieder etwa 1 MB. Ein Fenster beginnt nach Möglichkeit mit einem Prompt. So ändern
+  sich die Blöcke darüber nicht, wenn die davor kommen; in einem einzelnen langen Turn geht es bis zu
+  4 MB zurück zu seinem Prompt. `truncated { length }` zählt alle Items des Chats, auch die noch nicht
+  geholten.
 - **Reihenfolge**: Nachrichten zwischen zwei Geräten verlassen und erreichen `DeviceChannel` in der
   Reihenfolge, in der sie geschrieben wurden, auch wenn das Verschlüsseln unterschiedlich lange dauert.
   Öffnet ein Gerät einen Chat (`sessions:open`), verwirft der Host die für ihn noch wartenden Ereignisse

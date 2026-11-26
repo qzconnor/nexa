@@ -899,7 +899,9 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   dazugekommen sein.
 - **Lange Chats** (`MessageList`): Gezeigt werden die neuesten 40 Blöcke, beim Hochscrollen je 40 ältere
   (ein `IntersectionObserver` am oberen Ende, 1200 px voraus), ohne dass der sichtbare Inhalt springt. Das
-  Fenster hängt am ältesten gezeigten Block, neue kommen dazu. Unter dem Verlauf eines Agents bleibt der
+  Fenster hängt am ältesten gezeigten Block, neue kommen dazu. Der Chat eines anderen Geräts kommt nur mit
+  seinen neuesten Items (`SessionChat.older` zählt die übrigen). Sind alle davon gezeigt, holt
+  `sessions.loadOlder` die davor beim Gerät (`sessions:older`, siehe PROTOCOLS.md). Unter dem Verlauf eines Agents bleibt der
   Hauptchat versteckt stehen, zurück ist er so, wie er war.
 - **Updates** (`components/settings/SettingsUpdates.vue`, `components/updates/*`, `stores/updates.ts`): Zustand
   des Updaters, Herunterladen und Neustart (mit Rückfrage, wenn noch Antworten laufen), Versionshinweise der

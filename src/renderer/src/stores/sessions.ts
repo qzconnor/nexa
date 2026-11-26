@@ -1,5 +1,6 @@
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
+import { SESSIONS_OLDER, type RemoteItems } from '@shared/remote'
 import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
 import { chatKey } from '@/lib/session-tree'
 import { useChatWindowsStore } from './chat-windows'
@@ -18,6 +19,12 @@ export interface SessionChat {
    * instead of on every text (MessageList): they only change when a text stops being empty.
    */
   textShown: number
+  /**
+   * Items before `items` not here yet: another device's long chat comes with its newest items, the ones
+   * before as the user scrolls up (`loadOlder`). 0 for this device's chats.
+   */
+  older: number
+  loadingOlder: boolean
 }
 
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
@@ -105,6 +112,7 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
         const detail = await api.sessions.open(id)
         chat.items = detail.items
         chat.index = new Map(detail.items.map((item, i) => [item.id, i]))
+        chat.older = detail.older ?? 0
         runtimes.set(id, detail.runtime)
       } catch {
         chats.delete(id)
@@ -146,9 +154,13 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
         else if (event.field === 'output' && item.kind === 'tool') item.output = (item.output ?? '') + event.text
         break
       }
-      case 'truncated':
-        for (const item of chat.items.splice(event.length)) chat.index.delete(item.id)
+      case 'truncated': {
+        // `length` counts all of the chat's items, also the older ones not here.
+        const keep = event.length - chat.older
+        if (keep < 0) chat.older = event.length
+        for (const item of chat.items.splice(Math.max(0, keep))) chat.index.delete(item.id)
         break
+      }
     }
   }
 
@@ -169,18 +181,38 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
       void sync(id).catch((error) => console.warn('[sessions] sync failed', error))
       return
     }
-    const chat: SessionChat = reactive({ items: [], index: new Map(), loaded: false, textShown: 0 }) as SessionChat
+    const chat: SessionChat = reactive({ items: [], index: new Map(), loaded: false, textShown: 0, older: 0, loadingOlder: false }) as SessionChat
     chats.set(id, chat)
     keepFew()
     try {
       const detail = await api.sessions.open(id)
       chat.items = detail.items
       chat.index = new Map(detail.items.map((item, i) => [item.id, i]))
+      chat.older = detail.older ?? 0
       runtimes.set(id, detail.runtime)
       chat.loaded = true
     } catch (error) {
       chats.delete(id)
       throw error
+    }
+  }
+
+  /** The items before the first one here of another device's long chat, about as many as came when it opened. */
+  async function loadOlder(id: string): Promise<void> {
+    const chat = chats.get(id)
+    const first = chat?.items[0]
+    if (!device || !chat?.loaded || !chat.older || chat.loadingOlder || !first) return
+    chat.loadingOlder = true
+    try {
+      const page = (await window.api.remote.invoke(device, SESSIONS_OLDER, [id, first.id])) as RemoteItems
+      // Read anew meanwhile (`reload`), or the first one changed: what came doesn't fit before it.
+      if (chats.get(id) !== chat || chat.items[0]?.id !== first.id) return
+      const items = [...page.items.filter((item) => !chat.index.has(item.id)), ...chat.items]
+      chat.items = items
+      chat.index = new Map(items.map((item, i) => [item.id, i]))
+      chat.older = page.older
+    } finally {
+      chat.loadingOlder = false
     }
   }
 
@@ -321,6 +353,7 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
     load,
     reload,
     open,
+    loadOlder,
     sync,
     resumeAtReset,
     close,

@@ -14,6 +14,7 @@ import {
   parseRemoteResponse,
   remoteErrorText,
   REMOTE_TEXT_LIMIT,
+  remoteWindow,
   slimItem,
 } from './remote'
 
@@ -402,5 +403,59 @@ describe('slimItem', () => {
     expect(slim.prompt!.length).toBeLessThan(1024 + 20)
     expect(slim.result!.startsWith('r')).toBe(true)
     expect(slim.result!.length).toBeLessThan(1024 + 20)
+  })
+})
+
+describe('remoteWindow', () => {
+  const answer = (id: string, bytes: number): ChatItem => ({ kind: 'assistant', id, ts: 1, provider: 'claude', text: 'x'.repeat(bytes) })
+  /** `turns` turns of a prompt and `answers` answers of about `bytes` each. */
+  const chatOf = (turns: number, answers: number, bytes: number) =>
+    Array.from({ length: turns }, (_, t) => [user(`u${t}`), ...Array.from({ length: answers }, (_, a) => answer(`a${t}-${a}`, bytes))]).flat()
+  const ids = (items: ChatItem[]) => items.map((item) => item.id)
+
+  it('gives a short chat whole', () => {
+    const items = chatOf(3, 2, 10)
+    expect(remoteWindow(items, items.length)).toEqual({ items, older: 0 })
+  })
+
+  it('gives the newest items of a long chat, beginning with a prompt, and the ones before page by page', () => {
+    const items = chatOf(20, 3, 1000)
+    const newest = remoteWindow(items, items.length, 10_000)
+    expect(newest.items[0]!.kind).toBe('user')
+    expect(jsonBytes(newest.items)).toBeLessThanOrEqual(10_000)
+    expect(newest.older).toBe(items.length - newest.items.length)
+    expect(ids(newest.items)).toEqual(ids(items.slice(newest.older)))
+
+    // Page by page to the first item, each one exactly once.
+    const seen = [...newest.items]
+    let older = newest.older
+    while (older > 0) {
+      const page = remoteWindow(items, older, 10_000)
+      expect(page.items[0]!.kind).toBe('user')
+      expect(page.older).toBeLessThan(older)
+      seen.unshift(...page.items)
+      older = page.older
+    }
+    expect(ids(seen)).toEqual(ids(items))
+  })
+
+  it('goes back to the prompt of one long turn, but not without end', () => {
+    const items = [user('u0'), ...Array.from({ length: 30 }, (_, i) => answer(`a${i}`, 1000))]
+    const window = remoteWindow(items, items.length, 10_000)
+    expect(window).toMatchObject({ older: 0 })
+    expect(window.items).toHaveLength(31)
+
+    const endless = [user('u0'), ...Array.from({ length: 100 }, (_, i) => answer(`a${i}`, 1000))]
+    const cut = remoteWindow(endless, endless.length, 10_000)
+    expect(cut.older).toBeGreaterThan(0)
+    expect(jsonBytes(cut.items)).toBeLessThan(4 * 10_000 + 2000)
+  })
+
+  it('slims the items it gives, and gives at least one however large', () => {
+    const items = [user('u0'), answer('a0', 8 * REMOTE_TEXT_LIMIT)]
+    const window = remoteWindow(items, items.length, 1000)
+    expect(ids(window.items)).toEqual(['a0'])
+    expect(window.older).toBe(1)
+    expect((window.items[0] as Extract<ChatItem, { kind: 'assistant' }>).text.length).toBeLessThan(4 * REMOTE_TEXT_LIMIT + 20)
   })
 })

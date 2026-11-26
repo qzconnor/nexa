@@ -2,7 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, SessionEvent } from '@shared/chat'
 import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { IpcEvent, IpcInvoke } from '@shared/ipc'
-import { parseRemoteResponse, RemoteKind, REMOTE_TEXT_LIMIT, WATCH_TTL_MS, type RemoteEvent, type RemoteLevel, type RemoteResponse } from '@shared/remote'
+import {
+  parseRemoteResponse,
+  RemoteKind,
+  REMOTE_TEXT_LIMIT,
+  SESSIONS_OLDER,
+  WATCH_TTL_MS,
+  type RemoteEvent,
+  type RemoteItems,
+  type RemoteLevel,
+  type RemoteResponse,
+} from '@shared/remote'
 import type { SessionDetail, SessionMeta } from '@shared/types'
 import { MessageTooLargeError } from '../server-link/device-channel'
 import { RemoteHost, type RemoteHostDeps } from './remote-host'
@@ -216,6 +226,27 @@ describe('RemoteHost', () => {
     fire({ type: 'delta', sessionId: 'c1', itemId: 'a2', field: 'text', text: 'Neu' })
     await vi.advanceTimersByTimeAsync(150)
     expect(events()).toEqual([session({ type: 'delta', sessionId: 'c1', itemId: 'a2', field: 'text', text: 'Neu' })])
+  })
+
+  it('opens a long chat with its newest items, and gives the ones before as the device asks', async () => {
+    const { invoke, items } = setup()
+    // About 3 MB: far more than goes at once.
+    const long = Array.from({ length: 60 }, (_, t) => [user(`u${t}`), assistant(`a${t}`, 'x'.repeat(50_000))]).flat()
+    items.set('c9', long)
+    const opened = ((await invoke(IpcInvoke.sessionsOpen, ['c9'])) as { r: SessionDetail }).r
+    expect(opened.older).toBeGreaterThan(0)
+    expect(opened.items[0]!.kind).toBe('user')
+    expect(opened.items.map((i) => i.id)).toEqual(long.slice(opened.older).map((i) => i.id))
+
+    const page = ((await invoke(SESSIONS_OLDER, ['c9', opened.items[0]!.id])) as { r: RemoteItems }).r
+    expect(page.older).toBeLessThan(opened.older!)
+    expect(page.items.map((i) => i.id)).toEqual(long.slice(page.older, opened.older).map((i) => i.id))
+
+    expect(await invoke(SESSIONS_OLDER, ['c9', 'nope'])).toMatchObject({ e: { code: 'not-found' } })
+    expect(await invoke(SESSIONS_OLDER, ['c9'])).toMatchObject({ e: { code: 'bad-request' } })
+    expect(await invoke(SESSIONS_OLDER, ['c9', 'u1'], 'stranger')).toMatchObject({ e: { code: 'forbidden' } })
+    // A short chat comes whole.
+    expect(((await invoke(IpcInvoke.sessionsOpen, ['c1'])) as { r: SessionDetail }).r).toMatchObject({ older: 0 })
   })
 
   it('opens a chat for a device that doesn’t watch without watching for it', async () => {

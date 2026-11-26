@@ -102,6 +102,13 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /**
+ * The items of a chat before one of them (`[sessionId, itemId]` → `RemoteItems`): another device gets a
+ * long chat's newest items when it opens it (`sessions:open`), the ones before as it scrolls up. Only
+ * over Remote Control: this device's own windows have all of a chat's items.
+ */
+export const SESSIONS_OLDER = 'sessions:older'
+
+/**
  * The calls of the window API another device may make here, with the level each takes: what the chat
  * window, its dock and the sidebar need, nothing of the host's own windows, dialogs or terminals, and
  * of its files only those in the folders of its chats (the file panel; main/files/files-ipc.ts checks
@@ -132,6 +139,7 @@ const CHANNELS: Record<string, ChannelRule> = {
   [IpcInvoke.sessionsList]: 'read',
   [IpcInvoke.sessionsRuntimes]: 'read',
   [IpcInvoke.sessionsOpen]: 'read',
+  [SESSIONS_OLDER]: 'read',
   [IpcInvoke.sessionsContext]: 'read',
   [IpcInvoke.sessionsMcpServers]: 'read',
   [IpcInvoke.sessionsPlugins]: 'read',
@@ -531,4 +539,52 @@ export function slimItem(item: ChatItem, limit = REMOTE_TEXT_LIMIT): ChatItem {
     default:
       return item
   }
+}
+
+/** About as many UTF-8 bytes of a chat's items as go to another device at once (`remoteWindow`). */
+export const REMOTE_ITEMS_BYTES = 1024 * 1024
+
+/** Items of a chat for another device, slimmed, and how many come before them that it doesn't have yet. */
+export interface RemoteItems {
+  items: ChatItem[]
+  older: number
+}
+
+/**
+ * The items before `end` that go to another device at once, slimmed: about `budget` bytes of them. A
+ * chat of thousands of items is tens of megabytes even slimmed, which would take longer over the server
+ * than a request may; the newest are what the chat shows first, the ones before come as it scrolls up.
+ * They begin with a prompt where one is near: the blocks of the timeline above it then don't change
+ * when the items before it come (a group of tools would grow, and the window lose its place).
+ */
+export function remoteWindow(items: readonly ChatItem[], end: number, budget = REMOTE_ITEMS_BYTES): RemoteItems {
+  // Newest first while collecting.
+  const taken: ChatItem[] = []
+  let bytes = 0
+  let start = Math.max(0, Math.min(end, items.length))
+  while (start > 0) {
+    const item = slimItem(items[start - 1]!)
+    const size = jsonBytes(item)
+    if (taken.length && bytes + size > budget) break
+    taken.push(item)
+    bytes += size
+    start--
+  }
+  if (start > 0 && taken.at(-1)?.kind !== 'user') {
+    const prompt = taken.findLastIndex((item) => item.kind === 'user')
+    if (prompt >= 0) {
+      // The part of a turn before the prompt comes with the older ones.
+      start += taken.length - 1 - prompt
+      taken.length = prompt + 1
+    } else {
+      // One long turn: back to its prompt, but not without end.
+      while (start > 0 && bytes < 4 * budget && taken.at(-1)?.kind !== 'user') {
+        const item = slimItem(items[start - 1]!)
+        taken.push(item)
+        bytes += jsonBytes(item)
+        start--
+      }
+    }
+  }
+  return { items: taken.reverse(), older: start }
 }
