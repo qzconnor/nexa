@@ -132,6 +132,10 @@ export type RemoteErrorCode =
   | 'failed'
   /** On the controlling side: the host isn't connected, didn't answer, or this device isn't. */
   | 'unreachable'
+  /** The host is connected but doesn't keep up with reading (the server said `busy`). */
+  | 'busy'
+  /** The server knows no such device (any more): it was removed. */
+  | 'gone'
   | 'timeout'
   | 'offline'
 
@@ -157,6 +161,10 @@ export function remoteErrorText(error: RemoteErrorBody): string {
       return 'Die Antwort wäre zu groß für den Server.'
     case 'unreachable':
       return 'Das Gerät ist gerade nicht verbunden.'
+    case 'busy':
+      return 'Das Gerät kommt gerade nicht hinterher. Versuch es gleich noch einmal.'
+    case 'gone':
+      return 'Das Gerät gibt es beim Server nicht mehr.'
     case 'timeout':
       return 'Das Gerät hat nicht geantwortet.'
     case 'offline':
@@ -166,7 +174,7 @@ export function remoteErrorText(error: RemoteErrorBody): string {
   }
 }
 
-const REMOTE_ERROR_CODES = new Set<string>(['disabled', 'forbidden', 'not-found', 'bad-request', 'too-large', 'failed', 'unreachable', 'timeout', 'offline'])
+const REMOTE_ERROR_CODES = new Set<string>(['disabled', 'forbidden', 'not-found', 'bad-request', 'too-large', 'failed', 'unreachable', 'busy', 'gone', 'timeout', 'offline'])
 
 // --- Parsing what comes over the relay -------------------------------------------------------------
 
@@ -281,73 +289,124 @@ export function parseRemoteEvents(data: unknown): RemoteEvent[] | null {
 
 // --- What goes over the relay of a chat --------------------------------------------------------------
 
-/** Longest text of one field of an item that goes to another device; the rest is cut. */
+/** Longest text of one field of an item that goes to another device, in UTF-8 bytes; the rest is cut. */
 export const REMOTE_TEXT_LIMIT = 64 * 1024
-/** About as much JSON as a page or a bundle of events may have, well below the relay's limit. */
+/**
+ * At most this much JSON (UTF-8) in a page or a bundle of events; less where the server takes smaller
+ * messages (`budget` of `pageOf`, from the server's `limits`).
+ */
 export const REMOTE_BATCH_BYTES = 400 * 1024
 const PAGE_ITEMS = 300
 
+const utf8 = new TextEncoder()
+const utf8Decoder = new TextDecoder()
+
+/**
+ * `text` cut to `limit` UTF-8 bytes, its start or (`fromEnd`) its end: by bytes, since a text of umlauts
+ * or CJK takes two or three times its characters. A character cut in two goes.
+ */
+function cut(text: string, limit: number, fromEnd: boolean): string | null {
+  // Fast ways out: no character takes more than three bytes, none less than one.
+  if (text.length * 3 <= limit) return null
+  const bytes = utf8.encode(text)
+  if (bytes.length <= limit) return null
+  const part = fromEnd ? bytes.subarray(bytes.length - limit) : bytes.subarray(0, limit)
+  return utf8Decoder.decode(part).replace(/^�+|�+$/g, '')
+}
+
 function head(text: string | undefined, limit = REMOTE_TEXT_LIMIT): string | undefined {
-  return text !== undefined && text.length > limit ? `${text.slice(0, limit)}\n… (gekürzt)` : text
+  const start = text === undefined ? null : cut(text, limit, false)
+  return start === null ? text : `${start}\n… (gekürzt)`
 }
 
 function tail(text: string | undefined, limit = REMOTE_TEXT_LIMIT): string | undefined {
-  return text !== undefined && text.length > limit ? `… (gekürzt)\n${text.slice(-limit)}` : text
+  const end = text === undefined ? null : cut(text, limit, true)
+  return end === null ? text : `… (gekürzt)\n${end}`
 }
 
-function jsonLength(value: unknown): number {
+/** What `value` takes as JSON on the wire: UTF-8 bytes, so text with umlauts or CJK counts in full. */
+export function jsonBytes(value: unknown): number {
   try {
-    return value === undefined ? 0 : JSON.stringify(value).length
+    return value === undefined ? 0 : utf8.encode(JSON.stringify(value)).length
   } catch {
     return Infinity
   }
 }
 
+/** The longest text of one field for pages and bundles of `budget` bytes: an item has a few of them. */
+export function textLimitFor(budget: number): number {
+  return Math.max(1024, Math.min(REMOTE_TEXT_LIMIT, Math.floor(budget / 8)))
+}
+
 /**
- * An item as it goes to another device: long texts cut, what only works on the host left out. Images
- * are paths on the host; the pages of MCP Apps load from the host's MCP servers.
+ * An item as it goes to another device: texts over `limit` cut (prompts and answers at four times
+ * that), what only works on the host left out. Images are paths on the host; the pages of MCP Apps
+ * load from the host's MCP servers.
  */
-export function slimItem(item: ChatItem): ChatItem {
+export function slimItem(item: ChatItem, limit = REMOTE_TEXT_LIMIT): ChatItem {
   switch (item.kind) {
     case 'user':
-      return item.images?.length ? { ...item, images: undefined, text: head(item.text, 4 * REMOTE_TEXT_LIMIT)! } : { ...item, text: head(item.text, 4 * REMOTE_TEXT_LIMIT)! }
+      return item.images?.length ? { ...item, images: undefined, text: head(item.text, 4 * limit)! } : { ...item, text: head(item.text, 4 * limit)! }
     case 'assistant':
     case 'thinking':
-      return { ...item, text: head(item.text, 4 * REMOTE_TEXT_LIMIT)! }
+      return { ...item, text: head(item.text, 4 * limit)! }
     case 'tool': {
-      const slim = { ...item, output: tail(item.output), app: undefined, appResult: undefined }
-      if (jsonLength(item.input) > REMOTE_TEXT_LIMIT) slim.input = undefined
-      if (jsonLength(item.render) > REMOTE_TEXT_LIMIT) slim.render = undefined
+      const slim = { ...item, output: tail(item.output, limit), app: undefined, appResult: undefined }
+      if (jsonBytes(item.input) > limit) slim.input = undefined
+      if (jsonBytes(item.render) > limit) slim.render = undefined
       if (item.changes) {
-        slim.changes = item.changes.map((c) => ({ ...c, diff: head(c.diff), oldText: head(c.oldText), newText: head(c.newText) }))
+        slim.changes = item.changes.map((c) => ({ ...c, diff: head(c.diff, limit), oldText: head(c.oldText, limit), newText: head(c.newText, limit) }))
+        // Many files changed at once: their whole texts give way first, then the changes themselves.
+        if (jsonBytes(slim) > 6 * limit) slim.changes = slim.changes.map((c) => ({ ...c, oldText: undefined, newText: undefined }))
+        if (jsonBytes(slim) > 6 * limit) slim.changes = undefined
       }
       return slim
     }
     case 'agent':
-      return { ...item, prompt: head(item.prompt), result: head(item.result) }
+      return { ...item, prompt: head(item.prompt, limit), result: head(item.result, limit) }
     default:
       return item
   }
 }
 
 /**
- * The items before `before` (the end without it) that fit into one page, newest last, slimmed; at least
- * one, so a page always gets on.
+ * The items before `before` (the end without it) that fit into one page of `budget` bytes, newest last,
+ * slimmed; at least one, so a page always gets on.
  */
-export function pageOf(items: readonly ChatItem[], before = items.length): { items: ChatItem[]; start: number } {
+export function pageOf(items: readonly ChatItem[], before = items.length, budget = REMOTE_BATCH_BYTES): { items: ChatItem[]; start: number } {
   const end = Math.min(Math.max(0, before), items.length)
   const page: ChatItem[] = []
   let bytes = 0
   let start = end
+  const limit = textLimitFor(budget)
   while (start > 0 && page.length < PAGE_ITEMS) {
-    const slim = slimItem(items[start - 1])
-    const size = jsonLength(slim)
-    if (page.length > 0 && bytes + size > REMOTE_BATCH_BYTES) break
+    const slim = slimItem(items[start - 1], limit)
+    const size = jsonBytes(slim)
+    if (page.length > 0 && bytes + size > budget) break
     page.push(slim)
     bytes += size
     start--
   }
   return { items: page.reverse(), start }
+}
+
+/**
+ * The list of chats within `budget` bytes: without previews if need be, then the newest that fit (the
+ * pinned ones first). A namespace's chats are mostly far below; a server with small messages isn't.
+ */
+export function fitChats(chats: RemoteChats, budget: number): RemoteChats {
+  if (jsonBytes(chats) <= budget) return chats
+  const bare = chats.sessions.map(({ preview: _preview, ...s }) => s)
+  const order = [...bare.filter((s) => s.pinned), ...bare.filter((s) => !s.pinned)]
+  let bytes = jsonBytes({ ...chats, sessions: [] })
+  const kept = new Set<string>()
+  for (const s of order) {
+    const size = jsonBytes(s) + 1
+    if (bytes + size > budget) break
+    bytes += size
+    kept.add(s.id)
+  }
+  return { ...chats, sessions: bare.filter((s) => kept.has(s.id)) }
 }
 
 export function remoteSession(meta: SessionMeta): RemoteSession {

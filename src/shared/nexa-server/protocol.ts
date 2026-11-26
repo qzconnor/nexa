@@ -3,7 +3,7 @@
  * validation and the constants both sides need. Free of Node APIs on purpose, so the desktop app and the
  * PWA can take this file over unchanged. `docs/PROTOCOL.md` describes the same in prose.
  *
- * Copied unchanged from nexa-server (`src/protocol.ts`, commit ea70a38) apart from this paragraph; keep
+ * Copied unchanged from nexa-server (`src/protocol.ts`, commit 514ec89) apart from this paragraph; keep
  * both the same. The server's side (`parseClientMessage`) stays in, so a diff shows only real changes.
  */
 
@@ -159,6 +159,15 @@ export interface ReadyMessage {
   namespace: string
   /** All instances of the namespace, this one included. */
   instances: InstanceInfo[]
+  /** What this server allows a connection; clients size their messages by it. */
+  limits: ServerLimits
+}
+
+export interface ServerLimits {
+  /** Largest message a client may send, in bytes, the whole JSON (`maxPayload`); larger closes the connection. */
+  maxMessageBytes: number
+  /** Messages per second per connection (bursts up to twice as many); beyond it they are dropped (`rate-limited`). */
+  rateLimit: number
 }
 
 export interface RelayedMessage {

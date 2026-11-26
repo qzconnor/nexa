@@ -12,6 +12,7 @@ import {
   type ErrorCode,
   type InstanceInfo,
   type Role,
+  type ServerLimits,
   type ServerMessage,
 } from './protocol'
 
@@ -38,6 +39,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const isTime = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
 const isText = (value: unknown, pattern: RegExp): value is string => typeof value === 'string' && pattern.test(value)
+
+/** What nexa-server allows unless its admin set otherwise; also assumed of a server that doesn't say (before `limits`). */
+export const DEFAULT_SERVER_LIMITS: ServerLimits = { maxMessageBytes: 1024 * 1024, rateLimit: 100 }
+
+/** The server's `limits`, each value only within sense; what is missing or odd stays at the default. */
+export function parseLimits(data: unknown): ServerLimits {
+  const limits = isRecord(data) ? data : {}
+  const within = (value: unknown, min: number, max: number) => typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
+  return {
+    maxMessageBytes: within(limits.maxMessageBytes, 1024, 64 * 1024 * 1024) ? (limits.maxMessageBytes as number) : DEFAULT_SERVER_LIMITS.maxMessageBytes,
+    rateLimit: within(limits.rateLimit, 1, 100_000) ? (limits.rateLimit as number) : DEFAULT_SERVER_LIMITS.rateLimit,
+  }
+}
 
 export function parseInstanceInfo(data: unknown): InstanceInfo | null {
   if (!isRecord(data)) return null
@@ -77,7 +91,7 @@ export function parseServerMessage(text: string): ServerMessage | null {
     case 'ready': {
       const instances = parseInstances(data.instances)
       if (!isInstanceId(data.instance) || typeof data.namespace !== 'string' || !instances) return null
-      return { t: 'ready', instance: data.instance, namespace: data.namespace, instances }
+      return { t: 'ready', instance: data.instance, namespace: data.namespace, instances, limits: parseLimits(data.limits) }
     }
     case 'msg':
       if (!isText(data.id, REQUEST_ID) || !isInstanceId(data.from) || typeof data.to !== 'string' || !isText(data.kind, KIND)) return null

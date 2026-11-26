@@ -8,7 +8,7 @@ import { RemoteHost } from './remote-host'
 /** What Remote Control needs of the server link and of the chats (tests hand in fakes of these). */
 export type RemoteLink = Pick<
   ServerLinkService,
-  'on' | 'sendToDevice' | 'self' | 'device' | 'remoteLevel' | 'remoteEnabled' | 'setRemoteLevel' | 'getState'
+  'on' | 'sendToDevice' | 'self' | 'device' | 'remoteLevel' | 'remoteEnabled' | 'setRemoteLevel' | 'getState' | 'limits'
 >
 export type RemoteSessions = Pick<SessionService, 'on' | 'list' | 'open' | 'send' | 'interrupt' | 'respond' | 'activeRuntimes'>
 
@@ -40,6 +40,7 @@ export function createRemote(deps: RemoteDeps): Remote {
       level: (id) => link.remoteLevel(id),
       enabled: () => link.remoteEnabled(),
       revoke: (id) => link.setRemoteLevel(id, 'off'),
+      limits: () => link.limits(),
     },
     sessions: {
       list: () => sessions.list(),
@@ -66,7 +67,10 @@ export function createRemote(deps: RemoteDeps): Remote {
         client.onDeviceMessage(from, kind, data)
       }
     }),
-    link.on('deviceSendFailed', (id) => client.onSendFailed(id)),
+    link.on('deviceSendFailed', (id, code) => {
+      client.onSendFailed(id, code)
+      host.onSendFailed(id)
+    }),
     link.on('deviceStatus', (id, online) => {
       host.onDeviceStatus(id, online)
       client.onDeviceStatus(id, online)

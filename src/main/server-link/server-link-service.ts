@@ -10,7 +10,9 @@ import {
   type JoinRequest,
   type RelayedMessage,
   type Role,
+  type ServerLimits,
 } from '@shared/nexa-server/protocol'
+import { DEFAULT_SERVER_LIMITS } from '@shared/nexa-server/server-messages'
 import { DEFAULT_REMOTE_LEVEL, type RemoteLevel } from '@shared/remote'
 import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type PairInput, type ServerLinkState } from '@shared/server-link'
 import { TypedEmitter } from '../lib/typed-emitter'
@@ -55,6 +57,8 @@ interface Active {
   clock: { server: number; mono: number } | null
   /** Checks the clock again while it is off, to notice when the user fixed it. */
   clockTimer: ReturnType<typeof setTimeout> | null
+  /** What the server takes, as it said at login; its defaults until then. */
+  limits: ServerLimits
 }
 
 type Events = {
@@ -313,6 +317,11 @@ export class ServerLinkService extends TypedEmitter<Events> {
     return !!this.active?.profile.remote.enabled
   }
 
+  /** What the server takes (size of a message, messages per second), as it said at the last login. */
+  limits(): ServerLimits {
+    return this.active?.limits ?? DEFAULT_SERVER_LIMITS
+  }
+
   /** Lets the other devices in (each with its level) or no one. */
   async setRemoteEnabled(on: boolean): Promise<void> {
     const active = this.paired()
@@ -379,6 +388,7 @@ export class ServerLinkService extends TypedEmitter<Events> {
       identity: id,
       member: (memberId) => membership.member(memberId),
       send: (to, kind, msgId, body) => connection.send(to, kind, msgId, body),
+      maxMessageBytes: () => active.limits.maxMessageBytes,
     })
     const active: Active = {
       profile,
@@ -392,11 +402,13 @@ export class ServerLinkService extends TypedEmitter<Events> {
       leaving: false,
       clock: null,
       clockTimer: null,
+      limits: DEFAULT_SERVER_LIMITS,
     }
     active.offs.push(
       connection.on('status', () => this.changed()),
       connection.on('ready', (ready) => {
         active.devices = new Map(ready.instances.map((d) => [d.id, d]))
+        active.limits = ready.limits
         const self = active.devices.get(profile.instance)
         if (self) profile.name = self.name
         // The server stamps this device's `lastSeen` at login, just before `ready`: its clock, give or take the trip.

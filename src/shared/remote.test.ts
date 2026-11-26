@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem } from './chat'
 import {
+  fitChats,
+  jsonBytes,
   levelAllows,
   pageOf,
   parseInteractionResponse,
@@ -112,6 +114,37 @@ describe('slimItem and pageOf', () => {
     expect(slim.app).toBeUndefined()
     const withImage = slimItem({ ...user('u1'), images: ['C:\\bild.png'] } as ChatItem) as Extract<ChatItem, { kind: 'user' }>
     expect(withImage.images).toBeUndefined()
+  })
+
+  it('cuts by UTF-8 bytes, so umlauts and CJK stay within the limit too', () => {
+    for (const char of ['Ü', '漢', '😀']) {
+      const answer = slimItem({ kind: 'assistant', id: 'a', ts: 1, provider: 'claude', text: char.repeat(50_000) }, 1024) as Extract<ChatItem, { kind: 'assistant' }>
+      expect(new TextEncoder().encode(answer.text).length).toBeLessThanOrEqual(4 * 1024 + 20)
+      // No half character at the cut.
+      expect(answer.text).not.toContain('\uFFFD')
+      expect(answer.text.startsWith(char)).toBe(true)
+    }
+    const tool = slimItem({ kind: 'tool', id: 't', ts: 1, provider: 'claude', tool: 'bash', title: 'Bash', status: 'done', startedAt: 1, output: `${'ö'.repeat(5_000)}SCHLUSS` } as ChatItem, 1024)
+    expect((tool as Extract<ChatItem, { kind: 'tool' }>).output!.endsWith('SCHLUSS')).toBe(true)
+  })
+
+  it('leaves out the texts of many changed files before the changes', () => {
+    const changes = Array.from({ length: 30 }, (_, i) => ({ path: `f${i}.ts`, type: 'update' as const, oldText: 'a'.repeat(900), newText: 'b'.repeat(900) }))
+    const tool = slimItem({ kind: 'tool', id: 't', ts: 1, provider: 'claude', tool: 'edit', title: 'Edit', status: 'done', startedAt: 1, changes } as ChatItem, 1024) as Extract<ChatItem, { kind: 'tool' }>
+    expect(tool.changes).toHaveLength(30)
+    expect(tool.changes!.every((c) => c.oldText === undefined && c.path)).toBe(true)
+  })
+
+  it('fits the list of chats into a small message: previews first, then the oldest', () => {
+    const sessions = Array.from({ length: 200 }, (_, i) => ({ id: `c${i}`, projectId: 'p', title: `Chat ${i}`, provider: 'claude' as const, model: 'opus', createdAt: 1, updatedAt: 200 - i, preview: 'Vorschau '.repeat(20), pinned: i === 150 }))
+    const chats = { projects: [{ id: 'p', name: 'nexa', path: 'F:\\nexa' }], sessions, runtimes: {} }
+    expect(fitChats(chats, 1_000_000)).toBe(chats)
+    const fitted = fitChats(chats, 8 * 1024)
+    expect(jsonBytes(fitted)).toBeLessThanOrEqual(8 * 1024)
+    expect(fitted.sessions[0]).not.toHaveProperty('preview')
+    expect(fitted.sessions.some((s) => s.id === 'c150')).toBe(true)
+    expect(fitted.sessions.some((s) => s.id === 'c0')).toBe(true)
+    expect(fitted.sessions.length).toBeLessThan(200)
   })
 
   it('pages from the end backwards, within the size of a bundle', () => {

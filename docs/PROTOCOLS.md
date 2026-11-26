@@ -1273,7 +1273,7 @@ Typen und Prüfungen in `src/shared/remote.ts`, Host und Steuerung in `src/main/
   (dazu Prompts senden und abbrechen), `full` (dazu Rückfragen, Freigaben und Pläne beantworten). Jede
   Stufe schließt die davor ein. Ohne Eintrag gilt `read`; solange die Fernsteuerung aus ist, `off` für alle.
 - **`rc.request`** `{ m, p }`, beantwortet mit **`rc.response`** `{ re, r }` oder `{ re, e: { code, message } }`;
-  `re` ist die `id` der Anfrage. `code`: `disabled`, `forbidden`, `not-found`, `bad-request`, `too-large`,
+  `re` ist die `id` der Anfrage. `code` (vom Host): `disabled`, `forbidden`, `not-found`, `bad-request`, `too-large`,
   `failed` (`message` sagt dann warum, auf Deutsch).
 
 | `m` | `p` | Antwort | Stufe |
@@ -1293,14 +1293,29 @@ Typen und Prüfungen in `src/shared/remote.ts`, Host und Steuerung in `src/main/
   sinkt seine Stufe unter `read`, endet die Beobachtung sofort.
 - **`rc.events`** `{ events }`: die `SessionEvent`s der beobachteten Chats (`item`, `delta`, `truncated`),
   dazu `runtime` aller Chats und `{ type: "chats" }`, wenn sich die Liste geändert hat (höchstens alle
-  2 Sekunden). Gebündelt alle 100 ms und bis etwa 400 KB je Nachricht; Deltas desselben Items hängt der
-  Host aneinander, ein neuer Stand eines Items oder Laufzustands ersetzt den wartenden.
+  2 Sekunden). Gebündelt alle 100 ms (bei einem Server, der wenige Nachrichten je Sekunde erlaubt, seltener:
+  Bündel nehmen höchstens ein Viertel seiner `rateLimit`) und bis zum Budget je Nachricht (siehe „Größe“);
+  Deltas desselben Items hängt der Host aneinander, ein neuer Stand eines Items oder Laufzustands ersetzt
+  den wartenden. Kommt ein Bündel nicht an (der Server meldet `busy` oder `unreachable`) oder ist ein
+  Ereignis allein zu groß, endet die Beobachtung dieses Geräts: Mit der nächsten Erneuerung bekommt es
+  `renewed: false` und liest neu, statt mit einer Lücke weiterzumachen.
 - **Was nicht mitgeht**: Bilder (Pfade auf dem Host), die Seiten der MCP Apps, Eingaben und Render-Specs
-  über 64 KB. Lange Texte kürzt der Host, Ausgaben von Werkzeugen von vorn (das Ende zählt).
+  über die Textgrenze (64 KB, bei kleinem Budget ein Achtel davon). Lange Texte kürzt der Host nach UTF-8-Bytes,
+  Prompts und Antworten bei der vierfachen Grenze, Ausgaben von Werkzeugen von vorn (das Ende zählt).
+  Ein Werkzeug mit vielen geänderten Dateien verliert erst deren ganze Texte, dann die Änderungen.
 - **Reihenfolge**: Nachrichten zwischen zwei Geräten verlassen und erreichen `DeviceChannel` in der
   Reihenfolge, in der sie geschrieben wurden, auch wenn das Verschlüsseln unterschiedlich lange dauert.
   Öffnet ein Gerät einen beobachteten Chat, verwirft der Host die für ihn noch wartenden Ereignisse dieses
   Chats: Sie stecken in der Seite, und was danach kommt, folgt der Antwort. Die Steuerung ignoriert
   Ereignisse eines Chats, bis seine Seite da ist, wie ein Fenster bei einem lokalen.
-- **Größe**: Nachrichten über 900 KB schickt ein Gerät nicht (der Server trennt ab 1 MB die ganze
-  Verbindung); eine zu große Antwort wird zu `too-large`, ein zu großes Ereignis fällt weg.
+- **Größe**: Der Server nennt in `ready` seine Grenzen (`limits.maxMessageBytes`, `limits.rateLimit`);
+  ein Server, der das noch nicht tut, gilt als einer mit den Vorgaben (1 MB, 100 je Sekunde). Über
+  `maxMessageBytes` trennt er die ganze Verbindung, deshalb schickt `DeviceChannel` keinen versiegelten
+  Body über `maxMessageBytes − 1 KB`. Wie viel JSON dafür in Klartext passt, rechnet `payloadLimit`
+  (Base64 nimmt ein Viertel, Signatur und Tag ein wenig); Seiten, die Liste der Chats und Bündel bleiben
+  darunter und bei höchstens 400 KB, gemessen in UTF-8-Bytes. Die Liste der Chats lässt dafür zuerst die
+  Vorschauen weg, dann die ältesten Chats (angeheftete zuerst behalten). Eine trotzdem zu große Antwort
+  wird zu `too-large`.
+- **Abgelehnt vom Server**: `busy` (das Gerät liest nicht schnell genug) wird zu `busy`,
+  `unknown-instance` (entfernt) zu `gone`, sonst `unreachable`; jeweils sofort, ohne auf die Zeitgrenze
+  von 20 Sekunden zu warten.

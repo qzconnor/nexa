@@ -2,14 +2,27 @@ import type { Key } from '@shared/nexa-server/auth'
 import { openSealed, pairwiseKey, PAIRWISE, parseSealed, randomMessageId, seal, verifyOpened } from '@shared/nexa-server/envelope'
 import { ReplayGuard, type Member } from '@shared/nexa-server/members'
 import type { RelayedMessage } from '@shared/nexa-server/protocol'
+import { DEFAULT_SERVER_LIMITS } from '@shared/nexa-server/server-messages'
 import type { Identity } from './link-store'
 
+/** Room for the JSON around a sealed body in a `send` (type, id, receiver, kind): about 100 bytes, generously. */
+const SEND_HEADROOM = 1024
+
 /**
- * The largest sealed body this device sends. nexa-server closes the connection on a message over its
- * limit (1 MB unless its admin set another), which would cut off everything else too; this stays well
- * below it, the JSON around the body included.
+ * The largest sealed body this device sends to a server that takes messages of `maxMessageBytes`.
+ * Over that nexa-server closes the connection, which would cut off everything else too.
  */
-export const MAX_SEALED_BYTES = 900 * 1024
+export function sealedLimit(maxMessageBytes: number): number {
+  return maxMessageBytes - SEND_HEADROOM
+}
+
+/**
+ * About how much JSON (UTF-8 bytes) fits into one sealed message: the envelope adds the signature (64
+ * bytes), `{"at":…,"d":…}`, the tag (16) and base64url (4 bytes for 3).
+ */
+export function payloadLimit(maxMessageBytes: number): number {
+  return Math.max(0, Math.floor(((sealedLimit(maxMessageBytes) - 128) * 3) / 4) - 128)
+}
 
 export class MessageTooLargeError extends Error {
   constructor(readonly bytes: number) {
@@ -24,6 +37,8 @@ export interface DeviceChannelDeps {
   member(id: string): Member | undefined
   /** Relays a sealed body; false when not connected. */
   send(to: string, kind: string, id: string, body: unknown): boolean
+  /** The server's limit of a message (`ready`), in bytes. */
+  maxMessageBytes?: () => number
   now?: () => number
 }
 
@@ -73,7 +88,8 @@ export class DeviceChannel {
       now: this.now(),
     })
     const bytes = JSON.stringify(body).length
-    if (bytes > MAX_SEALED_BYTES) throw new MessageTooLargeError(bytes)
+    // The body is ASCII (base64url and names), so its length is its size in bytes.
+    if (bytes > sealedLimit(this.deps.maxMessageBytes?.() ?? DEFAULT_SERVER_LIMITS.maxMessageBytes)) throw new MessageTooLargeError(bytes)
     return { id, body }
   }
 

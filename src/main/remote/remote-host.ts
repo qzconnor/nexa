@@ -1,5 +1,8 @@
 import type { InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
+import type { ServerLimits } from '@shared/nexa-server/protocol'
 import {
+  fitChats,
+  jsonBytes,
   levelAllows,
   METHOD_LEVEL,
   pageOf,
@@ -8,6 +11,7 @@ import {
   RemoteKind,
   REMOTE_BATCH_BYTES,
   slimItem,
+  textLimitFor,
   WATCH_TTL_MS,
   type RemoteChats,
   type RemoteErrorBody,
@@ -19,10 +23,14 @@ import {
 import type { RemoteController } from '@shared/remote-ipc'
 import type { Project, ProjectSection, SessionDetail, SessionMeta } from '@shared/types'
 import { TypedEmitter } from '../lib/typed-emitter'
-import { MessageTooLargeError } from '../server-link/device-channel'
+import { MessageTooLargeError, payloadLimit } from '../server-link/device-channel'
 
 /** Events of a chat are bundled this long before they go, so streamed text costs a message per bundle. */
 const BATCH_MS = 100
+/** Bundles of events take at most this share of the messages a second the server allows (`rateLimit`). */
+const EVENTS_RATE_SHARE = 0.25
+/** How many sent bundles are remembered, to know whose watch a failed one belongs to. */
+const SENT_KEPT = 256
 /** The list of chats changes with every turn; a controller reads it anew at most this often. */
 const CHATS_DEBOUNCE_MS = 2_000
 
@@ -36,6 +44,8 @@ export interface RemoteHostDeps {
     enabled(): boolean
     /** „Trennen“: the device may do nothing here until the user lets it again. */
     revoke(id: string): Promise<void>
+    /** What the server takes, as it said at login. */
+    limits(): ServerLimits
   }
   sessions: {
     list(): SessionMeta[]
@@ -69,6 +79,10 @@ class NotFound extends Error {}
 export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteController[]] }> {
   private readonly watchers = new Map<string, Watcher>()
   private chatsTimer: ReturnType<typeof setTimeout> | null = null
+  /** Message ids of sent bundles, with the device they went to. */
+  private readonly sent = new Map<string, string>()
+  /** Messages the server refused before their send returned (and so before they were in `sent`). */
+  private readonly early = new Set<string>()
 
   constructor(private readonly deps: RemoteHostDeps) {
     super()
@@ -112,7 +126,28 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
     for (const watcher of this.watchers.values()) {
       if (event.type === 'runtime' || watcher.ids.has(event.sessionId)) this.queue(watcher, event)
     }
-    for (const [id, watcher] of this.watchers) if (watcher.queue.length && !watcher.flush) watcher.flush = setTimeout(() => void this.flush(id), BATCH_MS)
+    for (const [id, watcher] of this.watchers) if (watcher.queue.length && !watcher.flush) watcher.flush = setTimeout(() => void this.flush(id), this.batchMs())
+  }
+
+  /**
+   * The server couldn't pass a message on. A bundle of events lost (the device doesn't keep up, or went
+   * meanwhile) leaves a gap in its chats: its watch ends, and with the next renewal it reads them anew.
+   */
+  onSendFailed(id: string): void {
+    const device = this.sent.get(id)
+    if (device === undefined) {
+      // Perhaps a bundle whose send hasn't returned its id yet: `flush` looks here.
+      this.early.add(id)
+      if (this.early.size > SENT_KEPT) this.early.delete(this.early.values().next().value!)
+      return
+    }
+    this.sent.delete(id)
+    this.onLost(device)
+  }
+
+  private onLost(device: string): void {
+    this.deps.log?.(`remote: events to ${this.deps.link.deviceName(device) ?? device} lost, its watch ends`)
+    this.unwatch(device)
   }
 
   /** The list of chats changed (a title, a new chat, the order): the watching devices read it anew. */
@@ -150,11 +185,11 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
         return { name: this.deps.link.selfName(), enabled: this.deps.link.enabled(), level, version: this.deps.version }
       }
       case 'chats':
-        return this.chats()
+        return fitChats(this.chats(), this.budget())
       case 'open': {
         this.known(request.p.id)
         const detail = await sessions.open(request.p.id)
-        const page = pageOf(detail.items, request.p.before)
+        const page = pageOf(detail.items, request.p.before, this.budget())
         // The page holds what still waited to go; the answer leaves before the next bundle, and a chat
         // that is still loading on the other side ignores what came before it (as a window does).
         const watcher = this.watchers.get(from)
@@ -246,7 +281,7 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
         return
       }
       case 'item': {
-        const item = slimItem(event.item)
+        const item = slimItem(event.item, textLimitFor(this.budget()))
         watcher.queue = q.filter(
           (e) => !((e.type === 'item' && e.sessionId === event.sessionId && e.item.id === item.id) || (e.type === 'delta' && e.sessionId === event.sessionId && e.itemId === item.id)),
         )
@@ -273,16 +308,35 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
     watcher.flush = null
     const events = watcher.queue
     watcher.queue = []
-    for (const bundle of bundles(events)) {
+    for (const bundle of bundles(events, this.budget())) {
       try {
-        await this.deps.link.sendToDevice(id, RemoteKind.events, { events: bundle })
+        const sent = await this.deps.link.sendToDevice(id, RemoteKind.events, { events: bundle })
+        if (sent && this.early.delete(sent)) return this.onLost(id)
+        if (sent) this.remember(sent, id)
       } catch (error) {
-        // One event too large on its own (an item the slimming couldn't bring down) is left out; the
-        // device reads the chat anew when it opens it.
+        // An event too large on its own (an item the slimming couldn't bring down): what the device
+        // has of the chat would miss it, so it reads its chats anew instead (its watch ends).
         const why = error instanceof MessageTooLargeError ? `${error.bytes} bytes` : error instanceof Error ? error.message : String(error)
         this.deps.log?.(`remote: events not sent: ${why}`)
+        this.unwatch(id)
+        return
       }
     }
+  }
+
+  /** How much JSON a page, a list or a bundle may have, by the server's limit of a message. */
+  private budget(): number {
+    return Math.min(REMOTE_BATCH_BYTES, payloadLimit(this.deps.link.limits().maxMessageBytes))
+  }
+
+  /** Bundles go at most this often, so that they leave room for everything else the server allows. */
+  private batchMs(): number {
+    return Math.max(BATCH_MS, Math.ceil(1000 / (this.deps.link.limits().rateLimit * EVENTS_RATE_SHARE)))
+  }
+
+  private remember(messageId: string, device: string): void {
+    this.sent.set(messageId, device)
+    if (this.sent.size > SENT_KEPT) this.sent.delete(this.sent.keys().next().value!)
   }
 
   private async reply(to: string, response: RemoteResponse): Promise<void> {
@@ -295,14 +349,14 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
   }
 }
 
-/** Events in bundles of about `REMOTE_BATCH_BYTES` of JSON each, in their order. */
-function bundles(events: readonly RemoteEvent[]): RemoteEvent[][] {
+/** Events in bundles of at most `budget` bytes of JSON each (one event alone may be more), in their order. */
+function bundles(events: readonly RemoteEvent[], budget: number): RemoteEvent[][] {
   const result: RemoteEvent[][] = []
   let current: RemoteEvent[] = []
   let bytes = 0
   for (const event of events) {
-    const size = JSON.stringify(event).length
-    if (current.length && bytes + size > REMOTE_BATCH_BYTES) {
+    const size = jsonBytes(event) + 1
+    if (current.length && bytes + size > budget) {
       result.push(current)
       current = []
       bytes = 0
