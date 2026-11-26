@@ -1,8 +1,14 @@
-import { parseInteractionResponse } from '@shared/remote'
+import { readFile, stat } from 'node:fs/promises'
+import { extname, isAbsolute } from 'node:path'
+import { IpcInvoke } from '@shared/ipc'
+import { channelLevel } from '@shared/remote'
 import { RemoteInvoke, RemoteIpcEvent, type RemoteWatch } from '@shared/remote-ipc'
-import { broadcast, handle } from '../ipc'
+import { broadcast, handle, invokeHandler, onBroadcast } from '../ipc'
 import { perWindow } from '../lib/per-window'
-import { createRemote, type RemoteDeps } from './remote'
+import { createRemote, type RemoteLink } from './remote'
+
+const IMAGE_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 function text(value: unknown, name: string, max = 128): string {
   if (typeof value !== 'string' || !value || value.length > max) throw new Error(`Ungültiger Parameter: ${name}`)
@@ -18,32 +24,43 @@ function watchList(value: unknown): RemoteWatch[] {
   })
 }
 
-/** Remote Control (`createRemote`) with the window's side: the chats of other devices, who controls this one. */
-export function registerRemote(deps: RemoteDeps): { dispose(): void } {
-  const remote = createRemote(deps)
+export interface RegisterRemoteDeps {
+  link: RemoteLink
+  version: string
+  log?: (message: string) => void
+}
+
+/**
+ * Remote Control (`createRemote`) with the window's side: the window API of other devices, their
+ * events, who controls this one. The host's side answers with the windows' own handlers.
+ */
+export function registerRemote(deps: RegisterRemoteDeps): { dispose(): void } {
+  const remote = createRemote({ ...deps, invoke: invokeHandler, onBroadcast })
   const { host, client } = remote
   const offs = [
     host.on('changed', (controllers) => broadcast(RemoteIpcEvent.controllers, controllers)),
     client.on('events', (instance, events) => broadcast(RemoteIpcEvent.events, instance, events)),
     client.on('resync', (instance) => broadcast(RemoteIpcEvent.resync, instance)),
+    client.on('info', (instance, info) => broadcast(RemoteIpcEvent.info, instance, info)),
   ]
 
   const watch = perWindow<RemoteWatch, void>((all) => client.setWatch(all))
   handle(RemoteInvoke.hello, (_e, instance: unknown) => client.request(text(instance, 'instance', 64), 'hello', {}))
-  handle(RemoteInvoke.chats, (_e, instance: unknown) => client.request(text(instance, 'instance', 64), 'chats', {}))
-  handle(RemoteInvoke.open, (_e, instance: unknown, id: unknown, before: unknown) => {
-    if (before !== undefined && !(Number.isInteger(before) && (before as number) >= 0)) throw new Error('Ungültiger Parameter: before')
-    return client.request(text(instance, 'instance', 64), 'open', before === undefined ? { id: text(id, 'id') } : { id: text(id, 'id'), before: before as number })
+  handle(RemoteInvoke.invoke, (_e, instance: unknown, channel: unknown, args: unknown) => {
+    const ch = text(channel, 'channel', 96)
+    if (!Array.isArray(args)) throw new Error('Ungültiger Parameter: args')
+    // What the host would refuse anyway doesn't go out.
+    if (channelLevel(ch, args) === null) throw new Error(`${ch} geht nicht über die Fernsteuerung.`)
+    return client.invoke(text(instance, 'instance', 64), ch, args)
   })
   handle(RemoteInvoke.watch, (e, list: unknown) => watch(e.sender, watchList(list)))
-  handle(RemoteInvoke.send, (_e, instance: unknown, id: unknown, prompt: unknown) =>
-    client.request(text(instance, 'instance', 64), 'send', { id: text(id, 'id'), text: text(prompt, 'text', 200_000) }),
-  )
-  handle(RemoteInvoke.interrupt, (_e, instance: unknown, id: unknown) => client.request(text(instance, 'instance', 64), 'interrupt', { id: text(id, 'id') }))
-  handle(RemoteInvoke.respond, (_e, instance: unknown, id: unknown, itemId: unknown, response: unknown) => {
-    const parsed = parseInteractionResponse(response)
-    if (!parsed) throw new Error('Ungültiger Parameter: response')
-    return client.request(text(instance, 'instance', 64), 'respond', { id: text(id, 'id'), itemId: text(itemId, 'itemId', 256), response: parsed })
+  handle(RemoteInvoke.uploadImage, async (_e, instance: unknown, path: unknown) => {
+    const file = text(path, 'path', 4096)
+    const mime = IMAGE_MIME[extname(file).toLowerCase()]
+    if (!isAbsolute(file) || !mime) throw new Error('Nur Bilder (PNG, JPEG, GIF, WebP) gehen.')
+    if ((await stat(file)).size > MAX_IMAGE_BYTES) throw new Error('Das Bild ist zu groß (höchstens 20 MB).')
+    const data = (await readFile(file)).toString('base64')
+    return client.invoke(text(instance, 'instance', 64), IpcInvoke.appSaveImage, [data, mime])
   })
   handle(RemoteInvoke.controllers, () => host.controllers())
   handle(RemoteInvoke.disconnect, (_e, instance: unknown) => host.disconnect(text(instance, 'instance', 64)))

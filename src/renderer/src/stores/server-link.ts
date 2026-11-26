@@ -8,7 +8,7 @@ export const useServerLinkStore = defineStore('serverLink', () => {
   const state = ref<ServerLinkState | null>(null)
   let loading: Promise<void> | null = null
 
-  /** Once, at the start of the main window (the sidebar's „Geräte“ shows only when paired) or when the settings show. */
+  /** Once, at the start of the main window (the sidebar shows the other devices' chats) or when the settings show. */
   function load(): Promise<void> {
     loading ??= (async () => {
       window.api.serverLink.onChanged((next) => (state.value = next))

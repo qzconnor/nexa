@@ -99,7 +99,7 @@ function writeJson(key: string, value: unknown): void {
  */
 export const useBrowsersStore = defineStore('browsers', () => {
   const ui = useUiStore()
-  const sessions = useSessionsStore()
+  const sessions = useSessionsStore(null)
 
   const tabs = ref<BrowserTabInfo[]>([])
   const shown = ref<Record<string, string>>({})

@@ -8,10 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { useDevice } from '@/stores/device'
 import Markdown from './Markdown.vue'
 
 /** A form of the agent (`ask_user`): its fields, prefilled with their defaults, sent as values or declined. */
 const props = defineProps<{ request: FormRequest; busy?: boolean }>()
+/** Asked by an agent on another device: its paths are there, so they are typed, not picked here. */
+const device = useDevice()
 const emit = defineEmits<{ submit: [values: Record<string, FormValue>]; decline: [] }>()
 
 function initial(field: FormField): FormValue {
@@ -91,12 +94,14 @@ function submit(): void {
       </div>
       <div v-else-if="field.type === 'path'" class="flex gap-1.5">
         <Input :id="`ask-${field.key}`" v-model="values[field.key] as string" class="h-8 bg-background/60 font-mono text-[0.8rem]" />
-        <Button type="button" variant="outline" size="icon-sm" aria-label="Ordner wählen" v-tooltip="'Ordner wählen'" @click="pick(field, true)">
-          <FolderIcon />
-        </Button>
-        <Button type="button" variant="outline" size="icon-sm" aria-label="Datei wählen" v-tooltip="'Datei wählen'" @click="pick(field, false)">
-          <FileIcon />
-        </Button>
+        <template v-if="!device">
+          <Button type="button" variant="outline" size="icon-sm" aria-label="Ordner wählen" v-tooltip="'Ordner wählen'" @click="pick(field, true)">
+            <FolderIcon />
+          </Button>
+          <Button type="button" variant="outline" size="icon-sm" aria-label="Datei wählen" v-tooltip="'Datei wählen'" @click="pick(field, false)">
+            <FileIcon />
+          </Button>
+        </template>
       </div>
       <Input
         v-else-if="field.type !== 'boolean'"

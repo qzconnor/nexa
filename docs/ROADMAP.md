@@ -379,12 +379,17 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
           Mit zwei Rechnern gegen einen echten Server mit HTTPS/WSS geprüft. Ungeprüft: hinter einem Proxy
           des Systems.
     - [ ] Phase 2: Remote Control von Desktop zu Desktop.
-      - [x] Chats eines anderen Geräts auf der Seite „Geräte“ lesen und live mitverfolgen, Prompts senden,
-            abbrechen, Rückfragen und Freigaben beantworten; je Gerät eine Stufe (Einstellungen › Geräte ›
-            Fernsteuerung, aus bis eingeschaltet, Vorgabe „Nur mitlesen“), Leiste mit „Trennen“ auf dem
-            gesteuerten Gerät. Gegen den Test-Server geprüft, ungeprüft mit zwei Rechnern.
-      - [ ] Neuer Chat auf einem anderen Gerät: erst das Gerät, dann eines seiner Projekte.
-      - [ ] Bilder und Dateien eines Chats vom anderen Gerät zeigen (bisher bleiben sie dort).
+      - [x] Chats eines anderen Geräts lesen und live mitverfolgen, Prompts senden, abbrechen, Rückfragen
+            und Freigaben beantworten; je Gerät eine Stufe (Einstellungen › Geräte › Fernsteuerung, aus bis
+            eingeschaltet, Vorgabe „Nur mitlesen“), „Trennen“ auf dem gesteuerten Gerät.
+      - [x] Andere Geräte in der Seitenleiste wie dieses: ihre Projekte und Chats mit Anheften, Umbenennen,
+            Verschieben und Ordnen, ihr Chat im selben Fenster mit dem ganzen Dock (CLI, Modell, Konto,
+            Effort, Modus aus dem, was dort da ist), Bearbeiten von Prompts, Bilder im Prompt, neuer Chat
+            in einem ihrer Projekte. Die Fenster-API geht als `invoke` über den Server, zu große Nachrichten
+            in Teilen (`rc.part`). Gegen den Test-Server geprüft, ungeprüft mit zwei Rechnern.
+      - [ ] Bilder und Dateien im Verlauf eines Chats vom anderen Gerät zeigen (bisher Pfade dort).
+      - [ ] Schnellsuche (Strg+K) und Tastenkürzel über die Chats der anderen Geräte.
+      - [ ] Dateibaum, Änderungen und MCP Apps eines Chats auf einem anderen Gerät.
       - [ ] Nachrichten zwischen Chats über Geräte hinweg: `chat_list`, `chat_read`, `chat_send`,
             `chat_new` und `sessions_search` im Nexa-MCP-Server finden auch die Chats der gekoppelten Geräte
             (mit dem Gerät im Namen, etwa „Laptop › Server-Umbau“) und schicken ihnen Nachrichten,

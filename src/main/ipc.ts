@@ -52,9 +52,39 @@ const IMAGE_TYPES: Record<string, string> = {
 }
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
-/** Sends an event to every window of the app. */
+type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
+type BroadcastListener = (channel: string, args: unknown[]) => void
+
+/** Every handler by its channel, for the calls another device makes by Remote Control (`invokeHandler`). */
+const handlers = new Map<string, Listener>()
+const broadcastListeners = new Set<BroadcastListener>()
+
+/** Sends an event to every window of the app (and to who listens with `onBroadcast`: Remote Control). */
 export function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of openAppWindows()) win.webContents.send(channel, ...args)
+  for (const listener of broadcastListeners) listener(channel, args)
+}
+
+/** The events the windows get, as they go out. */
+export function onBroadcast(listener: BroadcastListener): () => void {
+  broadcastListeners.add(listener)
+  return () => broadcastListeners.delete(listener)
+}
+
+/**
+ * The event a handler gets for a call that came from another device: no window sent it, so whatever
+ * needs one (a dialog, the window's state) fails, as it should.
+ */
+const REMOTE_CALL = { sender: null, remote: true } as unknown as IpcMainInvokeEvent
+
+/**
+ * Runs the handler of `channel` as for a window, for a call of another device by Remote Control; which
+ * calls are allowed is Remote Control's to check before (`channelLevel`).
+ */
+export async function invokeHandler(channel: string, args: unknown[]): Promise<unknown> {
+  const listener = handlers.get(channel)
+  if (!listener) throw new Error(`Unbekannter Kanal: ${channel}`)
+  return listener(REMOTE_CALL, ...args)
 }
 
 /**
@@ -66,10 +96,11 @@ export function handle(
   listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown,
   from: (event: IpcMainInvokeEvent) => boolean = fromAppWindow,
 ): void {
+  handlers.set(channel, listener as Listener)
   ipcMain.handle(channel, (event, ...args) => {
     // Only the app's own page may call; anything else gets nothing.
     if (!from(event)) throw new Error('Nicht erlaubt.')
-    return (listener as (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown)(event, ...args)
+    return (listener as Listener)(event, ...args)
   })
 }
 
@@ -361,6 +392,7 @@ export function registerIpc(ctx: AppContext): void {
 
   // Sessions -----------------------------------------------------------------------------------
   handle(IpcInvoke.sessionsList, () => sessions.list())
+  handle(IpcInvoke.sessionsRuntimes, () => sessions.activeRuntimes())
   handle(IpcInvoke.sessionsCreate, (_e, input: unknown) => {
     // A chat that says it came from a scheduled task is the scheduler's to make, not the window's.
     const { scheduledTask: _task, ...rest } = (input && typeof input === 'object' ? input : {}) as SessionCreateInput

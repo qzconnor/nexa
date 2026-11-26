@@ -9,6 +9,7 @@ import { attempt } from '@/lib/errors'
 import { runningShells, startShellId } from '@/lib/shells'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAppStore } from '@/stores/app'
+import { useDevice, useDeviceApi } from '@/stores/device'
 import { useFileTreeStore } from '@/stores/file-tree'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
@@ -53,6 +54,9 @@ export function useChatCommands(options: {
   const ui = useUiStore()
   const startCommands = useStartCommandsStore()
   const chat = useChatActions()
+  /** A chat of another device: its calls go there; what needs this device's dialogs doesn't. */
+  const device = useDevice()
+  const api = useDeviceApi()
 
   function update(meta: SessionMeta, patch: SessionUpdateInput, failed = 'Ändern fehlgeschlagen'): Promise<void | undefined> {
     return attempt(() => sessions.update(meta.id, patch), failed)
@@ -134,6 +138,10 @@ export function useChatCommands(options: {
   }
 
   async function addDir(meta: SessionMeta, arg: string): Promise<void> {
+    if (!arg && device) {
+      toast('Den Ordner als Pfad angeben', { description: 'Der Chat läuft auf einem anderen Gerät: /add-dir mit dem Pfad dort.' })
+      return
+    }
     if (!arg) {
       options.composer.value?.addFolder()
       return
@@ -172,7 +180,7 @@ export function useChatCommands(options: {
       case 'fork':
         return fork(meta, args)
       case 'compact':
-        await attempt(() => window.api.sessions.compact(meta.id), 'Zusammenfassen ging nicht')
+        await attempt(() => api.sessions.compact(meta.id), 'Zusammenfassen ging nicht')
         return
       case 'diff':
         return diff(meta)
@@ -195,6 +203,7 @@ export function useChatCommands(options: {
       case 'copy':
         return chat.copyLastAnswer(meta.id)
       case 'export':
+        if (device) return void toast('Nur am Gerät selbst', { description: 'Der Chat läuft auf einem anderen Gerät: dort lässt er sich speichern.' })
         return chat.exportMarkdown(meta.id)
       case 'status':
         return options.showStatus()

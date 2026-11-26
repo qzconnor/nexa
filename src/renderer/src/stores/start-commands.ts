@@ -10,7 +10,7 @@ import { useProjectsStore } from './projects'
  * keeps (`services/start-commands.ts`): the last one of each command, running or ended.
  */
 export const useStartCommandsStore = defineStore('startCommands', () => {
-  const projects = useProjectsStore()
+  const projects = useProjectsStore(null)
   const runs = ref<StartCommandRun[]>([])
   const byKey = computed(() => new Map(runs.value.map((run) => [startCommandKey(run.projectId, run.commandId), run])))
 

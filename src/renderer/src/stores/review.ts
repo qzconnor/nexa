@@ -22,8 +22,8 @@ const samePath = (a: string, b: string) => {
  * the changes are closed.
  */
 export const useReviewStore = defineStore('review', () => {
-  const sessions = useSessionsStore()
-  const projects = useProjectsStore()
+  const sessions = useSessionsStore(null)
+  const projects = useProjectsStore(null)
   const composer = useComposerStore()
   const ui = useUiStore()
   const comments = ref<ReviewComment[]>([])

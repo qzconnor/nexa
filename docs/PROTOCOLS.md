@@ -1264,58 +1264,80 @@ eines Namespace macht den Schlüssel selbst (Generation 1).
 
 ### Remote Control (`rc.*`)
 
-Zwischen zwei Mitgliedern, mit dem Schlüssel `pair` (nur diese beiden lesen mit). Der Host prüft jede
-Anfrage selbst gegen die Stufe, die er dem fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht.
-Typen und Prüfungen in `src/shared/remote.ts`, Host und Steuerung in `src/main/remote`.
+Zwischen zwei Mitgliedern, mit dem Schlüssel `pair` (nur diese beiden lesen mit). Die Steuerung ruft die
+Fenster-API des Hosts auf, als wäre sie eins seiner Fenster: Seitenleiste, Chatfenster und Dock sind
+dieselben Komponenten, nur auf Stores dieses Geräts (`scopedStore`, `apiOf` in
+`src/renderer/src/stores/device.ts`). Der Host prüft jeden Aufruf selbst gegen die Stufe, die er dem
+fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht. Typen, Liste der Kanäle und Prüfungen in
+`src/shared/remote.ts`, Host und Steuerung in `src/main/remote`.
 
 - **Stufen** je Gerät, beim Host eingestellt (Einstellungen › Geräte › Fernsteuerung, gespeichert in
-  `nexa-server.json` unter `remote`): `off`, `read` (Chats und Verlauf lesen, beobachten), `prompt`
-  (dazu Prompts senden und abbrechen), `full` (dazu Rückfragen, Freigaben und Pläne beantworten). Jede
-  Stufe schließt die davor ein. Ohne Eintrag gilt `read`; solange die Fernsteuerung aus ist, `off` für alle.
+  `nexa-server.json` unter `remote`): `off`, `read` (Chats, Verlauf, Einstellungen, CLIs und Konten
+  lesen, beobachten), `prompt` (dazu Prompts senden, bearbeiten, abbrechen, Chats anlegen, umbenennen,
+  anheften, verschieben, Projekte und Trenner ordnen), `full` (alles, was das Fenster am Gerät selbst darf:
+  Modell, CLI, Konto, Effort und Modus im Dock, Rückfragen, Freigaben und Pläne, Shell-Befehle, MCP-Server,
+  Plugins, Einstellungen, Löschen). Jede Stufe schließt die davor ein. Ohne Eintrag gilt `read`; solange
+  die Fernsteuerung aus ist, `off` für alle.
 - **`rc.request`** `{ m, p }`, beantwortet mit **`rc.response`** `{ re, r }` oder `{ re, e: { code, message } }`;
-  `re` ist die `id` der Anfrage. `code` (vom Host): `disabled`, `forbidden`, `not-found`, `bad-request`, `too-large`,
-  `failed` (`message` sagt dann warum, auf Deutsch).
+  `re` ist die `id` der Anfrage. `code` (vom Host): `disabled`, `forbidden`, `not-found`, `bad-request`,
+  `too-large`, `failed` (`message` sagt dann warum, auf Deutsch).
 
 | `m` | `p` | Antwort | Stufe |
 |---|---|---|---|
 | `hello` | – | `{ name, enabled, level, version }`: wer der Host ist und wie weit er das fragende Gerät lässt | jede |
-| `chats` | – | `{ projects, sessions, runtimes }`: Projekte (mit dem Namen ihres Trenners), Chats ohne archivierte, Laufzustand der nicht ruhenden | `read` |
-| `open` | `{ id, before? }` | `{ session, items, start, total, runtime }`: die Items vor `before` (ohne: bis zum Ende), höchstens 300 und etwa 400 KB, ab `start` | `read` |
-| `watch` | `{ ids }` | `{ renewed }`: welche Chats das Gerät beobachtet, ersetzt die letzte Wahl | `read` |
+| `watch` | `{ ids, fresh? }` | `{ name, enabled, level, version, renewed }`: welche Chats das Gerät offen hat, ersetzt die letzte Wahl | `read` |
 | `unwatch` | – | `null` | jede |
-| `send` | `{ id, text }` | `null`, sobald der Chat den Prompt hat | `prompt` |
-| `interrupt` | `{ id }` | `null` | `prompt` |
-| `respond` | `{ id, itemId, response }` | `null`; `response` wie im Fenster (`InteractionResponse`) | `full` |
+| `invoke` | `{ ch, args }` | was der Handler des Kanals im Fenster liefert | je Kanal |
 
-- **Beobachten**: Eine Wahl gilt 90 Sekunden; die Steuerung erneuert sie alle 30 Sekunden, solange ein
-  Fenster die Seite „Geräte“ zeigt. `renewed: false` heißt, der Host kannte keine (Neustart, abgelaufen):
-  Was dazwischen geschah, kam nicht an, die Steuerung liest die Chats neu. Geht das Gerät offline oder
-  sinkt seine Stufe unter `read`, endet die Beobachtung sofort.
-- **`rc.events`** `{ events }`: die `SessionEvent`s der beobachteten Chats (`item`, `delta`, `truncated`),
-  dazu `runtime` aller Chats und `{ type: "chats" }`, wenn sich die Liste geändert hat (höchstens alle
-  2 Sekunden). Gebündelt alle 100 ms (bei einem Server, der wenige Nachrichten je Sekunde erlaubt, seltener:
-  Bündel nehmen höchstens ein Viertel seiner `rateLimit`) und bis zum Budget je Nachricht (siehe „Größe“);
-  Deltas desselben Items hängt der Host aneinander, ein neuer Stand eines Items oder Laufzustands ersetzt
-  den wartenden. Kommt ein Bündel nicht an (der Server meldet `busy` oder `unreachable`) oder ist ein
-  Ereignis allein zu groß, endet die Beobachtung dieses Geräts: Mit der nächsten Erneuerung bekommt es
-  `renewed: false` und liest neu, statt mit einer Lücke weiterzumachen.
-- **Was nicht mitgeht**: Bilder (Pfade auf dem Host), die Seiten der MCP Apps, Eingaben und Render-Specs
-  über die Textgrenze (64 KB, bei kleinem Budget ein Achtel davon). Lange Texte kürzt der Host nach UTF-8-Bytes,
-  Prompts und Antworten bei der vierfachen Grenze, Ausgaben von Werkzeugen von vorn (das Ende zählt).
-  Ein Werkzeug mit vielen geänderten Dateien verliert erst deren ganze Texte, dann die Änderungen.
+- **`invoke`**: `ch` ist ein IPC-Kanal (`sessions:send`, `settings:get` …), `args` seine Argumente (höchstens
+  8). Der Host führt ihn mit dem Handler aus, den seine Fenster nutzen (`invokeHandler` in
+  `src/main/ipc.ts`, mit einem Absender `{ sender: null, remote: true }`). Nur Kanäle in `CHANNELS`
+  (`channelLevel`) gehen, jeder mit seiner Stufe; was mit den Fenstern, Dialogen, Dateien, Terminals oder
+  dem Browser des Hosts arbeitet, nicht. Manche hängen von den Argumenten ab: `sessions:update` braucht
+  `full`, sobald es Felder des Agents ändert (`provider`, `account`, `model`, `effort`, `ultracode`,
+  `permissionMode`, `dirs` …), sonst `prompt`; `sessions:create` braucht `full` mit `cliArgs` oder einem
+  Modus außer `ask` und `plan`.
+- **Bilder** eines Prompts liegen auf dem steuernden Gerät: Es liest sie selbst (`remote:upload-image`,
+  höchstens 20 MB, png/jpg/gif/webp) und schickt sie als `invoke` von `app:save-image` mit den Bytes als
+  base64; der Host legt sie zu seinen Anhängen und gibt den Pfad zurück, der dann im Prompt steht.
+- **Beobachten**: Mit `watch` nennt das Gerät die Chats, die es geöffnet hat (höchstens 32); `sessions:open`
+  über `invoke` nimmt den Chat sofort dazu. Eine Wahl gilt 90 Sekunden, die Steuerung erneuert sie alle
+  30 Sekunden. `renewed: false` heißt, der Host kannte keine (Neustart, abgelaufen) oder das Gerät bat mit
+  `fresh: true` um einen neuen Anfang: Was dazwischen geschah, kam nicht an, die Steuerung liest alles neu.
+  Geht das Gerät offline oder sinkt seine Stufe unter `read`, endet die Beobachtung sofort.
+- **`rc.events`** `{ events }`: die Fenster-Ereignisse des Hosts, jedes als `{ ch, args }` (`REMOTE_EVENTS`):
+  Einstellungen, CLIs, Nutzung, Konten, Projekte, Trenner, die Liste der Chats und `session:event`; davon
+  `item`, `delta` und `truncated` nur für die beobachteten Chats, `runtime` für alle. Die Listen
+  (`LIST_EVENTS`: Konten, Projekte, Trenner, Chats) gehen als `{ ch, diff: { ids, changed } }`: die Ids in
+  ihrer Reihenfolge und die Einträge, die sich gegenüber dem letzten Stand dieses Geräts geändert haben.
+  Die Steuerung setzt daraus die ganze Liste zusammen (`applyDiff`); fehlt ihr ein Eintrag, beginnt sie mit
+  `watch` und `fresh: true` neu. Gebündelt alle 100 ms (bei einem Server, der wenige Nachrichten je Sekunde
+  erlaubt, seltener: Bündel nehmen höchstens ein Viertel seiner `rateLimit`); Deltas desselben Items hängt
+  der Host aneinander, ein neuer Stand eines Items, Laufzustands oder einer Liste ersetzt den wartenden.
+  Kommt ein Bündel nicht an (der Server meldet `busy` oder `unreachable`), endet die Beobachtung dieses
+  Geräts: Mit der nächsten Erneuerung bekommt es `renewed: false` und liest neu, statt mit einer Lücke
+  weiterzumachen.
+- **Was nicht mitgeht**: die Seiten der MCP Apps (sie sprechen mit Servern auf dem Host), lange Texte über
+  die Textgrenze (64 KB) in Items, die der Host nach UTF-8-Bytes kürzt (`slimItem`): Prompts und
+  Antworten bei der vierfachen Grenze, Ausgaben von Werkzeugen von vorn (das Ende zählt). Bilder im
+  Verlauf sind Pfade auf dem Host und zeigen sich auf dem steuernden Gerät noch nicht.
 - **Reihenfolge**: Nachrichten zwischen zwei Geräten verlassen und erreichen `DeviceChannel` in der
   Reihenfolge, in der sie geschrieben wurden, auch wenn das Verschlüsseln unterschiedlich lange dauert.
-  Öffnet ein Gerät einen beobachteten Chat, verwirft der Host die für ihn noch wartenden Ereignisse dieses
-  Chats: Sie stecken in der Seite, und was danach kommt, folgt der Antwort. Die Steuerung ignoriert
-  Ereignisse eines Chats, bis seine Seite da ist, wie ein Fenster bei einem lokalen.
-- **Größe**: Der Server nennt in `ready` seine Grenzen (`limits.maxMessageBytes`, `limits.rateLimit`);
-  ein Server, der das noch nicht tut, gilt als einer mit den Vorgaben (1 MB, 100 je Sekunde). Über
-  `maxMessageBytes` trennt er die ganze Verbindung, deshalb schickt `DeviceChannel` keinen versiegelten
-  Body über `maxMessageBytes − 1 KB`. Wie viel JSON dafür in Klartext passt, rechnet `payloadLimit`
-  (Base64 nimmt ein Viertel, Signatur und Tag ein wenig); Seiten, die Liste der Chats und Bündel bleiben
-  darunter und bei höchstens 400 KB, gemessen in UTF-8-Bytes. Die Liste der Chats lässt dafür zuerst die
-  Vorschauen weg, dann die ältesten Chats (angeheftete zuerst behalten). Eine trotzdem zu große Antwort
-  wird zu `too-large`.
+  Öffnet ein Gerät einen Chat (`sessions:open`), verwirft der Host die für ihn noch wartenden Ereignisse
+  dieses Chats: Sie stecken in der Antwort, und was danach kommt, folgt ihr. Die Steuerung ignoriert
+  Ereignisse eines Chats, bis seine Items da sind, wie ein Fenster bei einem lokalen.
+- **Größe und Teile**: Der Server nennt in `ready` seine Grenzen (`limits.maxMessageBytes`,
+  `limits.rateLimit`); ein Server, der das noch nicht tut, gilt als einer mit den Vorgaben (1 MB, 100 je
+  Sekunde). Über `maxMessageBytes` trennt er die ganze Verbindung, deshalb schickt `DeviceChannel` keinen
+  versiegelten Body über `maxMessageBytes − 1 KB`. Wie viel JSON dafür in Klartext passt, rechnet
+  `payloadLimit`. Eine größere Nachricht (ein langer Verlauf, eine große Liste) geht in Teilen der Art
+  **`rc.part`** `{ m, k, i, n, s }`: die Id und Art der ganzen Nachricht, die Nummer des Teils von `n`
+  und sein Stück JSON (`splitForJson` teilt so, dass jedes Stück als JSON-String unter die Grenze passt und
+  kein Ersatzpaar zerreißt). Höchstens 64 Teile; der Empfänger setzt sie zusammen und öffnet dann die
+  ganze Nachricht. Teile, die nicht alle binnen 60 Sekunden kommen, verwirft er; von einem Absender hält er
+  höchstens 16 Nachrichten in Teilen zugleich. Lehnt der Server einen Teil ab, gilt das für die ganze
+  Nachricht (`messageOf`). Jeder Teil ist eine eigene Nachricht des Servers und zählt für seine
+  `rateLimit`; der Server selbst braucht dafür nichts Neues.
 - **Abgelehnt vom Server**: `busy` (das Gerät liest nicht schnell genug) wird zu `busy`,
   `unknown-instance` (entfernt) zu `gone`, sonst `unreachable`; jeweils sofort, ohne auf die Zeitgrenze
-  von 20 Sekunden zu warten.
+  von 30 Sekunden zu warten.

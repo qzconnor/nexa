@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { attempt } from '@/lib/errors'
 import { formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useDeviceApi } from '@/stores/device'
 
 /**
  * A command the user ran with `!` (Nexa ran it, not the agent), as in Claude Code's bash mode: the
@@ -13,6 +14,8 @@ import { cn } from '@/lib/utils'
  * the agent gets with the next prompt too.
  */
 const props = defineProps<{ tool: ToolItem; sessionId: string }>()
+/** The chat may be another device's: its CLI and shells run there. */
+const api = useDeviceApi()
 
 const running = computed(() => props.tool.status === 'running')
 // Blank lines a program starts with (ping does) only push the output away from its command.
@@ -43,7 +46,7 @@ const stopping = ref(false)
 
 async function stop(): Promise<void> {
   stopping.value = true
-  await attempt(() => window.api.sessions.stopShell(props.sessionId, props.tool.id), 'Der Befehl ließ sich nicht beenden')
+  await attempt(() => api.sessions.stopShell(props.sessionId, props.tool.id), 'Der Befehl ließ sich nicht beenden')
   stopping.value = false
 }
 

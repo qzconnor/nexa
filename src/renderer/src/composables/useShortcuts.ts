@@ -5,14 +5,18 @@ import { chatAt, cycleChat, matchAppShortcut, type AppShortcut } from '@shared/s
 import { DEFAULT_ZOOM, normalizeZoom, stepZoom } from '@shared/zoom'
 import { isChatWindow } from '@/lib/chat-window'
 import { attempt } from '@/lib/errors'
+import { useShownDeviceStore } from '@/stores/device'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useTerminalsStore } from '@/stores/terminals'
 import { useUiStore } from '@/stores/ui'
 import { useChatActions } from './useChatActions'
 
-/** A chat's row in the sidebar (SidebarSession), with its id. */
+/** A chat's row in the sidebar (SidebarSession), with its device and id (`data-chat-key`). */
 const CHAT_ROW = '[data-chat-row]'
+
+/** A chat named across devices: `<device>:<id>`, this device's with an empty device. */
+const chatKey = (device: string | null, id: string) => `${device ?? ''}:${id}`
 
 /**
  * The window's keyboard shortcuts (src/shared/shortcuts.ts). `ready`: the window shows its content;
@@ -24,6 +28,7 @@ export function useShortcuts(ready: Ref<boolean>): void {
   const ui = useUiStore()
   const terminals = useTerminalsStore()
   const chat = useChatActions()
+  const shown = useShownDeviceStore()
 
   /**
    * The chats in the order the sidebar shows them, as one counts them there: a folded project's
@@ -32,12 +37,24 @@ export function useShortcuts(ready: Ref<boolean>): void {
    */
   function chatOrder(): string[] {
     const rows = [...document.querySelectorAll<HTMLElement>(CHAT_ROW)].filter((row) => row.getClientRects().length > 0)
-    if (rows.length) return [...new Set(rows.map((row) => row.dataset.sessionId!).filter(Boolean))]
-    return sessions.metas.filter((m) => !m.archived).map((m) => m.id)
+    if (rows.length) return [...new Set(rows.map((row) => row.dataset.chatKey!).filter(Boolean))]
+    return sessions.metas.filter((m) => !m.archived).map((m) => chatKey(null, m.id))
   }
 
-  /** The open chat; none on the start page. */
+  /** The open chat, of whichever device; none on the start page. */
   const openId = () => (ui.view === 'chat' ? sessions.activeId : null)
+  function openKey(): string | null {
+    if (ui.view !== 'chat') return null
+    const id = useSessionsStore(shown.device).activeId
+    return id ? chatKey(shown.device, id) : null
+  }
+
+  /** Opens a chat of the sidebar as its row would (of another device too), else one of this device. */
+  function openChat(key: string): void {
+    const row = [...document.querySelectorAll<HTMLElement>(CHAT_ROW)].find((r) => r.dataset.chatKey === key)
+    if (row) row.click()
+    else if (key.startsWith(':')) void chat.open(key.slice(1))
+  }
 
   /**
    * The scale asked for last, until the settings have it: keys pressed in quick succession step on
@@ -74,14 +91,14 @@ export function useShortcuts(ready: Ref<boolean>): void {
       case 'cycle-chat': {
         // A chat's own window has no sidebar to step through.
         if (isChatWindow) return
-        const id = cycleChat(chatOrder(), openId(), shortcut.step)
-        if (id && id !== openId()) void chat.open(id)
+        const key = cycleChat(chatOrder(), openKey(), shortcut.step)
+        if (key && key !== openKey()) openChat(key)
         return
       }
       case 'select-chat': {
         if (isChatWindow) return
-        const id = chatAt(chatOrder(), shortcut.index)
-        if (id && id !== openId()) void chat.open(id)
+        const key = chatAt(chatOrder(), shortcut.index)
+        if (key && key !== openKey()) openChat(key)
         return
       }
       case 'zoom':

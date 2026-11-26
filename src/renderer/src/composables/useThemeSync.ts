@@ -6,7 +6,7 @@ import { applyTheme } from '@/themes/apply'
 
 /** Applies the selected theme to the document and the native caption buttons. */
 export function useThemeSync() {
-  const store = useSettingsStore()
+  const store = useSettingsStore(null)
   const themes = useThemesStore()
   const theme = computed(() => themes.find(store.settings.appearance.theme))
 

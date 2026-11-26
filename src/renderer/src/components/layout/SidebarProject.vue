@@ -38,6 +38,7 @@ import { worktreeNote } from '@/lib/chat-cleanup'
 import { attempt } from '@/lib/errors'
 import { chatsIn, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
+import { useDevice } from '@/stores/device'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
@@ -59,6 +60,8 @@ const ui = useUiStore()
 const startCommands = useStartCommandsStore()
 const claudeManager = useClaudeManager()
 const drag = useSessionDrag()
+/** A project of another device: what works on this device's folders, dialogs and commands isn't offered. */
+const device = useDevice()
 
 const LIMIT = 8
 const showAll = ref(false)
@@ -68,9 +71,10 @@ const shown = computed(() => (showAll.value ? props.entry.tree.sessions : props.
 const otherSections = computed(() => projects.sections.filter((s) => s.id !== sectionIdOf(project.value, projects.sections)))
 /** A separator for its folder makes sense once, and not for the project a separator stands for already. */
 const canBecomeSection = computed(() => !projects.sections.some((s) => isSectionRoot(project.value, s)))
-const commands = computed(() => startCommands.commandsOf(project.value.id))
+// Start commands run on this device, for its own projects.
+const commands = computed(() => (device ? [] : startCommands.commandsOf(project.value.id)))
 /** „dev läuft“: start commands keep running while other projects' chats are on screen. */
-const runningText = computed(() => startCommands.runningText(project.value.id))
+const runningText = computed(() => (device ? '' : startCommands.runningText(project.value.id)))
 
 function toggleCommand(command: StartCommand): void {
   if (startCommands.isRunning(project.value.id, command.id)) void startCommands.stop(project.value.id, command.id)
@@ -112,7 +116,7 @@ async function remove(): Promise<void> {
   const result = await attempt(() => projects.remove(project.value.id), 'Entfernen fehlgeschlagen')
   if (!result) return
   sessions.forget(result.removed)
-  report(result)
+  report(result, !device)
   if (!sessions.activeId && ui.view === 'chat') ui.view = 'home'
 }
 
@@ -151,7 +155,7 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
             :aria-expanded="open"
             class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-[0.85rem]"
             :title="project.path"
-            @click="projects.update(project.id, { collapsed: !project.collapsed })"
+            @click="attempt(() => projects.update(project.id, { collapsed: !project.collapsed }))"
           >
             <ChevronRightIcon :class="cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')" />
             <component :is="open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0 text-muted-foreground" />
@@ -178,14 +182,16 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
       </ContextMenuTrigger>
       <ContextMenuContent class="w-60">
         <ContextMenuItem @select="newChat()"><PlusIcon /> Neuer Chat</ContextMenuItem>
-        <ContextMenuItem @select="newChatInFolder"><FolderInputIcon /> Neuer Chat in Unterordner …</ContextMenuItem>
-        <ContextMenuItem @select="ui.worktreeRequest = { projectId: project.id, folder: project.path }">
-          <FolderGit2Icon /> Neuer Chat in Worktree …
-        </ContextMenuItem>
-        <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
+        <template v-if="!device">
+          <ContextMenuItem @select="newChatInFolder"><FolderInputIcon /> Neuer Chat in Unterordner …</ContextMenuItem>
+          <ContextMenuItem @select="ui.worktreeRequest = { projectId: project.id, folder: project.path }">
+            <FolderGit2Icon /> Neuer Chat in Worktree …
+          </ContextMenuItem>
+          <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
+        </template>
         <ContextMenuItem @select="rename"><PencilIcon /> Umbenennen</ContextMenuItem>
-        <ContextMenuItem @select="ui.promptTarget = { kind: 'project', id: project.id }"><ScrollTextIcon /> Prompt …</ContextMenuItem>
-        <ContextMenuSub v-if="commands.length">
+        <ContextMenuItem v-if="!device" @select="ui.promptTarget = { kind: 'project', id: project.id }"><ScrollTextIcon /> Prompt …</ContextMenuItem>
+        <ContextMenuSub v-if="commands.length && !device">
           <ContextMenuSubTrigger><SquareTerminalIcon /> Startbefehle</ContextMenuSubTrigger>
           <ContextMenuSubContent class="w-56">
             <ContextMenuItem v-for="c in commands" :key="c.id" @select="toggleCommand(c)">
@@ -200,16 +206,16 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
             <ContextMenuItem @select="ui.startCommandsProject = project.id"><PencilIcon /> Bearbeiten …</ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
-        <ContextMenuItem v-else @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</ContextMenuItem>
+        <ContextMenuItem v-else-if="!device" @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</ContextMenuItem>
         <ContextMenuSub v-if="otherSections.length">
           <ContextMenuSubTrigger><ArrowRightIcon /> Verschieben nach</ContextMenuSubTrigger>
           <ContextMenuSubContent class="w-48">
             <ContextMenuItem v-for="section in otherSections" :key="section.id" @select="moveTo(section.id)">{{ section.name }}</ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
-        <ContextMenuItem v-if="canBecomeSection" @select="toSection"><FolderTreeIcon /> Zum Trenner machen …</ContextMenuItem>
+        <ContextMenuItem v-if="canBecomeSection && !device" @select="toSection"><FolderTreeIcon /> Zum Trenner machen …</ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem @select="ui.cleanupProject = project.id"><BrushCleaningIcon /> Chats aufräumen …</ContextMenuItem>
+        <ContextMenuItem v-if="!device" @select="ui.cleanupProject = project.id"><BrushCleaningIcon /> Chats aufräumen …</ContextMenuItem>
         <ContextMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Aus Nexa entfernen</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

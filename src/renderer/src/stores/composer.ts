@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { apiOf } from './device'
 
 export interface Draft {
   text: string
@@ -58,15 +59,16 @@ export const useComposerStore = defineStore('composer', () => {
   const fileLists = new Map<string, { at: number; list: Promise<readonly string[]> }>()
   const FILES_MAX_AGE_MS = 20_000
 
-  /** The files of a project folder, relative to it. */
-  function filesOf(root: string): Promise<readonly string[]> {
-    const cached = fileLists.get(root)
+  /** The files of a project folder of `device` (null: this one), relative to it. */
+  function filesOf(root: string, device: string | null = null): Promise<readonly string[]> {
+    const key = `${device ?? ''}\0${root}`
+    const cached = fileLists.get(key)
     if (cached && Date.now() - cached.at < FILES_MAX_AGE_MS) return cached.list
-    const list = window.api.files
-      .searchList(root)
+    const list = apiOf(device)
+      .files.searchList(root)
       .then((result) => Object.freeze(result.paths))
       .catch(() => cached?.list ?? ([] as readonly string[]))
-    fileLists.set(root, { at: Date.now(), list })
+    fileLists.set(key, { at: Date.now(), list })
     return list
   }
 

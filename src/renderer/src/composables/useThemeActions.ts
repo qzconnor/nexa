@@ -10,7 +10,7 @@ import { useUiStore } from '@/stores/ui'
 /** What the theme picker and the theme editor do with themes, with the messages that go with it. */
 export function useThemeActions() {
   const themes = useThemesStore()
-  const settings = useSettingsStore()
+  const settings = useSettingsStore(null)
   const ui = useUiStore()
 
   const names = () => themes.all.map((t) => t.name)

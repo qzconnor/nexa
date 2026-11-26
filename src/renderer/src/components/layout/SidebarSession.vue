@@ -8,10 +8,12 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Spinner } from '@/components/ui/spinner'
 import { useChatActions } from '@/composables/useChatActions'
 import { useSessionDrag } from '@/composables/useSessionDrag'
+import { attempt } from '@/lib/errors'
 import { formatAge } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useChatWindowsStore } from '@/stores/chat-windows'
+import { useDevice } from '@/stores/device'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import SessionMoveMenu from './SessionMoveMenu.vue'
@@ -30,8 +32,11 @@ const sessions = useSessionsStore()
 const ui = useUiStore()
 const accounts = useAccountsStore()
 const chatWindows = useChatWindowsStore()
+/** A chat of another device: no windows of its own, no files of this one. */
+const device = useDevice()
 /** In a window of its own: a click brings that window to the front. */
-const ownWindow = computed(() => chatWindows.hasWindow(props.meta.id))
+const ownWindow = computed(() => !device && chatWindows.hasWindow(props.meta.id))
+const update = (patch: { pinned?: boolean; archived?: boolean }) => void attempt(() => sessions.update(props.meta.id, patch))
 
 /** Whose login the chat runs with; only worth a dot while its CLI has more than one account. */
 const account = computed(() => (accounts.ofProvider(props.meta.provider).length > 1 ? accounts.get(accounts.sessionAccount(props.meta)) : undefined))
@@ -68,6 +73,7 @@ function endDrag(): void {
         data-list-row
         data-chat-row
         :data-session-id="meta.id"
+        :data-chat-key="`${device ?? ''}:${meta.id}`"
         :aria-current="sessions.activeId === meta.id && ui.view === 'chat' ? 'page' : undefined"
         :draggable="!!drag && !chat.working(meta.id)"
         :class="
@@ -110,18 +116,18 @@ function endDrag(): void {
     </ContextMenuTrigger>
     <ContextMenuContent class="w-56">
       <ContextMenuItem @select="rename"><PencilIcon /> Umbenennen</ContextMenuItem>
-      <ContextMenuItem @select="chat.popOut(meta)">
+      <ContextMenuItem v-if="!device" @select="chat.popOut(meta)">
         <SquareArrowOutUpRightIcon /> {{ ownWindow ? 'Fenster des Chats zeigen' : 'In eigenem Fenster öffnen' }}
       </ContextMenuItem>
-      <ContextMenuItem @select="sessions.update(meta.id, { pinned: !meta.pinned })">
+      <ContextMenuItem @select="update({ pinned: !meta.pinned })">
         <component :is="meta.pinned ? PinOffIcon : PinIcon" /> {{ meta.pinned ? 'Lösen' : 'Anheften' }}
       </ContextMenuItem>
       <SessionMoveMenu :meta="meta" />
       <ContextMenuItem :disabled="chat.working(meta.id)" @select="chat.fork(meta.id)"><GitForkIcon /> Abzweigen</ContextMenuItem>
-      <ContextMenuItem @select="sessions.update(meta.id, { archived: true })"><ArchiveIcon /> Archivieren</ContextMenuItem>
+      <ContextMenuItem @select="update({ archived: true })"><ArchiveIcon /> Archivieren</ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem @select="chat.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</ContextMenuItem>
-      <ContextMenuItem @select="chat.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</ContextMenuItem>
+      <ContextMenuItem v-if="!device" @select="chat.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</ContextMenuItem>
     </ContextMenuContent>

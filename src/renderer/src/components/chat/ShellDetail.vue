@@ -11,6 +11,7 @@ import { formatDuration } from '@/lib/format'
 import { plainOutput, shellCommand, shellEnd, shellStatus } from '@/lib/shells'
 import { cn } from '@/lib/utils'
 import ShellOutput from './ShellOutput.vue'
+import { useDeviceApi } from '@/stores/device'
 
 /**
  * A shell of the chat unfolded in the dock, below its line (which says what it is for): its whole
@@ -18,6 +19,8 @@ import ShellOutput from './ShellOutput.vue'
  * Codex and the user's own (`!`) bring it in the item. One that ended stays, so its last words can be read.
  */
 const props = defineProps<{ shell: ToolItem; items: ChatItem[]; sessionId: string }>()
+/** The chat may be another device's: its CLI and shells run there. */
+const api = useDeviceApi()
 const now = useClock(1000)
 const { shorten } = useProjectPath()
 
@@ -57,7 +60,7 @@ async function load(): Promise<void> {
   const mine = ++seq
   loading.value = true
   try {
-    const result = await window.api.sessions.shellOutput(props.sessionId, props.shell.id)
+    const result = await api.sessions.shellOutput(props.sessionId, props.shell.id)
     if (mine !== seq) return
     fetched.value = { text: result.text, truncated: result.truncated }
     fetchError.value = null
@@ -89,7 +92,7 @@ const canStop = computed(() => (!!props.shell.shell || !!props.shell.byUser) && 
 async function stop(): Promise<void> {
   stopping.value = true
   try {
-    await window.api.sessions.stopShell(props.sessionId, props.shell.id)
+    await api.sessions.stopShell(props.sessionId, props.shell.id)
   } catch (error) {
     stopping.value = false
     toastError(error, 'Die Shell ließ sich nicht beenden')

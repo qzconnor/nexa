@@ -7,7 +7,7 @@ import { isChatWindow } from '@/lib/chat-window'
 import type { SettingsAnchor } from '@/lib/settings-index'
 import { useChatWindowsStore } from './chat-windows'
 
-export type MainView = 'chat' | 'home' | 'artifacts' | 'scheduled' | 'devices'
+export type MainView = 'chat' | 'home' | 'artifacts' | 'scheduled'
 export type SettingsSection =
   | 'general'
   | 'appearance'
@@ -105,6 +105,15 @@ export const useUiStore = defineStore('ui', () => {
   /** The pinned chats on top of the sidebar; they are there to be seen, so open until folded. */
   const pinnedOpen = ref(stored<'open' | 'folded'>('nexa.pinned', 'open') === 'open')
   watch(pinnedOpen, (open) => remember('nexa.pinned', open ? 'open' : 'folded'))
+  /** Other devices folded in the sidebar (Remote Control): open by default, their chats are why they are there. */
+  const foldedDevices = ref(new Set<string>(parseList(stored('nexa.foldedDevices', '[]'))))
+  function toggleDevice(id: string): void {
+    const next = new Set(foldedDevices.value)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    foldedDevices.value = next
+    remember('nexa.foldedDevices', JSON.stringify([...next]))
+  }
 
   /** The settings are a dialog over whatever the window shows. */
   const settingsOpen = ref(false)
@@ -220,6 +229,8 @@ export const useUiStore = defineStore('ui', () => {
     openFolders,
     toggleFolder,
     pinnedOpen,
+    foldedDevices,
+    toggleDevice,
     settingsOpen,
     settingsSection,
     settingsAnchor,

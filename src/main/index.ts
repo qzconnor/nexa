@@ -326,7 +326,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // and the next attempt could be a minute away.
   const serverLink = new ServerLinkService({ userDataDir, log: (message) => console.info('[nexa-server]', message) })
   registerServerLinkIpc(serverLink)
-  const remote = registerRemote({ link: serverLink, sessions, projects, version: app.getVersion(), log: (message) => console.info('[remote]', message) })
+  const remote = registerRemote({ link: serverLink, version: app.getVersion(), log: (message) => console.info('[remote]', message) })
   void serverLink.init().catch((error: unknown) => console.warn('[nexa-server] init failed', error))
   powerMonitor.on('resume', () => serverLink.retryNow())
 

@@ -1,12 +1,14 @@
 import {
+  applyDiff,
   parseRemoteEvents,
   parseRemoteResponse,
   remoteErrorText,
   RemoteKind,
   WATCH_RENEW_MS,
+  type RemoteBroadcast,
   type RemoteErrorBody,
   type RemoteErrorCode,
-  type RemoteEvent,
+  type RemoteHostInfo,
   type RemoteMethod,
   type RemoteMethods,
 } from '@shared/remote'
@@ -14,8 +16,8 @@ import type { RemoteWatch } from '@shared/remote-ipc'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { MessageTooLargeError } from '../server-link/device-channel'
 
-/** How long an answer may take: the host may first read a long chat from disk (`open`). */
-const REQUEST_TIMEOUT_MS = 20_000
+/** How long an answer may take: the host may first read a long chat from disk (`sessions:open`). */
+const REQUEST_TIMEOUT_MS = 30_000
 /** Refusals of the server kept for requests that don't wait yet; they come right after the send. */
 const EARLY_KEPT = 64
 
@@ -51,23 +53,27 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>
 }
 
+/** How a watch is asked for: kept up, begun (nothing of before here), or begun anew after a gap. */
+type WatchMode = 'renew' | 'start' | 'restart'
+
 /**
- * This device as a controller: asks other devices for their chats (`shared/remote.ts`) and keeps up
- * the watch of what the windows show of them, so their events come. The host decides what is allowed;
- * this side only passes on what it says.
+ * This device as a controller: makes the calls of the window API at other devices (`invoke`) and keeps
+ * up the watch of the devices the windows show, so their window events come, the lists among them made
+ * whole again from what changed. The host decides what is allowed; this side only passes it on.
  */
-export class RemoteClient extends TypedEmitter<{ events: [instance: string, events: RemoteEvent[]]; resync: [instance: string] }> {
+export class RemoteClient extends TypedEmitter<{
+  events: [instance: string, events: RemoteBroadcast[]]
+  resync: [instance: string]
+  info: [instance: string, info: RemoteHostInfo]
+}> {
   private readonly pending = new Map<string, Pending>()
   /** Per device the chats watched there, as all windows together ask. */
   private watching = new Map<string, string[]>()
-  /**
-   * Devices whose watch the windows just started: they read the chats right after, so a host that knew
-   * no watch yet is no news. Any later renewal it doesn't know means it lost the watch (or never got it).
-   */
-  private readonly fresh = new Set<string>()
   private renewTimer: ReturnType<typeof setInterval> | null = null
   /** What the server refused to pass on before its request was waiting for an answer, by message id. */
   private readonly early = new Map<string, string>()
+  /** Per device the lists of its list events (`LIST_EVENTS`), by event and id: the base of what changes. */
+  private readonly lists = new Map<string, Map<string, Map<string, { id: string }>>>()
 
   constructor(private readonly deps: RemoteClientDeps) {
     super()
@@ -97,6 +103,11 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
     })
   }
 
+  /** A call of the window API at `instance`, answered by its handlers. */
+  invoke(instance: string, ch: string, args: unknown[]): Promise<unknown> {
+    return this.request(instance, 'invoke', { ch, args })
+  }
+
   /** An `rc.response` or `rc.events` of another device. */
   onDeviceMessage(from: string, kind: string, data: unknown): void {
     if (kind === RemoteKind.response) {
@@ -109,8 +120,31 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
       else pending.resolve(response.r)
     } else if (kind === RemoteKind.events && this.watching.has(from)) {
       const events = parseRemoteEvents(data)
-      if (events?.length) this.emit('events', from, events)
+      if (events?.length) this.receive(from, events)
     }
+  }
+
+  /** Events of a device, its lists whole again; a change without its base: the watch begins anew. */
+  private receive(from: string, events: NonNullable<ReturnType<typeof parseRemoteEvents>>): void {
+    const lists = this.lists.get(from) ?? new Map<string, Map<string, { id: string }>>()
+    this.lists.set(from, lists)
+    const whole: RemoteBroadcast[] = []
+    for (const event of events) {
+      if ('args' in event) {
+        whole.push(event)
+        continue
+      }
+      const list = applyDiff(event.diff, lists.get(event.ch) ?? new Map())
+      if (!list) {
+        // Something was lost on the way: what came so far goes, then everything anew.
+        if (whole.length) this.emit('events', from, whole)
+        this.renew(from, 'restart')
+        return
+      }
+      lists.set(event.ch, new Map(list.map((e) => [e.id, e])))
+      whole.push({ ch: event.ch, args: [list] })
+    }
+    if (whole.length) this.emit('events', from, whole)
   }
 
   /**
@@ -130,22 +164,23 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
   }
 
   /**
-   * What all windows together watch of other devices. A changed list goes to the device at once; the
-   * order of requests holds, so a chat opened after its watch misses none of its events.
+   * The devices all windows together show, with the chats open of them. A changed list goes to the
+   * device at once; the order of requests holds, so a chat opened after its watch misses none of its
+   * events.
    */
   setWatch(list: readonly RemoteWatch[]): void {
     const next = new Map<string, string[]>()
     for (const { instance, ids } of list) next.set(instance, [...new Set([...(next.get(instance) ?? []), ...ids])].sort())
     for (const instance of this.watching.keys()) {
       if (next.has(instance)) continue
-      this.fresh.delete(instance)
+      this.lists.delete(instance)
       void this.request(instance, 'unwatch', {}).catch(() => undefined)
     }
     const previous = this.watching
     this.watching = next
     for (const [instance, ids] of next) {
-      if (!previous.has(instance)) this.fresh.add(instance)
-      if (previous.get(instance)?.join() !== ids.join()) this.renew(instance)
+      if (!previous.has(instance)) this.renew(instance, 'start')
+      else if (previous.get(instance)?.join() !== ids.join()) this.renew(instance, 'renew')
     }
     if (next.size && !this.renewTimer) this.renewTimer = setInterval(() => this.renewAll(), WATCH_RENEW_MS)
     if (!next.size && this.renewTimer) {
@@ -161,7 +196,7 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
 
   /** A device came back: it lost what this one watched there when it went. */
   onDeviceStatus(instance: string, online: boolean): void {
-    if (online && this.watching.has(instance)) this.renew(instance)
+    if (online && this.watching.has(instance)) this.renew(instance, 'renew')
   }
 
   dispose(): void {
@@ -169,7 +204,7 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
     this.renewTimer = null
     for (const instance of this.watching.keys()) void this.request(instance, 'unwatch', {}).catch(() => undefined)
     this.watching.clear()
-    this.fresh.clear()
+    this.lists.clear()
     for (const [id, pending] of this.pending) {
       this.settle(id, pending)
       pending.reject(RemoteError.of('offline'))
@@ -177,20 +212,28 @@ export class RemoteClient extends TypedEmitter<{ events: [instance: string, even
   }
 
   private renewAll(): void {
-    for (const instance of this.watching.keys()) this.renew(instance)
+    for (const instance of this.watching.keys()) this.renew(instance, 'renew')
   }
 
-  private renew(instance: string): void {
+  private renew(instance: string, mode: WatchMode): void {
     const ids = this.watching.get(instance)
     if (!ids || !this.deps.link.online()) return
-    this.request(instance, 'watch', { ids }).then(
-      ({ renewed }) => {
-        const fresh = this.fresh.delete(instance)
-        if (!renewed && !fresh && this.watching.has(instance)) this.emit('resync', instance)
+    // Starting anew: the host's lists come whole, so what is here of them counts no more.
+    if (mode !== 'renew') this.lists.delete(instance)
+    this.request(instance, 'watch', mode === 'renew' ? { ids } : { ids, fresh: true }).then(
+      ({ renewed, ...info }) => {
+        if (!this.watching.has(instance)) return
+        this.emit('info', instance, info)
+        // Begun just now: the windows read what they show anyway. Otherwise a gap means reading anew.
+        if (mode === 'restart' || (mode === 'renew' && !renewed)) this.emit('resync', instance)
       },
       (error: unknown) => {
-        this.fresh.delete(instance)
         this.deps.log?.(`remote: watch at ${instance} failed: ${error instanceof Error ? error.message : String(error)}`)
+        if (error instanceof RemoteError && this.watching.has(instance)) {
+          const { code } = error.body
+          // The host said how far this device may go now (off, or no longer reading).
+          if (code === 'disabled' || code === 'forbidden') this.emit('info', instance, { name: '', enabled: code !== 'disabled', level: 'off', version: '' })
+        }
       },
     )
   }

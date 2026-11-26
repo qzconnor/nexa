@@ -8,6 +8,7 @@ import {
   FolderOpenIcon,
   GitForkIcon,
   InfoIcon,
+  MonitorIcon,
   MoreHorizontalIcon,
   PanelLeftIcon,
   PencilIcon,
@@ -62,6 +63,8 @@ import { dockShells } from '@/lib/shells'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useBrowsersStore } from '@/stores/browsers'
+import { useDevice, useDeviceApi } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
 import { MAX_TREE_SHARE, useFileTreeStore } from '@/stores/file-tree'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
@@ -93,6 +96,16 @@ const fileTree = useFileTreeStore()
 const browsers = useBrowsersStore()
 const chatActions = useChatActions()
 const now = useClock(1000)
+/**
+ * A chat of another device (Remote Control): the same window, its calls going there. What works on
+ * this device's own files, terminals, browser and windows isn't offered for it.
+ */
+const device = useDevice()
+const api = useDeviceApi()
+const devices = useDevicesStore()
+const deviceName = computed(() => (device ? (devices.devices.find((d) => d.id === device)?.name ?? 'anderes Gerät') : null))
+/** What the other device lets this one do: prompts, and the dock's settings with everything. */
+const canPrompt = computed(() => devices.can(device, 'prompt'))
 
 const meta = computed(() => sessions.active)
 const chat = computed(() => sessions.activeChat)
@@ -110,7 +123,7 @@ const startCommands = useStartCommandsStore()
 watch(
   () => project.value?.id,
   (id) => {
-    if (id) startCommands.chatOpened(id)
+    if (id && !device) startCommands.chatOpened(id)
   },
   { immediate: true },
 )
@@ -129,7 +142,7 @@ watch(terminalOpen, (open, before) => {
 
 const area = ref<HTMLElement | null>(null)
 const { width: areaWidth } = useElementSize(area)
-const treeTarget = computed(() => fileTree.targetOf(meta.value?.id))
+const treeTarget = computed(() => (device ? null : fileTree.targetOf(meta.value?.id)))
 const treeShown = computed(() => fileTree.open && !!treeTarget.value)
 /** The tree takes at most a share of the chat's area, so the chat keeps room. */
 const treeMax = computed(() => Math.max(180, Math.round(areaWidth.value * MAX_TREE_SHARE)))
@@ -366,7 +379,7 @@ async function runShell(command: string): Promise<void> {
   mainScroll = null
   ui.agentId = null
   scrollToBottom()
-  await attempt(() => window.api.sessions.runShell(id, command), 'Befehl ließ sich nicht ausführen')
+  await attempt(() => api.sessions.runShell(id, command), 'Befehl ließ sich nicht ausführen')
 }
 
 function update(patch: SessionUpdateInput): void {
@@ -497,6 +510,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <!-- Header -->
       <div class="flex h-11 shrink-0 items-center gap-2 border-b px-4">
         <Button
+          v-if="!device"
           variant="ghost"
           size="icon-sm"
           :class="cn('-ml-2', treeShown && 'bg-muted')"
@@ -546,9 +560,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           </template>
         </nav>
         <button v-else type="button" class="min-w-0 truncate text-sm font-medium" :title="meta.title" @dblclick="startRename">{{ meta.title }}</button>
+        <span v-if="deviceName" class="flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[0.72rem] text-muted-foreground" v-tooltip="'Der Chat läuft auf diesem Gerät'">
+          <MonitorIcon class="size-3" />
+          {{ deviceName }}
+        </span>
         <div class="ml-auto flex shrink-0 items-center gap-1">
-          <StartCommandsMenu v-if="project" :project-id="project.id" />
+          <StartCommandsMenu v-if="project && !device" :project-id="project.id" />
           <Button
+            v-if="!device"
             variant="ghost"
             size="icon-sm"
             :class="cn('relative', terminalOpen && 'bg-muted')"
@@ -576,7 +595,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           >
             <RotateCwIcon :class="cn(restarting && 'animate-spin')" />
           </Button>
-          <Button variant="ghost" size="icon-sm" :aria-label="popOutLabel" v-tooltip.bottom="popOutHint" @click="popOut">
+          <Button v-if="!device" variant="ghost" size="icon-sm" :aria-label="popOutLabel" v-tooltip.bottom="popOutHint" @click="popOut">
             <SquareArrowDownLeftIcon v-if="isChatWindow" />
             <SquareArrowOutUpRightIcon v-else />
           </Button>
@@ -590,14 +609,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <DropdownMenuItem @select="startRename"><PencilIcon /> Umbenennen</DropdownMenuItem>
               <DropdownMenuItem :disabled="!!diff" @select="openFind"><SearchIcon /> Im Chat suchen <DropdownMenuShortcut>Strg+F</DropdownMenuShortcut></DropdownMenuItem>
               <DropdownMenuItem :disabled="busy" @select="chatActions.fork(meta.id)"><GitForkIcon /> Chat abzweigen</DropdownMenuItem>
-              <DropdownMenuItem v-if="project" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
-              <DropdownMenuItem v-if="project" @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</DropdownMenuItem>
+              <DropdownMenuItem v-if="project && !device" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
+              <DropdownMenuItem v-if="project && !device" @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</DropdownMenuItem>
               <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit {{ syncNames }} abgleichen</DropdownMenuItem>
               <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
-              <DropdownMenuItem @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
+              <DropdownMenuItem v-if="!device" @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
               <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
               <DropdownMenuItem :disabled="restarting" @select="restart"><RotateCwIcon /> Chat neu starten</DropdownMenuItem>
-              <DropdownMenuItem @select="popOut">
+              <DropdownMenuItem v-if="!device" @select="popOut">
                 <SquareArrowDownLeftIcon v-if="isChatWindow" />
                 <SquareArrowOutUpRightIcon v-else />
                 {{ popOutLabel }}
@@ -607,7 +626,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <DropdownMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <BrowserToggle :session-id="meta.id" class="-mr-2" />
+          <BrowserToggle v-if="!device" :session-id="meta.id" class="-mr-2" />
         </div>
       </div>
 
@@ -674,6 +693,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
                 <template v-else><Kbd>Strg</Kbd> + <Kbd>Enter</Kbd> sendet</template>
               </li>
               <li>Bilder einfügen oder ins Feld ziehen hängt sie an</li>
+              <li v-if="deviceName">Der Chat läuft auf {{ deviceName }}</li>
               <li v-if="treeTarget">Dateien aus dem Baum ins Feld ziehen erwähnt sie · <Kbd>Strg</Kbd> + <Kbd>Umschalt</Kbd> + <Kbd>E</Kbd></li>
             </ul>
           </div>
@@ -784,6 +804,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               :session-id="meta.id"
               :dirs="meta.dirs"
               :suggestion="settings.settings.chat.promptSuggestions ? runtime.suggestion : undefined"
+              :disabled="!canPrompt"
               autofocus
               @send="send"
               @command="runCommand"
@@ -802,8 +823,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
     </div>
-    <TerminalPanel :session-id="meta.id" />
-    <BrowserPanel :session-id="meta.id" />
+    <template v-if="!device">
+      <TerminalPanel :session-id="meta.id" />
+      <BrowserPanel :session-id="meta.id" />
+    </template>
     <ChatStatusDialog v-model:open="statusOpen" :meta="meta" :runtime="runtime" :cwd="cwd" />
   </div>
 </template>

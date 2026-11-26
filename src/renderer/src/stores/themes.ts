@@ -12,7 +12,7 @@ import { useSettingsStore } from './settings'
  * as it is: the default theme shows until the file is back.
  */
 export const useThemesStore = defineStore('themes', () => {
-  const settings = useSettingsStore()
+  const settings = useSettingsStore(null)
   const entries = ref<CustomThemeEntry[]>([])
   const loaded = ref(false)
   /** Only the latest read counts: an older one still under way would undo a theme just saved. */

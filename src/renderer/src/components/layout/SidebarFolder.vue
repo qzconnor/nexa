@@ -8,6 +8,7 @@ import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import { chatsIn, type FolderNode } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
+import { useDevice } from '@/stores/device'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import SidebarGroupState from './SidebarGroupState.vue'
@@ -18,6 +19,8 @@ const props = defineProps<{ node: FolderNode; project: Project; now: number; lim
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const drag = useSessionDrag()
+/** A folder of another device: Explorer and the worktree dialog work on this device's folders. */
+const device = useDevice()
 
 const open = computed(() => ui.openFolders.has(props.node.id))
 const showAll = ref(false)
@@ -69,10 +72,12 @@ async function newChat(): Promise<void> {
       </ContextMenuTrigger>
       <ContextMenuContent class="w-56">
         <ContextMenuItem @select="newChat"><PlusIcon /> Neuer Chat hier</ContextMenuItem>
-        <ContextMenuItem @select="ui.worktreeRequest = { projectId: project.id, folder: node.path }">
-          <FolderGit2Icon /> Neuer Chat in Worktree …
-        </ContextMenuItem>
-        <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
+        <template v-if="!device">
+          <ContextMenuItem @select="ui.worktreeRequest = { projectId: project.id, folder: node.path }">
+            <FolderGit2Icon /> Neuer Chat in Worktree …
+          </ContextMenuItem>
+          <ContextMenuItem @select="openFolder"><FolderOpenIcon /> Ordner öffnen</ContextMenuItem>
+        </template>
       </ContextMenuContent>
     </ContextMenu>
 

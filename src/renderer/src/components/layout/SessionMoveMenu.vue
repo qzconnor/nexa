@@ -12,6 +12,7 @@ import {
   ContextMenuSubTrigger,
 } from '@/components/ui/context-menu'
 import { useChatActions } from '@/composables/useChatActions'
+import { useDevice } from '@/stores/device'
 import { useProjectsStore } from '@/stores/projects'
 
 /**
@@ -22,6 +23,8 @@ const props = defineProps<{ meta: SessionMeta }>()
 const projects = useProjectsStore()
 const chat = useChatActions()
 const working = computed(() => chat.working(props.meta.id))
+/** Another device's chat: its folders are there, the dialog here couldn't pick one. */
+const device = useDevice()
 
 /** The separators with their projects in the sidebar's order, the one of the separator's own folder first. */
 const groups = computed(() =>
@@ -70,11 +73,13 @@ const moveTo = (project: Project) => void chat.move(props.meta, { projectId: pro
           </ContextMenuSubContent>
         </ContextMenuSub>
       </template>
-      <ContextMenuSeparator v-if="groups.length" />
-      <ContextMenuItem @select="chat.moveElsewhere(meta)">
-        <FolderSearchIcon />
-        Anderer Ordner …
-      </ContextMenuItem>
+      <template v-if="!device">
+        <ContextMenuSeparator v-if="groups.length" />
+        <ContextMenuItem @select="chat.moveElsewhere(meta)">
+          <FolderSearchIcon />
+          Anderer Ordner …
+        </ContextMenuItem>
+      </template>
     </ContextMenuSubContent>
   </ContextMenuSub>
 </template>

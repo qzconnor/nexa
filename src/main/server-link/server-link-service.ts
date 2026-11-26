@@ -423,7 +423,7 @@ export class ServerLinkService extends TypedEmitter<Events> {
         if (msg.kind.startsWith('rc.')) void this.onDeviceMessage(active, msg)
         else void membership.receive(msg)
       }),
-      connection.on('sendFailed', (msgId, error) => this.emit('deviceSendFailed', msgId, error.code)),
+      connection.on('sendFailed', (msgId, error) => this.emit('deviceSendFailed', active.channel.messageOf(msgId), error.code)),
       connection.on('instance', (event) => {
         if (event.t === 'removed') {
           active.devices.delete(event.instance)
@@ -448,7 +448,7 @@ export class ServerLinkService extends TypedEmitter<Events> {
   private async onDeviceMessage(active: Active, msg: RelayedMessage): Promise<void> {
     try {
       const opened = await active.channel.receive(msg)
-      if (opened && this.active === active) this.emit('deviceMessage', msg.from, msg.kind, msg.id, opened.data)
+      if (opened && this.active === active) this.emit('deviceMessage', msg.from, opened.kind, opened.id, opened.data)
     } catch (error) {
       this.deps.log?.(`device message: ${error instanceof Error ? error.message : String(error)}`)
     }

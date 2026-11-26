@@ -1,5 +1,7 @@
 import { runsWhenOpened } from '@shared/executables'
+import { toast } from 'vue-sonner'
 import { attempt } from '@/lib/errors'
+import { useDevice } from '@/stores/device'
 import { useUiStore } from '@/stores/ui'
 
 /**
@@ -9,7 +11,13 @@ import { useUiStore } from '@/stores/ui'
  */
 export function useOpenFile(): (path: string) => Promise<void> {
   const ui = useUiStore()
+  const device = useDevice()
   return async (path) => {
+    // A file of another device (Remote Control) is there, not on this one.
+    if (device) {
+      toast('Die Datei liegt auf dem anderen Gerät', { description: path })
+      return
+    }
     const name = path.split(/[\\/]/).pop() || path
     if (runsWhenOpened(name, window.api.platform)) {
       const ok = await ui.confirm({

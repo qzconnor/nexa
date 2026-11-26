@@ -2,7 +2,7 @@ import type { Account, AccountCreateInput, AccountLoginState, AccountUpdateInput
 import type { ArtifactsApi } from './artifacts'
 import type { ChatWindowsApi } from './chat-windows'
 import type { CliConfigApi, CliConfigTarget } from './cli-config'
-import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent } from './chat'
+import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent, SessionRuntime } from './chat'
 import type { McpAppsApi } from './mcp-apps'
 import type { AgentNotification, AgentNotificationAnswer } from './notify'
 import type { ScheduledApi } from './scheduled-tasks'
@@ -121,6 +121,7 @@ export const IpcInvoke = {
   sectionsRemove: 'sections:remove',
 
   sessionsList: 'sessions:list',
+  sessionsRuntimes: 'sessions:runtimes',
   sessionsCreate: 'sessions:create',
   sessionsOpen: 'sessions:open',
   sessionsSend: 'sessions:send',
@@ -386,6 +387,8 @@ export interface NexaApi {
   }
   sessions: {
     list(): Promise<SessionMeta[]>
+    /** What each chat that isn't idle does now (its later changes come as `onEvent`). */
+    runtimes(): Promise<Record<string, SessionRuntime>>
     create(input: SessionCreateInput): Promise<SessionMeta>
     /** The session with its chat; doesn't start the CLI. */
     open(id: string): Promise<SessionDetail>

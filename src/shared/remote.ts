@@ -1,12 +1,16 @@
 /**
- * Remote Control between two paired devices (docs/NEXA-SERVER.md, „Remote Control“): what a controlling
- * device asks of a host and what the host sends back. The messages go sealed for the pair and signed
- * (`main/server-link/device-channel.ts`); the host still checks every request itself, against the level
- * it gives the asking device. Shared with the later PWA, so nothing here needs Node or Electron.
+ * Remote Control between two paired devices (docs/NEXA-SERVER.md, „Remote Control“): a controlling
+ * device uses the other one as if it sat in front of it. Its window makes the calls it makes of its own
+ * main process (`IpcInvoke`), they go to the host (`invoke`), and the host answers them with its own
+ * handlers; the host's events for its windows (`IpcEvent`) come back the same way (`rc.events`). The
+ * messages go sealed for the pair and signed (`main/server-link/device-channel.ts`); the host checks
+ * every call itself, against the list below and the level it gives the asking device.
  */
 
-import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from './chat'
-import type { SessionMeta } from './types'
+import type { ChatItem, InteractionResponse, PermissionMode, SessionEvent } from './chat'
+import { FilesInvoke } from './files-ipc'
+import { IpcEvent, IpcInvoke } from './ipc'
+import type { SessionCreateInput, SessionUpdateInput } from './types'
 
 /** `kind`s of Remote Control messages; the server sees them in plain text. */
 export const RemoteKind = {
@@ -14,7 +18,7 @@ export const RemoteKind = {
   request: 'rc.request',
   /** Host → controller: `{ re, r }` or `{ re, e }`. */
   response: 'rc.response',
-  /** Host → controller: `{ events }`, for the chats it watches (`watch`). */
+  /** Host → controller: `{ events }`, while the controller watches (`watch`). */
   events: 'rc.events',
 } as const
 
@@ -27,8 +31,8 @@ export const DEFAULT_REMOTE_LEVEL: RemoteLevel = 'read'
 export const REMOTE_LEVEL_LABELS: Record<RemoteLevel, string> = {
   off: 'Aus',
   read: 'Nur mitlesen',
-  prompt: 'Prompts senden und abbrechen',
-  full: 'Alles, auch Rückfragen und Freigaben',
+  prompt: 'Prompts senden und Chats ordnen',
+  full: 'Alles, wie am Gerät selbst',
 }
 
 export function isRemoteLevel(value: unknown): value is RemoteLevel {
@@ -39,7 +43,7 @@ export function levelAllows(level: RemoteLevel, needed: RemoteLevel): boolean {
   return REMOTE_LEVELS.indexOf(level) >= REMOTE_LEVELS.indexOf(needed)
 }
 
-/** The host as it answers `hello`: whether it lets anyone in, and how far the asking device. */
+/** The host as it answers `hello` and `watch`: whether it lets anyone in, and how far the asking device. */
 export interface RemoteHostInfo {
   name: string
   /** Remote Control is on at the host (Einstellungen › Geräte). */
@@ -50,74 +54,180 @@ export interface RemoteHostInfo {
   version: string
 }
 
-export interface RemoteProject {
-  id: string
-  name: string
-  path: string
-  /** The separator it shows under at the host, if not the default one. */
-  section?: string
-}
-
-/** A chat as a controlling device lists it. */
-export type RemoteSession = Pick<SessionMeta, 'id' | 'projectId' | 'title' | 'provider' | 'model' | 'createdAt' | 'updatedAt' | 'pinned' | 'cwd' | 'preview'>
-
-export interface RemoteChats {
-  projects: RemoteProject[]
-  /** Without archived chats, newest first. */
-  sessions: RemoteSession[]
-  /** Of the chats that aren't idle. */
-  runtimes: Record<string, SessionRuntime>
-}
-
-/** A page of a chat's history, from its end backwards (`open`). */
-export interface RemotePage {
-  session: RemoteSession
-  /** `items` are the chat's items from `start` on, up to `before` or its end. */
-  items: ChatItem[]
-  start: number
-  /** How many items the chat has. */
-  total: number
-  runtime: SessionRuntime
-}
-
 /** The requests, with what each takes and returns. */
 export interface RemoteMethods {
   hello: { params: Record<string, never>; result: RemoteHostInfo }
-  chats: { params: Record<string, never>; result: RemoteChats }
-  /** The newest items, or those before `before` (an index, for „Ältere laden“). */
-  open: { params: { id: string; before?: number }; result: RemotePage }
   /**
-   * The chats whose items and streamed text the device gets as `rc.events`, besides the state of all
-   * chats; replaces the last set and lasts `WATCH_TTL_MS`, so it is renewed while a window shows them.
-   * `renewed` false: the host had no watch of this device (it restarted, or the last one ran out), and
-   * what happened meanwhile came as no event: open chats are to be read anew.
+   * The host's events come as `rc.events` from now on, those of the chats in `ids` with their items
+   * and streamed text; replaces the last set and lasts `WATCH_TTL_MS`, so it is renewed while the
+   * device shows the host. `renewed` false: the host had no watch of this device (it restarted, or the
+   * last one ran out or lost events), and what happened meanwhile came as no event: read it anew.
+   * `fresh`: the device has nothing of before, its list events start whole (`ListDiff`).
    */
-  watch: { params: { ids: string[] }; result: { renewed: boolean } }
+  watch: { params: { ids: string[]; fresh?: boolean }; result: RemoteHostInfo & { renewed: boolean } }
   unwatch: { params: Record<string, never>; result: null }
-  send: { params: { id: string; text: string }; result: null }
-  interrupt: { params: { id: string }; result: null }
-  respond: { params: { id: string; itemId: string; response: InteractionResponse }; result: null }
+  /** A call of the host's window API (`IpcInvoke`), as far as `channelLevel` lets it through. */
+  invoke: { params: { ch: string; args: unknown[] }; result: unknown }
 }
 export type RemoteMethod = keyof RemoteMethods
 
-/** The level each request needs; null: every member may ask (to learn its level, or to stop). */
+/** The level each request needs; null: every member may ask (to learn its level, or to stop). `invoke`: by channel. */
 export const METHOD_LEVEL: Record<RemoteMethod, RemoteLevel | null> = {
   hello: null,
-  chats: 'read',
-  open: 'read',
   watch: 'read',
   unwatch: null,
-  send: 'prompt',
-  interrupt: 'prompt',
-  respond: 'full',
+  invoke: null,
 }
 
 /** A watch lasts this long unless renewed; the controller renews it every `WATCH_RENEW_MS`. */
 export const WATCH_TTL_MS = 90_000
 export const WATCH_RENEW_MS = 30_000
+/** At most this many chats send their items to one device at a time (`watch`). */
+export const MAX_WATCHED_CHATS = 32
 
-/** What `rc.events` carries: the chats' own events, and `chats` when the list changed (read it anew). */
-export type RemoteEvent = SessionEvent | { type: 'chats' }
+// --- What another device may call -------------------------------------------------------------------
+
+type ChannelRule = RemoteLevel | ((args: readonly unknown[]) => RemoteLevel)
+
+/** How the chat's agent runs: changing it is the host's own business, the full level's. */
+const AGENT_FIELDS: readonly string[] = ['provider', 'account', 'model', 'effort', 'ultracode', 'permissionMode', 'dirs'] satisfies (keyof SessionUpdateInput)[]
+/** Modes in which the agent asks before it acts: a chat that starts in them is just a prompt. */
+const ASKING_MODES: readonly (PermissionMode | undefined)[] = [undefined, 'ask', 'plan']
+
+function record(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+/**
+ * The calls of the window API another device may make here, with the level each takes: what the chat
+ * window, its dock and the sidebar need, nothing of the host's own windows, dialogs, files or
+ * terminals. Renaming, pinning and arranging chats is ordering them; how an agent runs (model,
+ * permissions, CLI arguments) and what it may do (answers to its questions) is the full level's.
+ */
+const CHANNELS: Record<string, ChannelRule> = {
+  [IpcInvoke.settingsGet]: 'read',
+  [IpcInvoke.settingsUpdate]: 'full',
+  [IpcInvoke.providersList]: 'read',
+  [IpcInvoke.providersRefresh]: 'prompt',
+  [IpcInvoke.providersModels]: 'read',
+  [IpcInvoke.providersModelDefaults]: 'read',
+  [IpcInvoke.providersCommands]: 'read',
+  [IpcInvoke.usageGet]: 'read',
+  [IpcInvoke.usageRefresh]: 'prompt',
+  [IpcInvoke.accountsList]: 'read',
+  [IpcInvoke.accountsLogins]: 'read',
+  [IpcInvoke.projectsList]: 'read',
+  [IpcInvoke.projectsUpdate]: 'prompt',
+  [IpcInvoke.projectsArrange]: 'prompt',
+  [IpcInvoke.projectsRemove]: 'full',
+  [IpcInvoke.sectionsList]: 'read',
+  [IpcInvoke.sectionsCreate]: 'prompt',
+  [IpcInvoke.sectionsUpdate]: 'prompt',
+  [IpcInvoke.sectionsRemove]: 'prompt',
+  [IpcInvoke.sessionsList]: 'read',
+  [IpcInvoke.sessionsRuntimes]: 'read',
+  [IpcInvoke.sessionsOpen]: 'read',
+  [IpcInvoke.sessionsContext]: 'read',
+  [IpcInvoke.sessionsMcpServers]: 'read',
+  [IpcInvoke.sessionsPlugins]: 'read',
+  [IpcInvoke.sessionsShellOutput]: 'read',
+  [IpcInvoke.sessionsLastAnswer]: 'read',
+  [IpcInvoke.sessionsSearch]: 'read',
+  [IpcInvoke.sessionsCreate]: (args) => {
+    const input = record(args[0]) as Partial<SessionCreateInput>
+    return input.cliArgs?.length || !ASKING_MODES.includes(input.permissionMode) ? 'full' : 'prompt'
+  },
+  [IpcInvoke.sessionsSend]: 'prompt',
+  [IpcInvoke.sessionsEdit]: 'prompt',
+  [IpcInvoke.sessionsInterrupt]: 'prompt',
+  [IpcInvoke.sessionsSync]: 'prompt',
+  [IpcInvoke.sessionsCompact]: 'prompt',
+  [IpcInvoke.sessionsFork]: 'prompt',
+  [IpcInvoke.sessionsClear]: 'prompt',
+  [IpcInvoke.sessionsMove]: 'prompt',
+  [IpcInvoke.sessionsStop]: 'prompt',
+  [IpcInvoke.sessionsRestart]: 'prompt',
+  [IpcInvoke.sessionsResumeAtReset]: 'prompt',
+  [IpcInvoke.sessionsUpdate]: (args) => (Object.keys(record(args[1])).some((key) => AGENT_FIELDS.includes(key)) ? 'full' : 'prompt'),
+  [IpcInvoke.sessionsRespond]: 'full',
+  [IpcInvoke.sessionsRunShell]: 'full',
+  [IpcInvoke.sessionsStopShell]: 'full',
+  [IpcInvoke.sessionsSetMcp]: 'full',
+  [IpcInvoke.sessionsReconnectMcp]: 'full',
+  [IpcInvoke.sessionsSetPlugin]: 'full',
+  [IpcInvoke.sessionsRemove]: 'full',
+  // `@` in the composer: the names of the project's files.
+  [FilesInvoke.searchList]: 'prompt',
+  // A picture for a prompt, as bytes (base64): the host keeps it with its own attachments.
+  [IpcInvoke.appSaveImage]: 'prompt',
+}
+
+/** The level a call of the window API takes when another device makes it; null: not over Remote Control. */
+export function channelLevel(ch: string, args: readonly unknown[]): RemoteLevel | null {
+  const rule = Object.hasOwn(CHANNELS, ch) ? CHANNELS[ch] : undefined
+  if (rule === undefined) return null
+  return typeof rule === 'function' ? rule(args) : rule
+}
+
+/** The host's window events another device gets while it watches (a chat's own only for its open chats). */
+export const REMOTE_EVENTS: ReadonlySet<string> = new Set<string>([
+  IpcEvent.settingsChanged,
+  IpcEvent.providersChanged,
+  IpcEvent.accountsChanged,
+  IpcEvent.usageChanged,
+  IpcEvent.projectsChanged,
+  IpcEvent.sectionsChanged,
+  IpcEvent.sessionsChanged,
+  IpcEvent.sessionEvent,
+])
+
+/**
+ * Events whose one argument is the whole list of something with an `id`: they go as what changed since
+ * the last one (`ListDiff`); the list of chats alone changes with every turn.
+ */
+export const LIST_EVENTS: ReadonlySet<string> = new Set<string>([IpcEvent.accountsChanged, IpcEvent.projectsChanged, IpcEvent.sectionsChanged, IpcEvent.sessionsChanged])
+
+/** A list event as the change against the one before: every id in order, the entries new or changed. */
+export interface ListDiff {
+  ids: string[]
+  changed: { id: string }[]
+}
+
+/** What `rc.events` carries: a window event of the host, or a list event as a change. */
+export type RemoteEvent = { ch: string; args: unknown[] } | { ch: string; diff: ListDiff }
+
+/** A window event as the controller's window gets it, whole again. */
+export interface RemoteBroadcast {
+  ch: string
+  args: unknown[]
+}
+
+/** The change from `before` (entries by id, as JSON) to `list`; null when `list` isn't a list of entries with ids. */
+export function diffList(list: unknown, before: ReadonlyMap<string, string>): { diff: ListDiff; next: Map<string, string> } | null {
+  if (!Array.isArray(list) || !list.every((e) => typeof record(e).id === 'string')) return null
+  const next = new Map<string, string>()
+  const changed: { id: string }[] = []
+  for (const entry of list as { id: string }[]) {
+    const json = JSON.stringify(entry)
+    next.set(entry.id, json)
+    if (before.get(entry.id) !== json) changed.push(entry)
+  }
+  return { diff: { ids: [...next.keys()], changed }, next }
+}
+
+/** The list again from the one before (by id) and a change; null when an entry is in neither. */
+export function applyDiff(diff: ListDiff, before: ReadonlyMap<string, { id: string }>): { id: string }[] | null {
+  const changed = new Map(diff.changed.map((e) => [e.id, e]))
+  const list: { id: string }[] = []
+  for (const id of diff.ids) {
+    const entry = changed.get(id) ?? before.get(id)
+    if (entry === undefined) return null
+    list.push(entry)
+  }
+  return list
+}
+
+// --- Errors ------------------------------------------------------------------------------------------
 
 export type RemoteErrorCode =
   /** Remote Control is off at the host. */
@@ -126,7 +236,7 @@ export type RemoteErrorCode =
   | 'forbidden'
   | 'not-found'
   | 'bad-request'
-  /** The answer would be larger than the server passes on. */
+  /** The message would be larger than the devices pass on. */
   | 'too-large'
   /** The host tried, and it went wrong; `message` says why, in German. */
   | 'failed'
@@ -150,15 +260,15 @@ export type RemoteResponse = { re: string; r: unknown } | { re: string; e: Remot
 export function remoteErrorText(error: RemoteErrorBody): string {
   switch (error.code) {
     case 'disabled':
-      return 'Auf diesem Gerät ist die Fernsteuerung aus. Schalte sie dort unter Einstellungen › Geräte ein.'
+      return 'Auf dem anderen Gerät ist die Fernsteuerung aus. Schalte sie dort unter Einstellungen › Geräte ein.'
     case 'forbidden':
       return 'Das darf dieses Gerät dort nicht. Mehr gibst du am anderen Gerät unter Einstellungen › Geräte frei.'
     case 'not-found':
-      return 'Den Chat gibt es dort nicht mehr.'
+      return 'Das gibt es auf dem anderen Gerät nicht.'
     case 'bad-request':
       return 'Das andere Gerät hat die Anfrage nicht verstanden. Läuft dort eine andere Version von Nexa?'
     case 'too-large':
-      return 'Die Antwort wäre zu groß für den Server.'
+      return 'Das ist zu groß, um es zwischen den Geräten zu schicken.'
     case 'unreachable':
       return 'Das Gerät ist gerade nicht verbunden.'
     case 'busy':
@@ -184,10 +294,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/
 const isId = (value: unknown): value is string => typeof value === 'string' && ID.test(value)
-/** Items are named by their CLIs (`toolu_…`, `ask:<uuid>`, Codex' own): any printable text of some length. */
-const isItemId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\x00-\x1f]/.test(value)
-/** A prompt as long as a pasted log; the CLIs take far more, but over the relay this is plenty. */
-export const MAX_REMOTE_PROMPT = 200_000
+/** Channels as `IpcInvoke` names them: `sessions:open`, `files:search-list`. */
+const CHANNEL = /^[a-z][a-z0-9-]{0,31}:[a-z0-9-]{1,64}$/
+/** Arguments of one call: the window API takes at most a few. */
+const MAX_ARGS = 8
 
 export type RemoteRequest = { [M in RemoteMethod]: { m: M; p: RemoteMethods[M]['params'] } }[RemoteMethod]
 
@@ -197,27 +307,15 @@ export function parseRemoteRequest(data: unknown): RemoteRequest | null {
   const p = isRecord(data.p) ? data.p : {}
   switch (data.m) {
     case 'hello':
-    case 'chats':
     case 'unwatch':
       return { m: data.m, p: {} }
-    case 'open': {
-      const before = p.before
-      if (!isId(p.id) || (before !== undefined && !(Number.isInteger(before) && (before as number) >= 0))) return null
-      return { m: 'open', p: before === undefined ? { id: p.id } : { id: p.id, before: before as number } }
-    }
     case 'watch': {
-      if (!Array.isArray(p.ids) || p.ids.length > 32 || !p.ids.every(isId)) return null
-      return { m: 'watch', p: { ids: [...new Set(p.ids as string[])] } }
+      if (!Array.isArray(p.ids) || p.ids.length > MAX_WATCHED_CHATS || !p.ids.every(isId)) return null
+      return { m: 'watch', p: { ids: [...new Set(p.ids as string[])], ...(p.fresh === true ? { fresh: true } : {}) } }
     }
-    case 'send':
-      if (!isId(p.id) || typeof p.text !== 'string' || !p.text.trim() || p.text.length > MAX_REMOTE_PROMPT) return null
-      return { m: 'send', p: { id: p.id, text: p.text } }
-    case 'interrupt':
-      return isId(p.id) ? { m: 'interrupt', p: { id: p.id } } : null
-    case 'respond': {
-      const response = parseInteractionResponse(p.response)
-      if (!isId(p.id) || !isItemId(p.itemId) || !response) return null
-      return { m: 'respond', p: { id: p.id, itemId: p.itemId, response } }
+    case 'invoke': {
+      if (typeof p.ch !== 'string' || !CHANNEL.test(p.ch) || !Array.isArray(p.args) || p.args.length > MAX_ARGS) return null
+      return { m: 'invoke', p: { ch: p.ch, args: p.args } }
     }
     default:
       return null
@@ -269,34 +367,44 @@ export function parseRemoteResponse(data: unknown): RemoteResponse | null {
   return 'r' in data ? { re: data.re, r: data.r } : null
 }
 
-const EVENT_TYPES = new Set(['item', 'delta', 'runtime', 'truncated', 'chats'])
-
 /** The events of an `rc.events`, roughly checked: they come from a member, but a broken one mustn't break the window. */
 export function parseRemoteEvents(data: unknown): RemoteEvent[] | null {
   if (!isRecord(data) || !Array.isArray(data.events)) return null
   const events: RemoteEvent[] = []
   for (const event of data.events) {
-    if (!isRecord(event) || !EVENT_TYPES.has(event.type as string)) continue
-    if (event.type !== 'chats' && typeof event.sessionId !== 'string') continue
-    if (event.type === 'item' && !(isRecord(event.item) && typeof event.item.id === 'string' && typeof event.item.kind === 'string')) continue
-    if (event.type === 'delta' && (typeof event.itemId !== 'string' || typeof event.text !== 'string' || (event.field !== 'text' && event.field !== 'output'))) continue
-    if (event.type === 'runtime' && !(isRecord(event.runtime) && typeof event.runtime.status === 'string')) continue
-    if (event.type === 'truncated' && !Number.isInteger(event.length)) continue
-    events.push(event as RemoteEvent)
+    if (!isRecord(event) || typeof event.ch !== 'string' || !REMOTE_EVENTS.has(event.ch)) continue
+    if (Array.isArray(event.args)) {
+      if (event.ch === IpcEvent.sessionEvent && !isSessionEvent(event.args[0])) continue
+      events.push({ ch: event.ch, args: event.args })
+    } else if (LIST_EVENTS.has(event.ch) && isRecord(event.diff)) {
+      const { ids, changed } = event.diff
+      if (!isStringArray(ids) || !Array.isArray(changed) || !changed.every((e) => isRecord(e) && typeof e.id === 'string')) continue
+      events.push({ ch: event.ch, diff: { ids, changed: changed as { id: string }[] } })
+    }
   }
   return events
+}
+
+const SESSION_EVENT_TYPES = new Set(['item', 'delta', 'runtime', 'truncated'])
+
+function isSessionEvent(event: unknown): event is SessionEvent {
+  if (!isRecord(event) || !SESSION_EVENT_TYPES.has(event.type as string) || typeof event.sessionId !== 'string') return false
+  switch (event.type) {
+    case 'item':
+      return isRecord(event.item) && typeof event.item.id === 'string' && typeof event.item.kind === 'string'
+    case 'delta':
+      return typeof event.itemId === 'string' && typeof event.text === 'string' && (event.field === 'text' || event.field === 'output')
+    case 'runtime':
+      return isRecord(event.runtime) && typeof event.runtime.status === 'string'
+    default:
+      return Number.isInteger(event.length)
+  }
 }
 
 // --- What goes over the relay of a chat --------------------------------------------------------------
 
 /** Longest text of one field of an item that goes to another device, in UTF-8 bytes; the rest is cut. */
 export const REMOTE_TEXT_LIMIT = 64 * 1024
-/**
- * At most this much JSON (UTF-8) in a page or a bundle of events; less where the server takes smaller
- * messages (`budget` of `pageOf`, from the server's `limits`).
- */
-export const REMOTE_BATCH_BYTES = 400 * 1024
-const PAGE_ITEMS = 300
 
 const utf8 = new TextEncoder()
 const utf8Decoder = new TextDecoder()
@@ -333,11 +441,6 @@ export function jsonBytes(value: unknown): number {
   }
 }
 
-/** The longest text of one field for pages and bundles of `budget` bytes: an item has a few of them. */
-export function textLimitFor(budget: number): number {
-  return Math.max(1024, Math.min(REMOTE_TEXT_LIMIT, Math.floor(budget / 8)))
-}
-
 /**
  * An item as it goes to another device: texts over `limit` cut (prompts and answers at four times
  * that), what only works on the host left out. Images are paths on the host; the pages of MCP Apps
@@ -367,63 +470,4 @@ export function slimItem(item: ChatItem, limit = REMOTE_TEXT_LIMIT): ChatItem {
     default:
       return item
   }
-}
-
-/**
- * The items before `before` (the end without it) that fit into one page of `budget` bytes, newest last,
- * slimmed; at least one, so a page always gets on.
- */
-export function pageOf(items: readonly ChatItem[], before = items.length, budget = REMOTE_BATCH_BYTES): { items: ChatItem[]; start: number } {
-  const end = Math.min(Math.max(0, before), items.length)
-  const page: ChatItem[] = []
-  let bytes = 0
-  let start = end
-  const limit = textLimitFor(budget)
-  while (start > 0 && page.length < PAGE_ITEMS) {
-    const slim = slimItem(items[start - 1], limit)
-    const size = jsonBytes(slim)
-    if (page.length > 0 && bytes + size > budget) break
-    page.push(slim)
-    bytes += size
-    start--
-  }
-  return { items: page.reverse(), start }
-}
-
-/**
- * The list of chats within `budget` bytes: without previews if need be, then the newest that fit (the
- * pinned ones first). A namespace's chats are mostly far below; a server with small messages isn't.
- */
-export function fitChats(chats: RemoteChats, budget: number): RemoteChats {
-  if (jsonBytes(chats) <= budget) return chats
-  const bare = chats.sessions.map(({ preview: _preview, ...s }) => s)
-  const order = [...bare.filter((s) => s.pinned), ...bare.filter((s) => !s.pinned)]
-  let bytes = jsonBytes({ ...chats, sessions: [] })
-  const kept = new Set<string>()
-  for (const s of order) {
-    const size = jsonBytes(s) + 1
-    if (bytes + size > budget) break
-    bytes += size
-    kept.add(s.id)
-  }
-  return { ...chats, sessions: bare.filter((s) => kept.has(s.id)) }
-}
-
-export function remoteSession(meta: SessionMeta): RemoteSession {
-  const { id, projectId, title, provider, model, createdAt, updatedAt, pinned, cwd, preview } = meta
-  return { id, projectId, title, provider, model, createdAt, updatedAt, pinned, cwd, preview }
-}
-
-/** The id a chat of another device has in this window's session store; its events and actions go there. */
-export function remoteChatId(instance: string, sessionId: string): string {
-  return `remote:${instance}:${sessionId}`
-}
-
-export function isRemoteChatId(id: string): boolean {
-  return id.startsWith('remote:')
-}
-
-export function parseRemoteChatId(id: string): { instance: string; sessionId: string } | null {
-  const match = /^remote:([^:]+):(.+)$/.exec(id)
-  return match ? { instance: match[1], sessionId: match[2] } : null
 }

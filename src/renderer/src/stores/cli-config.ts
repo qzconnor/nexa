@@ -32,9 +32,9 @@ export type CliConfigSection = 'mcp' | 'permissions' | 'hooks'
  * read back, so the page shows the files as they are, also after the CLI or another window changed them.
  */
 export const useCliConfigStore = defineStore('cliConfig', () => {
-  const accounts = useAccountsStore()
-  const projects = useProjectsStore()
-  const settings = useSettingsStore()
+  const accounts = useAccountsStore(null)
+  const projects = useProjectsStore(null)
+  const settings = useSettingsStore(null)
   const ui = useUiStore()
 
   /** The CLIs with an adapter in main. */

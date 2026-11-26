@@ -1,13 +1,18 @@
-import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
 import { enabledProviders, offeredProviders, providerTogglePatch } from '@shared/providers'
 import type { CommandOption, ModelDefaults, ModelOption, ProviderStatus, ProviderUsage } from '@shared/types'
+import { apiOf, scopedStore } from './device'
 import { useSettingsStore } from './settings'
 
-/** The CLIs: installed and logged in, switched on or off, their models, the usage of every account's plan. */
-export const useProvidersStore = defineStore('providers', () => {
-  const settings = useSettingsStore()
+/**
+ * The CLIs of a device (`scopedStore`): installed and logged in, switched on or off, their models, the
+ * usage of every account's plan.
+ */
+export const useProvidersStore = scopedStore('providers', (device) => {
+  const api = apiOf(device)
+  const settings = useSettingsStore(device)
+  let listening = false
   const statuses = ref<ProviderStatus[]>([])
   const usage = ref<ProviderUsage[]>([])
   const models = ref<Partial<Record<ProviderId, ModelOption[]>>>({})
@@ -37,7 +42,7 @@ export const useProvidersStore = defineStore('providers', () => {
     if (on) {
       // It wasn't asked while off: its models and limits are new.
       if (byId.value[id]?.installed) void loadModels(id)
-      void window.api.usage.refresh().then((next) => (usage.value = next))
+      void api.usage.refresh().then((next) => (usage.value = next))
     }
     return true
   }
@@ -47,23 +52,25 @@ export const useProvidersStore = defineStore('providers', () => {
   }
 
   async function load(): Promise<void> {
-    const [list, current] = await Promise.all([window.api.providers.list(), window.api.usage.get()])
+    const [list, current] = await Promise.all([api.providers.list(), api.usage.get()])
     statuses.value = list
     usage.value = current
-    window.api.providers.onChanged((next) => {
+    for (const s of list) if (s.installed && settings.settings[s.id].enabled) void loadModels(s.id)
+    if (listening) return
+    listening = true
+    api.providers.onChanged((next) => {
       statuses.value = next
       // A CLI that was installed or logged in meanwhile may have other models.
       for (const s of next) if (s.installed && settings.settings[s.id].enabled && !models.value[s.id]?.length) void loadModels(s.id)
     })
-    window.api.usage.onChanged((next) => (usage.value = next))
-    for (const s of list) if (s.installed && settings.settings[s.id].enabled) void loadModels(s.id)
+    api.usage.onChanged((next) => (usage.value = next))
   }
 
   async function refresh(): Promise<void> {
     detecting.value = true
     try {
-      statuses.value = await window.api.providers.refresh()
-      usage.value = await window.api.usage.refresh()
+      statuses.value = await api.providers.refresh()
+      usage.value = await api.usage.refresh()
     } finally {
       detecting.value = false
     }
@@ -72,7 +79,7 @@ export const useProvidersStore = defineStore('providers', () => {
   function loadModels(id: ProviderId): Promise<ModelOption[]> {
     let pending = loading.get(id)
     if (!pending) {
-      pending = window.api.providers
+      pending = api.providers
         .models(id)
         .then((list) => {
           models.value = { ...models.value, [id]: list }
@@ -95,7 +102,7 @@ export const useProvidersStore = defineStore('providers', () => {
     const key = `${id}\0${account ?? ''}\0${cwd}`
     const cached = commandCache.get(key)
     if (cached && Date.now() - cached.at < maxAgeMs) return cached.list
-    const list = window.api.providers.commands(id, account, cwd).catch(() => cached?.list ?? ([] as CommandOption[]))
+    const list = api.providers.commands(id, account, cwd).catch(() => cached?.list ?? ([] as CommandOption[]))
     commandCache.set(key, { at: Date.now(), list })
     return list
   }
@@ -105,7 +112,7 @@ export const useProvidersStore = defineStore('providers', () => {
     const key = `${id}\0${account ?? ''}\0${model}`
     let pending = defaultsCache.get(key)
     if (!pending) {
-      pending = window.api.providers.modelDefaults(id, account, model).catch(() => {
+      pending = api.providers.modelDefaults(id, account, model).catch(() => {
         // A failed probe is asked again next time instead of staying empty.
         defaultsCache.delete(key)
         return {} as ModelDefaults

@@ -14,6 +14,7 @@ import { StartCommandsEvent, StartCommandsInvoke } from '@shared/start-commands'
 import { TerminalsEvent, TerminalsInvoke } from '@shared/terminals'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
 import { VoiceEvent, VoiceInvoke } from '@shared/voice'
+import { deviceApi } from '@shared/window-api'
 
 function subscribe<Args extends unknown[]>(channel: string, cb: (...args: Args) => void): Unsubscribe {
   const listener = (_event: IpcRendererEvent, ...args: unknown[]) => cb(...(args as Args))
@@ -24,6 +25,9 @@ function subscribe<Args extends unknown[]>(channel: string, cb: (...args: Args) 
 }
 
 const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args) as Promise<T>
+
+// Its `files` is the one call of the full namespace below that another device answers too.
+const { files: _files, ...device } = deviceApi(invoke, subscribe)
 
 const api: NexaApi = {
   platform: process.platform,
@@ -71,16 +75,14 @@ const api: NexaApi = {
   },
   remote: {
     hello: (instance) => invoke(RemoteInvoke.hello, instance),
-    chats: (instance) => invoke(RemoteInvoke.chats, instance),
-    open: (instance, sessionId, before) => invoke(RemoteInvoke.open, instance, sessionId, before),
+    invoke: (instance, channel, args) => invoke(RemoteInvoke.invoke, instance, channel, args),
     watch: (list) => invoke(RemoteInvoke.watch, list),
-    send: (instance, sessionId, text) => invoke(RemoteInvoke.send, instance, sessionId, text),
-    interrupt: (instance, sessionId) => invoke(RemoteInvoke.interrupt, instance, sessionId),
-    respond: (instance, sessionId, itemId, response) => invoke(RemoteInvoke.respond, instance, sessionId, itemId, response),
+    uploadImage: (instance, path) => invoke(RemoteInvoke.uploadImage, instance, path),
     controllers: () => invoke(RemoteInvoke.controllers),
     disconnect: (instance) => invoke(RemoteInvoke.disconnect, instance),
     onEvents: (cb) => subscribe(RemoteIpcEvent.events, cb),
     onResync: (cb) => subscribe(RemoteIpcEvent.resync, cb),
+    onInfo: (cb) => subscribe(RemoteIpcEvent.info, cb),
     onControllers: (cb) => subscribe(RemoteIpcEvent.controllers, cb),
   },
   claudeManager: {
@@ -234,14 +236,6 @@ const api: NexaApi = {
     setTitleBarColors: (colors) => invoke(IpcInvoke.windowSetTitleBarColors, colors),
     onState: (cb) => subscribe(IpcEvent.windowState, cb),
   },
-  settings: {
-    get: () => invoke(IpcInvoke.settingsGet),
-    update: (patch) => invoke(IpcInvoke.settingsUpdate, patch),
-    exportToFile: () => invoke(IpcInvoke.settingsExport),
-    previewImport: () => invoke(IpcInvoke.settingsImportPreview),
-    onChanged: (cb) => subscribe(IpcEvent.settingsChanged, cb),
-    onOpen: (cb) => subscribe(IpcEvent.openSettings, cb),
-  },
   notifications: {
     viewing: (sessionId) => invoke(IpcInvoke.notificationsViewing, sessionId),
     test: () => invoke(IpcInvoke.notificationsTest),
@@ -262,91 +256,8 @@ const api: NexaApi = {
     onChanged: (cb) => subscribe(IpcEvent.themesChanged, cb),
     onSaved: (cb) => subscribe(IpcEvent.themesSaved, cb),
   },
-  providers: {
-    list: () => invoke(IpcInvoke.providersList),
-    refresh: () => invoke(IpcInvoke.providersRefresh),
-    models: (provider) => invoke(IpcInvoke.providersModels, provider),
-    modelDefaults: (provider, account, model) => invoke(IpcInvoke.providersModelDefaults, provider, account, model),
-    commands: (provider, account, cwd) => invoke(IpcInvoke.providersCommands, provider, account, cwd),
-    onChanged: (cb) => subscribe(IpcEvent.providersChanged, cb),
-  },
-  accounts: {
-    list: () => invoke(IpcInvoke.accountsList),
-    refresh: () => invoke(IpcInvoke.accountsRefresh),
-    create: (input) => invoke(IpcInvoke.accountsCreate, input),
-    update: (id, patch) => invoke(IpcInvoke.accountsUpdate, id, patch),
-    remove: (id, deleteFolder) => invoke(IpcInvoke.accountsRemove, id, deleteFolder),
-    merge: (from, into) => invoke(IpcInvoke.accountsMerge, from, into),
-    reorder: (ids) => invoke(IpcInvoke.accountsReorder, ids),
-    logins: () => invoke(IpcInvoke.accountsLogins),
-    login: (id) => invoke(IpcInvoke.accountsLogin, id),
-    loginCode: (id, code) => invoke(IpcInvoke.accountsLoginCode, id, code),
-    cancelLogin: (id) => invoke(IpcInvoke.accountsLoginCancel, id),
-    renewLogin: (id) => invoke(IpcInvoke.accountsRenewLogin, id),
-    logout: (id) => invoke(IpcInvoke.accountsLogout, id),
-    onChanged: (cb) => subscribe(IpcEvent.accountsChanged, cb),
-    onLogin: (cb) => subscribe(IpcEvent.accountsLogin, cb),
-  },
-  usage: {
-    get: () => invoke(IpcInvoke.usageGet),
-    refresh: () => invoke(IpcInvoke.usageRefresh),
-    stats: (days) => invoke(IpcInvoke.usageStats, days),
-    onChanged: (cb) => subscribe(IpcEvent.usageChanged, cb),
-  },
-  projects: {
-    list: () => invoke(IpcInvoke.projectsList),
-    create: (input) => invoke(IpcInvoke.projectsCreate, input),
-    update: (id, patch) => invoke(IpcInvoke.projectsUpdate, id, patch),
-    prompt: (target) => invoke(IpcInvoke.projectsPrompt, target),
-    setPrompt: (target, text) => invoke(IpcInvoke.projectsSetPrompt, target, text),
-    remove: (id) => invoke(IpcInvoke.projectsRemove, id),
-    onChanged: (cb) => subscribe(IpcEvent.projectsChanged, cb),
-    arrange: (layout) => invoke(IpcInvoke.projectsArrange, layout),
-    toSection: (id) => invoke(IpcInvoke.projectsToSection, id),
-    sections: () => invoke(IpcInvoke.sectionsList),
-    createSection: (input) => invoke(IpcInvoke.sectionsCreate, input),
-    updateSection: (id, patch) => invoke(IpcInvoke.sectionsUpdate, id, patch),
-    removeSection: (id) => invoke(IpcInvoke.sectionsRemove, id),
-    onSectionsChanged: (cb) => subscribe(IpcEvent.sectionsChanged, cb),
-  },
-  sessions: {
-    list: () => invoke(IpcInvoke.sessionsList),
-    create: (input) => invoke(IpcInvoke.sessionsCreate, input),
-    open: (id) => invoke(IpcInvoke.sessionsOpen, id),
-    send: (id, input) => invoke(IpcInvoke.sessionsSend, id, input),
-    edit: (id, itemId, input) => invoke(IpcInvoke.sessionsEdit, id, itemId, input),
-    interrupt: (id) => invoke(IpcInvoke.sessionsInterrupt, id),
-    respond: (id, itemId, response) => invoke(IpcInvoke.sessionsRespond, id, itemId, response),
-    shellOutput: (id, itemId) => invoke(IpcInvoke.sessionsShellOutput, id, itemId),
-    stopShell: (id, itemId) => invoke(IpcInvoke.sessionsStopShell, id, itemId),
-    runShell: (id, command) => invoke(IpcInvoke.sessionsRunShell, id, command),
-    context: (id) => invoke(IpcInvoke.sessionsContext, id),
-    mcpServers: (id) => invoke(IpcInvoke.sessionsMcpServers, id),
-    setMcp: (id, name, enabled) => invoke(IpcInvoke.sessionsSetMcp, id, name, enabled),
-    reconnectMcp: (id, name) => invoke(IpcInvoke.sessionsReconnectMcp, id, name),
-    authenticateMcp: (id, name) => invoke(IpcInvoke.sessionsAuthenticateMcp, id, name),
-    configTarget: (id) => invoke(IpcInvoke.sessionsConfigTarget, id),
-    plugins: (id) => invoke(IpcInvoke.sessionsPlugins, id),
-    setPlugin: (id, pluginId, enabled) => invoke(IpcInvoke.sessionsSetPlugin, id, pluginId, enabled),
-    sync: (id) => invoke(IpcInvoke.sessionsSync, id),
-    update: (id, patch) => invoke(IpcInvoke.sessionsUpdate, id, patch),
-    remove: (ids) => invoke(IpcInvoke.sessionsRemove, ids),
-    storage: () => invoke(IpcInvoke.sessionsStorage),
-    stop: (id) => invoke(IpcInvoke.sessionsStop, id),
-    restart: (id) => invoke(IpcInvoke.sessionsRestart, id),
-    resumeAtReset: (id, on) => invoke(IpcInvoke.sessionsResumeAtReset, id, on),
-    search: (query) => invoke(IpcInvoke.sessionsSearch, query),
-    move: (id, target) => invoke(IpcInvoke.sessionsMove, id, target),
-    compact: (id) => invoke(IpcInvoke.sessionsCompact, id),
-    fork: (id) => invoke(IpcInvoke.sessionsFork, id),
-    clear: (id) => invoke(IpcInvoke.sessionsClear, id),
-    exportMarkdown: (id) => invoke(IpcInvoke.sessionsExportMarkdown, id),
-    lastAnswer: (id) => invoke(IpcInvoke.sessionsLastAnswer, id),
-    onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),
-    onEvent: (cb) => subscribe(IpcEvent.sessionEvent, cb),
-    onShow: (cb) => subscribe(IpcEvent.showSession, cb),
-    onFind: (cb) => subscribe(IpcEvent.findSessions, cb),
-  },
+  // Settings, CLIs, accounts, projects and chats: the same calls the window makes of other devices.
+  ...device,
   api: {
     status: () => invoke(IpcInvoke.apiStatus),
   },

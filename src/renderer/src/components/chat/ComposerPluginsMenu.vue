@@ -15,12 +15,14 @@ import { Switch } from '@/components/ui/switch'
 import { errorMessage, toastError } from '@/lib/errors'
 import { containsTerms, searchText } from '@/lib/search'
 import { cn } from '@/lib/utils'
+import { useDeviceApi } from '@/stores/device'
 
 /**
  * „Plugins ›“ in the composer's „+“: the plugins the chat's CLI has installed for its folder, each to
  * switch on and off in the CLI's own settings (so also outside Nexa).
  */
 const props = defineProps<{ sessionId: string; provider: ProviderId; menuOpen: boolean }>()
+const api = useDeviceApi()
 
 const cacheKey = () => `${props.sessionId}\0${props.provider}`
 
@@ -38,7 +40,7 @@ async function load(force = false): Promise<void> {
   loading.value = true
   failed.value = null
   try {
-    const list = await window.api.sessions.plugins(props.sessionId)
+    const list = await api.sessions.plugins(props.sessionId)
     cache.set(key, { list, at: Date.now() })
     if (key === cacheKey()) plugins.value = list
   } catch (error) {
@@ -96,7 +98,7 @@ async function toggle(plugin: PluginInfo): Promise<void> {
   set(enabled)
   busy.value = new Set(busy.value).add(plugin.id)
   try {
-    await window.api.sessions.setPlugin(id, plugin.id, enabled)
+    await api.sessions.setPlugin(id, plugin.id, enabled)
     // The CLI decides in the end (settings of another scope may win): its list shows how it stands.
     await load(true)
   } catch (error) {
