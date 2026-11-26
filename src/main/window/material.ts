@@ -29,6 +29,42 @@ async function loadSendMessage(): Promise<SendMessage | null> {
   return sendMessage
 }
 
+const DWMWA_WINDOW_CORNER_PREFERENCE = 33
+const DWMWCP_ROUNDSMALL = 3
+
+type DwmSetWindowAttribute = (hwnd: number, attribute: number, value: Int32Array, size: number) => number
+
+let dwmSetWindowAttribute: DwmSetWindowAttribute | null | undefined
+
+async function loadDwmSetWindowAttribute(): Promise<DwmSetWindowAttribute | null> {
+  if (dwmSetWindowAttribute !== undefined) return dwmSetWindowAttribute
+  if (process.platform !== 'win32') return (dwmSetWindowAttribute = null)
+  try {
+    const { load } = await import('koffi')
+    dwmSetWindowAttribute = load('dwmapi.dll').func(
+      'int32 __stdcall DwmSetWindowAttribute(intptr hwnd, uint32 dwAttribute, _In_ int32 *pvAttribute, uint32 cbAttribute)',
+    ) as DwmSetWindowAttribute
+  } catch (error) {
+    console.warn('[material] koffi unavailable — the tray menu keeps square corners', error)
+    dwmSetWindowAttribute = null
+  }
+  return dwmSetWindowAttribute
+}
+
+/**
+ * The small rounded corners of Windows 11's menus. A window without a frame keeps square ones unless
+ * it asks DWM; Windows 10 doesn't know the attribute and leaves them square.
+ */
+export async function roundSmallCorners(win: BrowserWindow): Promise<void> {
+  const set = await loadDwmSetWindowAttribute()
+  if (!set || win.isDestroyed()) return
+  try {
+    set(hwndOf(win), DWMWA_WINDOW_CORNER_PREFERENCE, new Int32Array([DWMWCP_ROUNDSMALL]), 4)
+  } catch (error) {
+    console.warn('[material] DwmSetWindowAttribute failed', error)
+  }
+}
+
 export function hwndOf(win: BrowserWindow): number {
   const handle = win.getNativeWindowHandle()
   return handle.length >= 8 ? Number(handle.readBigUInt64LE(0)) : handle.readUInt32LE(0)

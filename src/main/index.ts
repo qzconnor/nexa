@@ -1,9 +1,10 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme, shell, type MessageBoxOptions } from 'electron'
-import { ChatWindowsEvent } from '@shared/chat-windows'
+import { ChatWindowsEvent, type MainWindowRequest } from '@shared/chat-windows'
 import { IpcEvent } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { findTheme } from '@shared/themes/builtin'
+import { trayChats, type TrayMenuAction } from '@shared/tray-menu'
 import { ApiServer } from './api/api-server'
 import { registerArtifactsIpc } from './artifacts/artifact-ipc'
 import { ArtifactService, artifactAccounts } from './artifacts/artifact-service'
@@ -60,6 +61,7 @@ import { registerChatWindowsIpc } from './window/chat-windows-ipc'
 import { handleFileProtocol, registerFileScheme } from './window/file-protocol'
 import { createChatWindow, createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
 import { AppTray } from './window/tray'
+import { TrayMenu } from './window/tray-menu'
 import { WindowMaterialController } from './window/material'
 
 app.setName(APP_NAME)
@@ -367,7 +369,51 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     }
   }
 
-  const tray = new AppTray({ open: () => show(), quit: () => app.quit() })
+  // Windows: the icon's menu in the theme's colours, with the chats that wait or work.
+  const trayAct = (action: TrayMenuAction) => {
+    switch (action.kind) {
+      case 'open':
+        return show()
+      case 'chat':
+        return show(sessionExists(action.sessionId) ? action.sessionId : undefined)
+      case 'new':
+        return reveal(ChatWindowsEvent.request, { kind: 'new', projectId: null } satisfies MainWindowRequest)
+      case 'notifications':
+        return void settings.update({ notifications: { enabled: action.enabled } }).catch((error) => console.error('[tray] notifications', error))
+      case 'quit':
+        return app.quit()
+    }
+  }
+  const trayMenu =
+    process.platform === 'win32'
+      ? new TrayMenu({
+          state: async () => {
+            const current = settings.get()
+            const custom = (await themes.list().catch(() => [])).flatMap((entry) => (entry.theme ? [entry.theme] : []))
+            return {
+              theme: findTheme(current.appearance.theme, custom),
+              appearance: current.appearance,
+              translucent: current.appearance.material !== 'none',
+              ...trayChats(sessions.list(), (id) => sessions.statusOf(id), (id) => projects.get(id)?.name ?? ''),
+              notifications: current.notifications.enabled,
+            }
+          },
+          zoom: () => settings.get().appearance.zoom,
+          onChange: (cb) => {
+            const offs = [
+              sessions.on('changed', cb),
+              sessions.on('event', (event) => {
+                if (event.type === 'runtime') cb()
+              }),
+              settings.on('changed', cb),
+              themes.on('changed', cb),
+            ]
+            return () => offs.forEach((off) => off())
+          },
+          act: trayAct,
+        })
+      : null
+  const tray = new AppTray({ open: () => show(), quit: () => app.quit() }, trayMenu)
 
   /** The user said to quit although something ran; the next `before-quit` goes through. */
   let quitConfirmed = false

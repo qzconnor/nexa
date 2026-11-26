@@ -26,6 +26,21 @@ export function onScreen(saved: Rectangle, areas: readonly Rectangle[]): boolean
 }
 
 /**
+ * Where the menu of the icon in the notification area goes: with a corner at the pointer as the
+ * system's menus open, towards the middle of the display, and wholly inside its work area. The
+ * taskbar isn't part of that, so the menu ends up above it, below it or beside it, wherever it is.
+ */
+export function trayMenuPlace(point: { x: number; y: number }, size: { width: number; height: number }, area: Rectangle): Rectangle {
+  const width = Math.min(size.width, area.width)
+  const height = Math.min(size.height, area.height)
+  const fromX = point.x + width <= area.x + area.width ? point.x : point.x - width
+  const fromY = point.y < area.y + area.height / 2 ? point.y : point.y - height
+  const x = Math.max(area.x, Math.min(fromX, area.x + area.width - width))
+  const y = Math.max(area.y, Math.min(fromY, area.y + area.height - height))
+  return { x, y, width, height }
+}
+
+/**
  * Where a chat's first window goes: down and right of the main window's corner (`near`), on its
  * display, as large as fits there; without a main window in the middle of the display.
  */

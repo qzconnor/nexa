@@ -57,10 +57,18 @@ export function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of openAppWindows()) win.webContents.send(channel, ...args)
 }
 
-export function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown): void {
+/**
+ * `from` says who may call: the app's own windows, or for a window with a page of its own (the tray
+ * menu) only that window.
+ */
+export function handle(
+  channel: string,
+  listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown,
+  from: (event: IpcMainInvokeEvent) => boolean = fromAppWindow,
+): void {
   ipcMain.handle(channel, (event, ...args) => {
     // Only the app's own page may call; anything else gets nothing.
-    if (!fromAppWindow(event)) throw new Error('Nicht erlaubt.')
+    if (!from(event)) throw new Error('Nicht erlaubt.')
     return (listener as (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown)(event, ...args)
   })
 }

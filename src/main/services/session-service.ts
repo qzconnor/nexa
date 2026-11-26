@@ -18,6 +18,7 @@ import {
   type SessionEvent,
   type SessionResume,
   type SessionRuntime,
+  type SessionStatus,
   type TodoEntry,
   type ToolItem,
   type UserItem,
@@ -300,6 +301,11 @@ export class SessionService extends TypedEmitter<Events> {
     return !!s.items?.some(
       (i) => (i.kind === 'tool' && i.shell?.background === true && i.shell.status === 'running') || (i.kind === 'agent' && i.background === true && i.status === 'running'),
     )
+  }
+
+  /** What the chat's CLI does right now; null for a chat Nexa doesn't have. */
+  statusOf(id: string): SessionStatus | null {
+    return this.sessions.get(id)?.runtime.status ?? null
   }
 
   /** The chats whose CLI is up or at work; `nx` goes to one of them rather than starting another. */
