@@ -74,6 +74,21 @@ describe('ServerLinkService', () => {
     await until(first, (s) => trustedNames(s).join() === 'Desktop,Laptop')
   })
 
+  it('tells how far this device’s clock is off from the server’s', async () => {
+    const { link } = await service()
+    await link.pair({ url: 'https://nexa.test', code: server.invite(), name: 'Desktop' })
+    await until(link, (s) => s.status === 'online')
+    expect(Math.abs(link.getState().clockSkew!)).toBeLessThan(5_000)
+
+    // The server's clock an hour ahead: this device's is an hour behind.
+    server.now = () => Date.now() + 60 * 60_000
+    await link.disconnect()
+    await link.connect()
+    await until(link, (s) => s.status === 'online' && s.clockSkew !== null && Math.abs(s.clockSkew + 60 * 60_000) < 5_000)
+    await link.disconnect()
+    expect(link.getState().clockSkew).toBeNull()
+  })
+
   it('does not trust a device the server added on its own', async () => {
     const { link } = await service()
     await link.pair({ url: 'https://nexa.test', code: server.invite(), name: 'Desktop' })

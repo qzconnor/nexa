@@ -15,6 +15,8 @@ export class FakeServer {
   /** Every `send` the server relayed, for tests that look at what went where. */
   readonly relayed: { from: string; to: string; kind: string }[] = []
   info: unknown = { name: 'nexa-server', version: '0.1.0', protocol: 1 }
+  /** The server's clock, for tests of a device whose clock is off. */
+  now = (): number => Date.now()
   private counter = 0
 
   invite(): string {
@@ -74,6 +76,8 @@ export class FakeServer {
         this.connected(info.id)?.drop(CloseCode.Replaced)
         socket.instance = info.id
         info.online = true
+        // Like the real one, which stamps the login before `ready`.
+        info.lastSeen = this.now()
         socket.deliver({ t: 'ready', instance: info.id, namespace: 'test', instances: [...this.instances.values()] })
         this.broadcast({ t: 'instance', event: 'online', instance: info }, info.id)
       })

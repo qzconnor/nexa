@@ -10,7 +10,7 @@ import {
   type JoinRequest,
   type Role,
 } from '@shared/nexa-server/protocol'
-import type { DeviceInvite, LinkedDevice, PairInput, ServerLinkState } from '@shared/server-link'
+import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type PairInput, type ServerLinkState } from '@shared/server-link'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ServerConnection, ServerError, type SocketFactory, type StopReason } from './connection'
 import { generateIdentity, importIdentity, LinkStore, type Identity, type LinkSecrets, type SecretCodec, type StoredLink } from './link-store'
@@ -30,6 +30,7 @@ const ROLE: Role = 'host'
 const HTTP_TIMEOUT_MS = 15_000
 /** Online and offline of devices come often; they reach the disk in one write. */
 const SAVE_DELAY_MS = 1_000
+const CLOCK_CHECK_MS = 10_000
 
 type Profile = Omit<StoredLink, 'version' | 'secrets' | 'members' | 'devices'>
 
@@ -43,6 +44,13 @@ interface Active {
   offs: (() => void)[]
   /** The user leaves the namespace: the close that follows is no removal by someone else. */
   leaving: boolean
+  /**
+   * The server's time at login and `performance.now()` then: the skew stays right when the user sets
+   * the clock afterwards, which is the point of showing it.
+   */
+  clock: { server: number; mono: number } | null
+  /** Checks the clock again while it is off, to notice when the user fixed it. */
+  clockTimer: ReturnType<typeof setTimeout> | null
 }
 
 /**
@@ -106,12 +114,14 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
         namespace: this.locked.namespace,
         instance: this.locked.instance,
         name: this.locked.name,
-        devices: deviceList(this.locked.devices, this.locked.instance, false, (id) => members.has(id)),
+        clockSkew: null,
+        devices: deviceList(this.locked.devices, this.locked.instance, false, (id) => ({ trusted: members.has(id), issue: null })),
       }
     }
     const active = this.active
-    if (!active) return { ...base, status: 'unpaired', url: null, namespace: null, instance: null, name: null, devices: [] }
+    if (!active) return { ...base, status: 'unpaired', url: null, namespace: null, instance: null, name: null, clockSkew: null, devices: [] }
     const { profile, connection, membership } = active
+    const online = !profile.paused && connection.status === 'online'
     return {
       ...base,
       status: profile.paused ? 'paused' : connection.status,
@@ -120,9 +130,11 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
       namespace: profile.namespace,
       instance: profile.instance,
       name: profile.name,
-      devices: deviceList([...active.devices.values()], profile.instance, !profile.paused && connection.status === 'online', (id) =>
-        membership.isMember(id),
-      ),
+      clockSkew: online ? clockSkew(active) : null,
+      devices: deviceList([...active.devices.values()], profile.instance, online, (id) => {
+        const trusted = membership.isMember(id)
+        return { trusted, issue: trusted ? null : membership.issueOf(id) }
+      }),
     }
   }
 
@@ -248,6 +260,7 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
     const active = this.active
     if (!active) return
     for (const off of active.offs) off()
+    this.stopClockWatch(active)
     active.membership.dispose()
     active.connection.stop('user')
     if (this.saveTimer) await this.saveNow()
@@ -278,6 +291,7 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
       send: (to, kind, msgId, body) => connection.send(to, kind, msgId, body),
       persist: () => this.scheduleSave(),
       changed: () => this.changed(),
+      clockSkew: () => clockSkew(active),
       log: this.deps.log,
     })
     const active: Active = {
@@ -289,6 +303,8 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
       connection,
       offs: [],
       leaving: false,
+      clock: null,
+      clockTimer: null,
     }
     active.offs.push(
       connection.on('status', () => this.changed()),
@@ -296,6 +312,9 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
         active.devices = new Map(ready.instances.map((d) => [d.id, d]))
         const self = active.devices.get(profile.instance)
         if (self) profile.name = self.name
+        // The server stamps this device's `lastSeen` at login, just before `ready`: its clock, give or take the trip.
+        active.clock = self?.lastSeen ? { server: self.lastSeen, mono: performance.now() } : null
+        this.watchClock(active)
         this.scheduleSave()
         void membership.ready(ready.instances)
         this.changed()
@@ -341,6 +360,7 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
     this.active = null
     this.error = error
     for (const off of active.offs) off()
+    this.stopClockWatch(active)
     active.membership.dispose()
     active.connection.stop('user')
     if (this.saveTimer) clearTimeout(this.saveTimer)
@@ -353,6 +373,40 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
         this.changed()
       })
     return this.forgetting
+  }
+
+  /**
+   * While this device's clock is off, checks it again now and then. Once it is right, the window learns
+   * it at once, and the devices that dropped this one's hello get a new one instead of waiting for the
+   * next retry.
+   */
+  private watchClock(active: Active): void {
+    this.stopClockWatch(active)
+    const off = (skew: number | null) => skew !== null && Math.abs(skew) >= CLOCK_SKEW_WARN_MS
+    if (!off(clockSkew(active))) return
+    let shown = Math.round(clockSkew(active)! / 60_000)
+    const check = () => {
+      active.clockTimer = null
+      if (this.active !== active || active.connection.status !== 'online') return
+      const skew = clockSkew(active)
+      if (!off(skew)) {
+        this.changed()
+        active.membership.askAgain()
+        return
+      }
+      const minutes = Math.round(skew! / 60_000)
+      if (minutes !== shown) {
+        shown = minutes
+        this.changed()
+      }
+      active.clockTimer = setTimeout(check, CLOCK_CHECK_MS)
+    }
+    active.clockTimer = setTimeout(check, CLOCK_CHECK_MS)
+  }
+
+  private stopClockWatch(active: Active): void {
+    if (active.clockTimer) clearTimeout(active.clockTimer)
+    active.clockTimer = null
   }
 
   private online(): Active {
@@ -441,11 +495,22 @@ function serverUrl(input: string): string {
   return result.url
 }
 
+/** This device's clock minus the server's now, from the time the server gave at login. */
+function clockSkew(active: Active): number | null {
+  const clock = active.clock
+  return clock ? Date.now() - (clock.server + performance.now() - clock.mono) : null
+}
+
 /**
  * This device first, then the others by name. Without a connection nobody counts as online: the last
  * list can't say who still is.
  */
-function deviceList(devices: readonly InstanceInfo[], self: string, connected: boolean, trusted: (id: string) => boolean): LinkedDevice[] {
+function deviceList(
+  devices: readonly InstanceInfo[],
+  self: string,
+  connected: boolean,
+  trust: (id: string) => Pick<LinkedDevice, 'trusted' | 'issue'>,
+): LinkedDevice[] {
   return devices
     .map((d) => ({
       id: d.id,
@@ -455,7 +520,7 @@ function deviceList(devices: readonly InstanceInfo[], self: string, connected: b
       lastSeen: d.lastSeen,
       createdAt: d.createdAt,
       self: d.id === self,
-      trusted: trusted(d.id),
+      ...trust(d.id),
     }))
     .sort((a, b) => Number(b.self) - Number(a.self) || a.name.localeCompare(b.name, 'de'))
 }

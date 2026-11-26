@@ -1226,12 +1226,25 @@ eines Namespace macht den Schlüssel selbst (Generation 1).
 
 ### Mitglieder und Schlüssel
 
-- **`member.hello`** (`{ instance, signKey, dhKey }`, mit dem Schlüssel des Namespace): nach jedem
-  `ready` an alle. Wer ihn öffnen kann, dessen Signatur stimmt und dessen Schlüssel denen in der Liste
-  des Servers gleichen, wird Mitglied; neue Mitglieder nur unter dem neuesten Schlüssel und nicht, solange
-  nach einer Entfernung ein neuer aussteht. Ein Mitglied antwortet auf einen Hello an alle mit einem
-  eigenen an den Absender (nicht auf einen direkten, sonst ginge es hin und her). Die Schlüssel eines
-  Mitglieds ändern sich nie; ein Hello mit anderen unter seiner Id gilt nicht.
+- **`member.hello`** (`{ instance, signKey, dhKey, reply? }`, mit dem Schlüssel des Namespace): nach
+  jedem `ready` an alle. Wer ihn öffnen kann, dessen Signatur stimmt und dessen Schlüssel denen in der
+  Liste des Servers gleichen, wird Mitglied; neue Mitglieder nur unter dem neuesten Schlüssel und nicht,
+  solange nach einer Entfernung ein neuer aussteht. Auf jeden angenommenen Hello antwortet ein Gerät mit
+  einem eigenen an den Absender, mit `reply: true`; einen solchen beantwortet es nicht, sonst ginge es hin
+  und her. Die Schlüssel eines Mitglieds ändern sich nie; ein Hello mit anderen unter seiner Id gilt nicht.
+- **Erneut fragen**: Ein Gerät, das der Server als verbunden führt und das noch kein Mitglied ist, bekommt
+  nach 30 Sekunden einen eigenen Hello (ohne `reply`), danach jedes Mal nach doppelt so langer Zeit, bis
+  höchstens alle 15 Minuten; nach jedem `ready` und wenn es neu online kommt, wieder ab 30 Sekunden. So
+  finden zwei Geräte zusammen, wenn der erste Hello verloren ging oder verworfen wurde. Einen Hello unter
+  einem Schlüssel, den es nicht hat, beantwortet ein Gerät nur, wenn er an alle ging und von einem
+  Mitglied kommt: Ob er selbst eine Antwort war, lässt sich nicht lesen, und zwei Geräte mit einander
+  fremden Schlüsseln antworteten sich sonst endlos.
+- **Uhr**: Ein Hello, dessen `at` mehr als 5 Minuten abweicht, verwirft das Gerät und merkt sich die
+  Abweichung (geprüft erst nach der Signatur, die Zeit ist also die des Absenders). Bei `ready` steht in
+  der Liste des Servers `lastSeen` dieses Geräts, gestempelt beim Anmelden; daraus schätzt Nexa die
+  eigene Abweichung zur Uhr des Servers. Beides zeigt Nexa nur an (Einstellungen › Geräte), es entscheidet
+  nichts, denn der Server könnte bei seiner Zeit lügen. Ab 1 Minute Abweichung warnt die Karte
+  „Verbindung“; ist die Uhr wieder richtig, fragt Nexa die übrigen Geräte gleich erneut.
 - **`key.share`** (`{ key, members }`, mit dem Schlüssel `pair`): ein Schlüssel des Namespace und die
   Mitglieder, wie der Absender sie kennt. Nur von Mitgliedern, nur direkt, nur wenn der Empfänger und der
   Absender in `members` stehen. Ist der Schlüssel neuer (höhere Generation, bei gleicher die kleinere Id),
