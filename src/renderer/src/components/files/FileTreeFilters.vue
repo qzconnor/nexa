@@ -1,17 +1,20 @@
 <script setup lang="ts">
+import { TimerIcon } from '@lucide/vue'
 import { computed, useId } from 'vue'
 import type { FileTouchKind, GitFileStatus } from '@shared/files'
 import { Switch } from '@/components/ui/switch'
-import { STATUS_CLASS, STATUS_LABEL, STATUS_LETTER, TOUCH_KINDS } from '@/lib/file-tree'
+import { formatActivityTime, STATUS_CLASS, STATUS_LABEL, STATUS_LETTER, TOUCH_KINDS } from '@/lib/file-tree'
 import { TOUCH_DONE, TOUCH_ICON } from '@/lib/file-touch'
 import { cn } from '@/lib/utils'
 import { useFileTreeStore } from '@/stores/file-tree'
+import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 
 /**
  * The filters of the trees, unfolded below a tree's folder: only the files git sees changed, only those
- * the agent touched in the chat, or both together; each narrowed by kind. Below them whether the
- * files git ignores show. They hold for every tree and are remembered. Beside that the session's activity
- * can be cleared.
+ * the agent is at right now in the chat, or both together; each narrowed by kind. With nothing to show
+ * the tree shows all files. Below them whether the files git ignores show. They hold for every tree and
+ * are remembered. Beside that the session's activity can be cleared before it runs out by itself.
  */
 const props = defineProps<{
   /** The changes by state, the states there are. */
@@ -25,10 +28,24 @@ const props = defineProps<{
 }>()
 
 const fileTree = useFileTreeStore()
+const settings = useSettingsStore(null)
+const ui = useUiStore()
 const id = useId()
 
-/** All files of the chat's activity, also those outside this tree. */
+/** All files the chat's agent is at, also those outside this tree. */
 const recorded = computed(() => fileTree.activityOf(props.sessionId)?.size ?? 0)
+
+/** How long each kind stays, as set in Einstellungen › Allgemein. */
+const durations = computed(() => {
+  const s = settings.settings.general.activitySeconds
+  return `Gelesenes ${formatActivityTime(s.read)}, Durchsuchtes ${formatActivityTime(s.search)}, Geschriebenes ${formatActivityTime(s.write)}, Committetes ${formatActivityTime(s.commit)}`
+})
+const activityHint = computed(
+  () =>
+    `Was der Agent in diesem Chat gerade liest, durchsucht, schreibt oder committet. Es bleibt eine Weile: ${durations.value}. Tut sich gerade nichts, zeigt der Baum alle Dateien.`,
+)
+
+const openDurations = () => ui.openSettings('general', 'general.fileActivity')
 
 function toggle<T>(set: Set<T>, value: T) {
   if (!set.delete(value)) set.add(value)
@@ -77,9 +94,7 @@ const chips = 'ml-auto flex min-h-[20px] flex-wrap items-center justify-end gap-
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
       <div class="flex h-[24px] min-w-0 items-center gap-2">
         <Switch :id="`${id}-activity`" v-model="fileTree.filters.activity" size="sm" />
-        <label :for="`${id}-activity`" class="min-w-0 cursor-pointer truncate" v-tooltip="'Was der Agent in diesem Chat gelesen, durchsucht, geschrieben oder committet hat'">
-          Aktivität
-        </label>
+        <label :for="`${id}-activity`" class="min-w-0 cursor-pointer truncate" v-tooltip="activityHint">Aktivität</label>
       </div>
       <div :class="cn(chips, !fileTree.filters.activity && 'opacity-60')">
         <button
@@ -90,7 +105,7 @@ const chips = 'ml-auto flex min-h-[20px] flex-wrap items-center justify-end gap-
             :aria-label="`Vom Agenten ${TOUCH_DONE[kind]}`"
             :aria-pressed="!fileTree.hiddenKinds.has(kind)"
             :class="cn(chip, fileTree.hiddenKinds.has(kind) ? chipHidden : chipShown)"
-            v-tooltip="chipTooltip(`Vom Agenten ${TOUCH_DONE[kind]}`, kinds[kind], !fileTree.hiddenKinds.has(kind))"
+            v-tooltip="chipTooltip(`Gerade vom Agenten ${TOUCH_DONE[kind]}`, kinds[kind], !fileTree.hiddenKinds.has(kind))"
             @click="toggle(fileTree.hiddenKinds, kind)"
           >
             <component :is="TOUCH_ICON[kind]" class="size-[12px] text-(--touch)" />{{ kinds[kind] }}
@@ -102,15 +117,25 @@ const chips = 'ml-auto flex min-h-[20px] flex-wrap items-center justify-end gap-
     <div class="flex h-[24px] items-center gap-2">
       <Switch :id="`${id}-ignored`" v-model="fileTree.showIgnored" size="sm" />
       <label :for="`${id}-ignored`" class="min-w-0 flex-1 cursor-pointer truncate">Ignorierte Dateien zeigen</label>
-      <!-- Once the work is done (committed …), the activity starts anew. -->
+      <!-- It runs out by itself; this is for not waiting. -->
       <button
         type="button"
         :disabled="recorded === 0"
         class="h-[20px] shrink-0 cursor-pointer rounded-md px-[6px] text-[11px] text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-        v-tooltip="recorded === 0 ? 'Der Agent hat in diesem Chat noch keine Datei angefasst' : `Vergisst die ${files(recorded)}, die der Agent in diesem Chat angefasst hat`"
+        v-tooltip="recorded === 0 ? 'Der Agent ist gerade an keiner Datei' : `Vergisst sofort die ${files(recorded)}, an denen der Agent gerade war`"
         @click="fileTree.clearActivity(sessionId)"
       >
         Aktivität leeren
+      </button>
+      <!-- How long it stays is a setting: this opens it. -->
+      <button
+        type="button"
+        aria-label="Dauer der Aktivität einstellen"
+        class="-ml-1 flex size-[20px] shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+        v-tooltip="`Wie lange die Aktivität bleibt (${durations}): Einstellungen › Allgemein`"
+        @click="openDurations"
+      >
+        <TimerIcon class="size-[13px]" />
       </button>
     </div>
   </div>

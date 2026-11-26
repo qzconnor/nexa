@@ -158,6 +158,19 @@ export interface GeneralSettings {
    * that would end with it (`!` commands, start commands).
    */
   confirmQuitRunning: boolean
+  /**
+   * How long a file counts as what the agent is at, by the kind of touch (seconds): the file tree's
+   * activity filter shows it that long (`ACTIVITY_CHOICES`).
+   */
+  activitySeconds: ActivitySeconds
+}
+
+/** A duration for each kind the agent touches a file with (`FileTouchKind`). */
+export interface ActivitySeconds {
+  read: number
+  search: number
+  write: number
+  commit: number
 }
 
 /**

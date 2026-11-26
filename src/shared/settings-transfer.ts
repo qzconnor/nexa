@@ -1,5 +1,5 @@
 import { PROVIDER_IDS, type ProviderId } from './chat'
-import { defaultSettings, SETTING_RANGES } from './defaults'
+import { ACTIVITY_CHOICES, defaultSettings, SETTING_RANGES } from './defaults'
 import { PERMISSION_MODES } from './providers'
 import { CUSTOM_THEME_PREFIX } from './themes/file'
 import { THEMES } from './themes/builtin'
@@ -178,6 +178,10 @@ const themeId: Check = (value) =>
  * of their default's type, e.g. a model's id.
  */
 const CHECKS: Record<string, Check> = {
+  'general.activitySeconds.read': oneOf(ACTIVITY_CHOICES),
+  'general.activitySeconds.search': oneOf(ACTIVITY_CHOICES),
+  'general.activitySeconds.write': oneOf(ACTIVITY_CHOICES),
+  'general.activitySeconds.commit': oneOf(ACTIVITY_CHOICES),
   'appearance.theme': themeId,
   'appearance.material': oneOf(['none', 'mica', 'acrylic', 'tabbed']),
   'appearance.surfaceOpacity': slider('appearance.surfaceOpacity'),

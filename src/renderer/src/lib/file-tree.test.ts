@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest'
 import type { FileEntry, FileListing, GitTreeStatus } from '@shared/files'
 import {
   absolutePath,
+  activityDurations,
   ancestors,
   changedFiles,
   filesTree,
   flattenTree,
   folderName,
+  formatActivityTime,
   gitDecorations,
+  liveRecord,
   parentPath,
+  recordChange,
   recordKind,
   recordTouch,
   searchTree,
@@ -226,5 +230,29 @@ describe('touch records', () => {
     expect(recordKind(record, new Set(['write'] as const))).toBe('read')
     expect(recordKind({ search: 1 }, new Set(['search'] as const))).toBeNull()
     expect(recordKind({ commit: 1, read: 2 })).toBe('commit')
+  })
+
+  const durations = activityDurations({ read: 60, search: 60, write: 300, commit: 120 })
+
+  it('keep a kind only while it is current', () => {
+    const record = recordTouch(recordTouch(undefined, 'read', 0), 'write', 0)
+    expect(liveRecord(record, 59_999, durations)).toBe(record)
+    expect(liveRecord(record, 60_000, durations)).toEqual({ write: 0 })
+    expect(liveRecord(record, 300_000, durations)).toBeNull()
+  })
+
+  it('tell when the first kind runs out', () => {
+    expect(recordChange({ read: 1_000, write: 0 }, durations)).toBe(61_000)
+    expect(recordChange({ write: 0 }, durations)).toBe(300_000)
+    expect(recordChange({}, durations)).toBe(Infinity)
+  })
+
+  it('last as set, a value no one could pick as by default', () => {
+    expect(activityDurations({ read: 15, search: 30, write: 1800, commit: 600 })).toEqual({ read: 15_000, search: 30_000, write: 1_800_000, commit: 600_000 })
+    expect(activityDurations({ read: 0, search: -5, write: Number.NaN, commit: 120 })).toEqual({ read: 60_000, search: 60_000, write: 300_000, commit: 120_000 })
+  })
+
+  it('name a duration as the settings do', () => {
+    expect([15, 60, 90, 1800].map(formatActivityTime)).toEqual(['15 s', '1 min', '1 min 30 s', '30 min'])
   })
 })

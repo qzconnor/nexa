@@ -78,6 +78,17 @@ const TREE = [
         ],
       },
       {
+        id: 'general.fileActivity',
+        title: 'Aktivität im Dateibaum',
+        keywords: 'Dateibaum Dateien Filter Aktivität Dauer Zeit wie lange verschwinden ausblenden Agent live gerade',
+        fields: [
+          { id: 'general.activityRead', label: 'Gelesen', keywords: 'lesen Read angesehen' },
+          { id: 'general.activitySearch', label: 'Durchsucht', keywords: 'suchen Grep Glob Suche' },
+          { id: 'general.activityWrite', label: 'Geschrieben', keywords: 'schreiben ändern bearbeiten Edit Write' },
+          { id: 'general.activityCommit', label: 'Committet', keywords: 'Commit Git' },
+        ],
+      },
+      {
         id: 'general.command',
         title: 'Befehl „nx“',
         keywords: 'nx Kommandozeile Terminal Explorer Adressleiste CLI starten',

@@ -1,4 +1,6 @@
+import { defaultSettings } from '@shared/defaults'
 import type { FileEntry, FileListing, FileTouchKind, GitFileState, GitFileStatus, GitTreeStatus } from '@shared/files'
+import type { ActivitySeconds } from '@shared/types'
 
 /**
  * The file tree of a tab, without Vue: paths, the rows it shows, git's marks and the search. A path in
@@ -142,6 +144,50 @@ export function recordKind(record: TouchRecord, hidden?: ReadonlySet<FileTouchKi
 /** The record with a touch of `kind` at `at`. */
 export function recordTouch(record: TouchRecord | undefined, kind: FileTouchKind, at: number): TouchRecord {
   return Object.freeze({ ...record, [kind]: at })
+}
+
+/**
+ * How long a touch of each kind counts as what the agent is doing now (ms), from the setting
+ * (`general.activitySeconds`, seconds). The activity shows only what is that recent, not everything
+ * the chat ever did. A value no one could have picked (a hand-edited file) takes the default.
+ */
+export type ActivityDurations = Record<FileTouchKind, number>
+
+export function activityDurations(seconds: ActivitySeconds): ActivityDurations {
+  const fallback = defaultSettings().general.activitySeconds
+  const ms = (kind: FileTouchKind) => {
+    const value = seconds?.[kind]
+    return (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback[kind]) * 1000
+  }
+  return { read: ms('read'), search: ms('search'), write: ms('write'), commit: ms('commit') }
+}
+
+/** A duration of the activity as the settings name it: „30 s“, „2 min“. */
+export function formatActivityTime(seconds: number): string {
+  return seconds < 60 ? `${seconds} s` : seconds % 60 === 0 ? `${seconds / 60} min` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`
+}
+
+/** The kinds of a record still current at `now`; null when none is. The same record when all are. */
+export function liveRecord(record: TouchRecord, now: number, durations: ActivityDurations): TouchRecord | null {
+  let live: Partial<Record<FileTouchKind, number>> | null = null
+  let all = true
+  for (const kind of TOUCH_KINDS) {
+    const at = record[kind]
+    if (at === undefined) continue
+    if (at + durations[kind] > now) (live ??= {})[kind] = at
+    else all = false
+  }
+  return all ? record : live && Object.freeze(live)
+}
+
+/** When the first kind of a record stops being current: the moment it shows differently. */
+export function recordChange(record: TouchRecord, durations: ActivityDurations): number {
+  let next = Infinity
+  for (const kind of TOUCH_KINDS) {
+    const at = record[kind]
+    if (at !== undefined) next = Math.min(next, at + durations[kind])
+  }
+  return next
 }
 
 export const STATUS_LETTER: Record<GitFileStatus, string> = {

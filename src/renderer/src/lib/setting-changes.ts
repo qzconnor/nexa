@@ -5,6 +5,7 @@ import type { SettingChange, SettingsFileTheme, SettingsImportPreview, SkippedSe
 import { VOICE_LANGUAGES } from '@shared/voice'
 import { formatArgs } from './args'
 import { effortLabel } from './effort'
+import { formatActivityTime } from './file-tree'
 import { settingsIndex, type SettingsAnchor, type SettingsEntry } from './settings-index'
 
 /**
@@ -22,6 +23,10 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'general.launchAtLogin': { anchor: 'general.launchAtLogin' },
   'general.confirmQuitRunning': { anchor: 'general.confirmQuitRunning', label: 'Vor dem Beenden fragen' },
   'general.nxReuseChat': { anchor: 'general.nxReuseChat', label: '„nx“ nutzt einen offenen Chat' },
+  'general.activitySeconds.read': { anchor: 'general.activityRead', label: 'Aktivität: Gelesenes' },
+  'general.activitySeconds.search': { anchor: 'general.activitySearch', label: 'Aktivität: Durchsuchtes' },
+  'general.activitySeconds.write': { anchor: 'general.activityWrite', label: 'Aktivität: Geschriebenes' },
+  'general.activitySeconds.commit': { anchor: 'general.activityCommit', label: 'Aktivität: Committetes' },
   'appearance.theme': { anchor: 'appearance.theme' },
   'appearance.material': { anchor: 'appearance.material', label: 'Fenster-Material' },
   'appearance.keepMaterialActive': { anchor: 'appearance.keepMaterial', label: 'Material auch im Hintergrund' },
@@ -215,6 +220,7 @@ export function settingValueText(path: string, value: unknown, names: ValueNames
   if (value === true) return 'An'
   if (value === false) return 'Aus'
   if (typeof value === 'number') {
+    if (path.startsWith('general.activitySeconds.')) return formatActivityTime(value)
     switch (path) {
       case 'appearance.radius':
         return `${value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} rem`

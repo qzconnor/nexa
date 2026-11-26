@@ -1,8 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
+import { defaultSettings } from '@shared/defaults'
 import type { FileTouch, TimedTouch } from '@shared/files'
 import type { SessionMeta } from '@shared/types'
+import { mergeKnown } from '@shared/utils'
 
 /** What the agent did in a chat: from its history once shown, then live; cleared by hand. */
 
@@ -30,7 +32,10 @@ let history: TimedTouch[]
 
 const api = {
   platform: 'win32',
-  settings: { onChanged: () => () => {} },
+  settings: {
+    onChanged: () => () => {},
+    update: vi.fn(async (patch: Record<string, unknown>) => mergeKnown(defaultSettings(), patch)),
+  },
   app: { onQuitting: () => () => {}, info: vi.fn(async () => null) },
   window: { state: vi.fn(async () => ({ maximized: false, focused: true, fullscreen: false })), onState: () => () => {} },
   projects: { list: vi.fn(async () => [{ id: 'p', name: 'dev', path: 'C:\\dev' }]), onChanged: () => () => {}, sections: vi.fn(async () => []), onSectionsChanged: () => () => {} },
@@ -116,24 +121,63 @@ describe('activity', () => {
     expect([...fileTree.activityOf('s1')!.keys()]).toEqual(['C:\\dev\\d.ts'])
   })
 
-  it('starts with the chat’s history, what was seen live staying the most recent', async () => {
+  it('starts with the chat’s recent history, what was seen live staying the most recent', async () => {
     const fileTree = await load(['s1'])
+    const now = Date.now()
     history = [
-      { path: 'C:\\dev\\a.ts', kind: 'read', at: 1 },
-      { path: 'C:\\dev\\b.ts', kind: 'write', at: 2 },
+      { path: 'C:\\dev\\old.ts', kind: 'write', at: now - 10 * 60_000 },
+      { path: 'C:\\dev\\a.ts', kind: 'read', at: now - 2000 },
+      { path: 'C:\\dev\\b.ts', kind: 'write', at: now - 1000 },
     ]
     touched('s1', [read('C:\\dev\\a.ts')])
     await fileTree.loadHistory('s1')
     const activity = fileTree.activityOf('s1')!
     expect([...activity.keys()]).toEqual(['C:\\dev\\b.ts', 'C:\\dev\\a.ts'])
-    expect(activity.get('C:\\dev\\a.ts')!.read).toBeGreaterThan(1)
-    expect(activity.get('C:\\dev\\b.ts')!.write).toBe(2)
+    expect(activity.get('C:\\dev\\a.ts')!.read).toBeGreaterThan(now - 2000)
+    expect(activity.get('C:\\dev\\b.ts')!.write).toBe(now - 1000)
+  })
+
+  it('lets each kind run out: a read after a minute, a write after five', async () => {
+    const fileTree = await load(['s1'])
+    vi.useFakeTimers()
+    try {
+      touched('s1', [read('C:\\dev\\a.ts'), read('C:\\dev\\b.ts'), { path: 'C:\\dev\\b.ts', kind: 'write' }])
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(fileTree.activityOf('s1')?.size).toBe(2)
+      await vi.advanceTimersByTimeAsync(2000)
+      expect([...fileTree.activityOf('s1')!.keys()]).toEqual(['C:\\dev\\b.ts'])
+      expect(Object.keys(fileTree.activityOf('s1')!.get('C:\\dev\\b.ts')!)).toEqual(['write'])
+      await vi.advanceTimersByTimeAsync(4 * 60_000)
+      expect(fileTree.activityOf('s1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lasts as long as set; set shorter, what is older goes at once', async () => {
+    const fileTree = await load(['s1'])
+    const { useSettingsStore } = await import('./settings')
+    vi.useFakeTimers()
+    try {
+      touched('s1', [{ path: 'C:\\dev\\a.ts', kind: 'write' }])
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(fileTree.activityOf('s1')?.size).toBe(1)
+      await useSettingsStore(null).update({ general: { activitySeconds: { write: 15 } } })
+      await nextTick()
+      expect(fileTree.activityOf('s1')).toBeNull()
+      touched('s1', [{ path: 'C:\\dev\\b.ts', kind: 'write' }])
+      await vi.advanceTimersByTimeAsync(16_000)
+      expect(fileTree.activityOf('s1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('asks for the history once, also after it was cleared', async () => {
     const fileTree = await load(['s1'])
-    history = [{ path: 'C:\\dev\\a.ts', kind: 'read', at: 1 }]
+    history = [{ path: 'C:\\dev\\a.ts', kind: 'read', at: Date.now() }]
     await fileTree.loadHistory('s1')
+    expect(fileTree.activityOf('s1')?.size).toBe(1)
     fileTree.clearActivity('s1')
     await fileTree.loadHistory('s1')
     expect(api.files.history).toHaveBeenCalledTimes(1)

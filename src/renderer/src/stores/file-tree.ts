@@ -1,12 +1,24 @@
 import { defineStore } from 'pinia'
-import { reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
 import type { FileListing, FileSearchList, FileTouch, FileTouchKind, FileTreeWatch, GitFileStatus, GitTreeStatus } from '@shared/files'
 import { sameData } from '@shared/utils'
 import { errorMessage } from '@/lib/errors'
-import { absolutePath, ancestors, GIT_STATUSES, recordTouch, TOUCH_KINDS, treePathOf, type TouchRecord } from '@/lib/file-tree'
+import {
+  absolutePath,
+  activityDurations,
+  ancestors,
+  GIT_STATUSES,
+  liveRecord,
+  recordChange,
+  recordTouch,
+  TOUCH_KINDS,
+  treePathOf,
+  type TouchRecord,
+} from '@/lib/file-tree'
 import { useAppStore } from './app'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
+import { useSettingsStore } from './settings'
 
 /** Width of the tree (px) before it is dragged, and the bounds it is dragged within. */
 export const DEFAULT_TREE_WIDTH = 280
@@ -33,6 +45,11 @@ const AGENT_FOLDER_MS = 10_000
 const REVEAL_LIMIT: Record<FileTouchKind, number> = { read: 30, write: 30, commit: 30, search: 10 }
 /** The most files a session's activity keeps; the ones the agent left alone the longest go first. */
 const MAX_ACTIVITY = 2000
+/**
+ * Activity that runs out goes at most this often (ms): what runs out within it goes together, and the
+ * trees don't redraw for every single file.
+ */
+const ACTIVITY_TICK_MS = 1000
 
 export const SEPARATOR = window.api.platform === 'win32' ? '\\' : '/'
 
@@ -135,6 +152,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   const app = useAppStore()
   const sessions = useSessionsStore(null)
   const projects = useProjectsStore(null)
+  const settings = useSettingsStore(null)
   const saved = readSaved()
 
   const width = ref(clampWidth(typeof saved.width === 'number' ? saved.width : DEFAULT_TREE_WIDTH))
@@ -150,8 +168,9 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   const hiddenStatuses = reactive(new Set(knownValues(saved.hiddenStatuses, GIT_STATUSES)))
   const hiddenKinds = reactive(new Set(knownValues(saved.hiddenKinds, TOUCH_KINDS)))
   /**
-   * Every file the agent touched in a session, by session and absolute path, the most recently touched
-   * last: what the activity filter shows. From the chat's history once the tree shows it, then live.
+   * The files the agent is at in a session, by session and absolute path, the most recently touched
+   * last: what the activity filter shows. Each kind of touch stays only a while (`durations`), a file
+   * with none left goes. From the chat's recent history once the tree shows it, then live.
    */
   const activity = shallowRef(new Map<string, ReadonlyMap<string, TouchRecord>>())
   /** The file whose changes a chat shows over its timeline, by session. */
@@ -553,10 +572,59 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     const next = new Map(activity.value)
     next.set(sessionId, mine)
     activity.value = next
+    scheduleActivityExpiry()
   }
 
   function trim(map: Map<string, TouchRecord>): void {
     if (map.size > MAX_ACTIVITY) for (const path of [...map.keys()].slice(0, map.size - MAX_ACTIVITY)) map.delete(path)
+  }
+
+  let activityTimer: ReturnType<typeof setTimeout> | null = null
+  /** How long each kind of touch stays (Einstellungen › Allgemein › Aktivität im Dateibaum). */
+  const durations = computed(() => activityDurations(settings.settings.general.activitySeconds))
+  // Set shorter, what is older now goes at once; set longer, what is still there stays longer.
+  watch(durations, (next, before) => {
+    if (sameData(next, before)) return
+    expireActivity(Date.now())
+    scheduleActivityExpiry()
+  })
+
+  /** Kinds of touch that ran out leave their files; a file with none left leaves the activity. */
+  function expireActivity(now: number): void {
+    let changed = false
+    const next = new Map<string, ReadonlyMap<string, TouchRecord>>()
+    for (const [id, map] of activity.value) {
+      let mine: Map<string, TouchRecord> | null = null
+      for (const [path, record] of map) {
+        const live = liveRecord(record, now, durations.value)
+        if (live === record) continue
+        mine ??= new Map(map)
+        if (live) mine.set(path, live)
+        else mine.delete(path)
+      }
+      if (mine) changed = true
+      const kept = mine ?? map
+      if (kept.size > 0) next.set(id, kept)
+      else changed = true
+    }
+    if (changed) activity.value = next
+  }
+
+  /** Waits for the next kind of touch to run out, then lets it go (with all that ran out meanwhile). */
+  function scheduleActivityExpiry(): void {
+    if (activityTimer) clearTimeout(activityTimer)
+    activityTimer = null
+    let next = Infinity
+    for (const map of activity.value.values()) for (const record of map.values()) next = Math.min(next, recordChange(record, durations.value))
+    if (next === Infinity) return
+    activityTimer = setTimeout(
+      () => {
+        activityTimer = null
+        expireActivity(Date.now())
+        scheduleActivityExpiry()
+      },
+      Math.max(ACTIVITY_TICK_MS, next - Date.now()),
+    )
   }
 
   const activityOf = (id: string | null | undefined): ReadonlyMap<string, TouchRecord> | null =>
@@ -566,14 +634,16 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   const histories = new Map<string, Promise<void>>()
 
   /**
-   * Fills a session's activity with what its chat did before (once per session while the app runs);
-   * what was seen live meanwhile stays the most recent.
+   * Fills a session's activity with what its chat did lately (once per session while the app runs): a
+   * chat opened while its agent works shows at once what it is at. What was seen live meanwhile stays
+   * the most recent; what is older than its kind lasts doesn't come in.
    */
   function loadHistory(sessionId: string): Promise<void> {
     let loading = histories.get(sessionId)
     if (!loading) {
       loading = window.api.files.history(sessionId).then(
         (list) => {
+          const now = Date.now()
           const mine = new Map<string, TouchRecord>()
           for (const touch of list) {
             const before = mine.get(touch.path)
@@ -585,10 +655,17 @@ export const useFileTreeStore = defineStore('file-tree', () => {
             mine.delete(path)
             mine.set(path, Object.freeze({ ...before, ...live }))
           }
+          for (const [path, record] of mine) {
+            const live = liveRecord(record, now, durations.value)
+            if (!live) mine.delete(path)
+            else if (live !== record) mine.set(path, live)
+          }
           trim(mine)
           const next = new Map(activity.value)
-          next.set(sessionId, mine)
+          if (mine.size > 0) next.set(sessionId, mine)
+          else next.delete(sessionId)
           activity.value = next
+          scheduleActivityExpiry()
         },
         () => {
           histories.delete(sessionId)
