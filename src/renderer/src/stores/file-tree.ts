@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
-import { reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
 import type { FileListing, FileSearchList, FileTouch, FileTouchKind, FileTreeWatch, GitFileStatus, GitTreeStatus } from '@shared/files'
 import { sameData } from '@shared/utils'
 import { errorMessage } from '@/lib/errors'
 import {
   absolutePath,
+  activityDurations,
   ancestors,
   GIT_STATUSES,
   liveRecord,
@@ -17,6 +18,7 @@ import {
 import { useAppStore } from './app'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
+import { useSettingsStore } from './settings'
 
 /** Width of the tree (px) before it is dragged, and the bounds it is dragged within. */
 export const DEFAULT_TREE_WIDTH = 280
@@ -150,6 +152,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   const app = useAppStore()
   const sessions = useSessionsStore(null)
   const projects = useProjectsStore(null)
+  const settings = useSettingsStore(null)
   const saved = readSaved()
 
   const width = ref(clampWidth(typeof saved.width === 'number' ? saved.width : DEFAULT_TREE_WIDTH))
@@ -166,7 +169,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   const hiddenKinds = reactive(new Set(knownValues(saved.hiddenKinds, TOUCH_KINDS)))
   /**
    * The files the agent is at in a session, by session and absolute path, the most recently touched
-   * last: what the activity filter shows. Each kind of touch stays only a while (`ACTIVITY_MS`), a file
+   * last: what the activity filter shows. Each kind of touch stays only a while (`durations`), a file
    * with none left goes. From the chat's recent history once the tree shows it, then live.
    */
   const activity = shallowRef(new Map<string, ReadonlyMap<string, TouchRecord>>())
@@ -577,6 +580,14 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   }
 
   let activityTimer: ReturnType<typeof setTimeout> | null = null
+  /** How long each kind of touch stays (Einstellungen › Allgemein › Aktivität im Dateibaum). */
+  const durations = computed(() => activityDurations(settings.settings.general.activitySeconds))
+  // Set shorter, what is older now goes at once; set longer, what is still there stays longer.
+  watch(durations, (next, before) => {
+    if (sameData(next, before)) return
+    expireActivity(Date.now())
+    scheduleActivityExpiry()
+  })
 
   /** Kinds of touch that ran out leave their files; a file with none left leaves the activity. */
   function expireActivity(now: number): void {
@@ -585,7 +596,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     for (const [id, map] of activity.value) {
       let mine: Map<string, TouchRecord> | null = null
       for (const [path, record] of map) {
-        const live = liveRecord(record, now)
+        const live = liveRecord(record, now, durations.value)
         if (live === record) continue
         mine ??= new Map(map)
         if (live) mine.set(path, live)
@@ -604,7 +615,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     if (activityTimer) clearTimeout(activityTimer)
     activityTimer = null
     let next = Infinity
-    for (const map of activity.value.values()) for (const record of map.values()) next = Math.min(next, recordChange(record))
+    for (const map of activity.value.values()) for (const record of map.values()) next = Math.min(next, recordChange(record, durations.value))
     if (next === Infinity) return
     activityTimer = setTimeout(
       () => {
@@ -645,7 +656,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
             mine.set(path, Object.freeze({ ...before, ...live }))
           }
           for (const [path, record] of mine) {
-            const live = liveRecord(record, now)
+            const live = liveRecord(record, now, durations.value)
             if (!live) mine.delete(path)
             else if (live !== record) mine.set(path, live)
           }

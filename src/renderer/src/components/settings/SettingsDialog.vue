@@ -51,7 +51,7 @@ const SECTIONS: Section[] = [
   {
     id: 'general',
     label: 'Allgemein',
-    description: isWindows ? 'Fenster, Infobereich, Start und Befehl nx' : 'Fenster, Infobereich und Start',
+    description: isWindows ? 'Fenster, Infobereich, Start, Dateibaum und Befehl nx' : 'Fenster, Infobereich, Start und Dateibaum',
     icon: SETTINGS_ICONS.general,
     page: SettingsGeneral,
   },

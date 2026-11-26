@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ACTIVITY_CHOICES } from '@shared/defaults'
+import type { FileTouchKind } from '@shared/files'
 import type { GeneralSettings } from '@shared/types'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { attempt } from '@/lib/errors'
+import { formatActivityTime } from '@/lib/file-tree'
+import { TOUCH_ICON } from '@/lib/file-touch'
 import { isWindows } from '@/lib/platform'
+import type { SettingsAnchor } from '@/lib/settings-index'
 import { useSettingsStore } from '@/stores/settings'
 import SettingField from './SettingField.vue'
 import SettingsCommand from './SettingsCommand.vue'
@@ -33,6 +39,20 @@ const startDescription = computed(() => {
   // A development build would register Electron itself, so it registers nothing.
   return import.meta.env.DEV ? `${how} In der Entwicklungsversion ohne Wirkung.` : how
 })
+
+/** The kinds in the order the file tree's filter shows them, each with its row. */
+const ACTIVITY_ROWS: { kind: FileTouchKind; anchor: SettingsAnchor; label: string }[] = [
+  { kind: 'read', anchor: 'general.activityRead', label: 'Gelesen' },
+  { kind: 'search', anchor: 'general.activitySearch', label: 'Durchsucht' },
+  { kind: 'write', anchor: 'general.activityWrite', label: 'Geschrieben' },
+  { kind: 'commit', anchor: 'general.activityCommit', label: 'Committet' },
+]
+
+function setActivity(kind: FileTouchKind, value: unknown): void {
+  const seconds = Number(value)
+  if (!(ACTIVITY_CHOICES as readonly number[]).includes(seconds)) return
+  void attempt(() => store.update({ general: { activitySeconds: { [kind]: seconds } } }), 'Speichern fehlgeschlagen')
+}
 </script>
 
 <template>
@@ -56,6 +76,23 @@ const startDescription = computed(() => {
         description="Arbeitet ein Chat noch oder läuft ein Befehl, fragt Nexa vor dem Beenden. Sonst brechen die Antworten ab, und die Befehle enden."
       >
         <Switch id="confirm-quit-running" v-model="confirmQuitRunning" />
+      </SettingField>
+    </SettingsSection>
+    <SettingsSection
+      anchor="general.fileActivity"
+      title="Aktivität im Dateibaum"
+      description="Wie lange eine Datei als aktiv gilt, nachdem der Agent an ihr war. So lange zeigt sie der Filter „Aktivität“ im Dateibaum, danach verschwindet sie."
+    >
+      <SettingField v-for="row in ACTIVITY_ROWS" :key="row.kind" :anchor="row.anchor" :label="row.label" :for="`activity-${row.kind}`">
+        <div class="flex items-center gap-2" :data-touch="row.kind">
+          <component :is="TOUCH_ICON[row.kind]" class="size-3.5 text-(--touch)" aria-hidden="true" />
+          <Select :model-value="String(g.activitySeconds[row.kind])" @update:model-value="(v) => setActivity(row.kind, v)">
+            <SelectTrigger :id="`activity-${row.kind}`" class="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="seconds in ACTIVITY_CHOICES" :key="seconds" :value="String(seconds)">{{ formatActivityTime(seconds) }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </SettingField>
     </SettingsSection>
     <!-- nx.exe is Windows' only. -->

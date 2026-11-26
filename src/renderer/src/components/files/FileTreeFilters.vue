@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { TimerIcon } from '@lucide/vue'
 import { computed, useId } from 'vue'
 import type { FileTouchKind, GitFileStatus } from '@shared/files'
 import { Switch } from '@/components/ui/switch'
-import { STATUS_CLASS, STATUS_LABEL, STATUS_LETTER, TOUCH_KINDS } from '@/lib/file-tree'
+import { formatActivityTime, STATUS_CLASS, STATUS_LABEL, STATUS_LETTER, TOUCH_KINDS } from '@/lib/file-tree'
 import { TOUCH_DONE, TOUCH_ICON } from '@/lib/file-touch'
 import { cn } from '@/lib/utils'
 import { useFileTreeStore } from '@/stores/file-tree'
+import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 
 /**
  * The filters of the trees, unfolded below a tree's folder: only the files git sees changed, only those
@@ -25,13 +28,24 @@ const props = defineProps<{
 }>()
 
 const fileTree = useFileTreeStore()
+const settings = useSettingsStore(null)
+const ui = useUiStore()
 const id = useId()
 
 /** All files the chat's agent is at, also those outside this tree. */
 const recorded = computed(() => fileTree.activityOf(props.sessionId)?.size ?? 0)
 
-const ACTIVITY_HINT =
-  'Was der Agent in diesem Chat gerade liest, durchsucht, schreibt oder committet. Gelesenes und Durchsuchtes verschwindet nach einer Minute, Committetes nach zwei, Geschriebenes nach fünf. Tut sich gerade nichts, zeigt der Baum alle Dateien.'
+/** How long each kind stays, as set in Einstellungen › Allgemein. */
+const durations = computed(() => {
+  const s = settings.settings.general.activitySeconds
+  return `Gelesenes ${formatActivityTime(s.read)}, Durchsuchtes ${formatActivityTime(s.search)}, Geschriebenes ${formatActivityTime(s.write)}, Committetes ${formatActivityTime(s.commit)}`
+})
+const activityHint = computed(
+  () =>
+    `Was der Agent in diesem Chat gerade liest, durchsucht, schreibt oder committet. Es bleibt eine Weile: ${durations.value}. Tut sich gerade nichts, zeigt der Baum alle Dateien.`,
+)
+
+const openDurations = () => ui.openSettings('general', 'general.fileActivity')
 
 function toggle<T>(set: Set<T>, value: T) {
   if (!set.delete(value)) set.add(value)
@@ -80,7 +94,7 @@ const chips = 'ml-auto flex min-h-[20px] flex-wrap items-center justify-end gap-
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
       <div class="flex h-[24px] min-w-0 items-center gap-2">
         <Switch :id="`${id}-activity`" v-model="fileTree.filters.activity" size="sm" />
-        <label :for="`${id}-activity`" class="min-w-0 cursor-pointer truncate" v-tooltip="ACTIVITY_HINT">Aktivität</label>
+        <label :for="`${id}-activity`" class="min-w-0 cursor-pointer truncate" v-tooltip="activityHint">Aktivität</label>
       </div>
       <div :class="cn(chips, !fileTree.filters.activity && 'opacity-60')">
         <button
@@ -112,6 +126,16 @@ const chips = 'ml-auto flex min-h-[20px] flex-wrap items-center justify-end gap-
         @click="fileTree.clearActivity(sessionId)"
       >
         Aktivität leeren
+      </button>
+      <!-- How long it stays is a setting: this opens it. -->
+      <button
+        type="button"
+        aria-label="Dauer der Aktivität einstellen"
+        class="-ml-1 flex size-[20px] shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+        v-tooltip="`Wie lange die Aktivität bleibt (${durations}): Einstellungen › Allgemein`"
+        @click="openDurations"
+      >
+        <TimerIcon class="size-[13px]" />
       </button>
     </div>
   </div>

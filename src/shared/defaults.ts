@@ -22,6 +22,12 @@ export const SETTING_RANGES = {
   'notifications.nearLimitPercent': { min: 50, max: 95, step: 5 },
 } as const
 
+/**
+ * How long the file tree's activity may keep a file (seconds), as Einstellungen › Allgemein offers it;
+ * a settings file is held to it too.
+ */
+export const ACTIVITY_CHOICES = [15, 30, 60, 120, 300, 600, 1800] as const
+
 /** Settings of a fresh install; the folder for new projects is filled in by the main process. */
 export function defaultSettings(): AppSettings {
   return {
@@ -30,6 +36,8 @@ export function defaultSettings(): AppSettings {
       launchAtLogin: false,
       nxReuseChat: true,
       confirmQuitRunning: true,
+      // A look at a file passes quickly, a change stays a while.
+      activitySeconds: { read: 60, search: 60, write: 300, commit: 120 },
     },
     appearance: {
       theme: DEFAULT_THEME_ID,

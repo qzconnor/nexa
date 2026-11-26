@@ -1,8 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
+import { defaultSettings } from '@shared/defaults'
 import type { FileTouch, TimedTouch } from '@shared/files'
 import type { SessionMeta } from '@shared/types'
+import { mergeKnown } from '@shared/utils'
 
 /** What the agent did in a chat: from its history once shown, then live; cleared by hand. */
 
@@ -30,7 +32,10 @@ let history: TimedTouch[]
 
 const api = {
   platform: 'win32',
-  settings: { onChanged: () => () => {} },
+  settings: {
+    onChanged: () => () => {},
+    update: vi.fn(async (patch: Record<string, unknown>) => mergeKnown(defaultSettings(), patch)),
+  },
   app: { onQuitting: () => () => {}, info: vi.fn(async () => null) },
   window: { state: vi.fn(async () => ({ maximized: false, focused: true, fullscreen: false })), onState: () => () => {} },
   projects: { list: vi.fn(async () => [{ id: 'p', name: 'dev', path: 'C:\\dev' }]), onChanged: () => () => {}, sections: vi.fn(async () => []), onSectionsChanged: () => () => {} },
@@ -143,6 +148,25 @@ describe('activity', () => {
       expect([...fileTree.activityOf('s1')!.keys()]).toEqual(['C:\\dev\\b.ts'])
       expect(Object.keys(fileTree.activityOf('s1')!.get('C:\\dev\\b.ts')!)).toEqual(['write'])
       await vi.advanceTimersByTimeAsync(4 * 60_000)
+      expect(fileTree.activityOf('s1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lasts as long as set; set shorter, what is older goes at once', async () => {
+    const fileTree = await load(['s1'])
+    const { useSettingsStore } = await import('./settings')
+    vi.useFakeTimers()
+    try {
+      touched('s1', [{ path: 'C:\\dev\\a.ts', kind: 'write' }])
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(fileTree.activityOf('s1')?.size).toBe(1)
+      await useSettingsStore(null).update({ general: { activitySeconds: { write: 15 } } })
+      await nextTick()
+      expect(fileTree.activityOf('s1')).toBeNull()
+      touched('s1', [{ path: 'C:\\dev\\b.ts', kind: 'write' }])
+      await vi.advanceTimersByTimeAsync(16_000)
       expect(fileTree.activityOf('s1')).toBeNull()
     } finally {
       vi.useRealTimers()
