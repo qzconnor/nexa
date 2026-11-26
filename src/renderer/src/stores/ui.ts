@@ -131,6 +131,19 @@ export const useUiStore = defineStore('ui', () => {
     foldedDevices.value = next
     remember('nexa.foldedDevices', JSON.stringify([...next]))
   }
+  /**
+   * Other devices the user hid here: not in the sidebar nor among the pinned, not loaded nor watched.
+   * Only this device forgets them; Einstellungen › Geräte shows them again.
+   */
+  const hiddenDevices = ref(new Set<string>(parseList(stored('nexa.hiddenDevices', '[]'))))
+  function setDeviceHidden(id: string, hidden: boolean): void {
+    if (hiddenDevices.value.has(id) === hidden) return
+    const next = new Set(hiddenDevices.value)
+    if (hidden) next.add(id)
+    else next.delete(id)
+    hiddenDevices.value = next
+    remember('nexa.hiddenDevices', JSON.stringify([...next]))
+  }
 
   /** The settings are a dialog over whatever the window shows. */
   const settingsOpen = ref(false)
@@ -251,6 +264,8 @@ export const useUiStore = defineStore('ui', () => {
     forgetPinned,
     foldedDevices,
     toggleDevice,
+    hiddenDevices,
+    setDeviceHidden,
     settingsOpen,
     settingsSection,
     settingsAnchor,

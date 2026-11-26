@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ChevronRightIcon, LoaderCircleIcon, MonitorIcon, RotateCwIcon, SquarePenIcon } from '@lucide/vue'
+import { ChevronRightIcon, EyeOffIcon, LoaderCircleIcon, MonitorIcon, RotateCwIcon, SettingsIcon, SquarePenIcon } from '@lucide/vue'
 import { computed } from 'vue'
+import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatActions } from '@/composables/useChatActions'
 import { cn } from '@/lib/utils'
 import { useShownDeviceStore } from '@/stores/device'
@@ -12,7 +14,7 @@ import SidebarTree from './SidebarTree.vue'
 
 /**
  * Another device in the sidebar (Remote Control), inside a `DeviceScope` of it: its name, and below it
- * its projects and chats as this device's show above, or why they don't show.
+ * its projects and chats as this device's show above, or why they don't show. Right-click hides it.
  */
 const props = defineProps<{ device: RemoteDevice; now: number }>()
 const devices = useDevicesStore()
@@ -27,42 +29,62 @@ const onStartPage = computed(
   () => shown.device === props.device.id && !(ui.view === 'chat' && sessions.active) && !['artifacts', 'scheduled'].includes(ui.view),
 )
 const canStart = computed(() => props.device.state === 'ready' && devices.can(props.device.id, 'prompt'))
+
+/** Gone from the sidebar at once; the toast takes it back, Einstellungen › Geräte later. */
+function hide(): void {
+  const { id, name } = props.device
+  ui.setDeviceHidden(id, true)
+  toast(`„${name}“ ausgeblendet`, {
+    description: 'Unter Einstellungen › Geräte blendest du es wieder ein.',
+    action: { label: 'Rückgängig', onClick: () => ui.setDeviceHidden(id, false) },
+  })
+}
 </script>
 
 <template>
   <section data-list-group class="mt-2 border-t border-sidebar-border pt-1">
-    <div class="group/device flex items-center gap-1 rounded-lg pt-1.5 pr-1 pb-1 pl-2">
-      <button
-        type="button"
-        data-list-row
-        :aria-expanded="open"
-        class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-        @click="ui.toggleDevice(device.id)"
-      >
-        <MonitorIcon class="size-3.5 shrink-0 text-muted-foreground" />
-        <span class="truncate text-[0.8rem] font-medium">{{ device.name }}</span>
-        <span
-          :class="cn('size-1.5 shrink-0 rounded-full', device.online ? 'bg-success' : 'bg-muted-foreground/40')"
-          :aria-label="device.online ? 'Verbunden' : 'Nicht verbunden'"
-          v-tooltip="device.online ? 'Verbunden' : 'Nicht verbunden'"
-        />
-        <ChevronRightIcon
-          :class="cn('size-3 shrink-0 text-muted-foreground transition-[transform,opacity]', open && 'rotate-90 opacity-0 group-hover/device:opacity-100')"
-        />
-      </button>
-      <Button
-        v-if="canStart"
-        variant="ghost"
-        size="icon-xs"
-        :class="onStartPage && 'bg-sidebar-accent'"
-        :aria-label="`Neuer Chat auf ${device.name}`"
-        :aria-current="onStartPage ? 'page' : undefined"
-        v-tooltip="'Neuer Chat'"
-        @click="chat.newChat()"
-      >
-        <SquarePenIcon />
-      </Button>
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger as-child>
+        <div class="group/device flex items-center gap-1 rounded-lg pt-1.5 pr-1 pb-1 pl-2">
+          <button
+            type="button"
+            data-list-row
+            :aria-expanded="open"
+            class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            @click="ui.toggleDevice(device.id)"
+          >
+            <MonitorIcon class="size-3.5 shrink-0 text-muted-foreground" />
+            <span class="truncate text-[0.8rem] font-medium">{{ device.name }}</span>
+            <span
+              :class="cn('size-1.5 shrink-0 rounded-full', device.online ? 'bg-success' : 'bg-muted-foreground/40')"
+              :aria-label="device.online ? 'Verbunden' : 'Nicht verbunden'"
+              v-tooltip="device.online ? 'Verbunden' : 'Nicht verbunden'"
+            />
+            <ChevronRightIcon
+              :class="cn('size-3 shrink-0 text-muted-foreground transition-[transform,opacity]', open && 'rotate-90 opacity-0 group-hover/device:opacity-100')"
+            />
+          </button>
+          <Button
+            v-if="canStart"
+            variant="ghost"
+            size="icon-xs"
+            :class="onStartPage && 'bg-sidebar-accent'"
+            :aria-label="`Neuer Chat auf ${device.name}`"
+            :aria-current="onStartPage ? 'page' : undefined"
+            v-tooltip="'Neuer Chat'"
+            @click="chat.newChat()"
+          >
+            <SquarePenIcon />
+          </Button>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent class="w-56">
+        <ContextMenuItem v-if="canStart" @select="chat.newChat()"><SquarePenIcon /> Neuer Chat</ContextMenuItem>
+        <ContextMenuItem @select="ui.openSettings('devices', 'devices.list')"><SettingsIcon /> Geräte verwalten …</ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem @select="hide"><EyeOffIcon /> Ausblenden</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
 
     <template v-if="open">
       <SidebarTree v-if="device.state === 'ready'" :now="now" />

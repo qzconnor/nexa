@@ -48,8 +48,10 @@ export const useDevicesStore = defineStore('devices', () => {
   const known = reactive(new Map<string, Known>())
   let started = false
 
-  /** Trusted, so they hold the namespace's key; this device itself not. */
-  const linked = computed<LinkedDevice[]>(() => link.state?.devices.filter((d) => !d.self && d.trusted) ?? [])
+  /** Trusted, so they hold the namespace's key; this device itself not, nor those the user hid here. */
+  const linked = computed<LinkedDevice[]>(
+    () => link.state?.devices.filter((d) => !d.self && d.trusted && !ui.hiddenDevices.has(d.id)) ?? [],
+  )
   const online = computed(() => link.state?.status === 'online')
 
   const devices = computed<RemoteDevice[]>(() =>
@@ -110,7 +112,8 @@ export const useDevicesStore = defineStore('devices', () => {
       // The watch first: its events then miss nothing of what the calls below read.
       syncWatch()
       await useSettingsStore(id).load()
-      await Promise.all([useProvidersStore(id).load(), useAccountsStore(id).load(), useProjectsStore(id).load(), useSessionsStore(id).load()])
+      // Chats loaded before it was hidden, cut off or let in got no events meanwhile: read anew too.
+      await Promise.all([useProvidersStore(id).load(), useAccountsStore(id).load(), useProjectsStore(id).load(), useSessionsStore(id).reload()])
       k.state = 'ready'
     } catch (error) {
       k.state = 'error'
@@ -157,7 +160,7 @@ export const useDevicesStore = defineStore('devices', () => {
           // Gone offline: what it showed stays until it is back (its watch then reads anew).
           if (!reachable && k.state === 'loading') k.state = 'offline'
         }
-        // Removed from the namespace: nothing more of it here, its chat on screen neither.
+        // Removed from the namespace or hidden: nothing more of it here, its chat on screen neither.
         for (const id of [...known.keys()]) {
           if (linked.value.some((d) => d.id === id)) continue
           known.delete(id)

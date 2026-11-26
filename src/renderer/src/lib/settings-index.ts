@@ -423,7 +423,7 @@ const TREE = [
       {
         id: 'devices.list',
         title: 'Geräte',
-        keywords: 'Instanzen Gerät hinzufügen entfernen umbenennen Laptop Desktop Handy bestätigt Schlüssel',
+        keywords: 'Instanzen Gerät hinzufügen entfernen umbenennen ausblenden einblenden verstecken Seitenleiste Laptop Desktop Handy bestätigt Schlüssel',
       },
       {
         id: 'devices.remote',
