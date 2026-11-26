@@ -10,7 +10,7 @@ const tint = (token: string, percent: number) => `color-mix(in oklab, var(${toke
  * lighter tint of a file that is all added, so it reads like code.
  */
 export function useDiffStyle() {
-  const settings = useSettingsStore()
+  const settings = useSettingsStore(null)
 
   const colors: Record<string, string> = {
     background: 'var(--code-bg)',

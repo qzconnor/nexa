@@ -1,9 +1,8 @@
-import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
-import { parseRemoteChatId } from '@shared/remote'
 import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
 import { useChatWindowsStore } from './chat-windows'
+import { apiOf, scopedStore, useShownDeviceStore } from './device'
 import { useProjectsStore } from './projects'
 
 /** The chat of an opened session. */
@@ -19,15 +18,20 @@ export interface SessionChat {
 }
 
 const IDLE: SessionRuntime = { status: 'idle', connected: false }
+/**
+ * Chats of another device kept loaded: each one's items and streamed text come over the server while
+ * it is, so the ones not looked at for a while go (opened again, they load anew).
+ */
+const REMOTE_CHATS_KEPT = 4
 
 /**
- * Every session (sidebar), the runtime of those that run, and the chat of the ones opened in this
- * window. The main process sends each item and each piece of streamed text; a chat that is still
- * loading ignores them: what came before its answer is in the answer (one IPC pipe keeps the order).
- * Chats of other devices (stores/remote.ts) sit in `chats` and `runtimes` too, under `remote:…` ids,
- * so the chat's components show them as any other; what they do there goes to the device.
+ * Every session of a device (`scopedStore`: this one's, or another's it controls), the runtime of those
+ * that run, and the chat of the ones opened in this window. The main process sends each item and each
+ * piece of streamed text; a chat that is still loading ignores them: what came before its answer is in
+ * the answer (one pipe keeps the order, also over the server to another device).
  */
-export const useSessionsStore = defineStore('sessions', () => {
+export const useSessionsStore = scopedStore('sessions', (device) => {
+  const api = apiOf(device)
   /** Every session the main process has, also those about to be deleted. */
   const all = ref<SessionMeta[]>([])
   /** Deleted, but for a few seconds still to be brought back (useChatRemoval): gone from every list. */
@@ -38,10 +42,20 @@ export const useSessionsStore = defineStore('sessions', () => {
   const activeId = ref<string | null>(null)
   /** Sessions that finished a turn while another one was shown. */
   const unread = reactive(new Set<string>())
+  let listening = false
 
   const active = computed(() => metas.value.find((m) => m.id === activeId.value) ?? null)
   const activeChat = computed(() => (activeId.value ? chats.get(activeId.value) : undefined))
   const activeRuntime = computed(() => (activeId.value ? runtime(activeId.value) : IDLE))
+
+  // A chat opened on another device closes this device's one: one chat is on screen.
+  const shown = useShownDeviceStore()
+  shown.register(device, () => (activeId.value = null))
+
+  /** In a window of its own (this device's chats only: another's don't go into windows). */
+  function elsewhere(id: string): boolean {
+    return !device && useChatWindowsStore().elsewhere(id)
+  }
 
   function runtime(id: string): SessionRuntime {
     return runtimes.get(id) ?? IDLE
@@ -58,13 +72,37 @@ export const useSessionsStore = defineStore('sessions', () => {
   /** The folder a chat's agent works in: its own in the project, else the project's. */
   function cwdOf(meta: SessionMeta | null | undefined): string | null {
     if (!meta) return null
-    return meta.cwd ?? useProjectsStore().get(meta.projectId)?.path ?? null
+    return meta.cwd ?? useProjectsStore(device).get(meta.projectId)?.path ?? null
   }
 
+  /** The list and what runs; again after another device lost track (Remote Control): its events start once. */
   async function load(): Promise<void> {
-    all.value = await window.api.sessions.list()
-    window.api.sessions.onChanged((next) => (all.value = next))
-    window.api.sessions.onEvent(onEvent)
+    const [list, current] = await Promise.all([api.sessions.list(), api.sessions.runtimes()])
+    all.value = list
+    for (const [id, state] of Object.entries(current)) if (!runtimes.has(id) || device) runtimes.set(id, state)
+    // What ran and stopped meanwhile isn't in `current`: idle.
+    if (device) for (const id of [...runtimes.keys()]) if (!(id in current)) runtimes.delete(id)
+    if (listening) return
+    listening = true
+    api.sessions.onChanged((next) => (all.value = next))
+    api.sessions.onEvent(onEvent)
+  }
+
+  /** After another device lost track: its list, and each chat loaded here, read anew. */
+  async function reload(): Promise<void> {
+    await load()
+    for (const [id, chat] of chats) {
+      if (!chat.loaded) continue
+      try {
+        const detail = await api.sessions.open(id)
+        chat.items = detail.items
+        chat.index = new Map(detail.items.map((item, i) => [item.id, i]))
+        runtimes.set(id, detail.runtime)
+      } catch {
+        chats.delete(id)
+        if (activeId.value === id) activeId.value = null
+      }
+    }
   }
 
   function onEvent(event: SessionEvent): void {
@@ -73,7 +111,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       runtimes.set(event.sessionId, event.runtime)
       const finished = previous && (previous.status === 'running' || previous.status === 'waiting') && event.runtime.status === 'idle'
       // A chat in a window of its own is on screen there.
-      if (finished && event.sessionId !== activeId.value && !useChatWindowsStore().elsewhere(event.sessionId)) unread.add(event.sessionId)
+      if (finished && event.sessionId !== activeId.value && !elsewhere(event.sessionId)) unread.add(event.sessionId)
       return
     }
     const chat = chats.get(event.sessionId)
@@ -108,19 +146,26 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   async function open(id: string): Promise<void> {
     // A chat in another window shows there: its own window, or (from a chat's own window) the main window.
-    const windows = useChatWindowsStore()
-    if (windows.elsewhere(id)) return windows.show(id)
+    if (elsewhere(id)) return useChatWindowsStore().show(id)
+    shown.show(device)
     activeId.value = id
     unread.delete(id)
-    if (chats.get(id)?.loaded) {
+    const loaded = chats.get(id)
+    if (loaded?.loaded) {
+      if (device) {
+        // The newest last: the ones looked at least go first (`keepFew`).
+        chats.delete(id)
+        chats.set(id, loaded)
+      }
       // Opened before: its CLI may have gone on outside Nexa since; what came arrives as events.
       void sync(id).catch((error) => console.warn('[sessions] sync failed', error))
       return
     }
     const chat: SessionChat = reactive({ items: [], index: new Map(), loaded: false, textShown: 0 }) as SessionChat
     chats.set(id, chat)
+    keepFew()
     try {
-      const detail = await window.api.sessions.open(id)
+      const detail = await api.sessions.open(id)
       chat.items = detail.items
       chat.index = new Map(detail.items.map((item, i) => [item.id, i]))
       runtimes.set(id, detail.runtime)
@@ -131,17 +176,26 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
   }
 
+  /** Of another device, only the chats looked at last stay loaded (`REMOTE_CHATS_KEPT`). */
+  function keepFew(): void {
+    if (!device) return
+    for (const id of [...chats.keys()]) {
+      if (chats.size <= REMOTE_CHATS_KEPT) return
+      if (id !== activeId.value) chats.delete(id)
+    }
+  }
+
   /**
    * Takes into a loaded chat what its CLI conversation gained outside Nexa; the items come as events.
    * The number of items taken.
    */
   async function sync(id: string): Promise<number> {
-    return chats.get(id)?.loaded ? window.api.sessions.sync(id) : 0
+    return chats.get(id)?.loaded ? api.sessions.sync(id) : 0
   }
 
   /** „Am Reset fortsetzen“ for a chat at its limit, or not (any more): it goes on by itself then. */
   async function resumeAtReset(id: string, on: boolean): Promise<void> {
-    await window.api.sessions.resumeAtReset(id, on)
+    await api.sessions.resumeAtReset(id, on)
   }
 
   function close(): void {
@@ -149,7 +203,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function create(input: SessionCreateInput): Promise<SessionMeta> {
-    const meta = await window.api.sessions.create(input)
+    const meta = await api.sessions.create({ ...input })
     if (!all.value.some((m) => m.id === meta.id)) all.value = [meta, ...all.value]
     await open(meta.id)
     return meta
@@ -157,7 +211,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   /** A new chat that goes on from where this one is now; it opens. */
   async function fork(id: string): Promise<SessionMeta> {
-    const meta = await window.api.sessions.fork(id)
+    const meta = await api.sessions.fork(id)
     if (!all.value.some((m) => m.id === meta.id)) all.value = [meta, ...all.value]
     await open(meta.id)
     return meta
@@ -165,43 +219,42 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   /** Empties the chat's context; it stays where it is, with a notice in its history. */
   async function clear(id: string): Promise<void> {
-    const meta = await window.api.sessions.clear(id)
+    const meta = await api.sessions.clear(id)
     const at = all.value.findIndex((m) => m.id === id)
     if (at >= 0) all.value[at] = meta
   }
 
+  /** Pictures are files of this device: another one gets them first and keeps them with its own. */
+  async function imagesFor(images: readonly string[] | undefined): Promise<string[] | undefined> {
+    if (!images?.length) return undefined
+    if (!device) return [...images]
+    return Promise.all(images.map((path) => window.api.remote.uploadImage(device, path)))
+  }
+
   async function send(id: string, input: SendInput): Promise<void> {
-    await window.api.sessions.send(id, { text: input.text, images: input.images ? [...input.images] : undefined })
+    await api.sessions.send(id, { text: input.text, images: await imagesFor(input.images) })
   }
 
   /** A prompt of the chat sent anew, changed: what came after it goes. */
   async function edit(id: string, itemId: string, input: SendInput): Promise<void> {
-    await window.api.sessions.edit(id, itemId, { text: input.text, images: input.images ? [...input.images] : undefined })
+    await api.sessions.edit(id, itemId, { text: input.text, images: await imagesFor(input.images) })
   }
 
   async function update(id: string, patch: SessionUpdateInput): Promise<void> {
-    const meta = await window.api.sessions.update(id, { ...patch })
+    const meta = await api.sessions.update(id, { ...patch })
     const at = all.value.findIndex((m) => m.id === id)
     if (at >= 0) all.value[at] = meta
   }
 
   async function move(id: string, target: SessionMoveInput): Promise<SessionMeta> {
-    const meta = await window.api.sessions.move(id, { ...target })
+    const meta = await api.sessions.move(id, { ...target })
     const at = all.value.findIndex((m) => m.id === id)
     if (at >= 0) all.value[at] = meta
     return meta
   }
 
   async function respond(id: string, itemId: string, response: InteractionResponse): Promise<void> {
-    const plain = JSON.parse(JSON.stringify(response)) as InteractionResponse
-    const remote = parseRemoteChatId(id)
-    if (remote) return window.api.remote.respond(remote.instance, remote.sessionId, itemId, plain)
-    await window.api.sessions.respond(id, itemId, plain)
-  }
-
-  async function interrupt(id: string): Promise<void> {
-    const remote = parseRemoteChatId(id)
-    return remote ? window.api.remote.interrupt(remote.instance, remote.sessionId) : window.api.sessions.interrupt(id)
+    await api.sessions.respond(id, itemId, JSON.parse(JSON.stringify(response)) as InteractionResponse)
   }
 
   /** Out of every list at once, for the seconds in which deleting can be undone; the shown chat closes. */
@@ -217,7 +270,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   /** Deletes chats for good, with their CLIs' conversations if the settings say so (see SessionService.remove). */
   async function remove(ids: readonly string[]): Promise<SessionRemoveResult> {
     try {
-      const result = await window.api.sessions.remove([...ids])
+      const result = await api.sessions.remove([...ids])
       forget(result.removed)
       return result
     } finally {
@@ -238,6 +291,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   return {
+    device,
     all,
     metas,
     hidden,
@@ -253,6 +307,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     byProject,
     cwdOf,
     load,
+    reload,
     open,
     sync,
     resumeAtReset,
@@ -269,10 +324,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     unhide,
     remove,
     forget,
-    /** An event of a chat, also one of another device's (stores/remote.ts). */
-    apply: onEvent,
-    interrupt,
-    stop: (id: string) => window.api.sessions.stop(id),
-    restart: (id: string) => window.api.sessions.restart(id),
+    interrupt: (id: string) => api.sessions.interrupt(id),
+    stop: (id: string) => api.sessions.stop(id),
+    restart: (id: string) => api.sessions.restart(id),
   }
 })

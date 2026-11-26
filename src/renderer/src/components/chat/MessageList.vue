@@ -2,11 +2,11 @@
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, useTemplateRef, watch } from 'vue'
 import type { ChatItem } from '@shared/chat'
-import { isRemoteChatId } from '@shared/remote'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
 import { formatDay, sameDay } from '@/lib/format'
 import { chatBlocks, type ChatBlock } from '@/lib/tools'
+import { useDevice } from '@/stores/device'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import AgentCard from './AgentCard.vue'
@@ -26,6 +26,8 @@ import UserShellBlock from './UserShellBlock.vue'
 const props = defineProps<{ items: ChatItem[]; sessionId: string; parentId?: string | null }>()
 const settings = useSettingsStore()
 const sessions = useSessionsStore()
+/** The chat of another device (Remote Control), or null for this one's. */
+const device = useDevice()
 
 /**
  * Built anew when an item comes, goes or is replaced, not for every piece of streamed text: the texts
@@ -170,7 +172,7 @@ defineExpose({ hidden, showAll })
 /** The newest browser card shows the page live; the others as it was when they ended. */
 const liveBrowser = computed(() => {
   // The browser of another device's chat runs there; here only the pictures in its cards show.
-  if (isRemoteChatId(props.sessionId)) return null
+  if (device) return null
   const last = blocks.value.findLast((b) => b.type === 'browser')
   return last?.type === 'browser' ? last.id : null
 })
@@ -180,8 +182,7 @@ const liveBrowser = computed(() => {
  * no CLI knows the chat any more). Also while the agent works (`busy`): sending one ends its turn.
  */
 const editable = computed(() => {
-  // A chat of another device: its prompts are sent anew there, if at all.
-  if (props.parentId || isRemoteChatId(props.sessionId)) return new Set<string>()
+  if (props.parentId) return new Set<string>()
   return new Set(blocks.value.slice(clearedAt.value + 1).flatMap((b) => (b.type === 'item' && b.item.kind === 'user' ? [b.item.id] : [])))
 })
 const busy = computed(() => {
@@ -285,7 +286,8 @@ const providerChanges = computed(() => {
         <template v-else-if="block.item.kind === 'tool'">
           <RenderBlock v-if="block.item.render" :spec="block.item.render" />
           <UserShellBlock v-else-if="block.item.byUser" :tool="block.item" :session-id="sessionId" />
-          <McpAppBlock v-else-if="block.item.app" :tool="block.item" :session-id="sessionId" />
+          <!-- An MCP app's frame talks to its server on the device the chat runs on: another one's shows as a tool. -->
+          <McpAppBlock v-else-if="block.item.app && !device" :tool="block.item" :session-id="sessionId" />
           <ToolRow v-else :tool="block.item" />
         </template>
         <AgentCard v-else-if="block.item.kind === 'agent'" :item="block.item" />

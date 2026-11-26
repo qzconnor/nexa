@@ -4,6 +4,7 @@ import BrowserLayer from '@/components/browser/BrowserLayer.vue'
 import ChatView from '@/components/chat/ChatView.vue'
 import AppTooltip from '@/components/common/AppTooltip.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import DeviceScope from '@/components/layout/DeviceScope.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
 import CommandPalette from '@/components/palette/CommandPalette.vue'
@@ -21,6 +22,8 @@ import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAppStore } from '@/stores/app'
 import { useChatWindowsStore } from '@/stores/chat-windows'
+import { useShownDeviceStore } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useScheduledStore } from '@/stores/scheduled'
@@ -48,8 +51,6 @@ const ThemeEditorDialog = defineAsyncComponent(() => import('@/components/themes
 const ArtifactsView = defineAsyncComponent(() => import('@/views/ArtifactsView.vue'))
 const ScheduledTaskDialog = defineAsyncComponent(() => import('@/components/scheduled/ScheduledTaskDialog.vue'))
 const ScheduledView = defineAsyncComponent(() => import('@/views/ScheduledView.vue'))
-const DevicesView = defineAsyncComponent(() => import('@/views/DevicesView.vue'))
-const RemoteControlBar = defineAsyncComponent(() => import('@/components/remote/RemoteControlBar.vue'))
 const SetupView = defineAsyncComponent(() => import('@/views/SetupView.vue'))
 
 const settings = useSettingsStore()
@@ -62,6 +63,9 @@ const sessions = useSessionsStore()
 const ui = useUiStore()
 const chatWindows = useChatWindowsStore()
 const scheduled = useScheduledStore()
+const shown = useShownDeviceStore()
+/** The chats of the device the main area shows: this one's, or another's (Remote Control). */
+const shownSessions = computed(() => useSessionsStore(shown.device))
 
 /** Under the title bar, where no button of the chat sits (`--titlebar-height`, main.css). */
 const TOAST_OFFSET = { top: 'calc(var(--titlebar-height) + 0.75rem)', right: '1rem' }
@@ -84,7 +88,6 @@ watch(
 
 const sidebarShown = computed(() => ui.sidebarOpen && !isChatWindow)
 const serverLink = useServerLinkStore()
-const remotePossible = computed(() => !!serverLink.state && serverLink.state.status !== 'unpaired')
 
 if (isChatWindow) {
   // The taskbar and Alt+Tab name the chat.
@@ -152,8 +155,9 @@ onMounted(async () => {
       void scheduled
         .load()
         .catch((error) => console.error('[scheduled]', error))
-      // Whether there is a server: the sidebar's „Geräte“ and the bar about Remote Control depend on it.
+      // Whether there is a server, and the other devices it connects: their chats in the sidebar.
       void serverLink.load().catch((error) => console.error('[nexa-server]', error))
+      useDevicesStore().start()
     }
   } catch (error) {
     fatal.value = errorMessage(error)
@@ -165,8 +169,6 @@ onMounted(async () => {
   <TooltipProvider :delay-duration="400">
     <div v-if="ready" class="flex h-full flex-col">
       <TitleBar />
-      <!-- Only with a server: who controls this device, and the way to stop it. -->
-      <RemoteControlBar v-if="!isChatWindow && remotePossible" />
       <div class="flex min-h-0 flex-1">
         <Sidebar v-if="sidebarShown" />
         <!-- The page sits as a panel in the window's frame (title bar and sidebar share its colour). -->
@@ -178,15 +180,19 @@ onMounted(async () => {
             )
           "
         >
-          <ChatView v-if="ui.view === 'chat' && sessions.active" />
+          <!-- The chat and the start page of the device whose chat was opened last, with its stores. -->
+          <DeviceScope v-if="ui.view === 'chat' && shownSessions.active" :key="`chat:${shown.device ?? ''}`" :device="shown.device">
+            <ChatView />
+          </DeviceScope>
           <!-- A chat's own window shows that chat and nothing else. -->
           <template v-else-if="!isChatWindow">
             <ArtifactsView v-if="ui.view === 'artifacts'" />
             <ScheduledView v-else-if="ui.view === 'scheduled'" />
-            <DevicesView v-else-if="ui.view === 'devices'" />
-            <!-- Chats stay reachable; only the start page waits for the setup. -->
-            <SetupView v-else-if="!settings.settings.setup.done" />
-            <HomeView v-else />
+            <!-- Chats stay reachable; only this device's start page waits for the setup. -->
+            <SetupView v-else-if="!shown.device && !settings.settings.setup.done" />
+            <DeviceScope v-else :key="`home:${shown.device ?? ''}`" :device="shown.device">
+              <HomeView />
+            </DeviceScope>
           </template>
           <div v-else class="flex flex-1 items-center justify-center"><Spinner class="size-5 text-muted-foreground" /></div>
           <!-- The pages of the chats' browsers, placed over the open chat's browser panel. -->

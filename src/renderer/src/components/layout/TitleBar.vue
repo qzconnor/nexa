@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { isChatWindow } from '@/lib/chat-window'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
+import { useShownDeviceStore } from '@/stores/device'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
@@ -24,7 +25,6 @@ import TitleBarUsage from './TitleBarUsage.vue'
  * area stays free. A chat's own window has no sidebar and no quick open: logo, project, usage, bell.
  */
 const app = useAppStore()
-const projects = useProjectsStore()
 const providers = useProvidersStore()
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
@@ -43,10 +43,16 @@ const shown = computed<ProviderId[]>(() => {
   return list.length ? list : providers.available.slice(0, 1)
 })
 
+/** The device whose chat is open: another one's (Remote Control) names its project too, its folder lies there. */
+const shownDevice = useShownDeviceStore()
+const open = computed(() => {
+  const store = useSessionsStore(shownDevice.device)
+  return ui.view === 'chat' ? store.active : null
+})
 /** Where the open chat's agent works. */
-const project = computed(() => (ui.view === 'chat' && sessions.active ? projects.get(sessions.active.projectId) : undefined))
+const project = computed(() => (open.value ? useProjectsStore(shownDevice.device).get(open.value.projectId) : undefined))
 /** The folder itself: the project's, or one in it the chat works in. */
-const cwd = computed(() => (project.value ? (sessions.cwdOf(sessions.active) ?? project.value.path) : null))
+const cwd = computed(() => (project.value ? (useSessionsStore(shownDevice.device).cwdOf(open.value) ?? project.value.path) : null))
 /**
  * The way from the project to the chat's folder, e.g. `nexa/src`; empty for the project's own. Empty
  * for a chat's worktree too: the branch chip names it (`worktree-<name>`), and `.claude/worktrees/`
@@ -54,13 +60,13 @@ const cwd = computed(() => (project.value ? (sessions.cwdOf(sessions.active) ?? 
  */
 const subfolder = computed(() => {
   if (!project.value || !cwd.value) return ''
-  const worktree = ui.view === 'chat' ? sessions.active?.worktree : undefined
+  const worktree = open.value?.worktree
   if (worktree && cwd.value === worktree.path) return ''
   return subfolderSegments(cwd.value, project.value.path).join('/')
 })
 
 function openProject(): void {
-  if (cwd.value) void window.api.app.openPath(cwd.value)
+  if (cwd.value && !shownDevice.device) void window.api.app.openPath(cwd.value)
 }
 </script>
 
@@ -113,8 +119,8 @@ function openProject(): void {
           <button
             type="button"
             class="app-no-drag flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[0.8rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            :aria-label="`Projektordner ${project.name} öffnen`"
-            v-tooltip="`${cwd} · Klicken öffnet den Ordner`"
+            :aria-label="shownDevice.device ? `Projekt ${project.name}` : `Projektordner ${project.name} öffnen`"
+            v-tooltip="shownDevice.device ? cwd : `${cwd} · Klicken öffnet den Ordner`"
             @click="openProject"
           >
             <FolderIcon class="size-3.5 shrink-0" />
@@ -122,7 +128,8 @@ function openProject(): void {
             <span class="shrink-[0.25] truncate font-medium">{{ project.name }}</span>
             <span v-if="subfolder" class="truncate">/ {{ subfolder }}</span>
           </button>
-          <GitBranchChip :cwd="cwd ?? project.path" class="min-w-0" />
+          <!-- The branch is read from this device's disk. -->
+          <GitBranchChip v-if="!shownDevice.device" :cwd="cwd ?? project.path" class="min-w-0" />
         </template>
       </div>
       <TitleBarSearch v-if="!isChatWindow" />

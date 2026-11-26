@@ -140,7 +140,7 @@ export const useUpdatesStore = defineStore('updates', () => {
 
   /** The installer closes the app, which ends the answers that are still running: asked before. */
   async function install(): Promise<void> {
-    const sessions = useSessionsStore()
+    const sessions = useSessionsStore(null)
     const running = [...sessions.runtimes.values()].filter((r) => r.status === 'running' || r.status === 'waiting').length
     if (running > 0) {
       const confirmed = await useUiStore().confirm({

@@ -6,6 +6,7 @@ import { groupState, type ChatState, type GroupState } from '@/lib/chat-state'
 import { attempt, toastError } from '@/lib/errors'
 import { foldersOf, projectTree } from '@/lib/session-tree'
 import { useChatWindowsStore } from '@/stores/chat-windows'
+import { useDevice, useDeviceApi, useShownDeviceStore } from '@/stores/device'
 import { useProjectsStore } from '@/stores/projects'
 import { useSessionsStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
@@ -13,12 +14,18 @@ import { useChatRemoval } from './useChatRemoval'
 
 export type { ChatState } from '@/lib/chat-state'
 
-/** What the sidebar's chats and the quick open do with a chat, in one place. */
+/**
+ * What the sidebar's chats and the quick open do with a chat, in one place: with the chats of the
+ * device the component shows (`useDevice`), this one's or another's.
+ */
 export function useChatActions() {
   const sessions = useSessionsStore()
   const projects = useProjectsStore()
   const ui = useUiStore()
   const removal = useChatRemoval()
+  const device = useDevice()
+  const api = useDeviceApi()
+  const shown = useShownDeviceStore()
 
   function state(id: string): ChatState {
     const status = sessions.runtime(id).status
@@ -42,12 +49,12 @@ export function useChatActions() {
   async function open(id: string): Promise<void> {
     // In another window: that one comes to the front, or the main window shows it.
     const windows = useChatWindowsStore()
-    if (windows.elsewhere(id)) return windows.show(id)
+    if (!device && windows.elsewhere(id)) return windows.show(id)
     ui.view = 'chat'
     await attempt(() => sessions.open(id), 'Session ließ sich nicht öffnen')
   }
 
-  /** The start page, with the project a new chat goes to (null: the last one used there). */
+  /** The start page of the device, with the project a new chat goes to (null: the last one used there). */
   function newChat(projectId: string | null = null): void {
     // A chat's own window has none: the main window shows it.
     if (isChatWindow) {
@@ -56,6 +63,7 @@ export function useChatActions() {
     }
     ui.homeProjectId = projectId
     sessions.close()
+    shown.show(device)
     ui.view = 'home'
   }
 
@@ -97,7 +105,7 @@ export function useChatActions() {
 
   /** What the agent said last goes to the clipboard, as Markdown. */
   async function copyLastAnswer(id: string): Promise<void> {
-    const answer = await attempt(() => window.api.sessions.lastAnswer(id), 'Antwort ließ sich nicht lesen')
+    const answer = await attempt(() => api.sessions.lastAnswer(id), 'Antwort ließ sich nicht lesen')
     if (answer === undefined) return
     if (answer === null) {
       toast('Noch keine Antwort', { description: 'In diesem Chat hat der Agent noch nichts gesagt.' })
@@ -120,7 +128,7 @@ export function useChatActions() {
   /** Gone at once, for 8 s to be brought back (useChatRemoval). */
   async function remove(meta: SessionMeta): Promise<void> {
     // From a chat's own window the main window deletes it, where „Rückgängig“ outlives this window.
-    if (isChatWindow) {
+    if (isChatWindow && !device) {
       await useChatWindowsStore().toMain({ kind: 'remove', sessionId: meta.id })
       return
     }
@@ -157,6 +165,7 @@ export function useChatActions() {
   /** Into a window of its own, or that window to the front; from a chat's own window, back into the main window. */
   async function popOut(meta: SessionMeta): Promise<void> {
     const windows = useChatWindowsStore()
+    if (device) return
     if (isChatWindow) await windows.dock()
     else await windows.popOut(meta.id)
   }

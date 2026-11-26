@@ -22,6 +22,8 @@ import { cn } from '@/lib/utils'
 import { spokenText, voiceAnchor, withSpoken, type VoiceAnchor } from '@/lib/voice-text'
 import { useAccountsStore } from '@/stores/accounts'
 import { useComposerStore } from '@/stores/composer'
+import { useDevice } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
 import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
 import ComposerAddMenu from './ComposerAddMenu.vue'
@@ -89,6 +91,14 @@ const providers = useProvidersStore()
 const accounts = useAccountsStore()
 
 const composer = useComposerStore()
+/** In a chat of another device: its files and folders are there, not here. */
+const device = useDevice()
+/**
+ * Another device that lets this one prompt but not more: how an open chat's agent runs (CLI, account,
+ * model, effort, mode) stays as it is set there. A new chat may still pick them (`sessions:create`).
+ */
+const devices = useDevicesStore()
+const agentLocked = computed(() => !!props.sessionId && !devices.can(device, 'full'))
 const { relative, root: projectRoot } = useProjectPath()
 const text = ref('')
 const images = ref<string[]>([])
@@ -329,7 +339,7 @@ async function loadSuggestions(kind: SuggestTrigger['kind']): Promise<void> {
   try {
     if (kind === 'file') {
       const root = projectRoot.value
-      const list = root ? await composer.filesOf(root) : []
+      const list = root ? await composer.filesOf(root, device) : []
       if (token === loadToken) fileList.value = list
     } else {
       const list = await providers.commands(props.provider, props.account, projectRoot.value)
@@ -559,7 +569,8 @@ async function pickFiles(): Promise<void> {
   const others: string[] = []
   for (const path of picked) {
     if (IMAGE_EXTENSIONS.test(path)) images.value.push(path)
-    else others.push(path)
+    // A file of this device means nothing to an agent on another one; pictures go there with the prompt.
+    else if (!device) others.push(path)
   }
   if (others.length) insertText(others.map((p) => mentionOf(relative(p)).trimEnd()).join(' ') + ' ')
   else void nextTick(() => input.value?.focus())
@@ -720,6 +731,7 @@ defineExpose({
         :provider="provider"
         :account="account"
         :model="model"
+        :disabled="agentLocked"
         @update:provider="emit('update:provider', $event)"
         @update:account="emit('update:account', $event)"
       />
@@ -778,7 +790,7 @@ defineExpose({
           :mode="mode"
           :ultracode="ultracode"
           :defaults="defaults"
-          :disabled="disabled"
+          :disabled="disabled || agentLocked"
           @update:model="emit('update:model', $event)"
           @update:effort="emit('update:effort', $event)"
           @update:mode="emit('update:mode', $event)"

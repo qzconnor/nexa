@@ -77,7 +77,7 @@ export const useChatWindowsStore = defineStore('chatWindows', () => {
   async function popOut(sessionId: string): Promise<void> {
     if (ownChat) return
     if (ids.value.has(sessionId)) return show(sessionId)
-    const sessions = useSessionsStore()
+    const sessions = useSessionsStore(null)
     const ui = useUiStore()
     const handoff = handoffOf(sessionId)
     const meta = sessions.get(sessionId)
@@ -130,7 +130,7 @@ export const useChatWindowsStore = defineStore('chatWindows', () => {
         chat.newChat(request.projectId)
         return
       case 'remove': {
-        const meta = useSessionsStore().get(request.sessionId)
+        const meta = useSessionsStore(null).get(request.sessionId)
         if (meta) void chat.remove(meta)
         return
       }

@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useMatchHighlight } from '@/composables/useMatchHighlight'
 import { containsTerms, searchText } from '@/lib/search'
 import { useAppStore } from '@/stores/app'
+import { useDevice } from '@/stores/device'
 import { useProjectsStore } from '@/stores/projects'
 
 /**
@@ -22,6 +23,8 @@ const emit = defineEmits<{ select: [id: string]; pickFolder: [] }>()
 
 const app = useAppStore()
 const projects = useProjectsStore()
+/** Another device's projects: a folder of this one can't become one of them. */
+const device = useDevice()
 
 const open = ref(false)
 const query = ref('')
@@ -111,7 +114,7 @@ const rowClass = 'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 
             </ListboxItem>
           </ListboxGroup>
           <p v-if="!groups.length && terms.length" class="px-2 py-4 text-center text-sm text-muted-foreground">Kein Projekt passt zu „{{ query.trim() }}“.</p>
-          <ListboxItem value="pick-folder" :class="[rowClass, 'mt-1 border-t pt-2']" @select.prevent="pickFolder">
+          <ListboxItem v-if="!device" value="pick-folder" :class="[rowClass, 'mt-1 border-t pt-2']" @select.prevent="pickFolder">
             <FolderPlusIcon class="size-4 text-muted-foreground" />
             <span class="text-sm">Ordner wählen …</span>
           </ListboxItem>

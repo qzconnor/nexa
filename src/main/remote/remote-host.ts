@@ -1,38 +1,38 @@
-import type { InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
+import type { SessionEvent } from '@shared/chat'
+import { IpcEvent, IpcInvoke } from '@shared/ipc'
 import type { ServerLimits } from '@shared/nexa-server/protocol'
 import {
-  fitChats,
-  jsonBytes,
+  channelLevel,
+  diffList,
   levelAllows,
+  LIST_EVENTS,
+  MAX_WATCHED_CHATS,
   METHOD_LEVEL,
-  pageOf,
   parseRemoteRequest,
-  remoteSession,
   RemoteKind,
-  REMOTE_BATCH_BYTES,
+  REMOTE_EVENTS,
   slimItem,
-  textLimitFor,
   WATCH_TTL_MS,
-  type RemoteChats,
   type RemoteErrorBody,
   type RemoteEvent,
+  type RemoteHostInfo,
   type RemoteLevel,
   type RemoteRequest,
   type RemoteResponse,
 } from '@shared/remote'
 import type { RemoteController } from '@shared/remote-ipc'
-import type { Project, ProjectSection, SessionDetail, SessionMeta } from '@shared/types'
+import type { SessionDetail } from '@shared/types'
 import { TypedEmitter } from '../lib/typed-emitter'
-import { MessageTooLargeError, payloadLimit } from '../server-link/device-channel'
+import { MessageTooLargeError } from '../server-link/device-channel'
 
-/** Events of a chat are bundled this long before they go, so streamed text costs a message per bundle. */
+/** Events are bundled this long before they go, so streamed text costs a message per bundle. */
 const BATCH_MS = 100
 /** Bundles of events take at most this share of the messages a second the server allows (`rateLimit`). */
 const EVENTS_RATE_SHARE = 0.25
 /** How many sent bundles are remembered, to know whose watch a failed one belongs to. */
 const SENT_KEPT = 256
-/** The list of chats changes with every turn; a controller reads it anew at most this often. */
-const CHATS_DEBOUNCE_MS = 2_000
+/** A picture for a prompt, as base64 (the host takes at most 20 MB of it). */
+const MAX_IMAGE_BASE64 = 28 * 1024 * 1024
 
 export interface RemoteHostDeps {
   link: {
@@ -47,38 +47,37 @@ export interface RemoteHostDeps {
     /** What the server takes, as it said at login. */
     limits(): ServerLimits
   }
-  sessions: {
-    list(): SessionMeta[]
-    open(id: string): Promise<SessionDetail>
-    send(id: string, text: string): Promise<void>
-    interrupt(id: string): Promise<void>
-    respond(id: string, itemId: string, response: InteractionResponse): Promise<void>
-    runtimes(): Record<string, SessionRuntime>
-  }
-  projects(): { projects: Project[]; sections: ProjectSection[] }
+  /** A call of the window API, answered by the handlers the windows use (`invokeHandler`). */
+  invoke(channel: string, args: unknown[]): Promise<unknown>
   version: string
   log?: (message: string) => void
 }
 
 interface Watcher {
+  /** The chats whose items and streamed text the device gets. */
   ids: Set<string>
   since: number
   expiry: ReturnType<typeof setTimeout>
   queue: RemoteEvent[]
   flush: ReturnType<typeof setTimeout> | null
+  /** What the device has of each list event (`LIST_EVENTS`): its entries by id, as JSON. */
+  lists: Map<string, Map<string, string>>
 }
 
-class NotFound extends Error {}
+class Refused extends Error {
+  constructor(readonly body: RemoteErrorBody) {
+    super(body.message)
+  }
+}
 
 /**
- * This device as a host of Remote Control: answers the requests of the other devices of the namespace
- * as far as each one's level goes (`shared/remote.ts`), and sends the devices that watch chats their
- * events, bundled. Off until the user turns it on (Einstellungen › Geräte); every request is checked
- * against the level here, whatever the other side believes.
+ * This device as a host of Remote Control: answers the calls the other devices of the namespace make of
+ * its window API as far as each one's level goes (`channelLevel`), with the handlers its windows use,
+ * and sends the devices that watch it its windows' events, bundled. Off until the user turns it on
+ * (Einstellungen › Geräte); every call is checked here, whatever the other side believes.
  */
 export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteController[]] }> {
   private readonly watchers = new Map<string, Watcher>()
-  private chatsTimer: ReturnType<typeof setTimeout> | null = null
   /** Message ids of sent bundles, with the device they went to. */
   private readonly sent = new Map<string, string>()
   /** Messages the server refused before their send returned (and so before they were in `sent`). */
@@ -88,12 +87,12 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
     super()
   }
 
-  /** The devices that watch chats here now, for the bar „wird gesteuert“. */
+  /** The devices that watch this one now (Einstellungen › Geräte). */
   controllers(): RemoteController[] {
     return [...this.watchers.entries()].map(([id, w]) => ({ id, name: this.deps.link.deviceName(id) ?? id, since: w.since, level: this.deps.link.level(id) }))
   }
 
-  /** „Trennen“ in the bar: the device loses its level here and stops getting events. */
+  /** „Trennen“: the device loses its level here and stops getting events. */
   async disconnect(id: string): Promise<void> {
     await this.deps.link.revoke(id)
     this.unwatch(id)
@@ -103,35 +102,51 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
     if (kind !== RemoteKind.request) return
     const request = parseRemoteRequest(data)
     if (!request) return this.reply(from, { re: id, e: { code: 'bad-request', message: 'not a request this host knows' } })
-    const needed = METHOD_LEVEL[request.m]
-    if (needed && !this.deps.link.enabled()) return this.reply(from, { re: id, e: { code: 'disabled', message: 'remote control is off' } })
-    if (needed && !levelAllows(this.deps.link.level(from), needed)) {
-      return this.reply(from, { re: id, e: { code: 'forbidden', message: `needs level ${needed}` } })
-    }
     let response: RemoteResponse
     try {
-      response = { re: id, r: await this.handle(from, request) }
+      this.check(from, request)
+      // Calls without a result (`sessions:send` and the like) answer null: JSON drops an undefined `r`.
+      response = { re: id, r: (await this.handle(from, request)) ?? null }
     } catch (error) {
-      const body: RemoteErrorBody =
-        error instanceof NotFound
-          ? { code: 'not-found', message: 'no such chat' }
-          : { code: 'failed', message: error instanceof Error ? error.message : String(error) }
+      const body: RemoteErrorBody = error instanceof Refused ? error.body : { code: 'failed', message: error instanceof Error ? error.message : String(error) }
       response = { re: id, e: body }
     }
     await this.reply(from, response)
   }
 
-  /** A chat's event at this host: to every device that watches it (the state of chats to all that watch). */
-  onSessionEvent(event: SessionEvent): void {
-    for (const watcher of this.watchers.values()) {
-      if (event.type === 'runtime' || watcher.ids.has(event.sessionId)) this.queue(watcher, event)
+  /** What `from` may ask, by its level here; throws `Refused`. */
+  private check(from: string, request: RemoteRequest): void {
+    const needed = request.m === 'invoke' ? channelLevel(request.p.ch, request.p.args) : METHOD_LEVEL[request.m]
+    if (request.m === 'invoke' && needed === null) throw new Refused({ code: 'forbidden', message: `${request.p.ch} is not for other devices` })
+    if (!needed) return
+    if (!this.deps.link.enabled()) throw new Refused({ code: 'disabled', message: 'remote control is off' })
+    if (!levelAllows(this.deps.link.level(from), needed)) throw new Refused({ code: 'forbidden', message: `needs level ${needed}` })
+  }
+
+  /**
+   * A window event of this device, as it goes out (`onBroadcast`): to every device that watches, a
+   * chat's items and text only to those that have it open.
+   */
+  onBroadcast(channel: string, args: unknown[]): void {
+    if (!this.watchers.size || !REMOTE_EVENTS.has(channel)) return
+    if (channel === IpcEvent.sessionEvent) {
+      const event = args[0] as SessionEvent
+      for (const watcher of this.watchers.values()) {
+        if (event.type === 'runtime' || watcher.ids.has(event.sessionId)) this.queueSession(watcher, event)
+      }
+    } else {
+      // The newest state of a list or the settings is all that counts: it replaces one still waiting.
+      for (const watcher of this.watchers.values()) {
+        watcher.queue = watcher.queue.filter((e) => e.ch !== channel)
+        watcher.queue.push({ ch: channel, args })
+      }
     }
     for (const [id, watcher] of this.watchers) if (watcher.queue.length && !watcher.flush) watcher.flush = setTimeout(() => void this.flush(id), this.batchMs())
   }
 
   /**
    * The server couldn't pass a message on. A bundle of events lost (the device doesn't keep up, or went
-   * meanwhile) leaves a gap in its chats: its watch ends, and with the next renewal it reads them anew.
+   * meanwhile) leaves a gap in what it shows: its watch ends, and with the next renewal it reads anew.
    */
   onSendFailed(id: string): void {
     const device = this.sent.get(id)
@@ -150,16 +165,6 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
     this.unwatch(device)
   }
 
-  /** The list of chats changed (a title, a new chat, the order): the watching devices read it anew. */
-  onSessionsChanged(): void {
-    if (this.chatsTimer || !this.watchers.size) return
-    this.chatsTimer = setTimeout(() => {
-      this.chatsTimer = null
-      for (const watcher of this.watchers.values()) this.queue(watcher, { type: 'chats' })
-      for (const id of this.watchers.keys()) void this.flush(id)
-    }, CHATS_DEBOUNCE_MS)
-  }
-
   /** A device went offline or was removed: its watch ends with it. */
   onDeviceStatus(id: string, online: boolean): void {
     if (!online) this.unwatch(id)
@@ -167,92 +172,74 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
 
   /** Remote Control turned off, or a level lowered: who may no longer read stops getting events. */
   onRemoteChanged(): void {
-    for (const id of [...this.watchers.keys()]) if (!levelAllows(this.deps.link.level(id), 'read')) this.unwatch(id)
+    for (const id of [...this.watchers.keys()]) if (!this.deps.link.enabled() || !levelAllows(this.deps.link.level(id), 'read')) this.unwatch(id)
     this.emit('changed', this.controllers())
   }
 
   dispose(): void {
     for (const id of [...this.watchers.keys()]) this.unwatch(id, false)
-    if (this.chatsTimer) clearTimeout(this.chatsTimer)
-    this.chatsTimer = null
+  }
+
+  private info(from: string): RemoteHostInfo {
+    return { name: this.deps.link.selfName(), enabled: this.deps.link.enabled(), level: this.deps.link.level(from), version: this.deps.version }
   }
 
   private async handle(from: string, request: RemoteRequest): Promise<unknown> {
-    const { sessions } = this.deps
     switch (request.m) {
-      case 'hello': {
-        const level = this.deps.link.level(from)
-        return { name: this.deps.link.selfName(), enabled: this.deps.link.enabled(), level, version: this.deps.version }
-      }
-      case 'chats':
-        return fitChats(this.chats(), this.budget())
-      case 'open': {
-        this.known(request.p.id)
-        const detail = await sessions.open(request.p.id)
-        const page = pageOf(detail.items, request.p.before, this.budget())
-        // The page holds what still waited to go; the answer leaves before the next bundle, and a chat
-        // that is still loading on the other side ignores what came before it (as a window does).
-        const watcher = this.watchers.get(from)
-        if (watcher && request.p.before === undefined) {
-          const id = request.p.id
-          watcher.queue = watcher.queue.filter((e) => e.type === 'chats' || e.type === 'runtime' || e.sessionId !== id)
-        }
-        return { session: remoteSession(detail.meta), items: page.items, start: page.start, total: detail.items.length, runtime: detail.runtime }
-      }
+      case 'hello':
+        return this.info(from)
       case 'watch':
-        return { renewed: this.watch(from, request.p.ids) }
+        return { ...this.info(from), renewed: this.watch(from, request.p.ids, request.p.fresh === true) }
       case 'unwatch':
         this.unwatch(from)
         return null
-      case 'send':
-        this.known(request.p.id)
-        await sessions.send(request.p.id, request.p.text)
-        return null
-      case 'interrupt':
-        this.known(request.p.id)
-        await sessions.interrupt(request.p.id)
-        return null
-      case 'respond':
-        this.known(request.p.id)
-        await sessions.respond(request.p.id, request.p.itemId, request.p.response)
-        return null
+      case 'invoke':
+        return this.invoke(from, request.p.ch, request.p.args)
     }
   }
 
-  private chats(): RemoteChats {
-    const { projects, sections } = this.deps.projects()
-    const sectionNames = new Map(sections.map((s) => [s.id, s.name]))
-    return {
-      projects: projects.map((p) => {
-        const section = p.sectionId ? sectionNames.get(p.sectionId) : undefined
-        return { id: p.id, name: p.name, path: p.path, ...(section ? { section } : {}) }
-      }),
-      sessions: this.deps.sessions
-        .list()
-        .filter((m) => !m.archived)
-        .map(remoteSession),
-      runtimes: this.deps.sessions.runtimes(),
+  private async invoke(from: string, channel: string, args: unknown[]): Promise<unknown> {
+    if (channel === IpcInvoke.appSaveImage) {
+      // Bytes don't go as JSON: the picture comes as base64.
+      const [data, mime] = args
+      if (typeof data !== 'string' || data.length > MAX_IMAGE_BASE64) throw new Refused({ code: 'bad-request', message: 'no picture' })
+      return this.deps.invoke(channel, [Buffer.from(data, 'base64'), mime])
     }
-  }
-
-  /** Archived chats count as gone: the list on the other side doesn't show them either. */
-  private known(id: string): void {
-    if (!this.deps.sessions.list().some((m) => m.id === id && !m.archived)) throw new NotFound()
+    const result = await this.deps.invoke(channel, args)
+    if (channel !== IpcInvoke.sessionsOpen) return result
+    // From now on the chat's events go to the device; what still waited for it is in the answer, which
+    // leaves before the next bundle (a chat still loading on the other side ignores what came before).
+    const detail = result as SessionDetail
+    const watcher = this.watchers.get(from)
+    if (watcher) {
+      const id = detail.meta.id
+      if (watcher.ids.size < MAX_WATCHED_CHATS) watcher.ids.add(id)
+      watcher.queue = watcher.queue.filter((e) => e.ch !== IpcEvent.sessionEvent || !('args' in e) || isOther(e.args[0] as SessionEvent, id))
+    }
+    return { ...detail, items: detail.items.map((item) => slimItem(item)) }
   }
 
   /** Sets what `from` watches; whether it watched before (else it may have missed events). */
-  private watch(from: string, ids: string[]): boolean {
-    const existing = this.watchers.get(from)
-    if (existing) clearTimeout(existing.expiry)
-    const watcher: Watcher = existing ?? { ids: new Set(), since: Date.now(), expiry: undefined as never, queue: [], flush: null }
+  private watch(from: string, ids: string[], fresh: boolean): boolean {
+    let watcher = this.watchers.get(from)
+    if (watcher && fresh) {
+      // The device starts anew: its lists come whole again, nothing waiting from before.
+      watcher.lists.clear()
+      watcher.queue = []
+    }
+    const existed = !!watcher
+    if (watcher) clearTimeout(watcher.expiry)
+    else {
+      watcher = { ids: new Set(), since: Date.now(), expiry: undefined as never, queue: [], flush: null, lists: new Map() }
+      this.watchers.set(from, watcher)
+    }
     watcher.ids = new Set(ids)
     watcher.expiry = setTimeout(() => this.unwatch(from), WATCH_TTL_MS)
-    this.watchers.set(from, watcher)
-    if (!existing) {
+    if (!existed) {
       this.deps.log?.(`remote: ${this.deps.link.deviceName(from) ?? from} watches`)
       this.emit('changed', this.controllers())
     }
-    return !!existing
+    return existed && !fresh
   }
 
   private unwatch(id: string, announce = true): void {
@@ -268,65 +255,64 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
    * Into the device's next bundle: text streamed into the same item joins the last piece, and a newer
    * state of an item or a chat's runtime replaces what was still waiting for it.
    */
-  private queue(watcher: Watcher, event: RemoteEvent): void {
+  private queueSession(watcher: Watcher, event: SessionEvent): void {
     const q = watcher.queue
+    const sessionEvent = (e: RemoteEvent): SessionEvent | null => (e.ch === IpcEvent.sessionEvent && 'args' in e ? (e.args[0] as SessionEvent) : null)
     switch (event.type) {
       case 'delta': {
-        const last = q[q.length - 1]
+        const last = q.length ? sessionEvent(q[q.length - 1]) : null
         if (last?.type === 'delta' && last.sessionId === event.sessionId && last.itemId === event.itemId && last.field === event.field) {
-          q[q.length - 1] = { ...last, text: last.text + event.text }
+          q[q.length - 1] = { ch: IpcEvent.sessionEvent, args: [{ ...last, text: last.text + event.text }] }
           return
         }
-        q.push(event)
-        return
+        break
       }
       case 'item': {
-        const item = slimItem(event.item, textLimitFor(this.budget()))
-        watcher.queue = q.filter(
-          (e) => !((e.type === 'item' && e.sessionId === event.sessionId && e.item.id === item.id) || (e.type === 'delta' && e.sessionId === event.sessionId && e.itemId === item.id)),
-        )
-        watcher.queue.push({ ...event, item })
+        const item = slimItem(event.item)
+        watcher.queue = q.filter((e) => {
+          const s = sessionEvent(e)
+          return !(s && s.sessionId === event.sessionId && ((s.type === 'item' && s.item.id === item.id) || (s.type === 'delta' && s.itemId === item.id)))
+        })
+        watcher.queue.push({ ch: IpcEvent.sessionEvent, args: [{ ...event, item }] })
         return
       }
       case 'runtime':
-        watcher.queue = q.filter((e) => !(e.type === 'runtime' && e.sessionId === event.sessionId))
-        watcher.queue.push(event)
+        watcher.queue = q.filter((e) => {
+          const s = sessionEvent(e)
+          return !(s?.type === 'runtime' && s.sessionId === event.sessionId)
+        })
+        watcher.queue.push({ ch: IpcEvent.sessionEvent, args: [event] })
         return
-      case 'chats':
-        if (!q.some((e) => e.type === 'chats')) q.push(event)
-        return
-      default:
-        q.push(event)
     }
+    watcher.queue.push({ ch: IpcEvent.sessionEvent, args: [event] })
   }
 
-  /** Sends what waits for the device, in bundles the relay passes on. */
+  /** Sends what waits for the device, lists as what changed since it got them last. */
   private async flush(id: string): Promise<void> {
     const watcher = this.watchers.get(id)
     if (!watcher) return
     if (watcher.flush) clearTimeout(watcher.flush)
     watcher.flush = null
-    const events = watcher.queue
+    const events = watcher.queue.map((event): RemoteEvent => {
+      if (!LIST_EVENTS.has(event.ch) || !('args' in event)) return event
+      const change = diffList(event.args[0], watcher.lists.get(event.ch) ?? new Map())
+      if (!change) return event
+      watcher.lists.set(event.ch, change.next)
+      return { ch: event.ch, diff: change.diff }
+    })
     watcher.queue = []
-    for (const bundle of bundles(events, this.budget())) {
-      try {
-        const sent = await this.deps.link.sendToDevice(id, RemoteKind.events, { events: bundle })
-        if (sent && this.early.delete(sent)) return this.onLost(id)
-        if (sent) this.remember(sent, id)
-      } catch (error) {
-        // An event too large on its own (an item the slimming couldn't bring down): what the device
-        // has of the chat would miss it, so it reads its chats anew instead (its watch ends).
-        const why = error instanceof MessageTooLargeError ? `${error.bytes} bytes` : error instanceof Error ? error.message : String(error)
-        this.deps.log?.(`remote: events not sent: ${why}`)
-        this.unwatch(id)
-        return
-      }
+    if (!events.length) return
+    try {
+      const sent = await this.deps.link.sendToDevice(id, RemoteKind.events, { events })
+      if (sent && this.early.delete(sent)) return this.onLost(id)
+      if (sent) this.remember(sent, id)
+      // Not connected: the device lost these, and the base of its lists with them.
+      else this.unwatch(id)
+    } catch (error) {
+      const why = error instanceof MessageTooLargeError ? `${error.bytes} bytes` : error instanceof Error ? error.message : String(error)
+      this.deps.log?.(`remote: events not sent: ${why}`)
+      this.unwatch(id)
     }
-  }
-
-  /** How much JSON a page, a list or a bundle may have, by the server's limit of a message. */
-  private budget(): number {
-    return Math.min(REMOTE_BATCH_BYTES, payloadLimit(this.deps.link.limits().maxMessageBytes))
   }
 
   /** Bundles go at most this often, so that they leave room for everything else the server allows. */
@@ -349,21 +335,7 @@ export class RemoteHost extends TypedEmitter<{ changed: [controllers: RemoteCont
   }
 }
 
-/** Events in bundles of at most `budget` bytes of JSON each (one event alone may be more), in their order. */
-function bundles(events: readonly RemoteEvent[], budget: number): RemoteEvent[][] {
-  const result: RemoteEvent[][] = []
-  let current: RemoteEvent[] = []
-  let bytes = 0
-  for (const event of events) {
-    const size = jsonBytes(event) + 1
-    if (current.length && bytes + size > budget) {
-      result.push(current)
-      current = []
-      bytes = 0
-    }
-    current.push(event)
-    bytes += size
-  }
-  if (current.length) result.push(current)
-  return result
+/** A chat's event that isn't one of the items of `id` (its runtime stays: the answer may be older). */
+function isOther(event: SessionEvent, id: string): boolean {
+  return event.type === 'runtime' || event.sessionId !== id
 }

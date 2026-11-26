@@ -34,6 +34,7 @@ import { toastError } from '@/lib/errors'
 import { containsTerms, searchText } from '@/lib/search'
 import { cn } from '@/lib/utils'
 import { useCliConfigStore } from '@/stores/cli-config'
+import { useDevice, useDeviceApi } from '@/stores/device'
 import ComposerPluginsMenu from './ComposerPluginsMenu.vue'
 
 /**
@@ -44,6 +45,9 @@ import ComposerPluginsMenu from './ComposerPluginsMenu.vue'
 const props = defineProps<{ sessionId?: string; provider: ProviderId; disabled?: boolean }>()
 const emit = defineEmits<{ files: []; folder: []; commands: [] }>()
 const cliConfig = useCliConfigStore()
+/** A chat of another device: its servers and plugins are there, its settings and folders too. */
+const device = useDevice()
+const api = useDeviceApi()
 
 const open = ref(false)
 const servers = shallowRef<McpServerInfo[] | null>(null)
@@ -58,7 +62,7 @@ async function loadServers(force = false): Promise<void> {
   loading.value = true
   failed.value = null
   try {
-    const list = await window.api.sessions.mcpServers(id)
+    const list = await api.sessions.mcpServers(id)
     if (id !== props.sessionId) return
     servers.value = list
     loadedAt.value = Date.now()
@@ -169,7 +173,7 @@ async function toggle(server: McpServerInfo): Promise<void> {
   // At once in the list; back if it fails.
   servers.value = (servers.value ?? []).map((s) => (s.name === server.name ? { ...s, enabled } : s))
   try {
-    await window.api.sessions.setMcp(id, server.name, enabled)
+    await api.sessions.setMcp(id, server.name, enabled)
   } catch (error) {
     toastError(error, 'Umschalten fehlgeschlagen')
     servers.value = (servers.value ?? []).map((s) => (s.name === server.name ? { ...s, enabled: !enabled } : s))
@@ -194,7 +198,8 @@ type ServerAction = { kind: 'reconnect' | 'authenticate'; text: string }
 function actionOf(server: McpServerInfo): ServerAction | null {
   if (!server.enabled) return null
   if (server.status === 'failed' || (server.status === 'needs-auth' && signedIn.value.has(server.name))) return { kind: 'reconnect', text: 'Neu verbinden' }
-  if (server.status === 'needs-auth') return { kind: 'authenticate', text: 'Anmelden' }
+  // Signing in opens a page in the browser of the device the CLI runs on.
+  if (server.status === 'needs-auth') return device ? null : { kind: 'authenticate', text: 'Anmelden' }
   return null
 }
 
@@ -203,7 +208,7 @@ async function reconnect(server: McpServerInfo): Promise<void> {
   if (!id) return
   setWorking(server.name, true)
   try {
-    await window.api.sessions.reconnectMcp(id, server.name)
+    await api.sessions.reconnectMcp(id, server.name)
     const next = new Set(signedIn.value)
     next.delete(server.name)
     signedIn.value = next
@@ -220,7 +225,7 @@ async function authenticate(server: McpServerInfo): Promise<void> {
   if (!id) return
   setWorking(server.name, true)
   try {
-    const start = await window.api.sessions.authenticateMcp(id, server.name)
+    const start = await api.sessions.authenticateMcp(id, server.name)
     if (!start) {
       await loadServers(true)
       return
@@ -269,7 +274,7 @@ async function manageConnectors(): Promise<void> {
   const id = props.sessionId
   if (!id) return
   try {
-    await cliConfig.open(await window.api.sessions.configTarget(id))
+    await cliConfig.open(await api.sessions.configTarget(id))
   } catch (error) {
     toastError(error, 'Konnektoren lassen sich nicht öffnen')
   }
@@ -310,7 +315,7 @@ function onSearchKey(event: KeyboardEvent): void {
         <PaperclipIcon /> Dateien oder Fotos hinzufügen
         <DropdownMenuShortcut>Strg+U</DropdownMenuShortcut>
       </DropdownMenuItem>
-      <DropdownMenuItem v-if="sessionId" @select="emit('folder')"><FolderPlusIcon /> Ordner hinzufügen</DropdownMenuItem>
+      <DropdownMenuItem v-if="sessionId && !device" @select="emit('folder')"><FolderPlusIcon /> Ordner hinzufügen</DropdownMenuItem>
       <DropdownMenuItem @select="emit('commands')"><SquareSlashIcon /> Slash-Befehle</DropdownMenuItem>
       <template v-if="sessionId">
         <DropdownMenuSeparator />
@@ -382,7 +387,7 @@ function onSearchKey(event: KeyboardEvent): void {
               </template>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem @select="manageConnectors"><SlidersHorizontalIcon /> Konnektoren verwalten</DropdownMenuItem>
+            <DropdownMenuItem v-if="!device" @select="manageConnectors"><SlidersHorizontalIcon /> Konnektoren verwalten</DropdownMenuItem>
             <p class="px-2 py-1.5 text-[0.7rem] leading-snug text-muted-foreground">
               Schalter gelten für alle Chats des Projekts.
               <template v-if="provider === 'codex'">Codex übernimmt sie mit dem nächsten Prompt.</template>

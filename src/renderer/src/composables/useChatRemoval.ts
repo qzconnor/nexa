@@ -39,7 +39,7 @@ export function useChatRemoval() {
     const ids = going.map((m) => m.id)
     const shown = sessions.activeId && ids.includes(sessions.activeId) ? sessions.activeId : null
     // A chat's own window goes with it; brought back, the chat is in the sidebar again.
-    useChatWindowsStore().closeWindows(ids)
+    if (!sessions.device) useChatWindowsStore().closeWindows(ids)
     sessions.hide(ids)
     if (shown && ui.view === 'chat') ui.view = 'home'
 
@@ -47,7 +47,7 @@ export function useChatRemoval() {
     const finish = () => {
       if (settled) return
       settled = true
-      sessions.remove(ids).then(report, (error) => toastError(error, 'Löschen fehlgeschlagen'))
+      sessions.remove(ids).then((result) => report(result, !sessions.device), (error) => toastError(error, 'Löschen fehlgeschlagen'))
     }
     const undo = () => {
       if (settled) return
@@ -73,13 +73,16 @@ export function useChatRemoval() {
   return { remove }
 }
 
-/** Tells what went otherwise than asked: a transcript that stays, files the recycle bin refused, a worktree with work in it. */
-export function report(result: SessionRemoveResult): void {
+/**
+ * Tells what went otherwise than asked: a transcript that stays, files the recycle bin refused, a
+ * worktree with work in it. `local` false: the folders are on another device, nothing to open here.
+ */
+export function report(result: SessionRemoveResult, local = true): void {
   for (const problem of removalProblems(result)) {
     const folder = problem.folder
     const options = {
       description: problem.description,
-      ...(folder ? { duration: 15_000, action: { label: 'Ordner öffnen', onClick: () => void window.api.app.openPath(folder) } } : {}),
+      ...(folder && local ? { duration: 15_000, action: { label: 'Ordner öffnen', onClick: () => void window.api.app.openPath(folder) } } : {}),
     }
     if (problem.error) toast.error(problem.title, options)
     else toast.warning(problem.title, options)

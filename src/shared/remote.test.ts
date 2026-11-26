@@ -1,23 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem } from './chat'
+import { FilesInvoke } from './files-ipc'
+import { IpcEvent, IpcInvoke } from './ipc'
 import {
-  fitChats,
+  applyDiff,
+  channelLevel,
+  diffList,
   jsonBytes,
   levelAllows,
-  pageOf,
   parseInteractionResponse,
-  parseRemoteChatId,
   parseRemoteEvents,
   parseRemoteRequest,
   parseRemoteResponse,
-  remoteChatId,
   remoteErrorText,
-  REMOTE_BATCH_BYTES,
   REMOTE_TEXT_LIMIT,
   slimItem,
 } from './remote'
 
 const user = (id: string, text = 'Hallo'): ChatItem => ({ kind: 'user', id, ts: 1, provider: 'claude', text })
+
+/** A list as the host's list events carry it, and the base of each side made of it. */
+const chat = (id: string, title = `Chat ${id}`) => ({ id, title, updatedAt: 1 })
+const hostBase = (list: { id: string }[]) => new Map(list.map((e) => [e.id, JSON.stringify(e)]))
+const clientBase = (list: { id: string }[]) => new Map(list.map((e) => [e.id, e]))
 
 describe('levels', () => {
   it('include the ones below them', () => {
@@ -28,73 +33,262 @@ describe('levels', () => {
   })
 })
 
+describe('channelLevel', () => {
+  it('gives the level of each channel on the list', () => {
+    expect(channelLevel(IpcInvoke.settingsGet, [])).toBe('read')
+    expect(channelLevel(IpcInvoke.sessionsList, [])).toBe('read')
+    expect(channelLevel(IpcInvoke.sessionsOpen, ['c1'])).toBe('read')
+    expect(channelLevel(IpcInvoke.sessionsSend, ['c1', { text: 'Los' }])).toBe('prompt')
+    expect(channelLevel(IpcInvoke.projectsArrange, [])).toBe('prompt')
+    expect(channelLevel(FilesInvoke.searchList, ['F:\\nexa'])).toBe('prompt')
+    expect(channelLevel(IpcInvoke.appSaveImage, ['aGFsbG8=', 'image/png'])).toBe('prompt')
+    expect(channelLevel(IpcInvoke.settingsUpdate, [{}])).toBe('full')
+    expect(channelLevel(IpcInvoke.sessionsRespond, [])).toBe('full')
+    expect(channelLevel(IpcInvoke.sessionsRunShell, [])).toBe('full')
+    expect(channelLevel(IpcInvoke.projectsRemove, ['p1'])).toBe('full')
+  })
+
+  it('lets nothing else through: the host’s windows, dialogs, files and terminals stay its own', () => {
+    expect(channelLevel(IpcInvoke.settingsExport, [])).toBeNull()
+    expect(channelLevel(IpcInvoke.sessionsExportMarkdown, ['c1'])).toBeNull()
+    expect(channelLevel(IpcInvoke.accountsLogin, [])).toBeNull()
+    expect(channelLevel(IpcInvoke.projectsCreate, [])).toBeNull()
+    expect(channelLevel('format:disk', ['C:'])).toBeNull()
+    // Names every object has must not count as channels.
+    for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(channelLevel(name, [])).toBeNull()
+  })
+
+  it('takes the full level to change how a chat’s agent runs, the prompt level for the rest', () => {
+    const update = (patch: unknown) => channelLevel(IpcInvoke.sessionsUpdate, ['c1', patch])
+    expect(update({ title: 'Neu' })).toBe('prompt')
+    expect(update({ pinned: true, archived: false })).toBe('prompt')
+    for (const field of ['provider', 'account', 'model', 'effort', 'ultracode', 'permissionMode', 'dirs']) {
+      expect(update({ title: 'Neu', [field]: undefined })).toBe('full')
+    }
+    expect(update({ model: 'opus' })).toBe('full')
+    // Nothing to read: nothing of the agent changes.
+    expect(update(undefined)).toBe('prompt')
+    expect(update(['model'])).toBe('prompt')
+    expect(channelLevel(IpcInvoke.sessionsUpdate, [])).toBe('prompt')
+  })
+
+  it('takes the full level for a new chat with CLI arguments or one that doesn’t ask before it acts', () => {
+    const create = (input: unknown) => channelLevel(IpcInvoke.sessionsCreate, [input])
+    expect(create({ projectId: 'p1' })).toBe('prompt')
+    expect(create({ projectId: 'p1', permissionMode: 'ask' })).toBe('prompt')
+    expect(create({ projectId: 'p1', permissionMode: 'plan' })).toBe('prompt')
+    expect(create({ projectId: 'p1', cliArgs: [] })).toBe('prompt')
+    for (const mode of ['edits', 'auto', 'full', 'root']) expect(create({ projectId: 'p1', permissionMode: mode })).toBe('full')
+    expect(create({ projectId: 'p1', cliArgs: ['--dangerously-skip-permissions'] })).toBe('full')
+    expect(create(null)).toBe('prompt')
+    expect(channelLevel(IpcInvoke.sessionsCreate, [])).toBe('prompt')
+  })
+})
+
 describe('parseRemoteRequest', () => {
   it('takes the requests with their parameters', () => {
     expect(parseRemoteRequest({ m: 'hello' })).toEqual({ m: 'hello', p: {} })
-    expect(parseRemoteRequest({ m: 'open', p: { id: 'abc', before: 40 } })).toEqual({ m: 'open', p: { id: 'abc', before: 40 } })
+    expect(parseRemoteRequest({ m: 'hello', p: { extra: 1 } })).toEqual({ m: 'hello', p: {} })
+    expect(parseRemoteRequest({ m: 'unwatch', p: {} })).toEqual({ m: 'unwatch', p: {} })
+    expect(parseRemoteRequest({ m: 'invoke', p: { ch: IpcInvoke.sessionsOpen, args: ['c1'] } })).toEqual({ m: 'invoke', p: { ch: 'sessions:open', args: ['c1'] } })
+    expect(parseRemoteRequest({ m: 'invoke', p: { ch: FilesInvoke.searchList, args: [] } })).toEqual({ m: 'invoke', p: { ch: 'files:search-list', args: [] } })
+  })
+
+  it('takes the chats to watch once each, and `fresh` only as true', () => {
     expect(parseRemoteRequest({ m: 'watch', p: { ids: ['a', 'a', 'b'] } })).toEqual({ m: 'watch', p: { ids: ['a', 'b'] } })
-    expect(parseRemoteRequest({ m: 'send', p: { id: 'abc', text: 'Los' } })).toEqual({ m: 'send', p: { id: 'abc', text: 'Los' } })
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: [], fresh: true } })).toEqual({ m: 'watch', p: { ids: [], fresh: true } })
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: ['a'], fresh: 'yes' } })).toEqual({ m: 'watch', p: { ids: ['a'] } })
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: ['a'], fresh: false } })).toEqual({ m: 'watch', p: { ids: ['a'] } })
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: Array.from({ length: 32 }, (_, i) => `c${i}`) } })).not.toBeNull()
   })
 
   it('refuses what isn’t one', () => {
     expect(parseRemoteRequest(null)).toBeNull()
-    expect(parseRemoteRequest({ m: 'delete', p: { id: 'abc' } })).toBeNull()
-    expect(parseRemoteRequest({ m: 'open', p: { id: '../x' } })).toBeNull()
-    expect(parseRemoteRequest({ m: 'open', p: { id: 'abc', before: -1 } })).toBeNull()
-    expect(parseRemoteRequest({ m: 'send', p: { id: 'abc', text: '   ' } })).toBeNull()
+    expect(parseRemoteRequest('hello')).toBeNull()
+    expect(parseRemoteRequest({ m: 1 })).toBeNull()
+    // Methods of the protocol before the window API went over it.
+    for (const m of ['chats', 'open', 'send', 'respond']) expect(parseRemoteRequest({ m, p: { id: 'c1' } })).toBeNull()
+    expect(parseRemoteRequest({ m: 'watch' })).toBeNull()
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: 'c1' } })).toBeNull()
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: ['../x'] } })).toBeNull()
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: [7] } })).toBeNull()
+    expect(parseRemoteRequest({ m: 'watch', p: { ids: ['x'.repeat(129)] } })).toBeNull()
     expect(parseRemoteRequest({ m: 'watch', p: { ids: Array.from({ length: 33 }, (_, i) => `c${i}`) } })).toBeNull()
   })
 
-  it('takes answers to the agent’s questions, item ids of the CLIs included', () => {
-    const request = parseRemoteRequest({ m: 'respond', p: { id: 'abc', itemId: 'ask:1b2c-3d', response: { type: 'permission', decision: 'allow' } } })
-    expect(request).toEqual({ m: 'respond', p: { id: 'abc', itemId: 'ask:1b2c-3d', response: { type: 'permission', decision: 'allow' } } })
-    expect(parseRemoteRequest({ m: 'respond', p: { id: 'abc', itemId: 'x', response: { type: 'permission', decision: 'sure' } } })).toBeNull()
+  it('refuses calls whose channel isn’t named like one, or with too many arguments', () => {
+    const invoke = (ch: unknown, args: unknown = []) => parseRemoteRequest({ m: 'invoke', p: { ch, args } })
+    for (const ch of ['Sessions:open', 'sessions', 'sessions:', ':open', 'sessions:open:x', '../x:y', 'sessions:open ', 'sessions:Open', '1x:y', `${'a'.repeat(33)}:y`, `x:${'a'.repeat(65)}`, 7, undefined]) {
+      expect(invoke(ch)).toBeNull()
+    }
+    // Named like one but not on the list: the host refuses it itself (`channelLevel`), with an answer.
+    expect(invoke('format:disk')).toEqual({ m: 'invoke', p: { ch: 'format:disk', args: [] } })
+    expect(invoke(IpcInvoke.sessionsOpen, Array.from({ length: 8 }, () => 0))).not.toBeNull()
+    expect(invoke(IpcInvoke.sessionsOpen, Array.from({ length: 9 }, () => 0))).toBeNull()
+    expect(invoke(IpcInvoke.sessionsOpen, 'c1')).toBeNull()
+    expect(invoke(IpcInvoke.sessionsOpen, { 0: 'c1', length: 1 })).toBeNull()
+    expect(parseRemoteRequest({ m: 'invoke', p: { ch: IpcInvoke.sessionsOpen } })).toBeNull()
   })
 })
 
 describe('parseInteractionResponse', () => {
   it('checks each shape', () => {
+    expect(parseInteractionResponse({ type: 'permission', decision: 'allow' })).toEqual({ type: 'permission', decision: 'allow' })
+    expect(parseInteractionResponse({ type: 'permission', decision: 'deny', message: 'Nein' })).toEqual({ type: 'permission', decision: 'deny', message: 'Nein' })
+    expect(parseInteractionResponse({ type: 'permission', decision: 'sure' })).toBeNull()
     expect(parseInteractionResponse({ type: 'question', answers: { Farbe: ['Blau'] } })).toEqual({ type: 'question', answers: { Farbe: ['Blau'] } })
     expect(parseInteractionResponse({ type: 'question', answers: { Farbe: 'Blau' } })).toBeNull()
     expect(parseInteractionResponse({ type: 'plan', approve: true, mode: 'auto' })).toMatchObject({ approve: true })
     expect(parseInteractionResponse({ type: 'plan', approve: true, mode: 'root' })).toBeNull()
+    expect(parseInteractionResponse({ type: 'elicitation', action: 'accept', content: { a: 1 } })).toMatchObject({ action: 'accept' })
+    expect(parseInteractionResponse({ type: 'elicitation', action: 'accept', content: 'a' })).toBeNull()
     expect(parseInteractionResponse({ type: 'form', action: 'submit', values: { n: 3, tags: ['a'] } })).toMatchObject({ action: 'submit' })
     expect(parseInteractionResponse({ type: 'form', action: 'submit', values: { n: { deep: 1 } } })).toBeNull()
+    expect(parseInteractionResponse({ type: 'shell' })).toBeNull()
+    expect(parseInteractionResponse(null)).toBeNull()
   })
 })
 
 describe('parseRemoteResponse', () => {
   it('reads results and errors; an unknown code counts as failed', () => {
     expect(parseRemoteResponse({ re: 'm1', r: null })).toEqual({ re: 'm1', r: null })
+    expect(parseRemoteResponse({ re: 'm1', r: undefined })).toEqual({ re: 'm1', r: undefined })
     expect(parseRemoteResponse({ re: 'm1', e: { code: 'forbidden', message: 'x' } })).toEqual({ re: 'm1', e: { code: 'forbidden', message: 'x' } })
     expect(parseRemoteResponse({ re: 'm1', e: { code: 'weird', message: 'x' } })).toMatchObject({ e: { code: 'failed' } })
+    expect(parseRemoteResponse({ re: 'm1', e: { code: 'failed' } })).toBeNull()
     expect(parseRemoteResponse({ re: 'm1' })).toBeNull()
+    expect(parseRemoteResponse({ r: 1 })).toBeNull()
+  })
+
+  it('cuts a long message of the host', () => {
+    const response = parseRemoteResponse({ re: 'm1', e: { code: 'failed', message: 'x'.repeat(5_000) } })
+    expect(response && 'e' in response && response.e.message).toHaveLength(1000)
   })
 
   it('has a German text for each error', () => {
     expect(remoteErrorText({ code: 'disabled', message: '' })).toMatch(/Fernsteuerung aus/)
+    expect(remoteErrorText({ code: 'busy', message: '' })).toMatch(/kommt gerade nicht hinterher/)
+    expect(remoteErrorText({ code: 'too-large', message: '' })).toMatch(/zu groß/)
     expect(remoteErrorText({ code: 'failed', message: 'Das Projekt der Session gibt es nicht mehr.' })).toBe('Das Projekt der Session gibt es nicht mehr.')
   })
 })
 
 describe('parseRemoteEvents', () => {
-  it('keeps what looks like events and drops the rest', () => {
+  it('keeps the window events another device gets and drops the rest', () => {
+    const session = (event: unknown) => ({ ch: IpcEvent.sessionEvent, args: [event] })
     const events = parseRemoteEvents({
       events: [
-        { type: 'item', sessionId: 's', item: user('u1') },
-        { type: 'delta', sessionId: 's', itemId: 'a1', field: 'text', text: 'Hal' },
-        { type: 'delta', sessionId: 's', itemId: 'a1', field: 'html', text: '<b>' },
-        { type: 'runtime', sessionId: 's', runtime: { status: 'running', connected: true } },
-        { type: 'chats' },
-        { type: 'item', sessionId: 's', item: { id: 'x' } },
+        session({ type: 'item', sessionId: 's', item: user('u1') }),
+        session({ type: 'delta', sessionId: 's', itemId: 'a1', field: 'text', text: 'Hal' }),
+        session({ type: 'delta', sessionId: 's', itemId: 'a1', field: 'html', text: '<b>' }),
+        session({ type: 'runtime', sessionId: 's', runtime: { status: 'running', connected: true } }),
+        session({ type: 'truncated', sessionId: 's', length: 3 }),
+        session({ type: 'truncated', sessionId: 's', length: 1.5 }),
+        session({ type: 'item', sessionId: 's', item: { id: 'x' } }),
+        session({ type: 'item', item: user('u2') }),
+        { ch: IpcEvent.settingsChanged, args: [{ theme: 'dark' }] },
+        // The host's own windows' business, not on the list.
+        { ch: IpcEvent.showSession, args: ['s'] },
+        { ch: IpcEvent.windowState, args: [{}] },
+        { ch: IpcEvent.settingsChanged },
         'nonsense',
+        null,
       ],
     })
-    expect(events?.map((e) => e.type)).toEqual(['item', 'delta', 'runtime', 'chats'])
+    expect(events).toEqual([
+      session({ type: 'item', sessionId: 's', item: user('u1') }),
+      session({ type: 'delta', sessionId: 's', itemId: 'a1', field: 'text', text: 'Hal' }),
+      session({ type: 'runtime', sessionId: 's', runtime: { status: 'running', connected: true } }),
+      session({ type: 'truncated', sessionId: 's', length: 3 }),
+      { ch: IpcEvent.settingsChanged, args: [{ theme: 'dark' }] },
+    ])
+  })
+
+  it('takes changes of lists, only for list events and with ids', () => {
+    const diff = { ids: ['a', 'b'], changed: [chat('b')] }
+    const events = parseRemoteEvents({
+      events: [
+        { ch: IpcEvent.sessionsChanged, diff },
+        { ch: IpcEvent.projectsChanged, diff: { ids: [], changed: [] } },
+        // Settings are no list.
+        { ch: IpcEvent.settingsChanged, diff },
+        { ch: IpcEvent.sectionsChanged, diff: { ids: [1], changed: [] } },
+        { ch: IpcEvent.accountsChanged, diff: { ids: ['a'], changed: [{ name: 'ohne id' }] } },
+        { ch: IpcEvent.accountsChanged, diff: { ids: ['a'], changed: 'a' } },
+        { ch: IpcEvent.accountsChanged, diff: ['a'] },
+      ],
+    })
+    expect(events).toEqual([
+      { ch: IpcEvent.sessionsChanged, diff },
+      { ch: IpcEvent.projectsChanged, diff: { ids: [], changed: [] } },
+    ])
+  })
+
+  it('refuses what has no events at all', () => {
+    expect(parseRemoteEvents(null)).toBeNull()
+    expect(parseRemoteEvents({ events: 'x' })).toBeNull()
+    expect(parseRemoteEvents({ events: [] })).toEqual([])
   })
 })
 
-describe('slimItem and pageOf', () => {
+describe('diffList and applyDiff', () => {
+  it('send a whole list the first time', () => {
+    const list = [chat('a'), chat('b')]
+    const change = diffList(list, new Map())!
+    expect(change.diff).toEqual({ ids: ['a', 'b'], changed: list })
+    expect(applyDiff(change.diff, new Map())).toEqual(list)
+  })
+
+  it('send only what changed and make the list whole again: added, changed, removed, reordered', () => {
+    const before = [chat('a'), chat('b'), chat('c'), chat('d')]
+    // `d` goes, `b` changes, `e` comes, and `c` moves to the front.
+    const after = [chat('c'), chat('a'), chat('b', 'Umbenannt'), chat('e')]
+    const change = diffList(after, hostBase(before))!
+    expect(change.diff).toEqual({ ids: ['c', 'a', 'b', 'e'], changed: [chat('b', 'Umbenannt'), chat('e')] })
+    expect(change.next).toEqual(hostBase(after))
+    expect(applyDiff(change.diff, clientBase(before))).toEqual(after)
+  })
+
+  it('send no entry for a list that stayed the same', () => {
+    const list = [chat('a'), chat('b')]
+    expect(diffList(list, hostBase(list))!.diff).toEqual({ ids: ['a', 'b'], changed: [] })
+    expect(diffList([], hostBase(list))!.diff).toEqual({ ids: [], changed: [] })
+  })
+
+  it('make no change of what isn’t a list of entries with ids', () => {
+    expect(diffList({ a: 1 }, new Map())).toBeNull()
+    expect(diffList([chat('a'), { title: 'ohne id' }], new Map())).toBeNull()
+    expect(diffList([{ id: 7 }], new Map())).toBeNull()
+    expect(diffList(['a'], new Map())).toBeNull()
+  })
+
+  it('can’t apply a change whose base is missing on this side', () => {
+    const before = [chat('a'), chat('b')]
+    const change = diffList([chat('a'), chat('b'), chat('c')], hostBase(before))!
+    // This side lost `b` (or never had it): the list can't be made whole.
+    expect(applyDiff(change.diff, clientBase([chat('a')]))).toBeNull()
+    expect(applyDiff(change.diff, new Map())).toBeNull()
+  })
+})
+
+describe('jsonBytes', () => {
+  it('counts UTF-8 bytes of the JSON', () => {
+    expect(jsonBytes('a')).toBe(3)
+    expect(jsonBytes('ä')).toBe(4)
+    expect(jsonBytes('漢')).toBe(5)
+    expect(jsonBytes('😀')).toBe(6)
+    expect(jsonBytes(undefined)).toBe(0)
+  })
+
+  it('counts what can’t be JSON as too large', () => {
+    const loop: Record<string, unknown> = {}
+    loop.self = loop
+    expect(jsonBytes(loop)).toBe(Infinity)
+    expect(jsonBytes(1n)).toBe(Infinity)
+  })
+})
+
+describe('slimItem', () => {
   it('cuts long output from its start and leaves out what only works at the host', () => {
     const tool: ChatItem = {
       kind: 'tool',
@@ -110,10 +304,19 @@ describe('slimItem and pageOf', () => {
     } as ChatItem
     const slim = slimItem(tool) as Extract<ChatItem, { kind: 'tool' }>
     expect(slim.output!.endsWith('ENDE')).toBe(true)
+    expect(slim.output!.startsWith('… (gekürzt)\n')).toBe(true)
     expect(slim.output!.length).toBeLessThan(REMOTE_TEXT_LIMIT + 20)
     expect(slim.app).toBeUndefined()
     const withImage = slimItem({ ...user('u1'), images: ['C:\\bild.png'] } as ChatItem) as Extract<ChatItem, { kind: 'user' }>
     expect(withImage.images).toBeUndefined()
+    expect(withImage.text).toBe('Hallo')
+  })
+
+  it('leaves short items as they are', () => {
+    const item = user('u1')
+    expect(slimItem(item)).toEqual(item)
+    const other: ChatItem = { kind: 'notice', id: 'n1', ts: 1, provider: 'claude', level: 'error', text: 'x'.repeat(REMOTE_TEXT_LIMIT * 2) }
+    expect(slimItem(other)).toBe(other)
   })
 
   it('cuts by UTF-8 bytes, so umlauts and CJK stay within the limit too', () => {
@@ -123,9 +326,19 @@ describe('slimItem and pageOf', () => {
       // No half character at the cut.
       expect(answer.text).not.toContain('\uFFFD')
       expect(answer.text.startsWith(char)).toBe(true)
+      expect(answer.text.endsWith('\n… (gekürzt)')).toBe(true)
     }
     const tool = slimItem({ kind: 'tool', id: 't', ts: 1, provider: 'claude', tool: 'bash', title: 'Bash', status: 'done', startedAt: 1, output: `${'ö'.repeat(5_000)}SCHLUSS` } as ChatItem, 1024)
     expect((tool as Extract<ChatItem, { kind: 'tool' }>).output!.endsWith('SCHLUSS')).toBe(true)
+  })
+
+  it('leaves out a tool’s input and rendering when they are too large', () => {
+    const big = { kind: 'tool', id: 't', ts: 1, provider: 'claude', tool: 'write', title: 'Write', status: 'done', startedAt: 1, input: { content: 'x'.repeat(2_000) }, render: { rows: ['y'.repeat(2_000)] } } as unknown as ChatItem
+    const slim = slimItem(big, 1024) as Extract<ChatItem, { kind: 'tool' }>
+    expect(slim.input).toBeUndefined()
+    expect(slim.render).toBeUndefined()
+    const small = slimItem({ ...big, input: { path: 'a.ts' } } as ChatItem, 1024) as Extract<ChatItem, { kind: 'tool' }>
+    expect(small.input).toEqual({ path: 'a.ts' })
   })
 
   it('leaves out the texts of many changed files before the changes', () => {
@@ -133,42 +346,17 @@ describe('slimItem and pageOf', () => {
     const tool = slimItem({ kind: 'tool', id: 't', ts: 1, provider: 'claude', tool: 'edit', title: 'Edit', status: 'done', startedAt: 1, changes } as ChatItem, 1024) as Extract<ChatItem, { kind: 'tool' }>
     expect(tool.changes).toHaveLength(30)
     expect(tool.changes!.every((c) => c.oldText === undefined && c.path)).toBe(true)
+
+    const huge = Array.from({ length: 30 }, (_, i) => ({ path: `f${i}.ts`, type: 'update' as const, diff: 'd'.repeat(1_000) }))
+    const without = slimItem({ kind: 'tool', id: 't', ts: 1, provider: 'claude', tool: 'edit', title: 'Edit', status: 'done', startedAt: 1, changes: huge } as ChatItem, 1024) as Extract<ChatItem, { kind: 'tool' }>
+    expect(without.changes).toBeUndefined()
   })
 
-  it('fits the list of chats into a small message: previews first, then the oldest', () => {
-    const sessions = Array.from({ length: 200 }, (_, i) => ({ id: `c${i}`, projectId: 'p', title: `Chat ${i}`, provider: 'claude' as const, model: 'opus', createdAt: 1, updatedAt: 200 - i, preview: 'Vorschau '.repeat(20), pinned: i === 150 }))
-    const chats = { projects: [{ id: 'p', name: 'nexa', path: 'F:\\nexa' }], sessions, runtimes: {} }
-    expect(fitChats(chats, 1_000_000)).toBe(chats)
-    const fitted = fitChats(chats, 8 * 1024)
-    expect(jsonBytes(fitted)).toBeLessThanOrEqual(8 * 1024)
-    expect(fitted.sessions[0]).not.toHaveProperty('preview')
-    expect(fitted.sessions.some((s) => s.id === 'c150')).toBe(true)
-    expect(fitted.sessions.some((s) => s.id === 'c0')).toBe(true)
-    expect(fitted.sessions.length).toBeLessThan(200)
-  })
-
-  it('pages from the end backwards, within the size of a bundle', () => {
-    const items = Array.from({ length: 500 }, (_, i) => user(`u${i}`))
-    const last = pageOf(items)
-    expect(last.start).toBe(200)
-    expect(last.items.at(-1)?.id).toBe('u499')
-    const before = pageOf(items, last.start)
-    expect(before).toMatchObject({ start: 0 })
-    expect(before.items.at(-1)?.id).toBe('u199')
-
-    const big = Array.from({ length: 20 }, (_, i) => user(`b${i}`, 'x'.repeat(100_000)))
-    const page = pageOf(big)
-    expect(JSON.stringify(page.items).length).toBeLessThanOrEqual(REMOTE_BATCH_BYTES)
-    expect(page.items.length).toBeGreaterThan(0)
-    // One item larger than a page still makes one, so the chat goes on.
-    expect(pageOf([user('huge', 'y'.repeat(4 * REMOTE_TEXT_LIMIT))]).items).toHaveLength(1)
-  })
-})
-
-describe('remote chat ids', () => {
-  it('name device and chat, and come apart again', () => {
-    const id = remoteChatId('inst-1', 'chat_2')
-    expect(parseRemoteChatId(id)).toEqual({ instance: 'inst-1', sessionId: 'chat_2' })
-    expect(parseRemoteChatId('chat_2')).toBeNull()
+  it('cuts a subagent’s prompt and result', () => {
+    const agent = { kind: 'agent', id: 'g', ts: 1, provider: 'claude', agentType: 'Explore', description: 'Suche', status: 'done', prompt: 'p'.repeat(2_000), result: 'r'.repeat(2_000) } as ChatItem
+    const slim = slimItem(agent, 1024) as Extract<ChatItem, { kind: 'agent' }>
+    expect(slim.prompt!.length).toBeLessThan(1024 + 20)
+    expect(slim.result!.startsWith('r')).toBe(true)
+    expect(slim.result!.length).toBeLessThan(1024 + 20)
   })
 })

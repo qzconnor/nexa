@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { TriangleAlertIcon } from '@lucide/vue'
+import { MonitorIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import type { PermissionMode, ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
@@ -13,6 +13,8 @@ import { attempt } from '@/lib/errors'
 import { andList } from '@/lib/format'
 import { provideProjectPath } from '@/composables/useProjectPath'
 import { useAccountsStore } from '@/stores/accounts'
+import { useDevice, useDeviceApi } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useSessionsStore } from '@/stores/sessions'
@@ -29,6 +31,14 @@ const projects = useProjectsStore()
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
+/** The start page of another device (Remote Control): its projects, CLIs and defaults; the chat runs there. */
+const device = useDevice()
+const api = useDeviceApi()
+const devices = useDevicesStore()
+const deviceName = computed(() => (device ? (devices.devices.find((d) => d.id === device)?.name ?? 'dem anderen Gerät') : null))
+/** Its settings change only where it gives this device everything: elsewhere what is picked here stays here. */
+const canSaveDefaults = computed(() => devices.can(device, 'full'))
+const canStart = computed(() => devices.can(device, 'prompt'))
 
 /** A mode the CLI knows: Codex has no "auto", for example. */
 function supportedMode(id: ProviderId, value: PermissionMode): PermissionMode {
@@ -79,34 +89,38 @@ watch(
  * What the start page picks becomes the default for new chats: it is what the next chat should start
  * with, and it stays after a restart. Chats keep their own choice in their session.
  */
+function saveDefault(patch: DeepPartial<AppSettings>): void {
+  if (canSaveDefaults.value) void attempt(() => settings.update(patch), 'Vorgabe ließ sich nicht speichern')
+}
+
 function pickProvider(id: ProviderId): void {
   provider.value = id
-  void attempt(() => settings.update({ defaults: { provider: id } }), 'Vorgabe ließ sich nicht speichern')
+  saveDefault({ defaults: { provider: id } })
 }
 
 function pickModel(value: string): void {
   model.value = value
   const patch: DeepPartial<AppSettings> = {}
   patch[provider.value] = { model: value }
-  void attempt(() => settings.update(patch), 'Vorgabe ließ sich nicht speichern')
+  saveDefault(patch)
 }
 
 function pickEffort(value: string): void {
   effort.value = value
   const patch: DeepPartial<AppSettings> = {}
   patch[provider.value] = { effort: value }
-  void attempt(() => settings.update(patch), 'Vorgabe ließ sich nicht speichern')
+  saveDefault(patch)
 }
 
 function pickMode(value: PermissionMode): void {
   mode.value = value
-  void attempt(() => settings.update({ defaults: { permissionMode: value } }), 'Vorgabe ließ sich nicht speichern')
+  saveDefault({ defaults: { permissionMode: value } })
 }
 
 function pickAccount(id: string): void {
   account.value = id
   const chosen = accounts.get(id)
-  if (chosen) void attempt(() => accounts.setDefault(chosen), 'Vorgabe ließ sich nicht speichern')
+  if (chosen && canSaveDefaults.value) void attempt(() => accounts.setDefault(chosen), 'Vorgabe ließ sich nicht speichern')
 }
 
 const project = computed(() => projects.get(ui.homeProjectId) ?? projects.projects[0])
@@ -131,6 +145,8 @@ async function pickFolder(): Promise<void> {
 /** A new chat in the picked project (the folder asked for first when there is none), then `first` in it. */
 async function start(first: (id: string) => Promise<unknown>, failed: string): Promise<void> {
   let target = project.value
+  // Another device's folders aren't picked from here: it needs a project first (sidebar, on it).
+  if (!target && device) return
   if (!target) {
     await pickFolder()
     target = project.value
@@ -161,7 +177,7 @@ async function start(first: (id: string) => Promise<unknown>, failed: string): P
 
 const send = (input: { text: string; images: string[] }) => start((id) => sessions.send(id, input), 'Senden fehlgeschlagen')
 // A command first (`!`): the chat begins with it, the first prompt then hands it to the CLI.
-const runShell = (command: string) => start((id) => window.api.sessions.runShell(id, command), 'Befehl ließ sich nicht ausführen')
+const runShell = (command: string) => start((id) => api.sessions.runShell(id, command), 'Befehl ließ sich nicht ausführen')
 </script>
 
 <template>
@@ -170,6 +186,10 @@ const runShell = (command: string) => start((id) => window.api.sessions.runShell
       <div class="flex flex-col items-center gap-3 text-center">
         <AppLogo class="size-12" />
         <h1 class="text-2xl font-semibold tracking-tight">Woran arbeiten wir?</h1>
+        <!-- Whose start page this is: the chat runs there, with its folders and CLIs. -->
+        <p v-if="deviceName" class="flex items-center gap-1.5 rounded-full border bg-card/60 px-2.5 py-0.5 text-xs text-muted-foreground">
+          <MonitorIcon class="size-3.5" /> Auf {{ deviceName }}
+        </p>
         <p class="text-sm text-muted-foreground">{{ tagline }}</p>
       </div>
 
@@ -191,17 +211,22 @@ const runShell = (command: string) => start((id) => window.api.sessions.runShell
           @update:effort="pickEffort"
           @update:mode="pickMode"
           @update:ultracode="ultracode = $event"
-          :disabled="!anyReady || starting"
+          :disabled="!anyReady || starting || !canStart || (!project && !!device)"
           autofocus
           @send="send"
           @shell="runShell"
         />
-        <p v-if="!project && anyReady" class="text-xs text-muted-foreground">Mit dem ersten Prompt fragt Nexa nach dem Ordner, in dem gearbeitet wird.</p>
+        <p v-if="!canStart" class="text-xs text-muted-foreground">{{ deviceName }} lässt dieses Gerät nur mitlesen: Neue Chats startest du dort.</p>
+        <p v-else-if="!project && device" class="text-xs text-muted-foreground">Auf {{ deviceName }} gibt es noch kein Projekt. Leg dort eins an, dann geht es hier weiter.</p>
+        <p v-else-if="!project && anyReady" class="text-xs text-muted-foreground">Mit dem ersten Prompt fragt Nexa nach dem Ordner, in dem gearbeitet wird.</p>
         <!-- What the CLIs lack is in the settings; here only that something does. -->
         <div v-if="providers.checked && !anyReady" class="flex items-center gap-3 rounded-xl border border-warning/40 bg-card/60 px-4 py-3 text-sm">
           <TriangleAlertIcon class="size-4 shrink-0 text-warning" />
-          <span class="min-w-0 flex-1 text-muted-foreground">Keine CLI ist bereit. Unter Einstellungen › CLIs siehst du, was fehlt.</span>
-          <Button variant="outline" size="sm" @click="ui.openSettings('providers')">Öffnen</Button>
+          <span v-if="device" class="min-w-0 flex-1 text-muted-foreground">Auf {{ deviceName }} ist keine CLI bereit. Dort unter Einstellungen › CLIs steht, was fehlt.</span>
+          <template v-else>
+            <span class="min-w-0 flex-1 text-muted-foreground">Keine CLI ist bereit. Unter Einstellungen › CLIs siehst du, was fehlt.</span>
+            <Button variant="outline" size="sm" @click="ui.openSettings('providers')">Öffnen</Button>
+          </template>
         </div>
       </div>
     </div>

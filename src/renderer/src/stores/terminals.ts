@@ -39,7 +39,7 @@ function isLocal(url: string): boolean {
  * the panel, so its screen stays when the chat is left or the panel closed.
  */
 export const useTerminalsStore = defineStore('terminals', () => {
-  const settings = useSettingsStore()
+  const settings = useSettingsStore(null)
   const themes = useThemesStore()
   const browsers = useBrowsersStore()
 

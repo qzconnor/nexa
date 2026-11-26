@@ -133,8 +133,8 @@ export interface Touch {
  */
 export const useFileTreeStore = defineStore('file-tree', () => {
   const app = useAppStore()
-  const sessions = useSessionsStore()
-  const projects = useProjectsStore()
+  const sessions = useSessionsStore(null)
+  const projects = useProjectsStore(null)
   const saved = readSaved()
 
   const width = ref(clampWidth(typeof saved.width === 'number' ? saved.width : DEFAULT_TREE_WIDTH))

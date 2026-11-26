@@ -36,6 +36,7 @@ const api = {
   projects: { list: vi.fn(async () => [{ id: 'p', name: 'dev', path: 'C:\\dev' }]), onChanged: () => () => {}, sections: vi.fn(async () => []), onSectionsChanged: () => () => {} },
   sessions: {
     list: vi.fn(async () => metas),
+    runtimes: vi.fn(async () => ({})),
     onChanged: (cb: typeof metasChanged) => {
       metasChanged = cb
       return () => {}

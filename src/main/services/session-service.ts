@@ -308,7 +308,7 @@ export class SessionService extends TypedEmitter<Events> {
     return this.sessions.get(id)?.runtime.status ?? null
   }
 
-  /** What each chat that isn't idle does, for a list on another device (Remote Control). */
+  /** What each chat that isn't idle does: for a window that comes later, and for other devices (Remote Control). */
   activeRuntimes(): Record<string, SessionRuntime> {
     const result: Record<string, SessionRuntime> = {}
     for (const s of this.sessions.values()) if (s.runtime.status !== 'idle') result[s.meta.id] = s.runtime

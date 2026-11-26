@@ -12,11 +12,14 @@ import {
   ShieldQuestionIcon,
   SmartphoneIcon,
   Trash2Icon,
+  UnplugIcon,
 } from '@lucide/vue'
 import { useIntervalFn } from '@vueuse/core'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { toast } from 'vue-sonner'
 import { decodePairingCode, isPairingCode } from '@shared/nexa-server/pairing-code'
 import { isRemoteLevel, REMOTE_LEVEL_LABELS, REMOTE_LEVELS } from '@shared/remote'
+import type { RemoteController } from '@shared/remote-ipc'
 import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type ServerLinkState } from '@shared/server-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -186,6 +189,22 @@ async function rename(device: LinkedDevice): Promise<void> {
 
 /** The other devices, each with what it may do here; untrusted ones get nothing whatever their level. */
 const others = computed(() => state.value.devices.filter((d) => !d.self))
+
+/** The devices that have this one's chats open right now: no bar over the page says so, this list does. */
+const controllers = ref<RemoteController[]>([])
+const offControllers = window.api.remote.onControllers((list) => (controllers.value = list))
+onMounted(() => void window.api.remote.controllers().then((list) => (controllers.value = list), () => undefined))
+onBeforeUnmount(offControllers)
+const controllerOf = (device: LinkedDevice) => controllers.value.find((c) => c.id === device.id)
+
+/** „Trennen“: its level here goes to „Aus“ until the user raises it again. */
+async function disconnect(device: LinkedDevice): Promise<void> {
+  const done = await attempt(async () => {
+    await window.api.remote.disconnect(device.id)
+    return true
+  }, 'Trennen fehlgeschlagen')
+  if (done) toast.success(`„${device.name}“ getrennt`, { description: 'Es darf hier nichts mehr, bis du es wieder erlaubst.' })
+}
 
 function setRemote(on: boolean): void {
   void attempt(() => link.setRemote(on), on ? 'Einschalten fehlgeschlagen' : 'Ausschalten fehlgeschlagen')
@@ -363,7 +382,7 @@ async function remove(device: LinkedDevice): Promise<void> {
       <SettingsSection
         anchor="devices.remote"
         title="Fernsteuerung"
-        description="Deine anderen Geräte sehen die Chats dieses Geräts auf ihrer Seite „Geräte“ und dürfen, so weit du es hier erlaubst, Prompts senden, abbrechen und Rückfragen beantworten."
+        description="Deine anderen Geräte zeigen die Chats dieses Geräts in ihrer Seitenleiste und dürfen sie, so weit du es hier erlaubst, bedienen wie du hier: mitlesen, Prompts senden, Chats ordnen oder alles im Dock einstellen."
       >
         <SettingField
           anchor="devices.remoteEnabled"
@@ -378,7 +397,19 @@ async function remove(device: LinkedDevice): Promise<void> {
             <div class="flex min-w-0 flex-1 flex-col">
               <span class="truncate text-sm">{{ device.name }}</span>
               <span v-if="!device.trusted" class="truncate text-xs text-warning">Nicht bestätigt: bekommt nichts, bis es sich ausweist</span>
+              <span v-else-if="controllerOf(device)" class="truncate text-xs text-success">
+                Verbunden seit {{ formatClock(controllerOf(device)!.since) }} Uhr
+              </span>
             </div>
+            <Button
+              v-if="controllerOf(device)"
+              variant="ghost"
+              size="xs"
+              v-tooltip="`„${device.name}“ darf hier nichts mehr, bis du es wieder erlaubst`"
+              @click="disconnect(device)"
+            >
+              <UnplugIcon data-icon="inline-start" /> Trennen
+            </Button>
             <Select :model-value="device.level" @update:model-value="(v) => setLevel(device, v)">
               <SelectTrigger class="min-w-56 bg-background/60" :aria-label="`Was „${device.name}“ darf`"><SelectValue /></SelectTrigger>
               <SelectContent>

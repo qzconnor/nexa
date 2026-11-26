@@ -8,6 +8,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatTokens } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useDeviceApi } from '@/stores/device'
 
 /**
  * The context ring of the composer; hovered, what fills the context by kind, as the CLI counts it
@@ -15,6 +16,8 @@ import { cn } from '@/lib/utils'
  */
 /** `compacting`: the CLI summarizes the conversation right now; what the ring showed is about to shrink. */
 const props = defineProps<{ sessionId?: string; provider: ProviderId; context: ContextUsage; busy?: boolean; compacting?: boolean }>()
+/** The chat may be another device's: its CLI and shells run there. */
+const api = useDeviceApi()
 
 const detail = ref<ContextDetail | null>(null)
 const loading = ref(false)
@@ -30,7 +33,7 @@ async function load(): Promise<void> {
   if (!id || loading.value) return
   loading.value = true
   try {
-    const next = await window.api.sessions.context(id)
+    const next = await api.sessions.context(id)
     if (id !== props.sessionId) return
     if (next) detail.value = next
     none.value = !next && !detail.value
