@@ -387,6 +387,8 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
             Effort, Modus aus dem, was dort da ist), Bearbeiten von Prompts, Bilder im Prompt, neuer Chat
             in einem ihrer Projekte. Die Fenster-API geht als `invoke` über den Server, zu große Nachrichten
             in Teilen (`rc.part`). Gegen den Test-Server geprüft, ungeprüft mit zwei Rechnern.
+      - [x] Abgleich fein einstellbar (Einstellungen › Geräte, in Gruppen): Auf- und Zuklappen, Reihenfolge,
+            Anheften, Archiv, Namen, Vorgaben der Startseite und Anzeige im Chat gemeinsam oder je Gerät.
       - [ ] Bilder und Dateien im Verlauf eines Chats vom anderen Gerät zeigen (bisher Pfade dort).
       - [ ] Schnellsuche (Strg+K) und Tastenkürzel über die Chats der anderen Geräte.
       - [ ] Dateibaum, Änderungen und MCP Apps eines Chats auf einem anderen Gerät.

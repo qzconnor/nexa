@@ -20,6 +20,7 @@ import { toast } from 'vue-sonner'
 import { decodePairingCode, isPairingCode } from '@shared/nexa-server/pairing-code'
 import { isRemoteLevel, REMOTE_LEVEL_LABELS, REMOTE_LEVELS } from '@shared/remote'
 import type { RemoteController } from '@shared/remote-ipc'
+import { SYNC_GROUPS, type SyncGroup, type SyncKey } from '@shared/remote-sync'
 import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type ServerLinkState } from '@shared/server-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,8 +31,10 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { attempt, errorMessage } from '@/lib/errors'
 import { formatClock, formatRelative, formatSpan } from '@/lib/format'
+import { useSettingsFilter } from '@/composables/useSettingsSearch'
 import { cn } from '@/lib/utils'
 import { useServerLinkStore } from '@/stores/server-link'
+import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import SettingField from './SettingField.vue'
 import SettingsSection from './SettingsSection.vue'
@@ -212,6 +215,24 @@ function setRemote(on: boolean): void {
 
 function setLevel(device: LinkedDevice, level: unknown): void {
   if (isRemoteLevel(level)) void attempt(() => link.setLevel(device.id, level), 'Ändern fehlgeschlagen')
+}
+
+// --- What is shared with a device this one controls ------------------------------------------------
+
+const settings = useSettingsStore()
+const filter = useSettingsFilter()
+const sync = computed(() => settings.settings.remote.sync)
+const onCount = (group: SyncGroup) => group.items.filter((item) => sync.value[item.key]).length
+/** A group shows while one of its rows matches the search. */
+const groupShown = (group: SyncGroup) => group.items.some((item) => filter.shows(`devices.sync.${item.key}`))
+
+function setSync(patch: Partial<Record<SyncKey, boolean>>): void {
+  void attempt(() => settings.update({ remote: { sync: patch } }), 'Ändern fehlgeschlagen')
+}
+
+/** A group's switch: all of its rows at once. */
+function setGroup(group: SyncGroup, on: boolean): void {
+  setSync(Object.fromEntries(group.items.map((item) => [item.key, on])))
 }
 
 async function remove(device: LinkedDevice): Promise<void> {
@@ -418,6 +439,39 @@ async function remove(device: LinkedDevice): Promise<void> {
             </Select>
           </li>
         </ul>
+      </SettingsSection>
+
+      <SettingsSection
+        anchor="devices.sync"
+        title="Abgleich mit anderen Geräten"
+        description="Wenn du hier die Chats eines anderen Geräts bedienst. An: Beide Geräte zeigen dasselbe, was du hier änderst, gilt auch dort. Aus: Jedes Gerät behält seins, was du hier änderst, bleibt hier."
+      >
+        <div v-for="group in SYNC_GROUPS" v-show="groupShown(group)" :key="group.id" class="flex flex-col rounded-lg border bg-background/40 px-3 py-2">
+          <div class="flex items-center gap-3 py-1">
+            <div class="flex min-w-0 flex-1 flex-col">
+              <!-- Above its rows, whose labels are the settings' usual ones. -->
+              <span class="text-[0.95rem] font-semibold">{{ group.label }}</span>
+              <span class="text-xs text-muted-foreground">
+                {{ group.description }}
+                <template v-if="onCount(group) && onCount(group) < group.items.length"> · {{ onCount(group) }} von {{ group.items.length }} an</template>
+              </span>
+            </div>
+            <!-- On while every row is: switching it sets them all. -->
+            <Switch
+              :model-value="onCount(group) === group.items.length"
+              :aria-label="`${group.label}: alle abgleichen`"
+              @update:model-value="(on: boolean) => setGroup(group, on)"
+            />
+          </div>
+          <div class="mt-1 flex flex-col gap-3 border-t pt-3 pb-1 pl-4">
+            <SettingField v-for="item in group.items" :key="item.key" :anchor="`devices.sync.${item.key}`" :label="item.label">
+              <Switch :model-value="sync[item.key]" @update:model-value="(on: boolean) => setSync({ [item.key]: on })" />
+            </SettingField>
+          </div>
+        </div>
+        <p class="text-xs text-muted-foreground">
+          Unterordner in Projekten klappen immer nur hier auf. Was ein Gerät dir nicht erlaubt, bleibt ebenfalls hier, auch wenn es an ist.
+        </p>
       </SettingsSection>
     </template>
   </div>

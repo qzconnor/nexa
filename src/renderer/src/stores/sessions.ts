@@ -3,6 +3,7 @@ import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from
 import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
 import { useChatWindowsStore } from './chat-windows'
 import { apiOf, scopedStore, useShownDeviceStore } from './device'
+import { useKeptHereStore } from './kept-here'
 import { useProjectsStore } from './projects'
 
 /** The chat of an opened session. */
@@ -36,7 +37,12 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
   const all = ref<SessionMeta[]>([])
   /** Deleted, but for a few seconds still to be brought back (useChatRemoval): gone from every list. */
   const hidden = reactive(new Set<string>())
-  const metas = computed(() => (hidden.size ? all.value.filter((m) => !hidden.has(m.id)) : all.value))
+  /** Another device's: with what this one keeps of its chats for itself (pins, archive, titles). */
+  const kept = device ? useKeptHereStore(device) : null
+  const metas = computed(() => {
+    const list = hidden.size ? all.value.filter((m) => !hidden.has(m.id)) : all.value
+    return kept ? list.map(kept.chatView) : list
+  })
   const runtimes = reactive(new Map<string, SessionRuntime>())
   const chats = shallowReactive(new Map<string, SessionChat>())
   const activeId = ref<string | null>(null)
@@ -241,7 +247,9 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
   }
 
   async function update(id: string, patch: SessionUpdateInput): Promise<void> {
-    const meta = await api.sessions.update(id, { ...patch })
+    const send = kept ? kept.keepChat(id, patch) : patch
+    if (!Object.keys(send).length) return
+    const meta = await api.sessions.update(id, { ...send })
     const at = all.value.findIndex((m) => m.id === id)
     if (at >= 0) all.value[at] = meta
   }
@@ -282,6 +290,7 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
   function forget(ids: readonly string[]): void {
     const gone = new Set(ids)
     all.value = all.value.filter((m) => !gone.has(m.id))
+    kept?.drop('sessions', ids)
     for (const id of gone) {
       chats.delete(id)
       runtimes.delete(id)

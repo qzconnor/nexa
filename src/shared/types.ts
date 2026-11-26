@@ -1,5 +1,6 @@
 import type { ChatItem, ContextUsage, PermissionMode, ProviderId, SessionRuntime } from './chat'
 import type { WorktreeBaseChoice } from './files'
+import type { SyncSettings } from './remote-sync'
 
 export type { DeepPartial } from './utils'
 
@@ -217,6 +218,10 @@ export interface AppSettings {
   tools: ToolSettings
   notifications: NotificationSettings
   api: ApiSettings
+  /** Remote Control from this device: what it and another one it controls share (`shared/remote-sync.ts`). */
+  remote: {
+    sync: SyncSettings
+  }
   setup: {
     /** The first start's setup (which CLIs to use) is through; until then it takes the start page's place. */
     done: boolean

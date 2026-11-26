@@ -36,8 +36,6 @@ const device = useDevice()
 const api = useDeviceApi()
 const devices = useDevicesStore()
 const deviceName = computed(() => (device ? (devices.devices.find((d) => d.id === device)?.name ?? 'dem anderen Gerät') : null))
-/** Its settings change only where it gives this device everything: elsewhere what is picked here stays here. */
-const canSaveDefaults = computed(() => devices.can(device, 'full'))
 const canStart = computed(() => devices.can(device, 'prompt'))
 
 /** A mode the CLI knows: Codex has no "auto", for example. */
@@ -89,8 +87,9 @@ watch(
  * What the start page picks becomes the default for new chats: it is what the next chat should start
  * with, and it stays after a restart. Chats keep their own choice in their session.
  */
+// On another device they stay on this one where they aren't shared or allowed (`useKeptHereStore`).
 function saveDefault(patch: DeepPartial<AppSettings>): void {
-  if (canSaveDefaults.value) void attempt(() => settings.update(patch), 'Vorgabe ließ sich nicht speichern')
+  void attempt(() => settings.update(patch), 'Vorgabe ließ sich nicht speichern')
 }
 
 function pickProvider(id: ProviderId): void {
@@ -120,7 +119,7 @@ function pickMode(value: PermissionMode): void {
 function pickAccount(id: string): void {
   account.value = id
   const chosen = accounts.get(id)
-  if (chosen && canSaveDefaults.value) void attempt(() => accounts.setDefault(chosen), 'Vorgabe ließ sich nicht speichern')
+  if (chosen) void attempt(() => accounts.setDefault(chosen), 'Vorgabe ließ sich nicht speichern')
 }
 
 const project = computed(() => projects.get(ui.homeProjectId) ?? projects.projects[0])

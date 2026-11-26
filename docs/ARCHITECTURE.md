@@ -734,6 +734,13 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   `useShownDeviceStore` merkt sich, wessen Chat oder Startseite der Hauptbereich zeigt; ein Chat eines
   Geräts schließt den offenen der anderen. Welche Geräte gerade die Chats dieses Geräts offen haben,
   steht unter Einstellungen › Geräte › Fernsteuerung, mit „Trennen“ (Stufe „Aus“).
+- **Abgleich mit anderen Geräten** (Einstellungen › Geräte, `settings.remote.sync`, Gruppen und Stufen in
+  `shared/remote-sync.ts`): je Punkt, ob dieses und ein gesteuertes Gerät dasselbe zeigen (Auf- und
+  Zuklappen, Reihenfolge, Anheften, Archiv, Namen, Vorgaben der Startseite, Anzeige im Chat). Was nicht
+  geteilt wird oder das Gerät nicht erlaubt, hält `stores/kept-here.ts` je Gerät im `localStorage`; die
+  Stores des Geräts zeigen ihre Listen und Einstellungen durch ihn (`projectsView`, `chatView`,
+  `settingsView`) und schicken nur den Rest. Ein umgeschalteter Punkt vergisst, was dazu hier lag. Theme
+  und Schriften kommen bei einem anderen Gerät immer von diesem.
 - **Benachrichtigungen der Agents** (`composables/useAgentNotifications.ts`, in jedem Fenster): Toasts zu
   `notify` mit Chat, Text und Knöpfen (`AgentNotificationBody` als Beschreibung des Sonner-Toasts, dessen
   eigener Platz nur einen Knopf fasst). Ein Knopf oder das Schließen antwortet Main genau einmal;

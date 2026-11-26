@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SYNC_KEYS } from '@shared/remote-sync'
 import { searchTerms } from '@shared/utils'
 import { matchSettings, settingsIndex } from './settings-index'
 
@@ -31,6 +32,8 @@ describe('settingsIndex', () => {
       // The cards of the CLIs: `:anchor="id"` and `cliAnchor(id, 'row')` for each CLI.
       if (source.includes(':anchor="id"')) ['claude', 'codex', 'antigravity'].forEach((id) => used.add(id))
       for (const m of source.matchAll(/cliAnchor\(id, '(\w+)'\)/g)) ['claude', 'codex', 'antigravity'].forEach((id) => used.add(`${id}.${m[1]}`))
+      // The rows of what is shared with another device, one per key of `SYNC_GROUPS`.
+      if (source.includes(':anchor="`devices.sync.${item.key}`"')) SYNC_KEYS.forEach((key) => used.add(`devices.sync.${key}`))
     }
     for (const anchor of used) expect(ids.has(anchor as never), anchor).toBe(true)
     for (const id of ids) expect(used.has(id), id).toBe(true)

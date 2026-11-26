@@ -222,9 +222,14 @@ export class DeviceChannel {
    * the last one of its message came. In the order they came.
    */
   receive(msg: RelayedMessage): Promise<OpenedMessage | null> {
+    // Opened side by side, which takes each its own time; taken in, pieces too, in the order they came:
+    // a message is whole with its last piece, not with whichever was opened last.
     const opened = this.open(msg)
     opened.catch(() => undefined)
-    const result = this.receiving.then(() => opened)
+    const result = this.receiving.then(async () => {
+      const message = await opened
+      return message?.kind === PART_KIND ? this.piece(msg.from, message.data) : message
+    })
     this.receiving = result.catch(() => undefined)
     return result
   }
@@ -238,7 +243,7 @@ export class DeviceChannel {
     const opened = key && (await openSealed({ from: msg.from, to: msg.to, kind: msg.kind, id: msg.id }, sealed, key))
     if (!opened || !(await verifyOpened(opened, member.signKey))) return null
     if (!this.guard.accept(msg.from, msg.id, opened.at, this.now())) return null
-    if (msg.kind === PART_KIND) return this.piece(msg.from, opened.data)
+    // A piece too: `receive` puts it into its message.
     return { kind: msg.kind, id: msg.id, data: opened.data }
   }
 
