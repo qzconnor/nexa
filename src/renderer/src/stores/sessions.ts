@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
+import { parseRemoteChatId } from '@shared/remote'
 import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
 import { useChatWindowsStore } from './chat-windows'
 import { useProjectsStore } from './projects'
@@ -23,6 +24,8 @@ const IDLE: SessionRuntime = { status: 'idle', connected: false }
  * Every session (sidebar), the runtime of those that run, and the chat of the ones opened in this
  * window. The main process sends each item and each piece of streamed text; a chat that is still
  * loading ignores them: what came before its answer is in the answer (one IPC pipe keeps the order).
+ * Chats of other devices (stores/remote.ts) sit in `chats` and `runtimes` too, under `remote:…` ids,
+ * so the chat's components show them as any other; what they do there goes to the device.
  */
 export const useSessionsStore = defineStore('sessions', () => {
   /** Every session the main process has, also those about to be deleted. */
@@ -190,7 +193,15 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   async function respond(id: string, itemId: string, response: InteractionResponse): Promise<void> {
-    await window.api.sessions.respond(id, itemId, JSON.parse(JSON.stringify(response)) as InteractionResponse)
+    const plain = JSON.parse(JSON.stringify(response)) as InteractionResponse
+    const remote = parseRemoteChatId(id)
+    if (remote) return window.api.remote.respond(remote.instance, remote.sessionId, itemId, plain)
+    await window.api.sessions.respond(id, itemId, plain)
+  }
+
+  async function interrupt(id: string): Promise<void> {
+    const remote = parseRemoteChatId(id)
+    return remote ? window.api.remote.interrupt(remote.instance, remote.sessionId) : window.api.sessions.interrupt(id)
   }
 
   /** Out of every list at once, for the seconds in which deleting can be undone; the shown chat closes. */
@@ -258,7 +269,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     unhide,
     remove,
     forget,
-    interrupt: (id: string) => window.api.sessions.interrupt(id),
+    /** An event of a chat, also one of another device's (stores/remote.ts). */
+    apply: onEvent,
+    interrupt,
     stop: (id: string) => window.api.sessions.stop(id),
     restart: (id: string) => window.api.sessions.restart(id),
   }

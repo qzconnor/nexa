@@ -4,6 +4,7 @@ import {
   ChevronRightIcon,
   FolderOpenIcon,
   FolderPlusIcon,
+  MonitorSmartphoneIcon,
   PencilIcon,
   PlusIcon,
   ScrollTextIcon,
@@ -28,6 +29,7 @@ import { chatsIn, foldersOf, pinnedChats, projectTree, type ProjectEntry } from 
 import { cn } from '@/lib/utils'
 import { useProjectsStore } from '@/stores/projects'
 import { useScheduledStore } from '@/stores/scheduled'
+import { useServerLinkStore } from '@/stores/server-link'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -47,6 +49,7 @@ const settings = useSettingsStore()
 const ui = useUiStore()
 const updates = useUpdatesStore()
 const scheduled = useScheduledStore()
+const link = useServerLinkStore()
 const chat = useChatActions()
 
 /**
@@ -109,10 +112,13 @@ watch(
 const newChat = () => chat.newChat()
 /** The start page is where a new chat begins: its button shows it as the page on screen, as a chat's row does. */
 const onStartPage = computed(
-  () => !(ui.view === 'chat' && sessions.active) && ui.view !== 'artifacts' && ui.view !== 'scheduled' && settings.settings.setup.done,
+  () => !(ui.view === 'chat' && sessions.active) && !['artifacts', 'scheduled', 'devices'].includes(ui.view) && settings.settings.setup.done,
 )
 const onArtifacts = computed(() => ui.view === 'artifacts')
 const onScheduled = computed(() => ui.view === 'scheduled')
+const onDevices = computed(() => ui.view === 'devices')
+/** Only with a server: without one there are no other devices to show. */
+const paired = computed(() => !!link.state && link.state.status !== 'unpaired')
 
 /** The folder a separator stands for, as the Claude Manager shows a workspace: where it lies. */
 function parentOf(section: ProjectSection): string | null {
@@ -320,6 +326,16 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
         <span class="flex-1 text-left">Geplant</span>
         <!-- What runs on its own is worth a glance: how many tasks are on. -->
         <span v-if="scheduled.activeCount" class="text-[0.7rem] text-muted-foreground/70 tabular-nums">{{ scheduled.activeCount }}</span>
+      </Button>
+      <Button
+        v-if="paired"
+        variant="ghost"
+        :class="cn('justify-start gap-2 px-2.5', onDevices && 'bg-sidebar-accent')"
+        :aria-current="onDevices ? 'page' : undefined"
+        @click="ui.view = 'devices'"
+      >
+        <MonitorSmartphoneIcon />
+        Geräte
       </Button>
     </div>
 

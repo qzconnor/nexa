@@ -8,6 +8,7 @@ import {
   MonitorIcon,
   PencilIcon,
   PlusIcon,
+  RadioTowerIcon,
   ShieldQuestionIcon,
   SmartphoneIcon,
   Trash2Icon,
@@ -15,12 +16,15 @@ import {
 import { useIntervalFn } from '@vueuse/core'
 import { computed, onMounted, ref } from 'vue'
 import { decodePairingCode, isPairingCode } from '@shared/nexa-server/pairing-code'
+import { isRemoteLevel, REMOTE_LEVEL_LABELS, REMOTE_LEVELS } from '@shared/remote'
 import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type ServerLinkState } from '@shared/server-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { attempt, errorMessage } from '@/lib/errors'
 import { formatClock, formatRelative, formatSpan } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -176,6 +180,19 @@ function issueOf(device: LinkedDevice): { short: string; long: string } | null {
 async function rename(device: LinkedDevice): Promise<void> {
   const next = await ui.ask({ title: 'Gerät umbenennen', input: { value: device.name }, confirmText: 'Umbenennen' })
   if (next && next !== device.name) await attempt(() => link.rename(device.self ? null : device.id, next), 'Umbenennen fehlgeschlagen')
+}
+
+// --- Remote Control --------------------------------------------------------------------------------
+
+/** The other devices, each with what it may do here; untrusted ones get nothing whatever their level. */
+const others = computed(() => state.value.devices.filter((d) => !d.self))
+
+function setRemote(on: boolean): void {
+  void attempt(() => link.setRemote(on), on ? 'Einschalten fehlgeschlagen' : 'Ausschalten fehlgeschlagen')
+}
+
+function setLevel(device: LinkedDevice, level: unknown): void {
+  if (isRemoteLevel(level)) void attempt(() => link.setLevel(device.id, level), 'Ändern fehlgeschlagen')
 }
 
 async function remove(device: LinkedDevice): Promise<void> {
@@ -339,6 +356,35 @@ async function remove(device: LinkedDevice): Promise<void> {
                 </template>
               </DropdownMenuContent>
             </DropdownMenu>
+          </li>
+        </ul>
+      </SettingsSection>
+
+      <SettingsSection
+        anchor="devices.remote"
+        title="Fernsteuerung"
+        description="Deine anderen Geräte sehen die Chats dieses Geräts auf ihrer Seite „Geräte“ und dürfen, so weit du es hier erlaubst, Prompts senden, abbrechen und Rückfragen beantworten."
+      >
+        <SettingField
+          anchor="devices.remoteEnabled"
+          label="Andere Geräte dürfen dieses steuern"
+          description="Aus, antwortet dieses Gerät keinem anderen. Ein Gerät, dem du nichts eingestellt hast, darf nur mitlesen."
+        >
+          <Switch :model-value="state.remoteEnabled" @update:model-value="setRemote" />
+        </SettingField>
+        <ul v-if="state.remoteEnabled && others.length" class="flex flex-col divide-y rounded-lg border bg-background/40 px-3">
+          <li v-for="device in others" :key="device.id" class="flex items-center gap-3 py-2">
+            <RadioTowerIcon class="size-4 shrink-0 text-muted-foreground" />
+            <div class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate text-sm">{{ device.name }}</span>
+              <span v-if="!device.trusted" class="truncate text-xs text-warning">Nicht bestätigt: bekommt nichts, bis es sich ausweist</span>
+            </div>
+            <Select :model-value="device.level" @update:model-value="(v) => setLevel(device, v)">
+              <SelectTrigger class="min-w-56 bg-background/60" :aria-label="`Was „${device.name}“ darf`"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="level in REMOTE_LEVELS" :key="level" :value="level">{{ REMOTE_LEVEL_LABELS[level] }}</SelectItem>
+              </SelectContent>
+            </Select>
           </li>
         </ul>
       </SettingsSection>

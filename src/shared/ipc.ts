@@ -45,6 +45,7 @@ import type { BrowserApi } from './browser-ipc'
 import type { UpdatesApi } from './updates'
 import type { CliImportApi, ImportApi } from './import-ipc'
 import type { SectionLayout } from './sections'
+import type { RemoteApi } from './remote-ipc'
 import type { ServerLinkApi } from './server-link'
 import type { StartCommandsApi } from './start-commands'
 import type { TerminalsApi } from './terminals'
@@ -246,6 +247,8 @@ export interface NexaApi {
   chatWindows: ChatWindowsApi
   /** The pairing with a nexa-server and the devices of the namespace (shared/server-link.ts). */
   serverLink: ServerLinkApi
+  /** Remote Control: the chats of other devices, and who controls this one (shared/remote-ipc.ts). */
+  remote: RemoteApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

@@ -7,6 +7,7 @@ import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
 import { McpAppsInvoke } from '@shared/mcp-apps'
+import { RemoteInvoke, RemoteIpcEvent } from '@shared/remote-ipc'
 import { ScheduledEvent, ScheduledInvoke } from '@shared/scheduled-tasks'
 import { ServerLinkEvent, ServerLinkInvoke } from '@shared/server-link'
 import { StartCommandsEvent, StartCommandsInvoke } from '@shared/start-commands'
@@ -64,7 +65,23 @@ const api: NexaApi = {
     unpair: () => invoke(ServerLinkInvoke.unpair),
     connect: () => invoke(ServerLinkInvoke.connect),
     disconnect: () => invoke(ServerLinkInvoke.disconnect),
+    setRemote: (enabled) => invoke(ServerLinkInvoke.setRemote, enabled),
+    setLevel: (instance, level) => invoke(ServerLinkInvoke.setLevel, instance, level),
     onChanged: (cb) => subscribe(ServerLinkEvent.changed, cb),
+  },
+  remote: {
+    hello: (instance) => invoke(RemoteInvoke.hello, instance),
+    chats: (instance) => invoke(RemoteInvoke.chats, instance),
+    open: (instance, sessionId, before) => invoke(RemoteInvoke.open, instance, sessionId, before),
+    watch: (list) => invoke(RemoteInvoke.watch, list),
+    send: (instance, sessionId, text) => invoke(RemoteInvoke.send, instance, sessionId, text),
+    interrupt: (instance, sessionId) => invoke(RemoteInvoke.interrupt, instance, sessionId),
+    respond: (instance, sessionId, itemId, response) => invoke(RemoteInvoke.respond, instance, sessionId, itemId, response),
+    controllers: () => invoke(RemoteInvoke.controllers),
+    disconnect: (instance) => invoke(RemoteInvoke.disconnect, instance),
+    onEvents: (cb) => subscribe(RemoteIpcEvent.events, cb),
+    onResync: (cb) => subscribe(RemoteIpcEvent.resync, cb),
+    onControllers: (cb) => subscribe(RemoteIpcEvent.controllers, cb),
   },
   claudeManager: {
     detect: () => invoke(ImportInvoke.detect),

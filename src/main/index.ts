@@ -54,6 +54,7 @@ import { ThemeService } from './services/theme-service'
 import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
 import { shellLaunch } from './services/user-shells'
+import { registerRemote } from './remote/remote-ipc'
 import { registerServerLinkIpc } from './server-link/server-link-ipc'
 import { ServerLinkService } from './server-link/server-link-service'
 import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
@@ -325,6 +326,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // and the next attempt could be a minute away.
   const serverLink = new ServerLinkService({ userDataDir, log: (message) => console.info('[nexa-server]', message) })
   registerServerLinkIpc(serverLink)
+  const remote = registerRemote({ link: serverLink, sessions, projects, version: app.getVersion(), log: (message) => console.info('[remote]', message) })
   void serverLink.init().catch((error: unknown) => console.warn('[nexa-server] init failed', error))
   powerMonitor.on('resume', () => serverLink.retryNow())
 
@@ -578,6 +580,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     cleanedUp = true
     tray.dispose()
     updates.dispose()
+    remote.dispose()
     const serverLinkSaved = serverLink.dispose()
     // Before the runs end: nothing goes on after a limit while Nexa quits.
     const switchSaved = autoSwitch.dispose()

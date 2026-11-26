@@ -8,12 +8,15 @@ import {
   PROTOCOL_VERSION,
   type InstanceInfo,
   type JoinRequest,
+  type RelayedMessage,
   type Role,
 } from '@shared/nexa-server/protocol'
+import { DEFAULT_REMOTE_LEVEL, type RemoteLevel } from '@shared/remote'
 import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type PairInput, type ServerLinkState } from '@shared/server-link'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ServerConnection, ServerError, type SocketFactory, type StopReason } from './connection'
 import { generateIdentity, importIdentity, LinkStore, type Identity, type LinkSecrets, type SecretCodec, type StoredLink } from './link-store'
+import { DeviceChannel } from './device-channel'
 import { Membership } from './membership'
 
 export interface ServerLinkDeps {
@@ -41,6 +44,7 @@ interface Active {
   devices: Map<string, InstanceInfo>
   membership: Membership
   connection: ServerConnection
+  channel: DeviceChannel
   offs: (() => void)[]
   /** The user leaves the namespace: the close that follows is no removal by someone else. */
   leaving: boolean
@@ -53,12 +57,26 @@ interface Active {
   clockTimer: ReturnType<typeof setTimeout> | null
 }
 
+type Events = {
+  changed: [state: ServerLinkState]
+  /** A member sealed this for this device alone (`DeviceChannel`), checked; `id` is the message's. */
+  deviceMessage: [from: string, kind: string, id: string, data: unknown]
+  /** The server couldn't pass on a message this device sent (its id), e.g. the other one isn't connected. */
+  deviceSendFailed: [id: string, code: string]
+  /** Another device connected or went (as the server says), or was removed (`online` false). */
+  deviceStatus: [id: string, online: boolean]
+  /** This device logged in (again): what it asked of others before may need asking anew. */
+  connected: []
+  /** Remote Control was turned on or off, or a device got another level. */
+  remoteChanged: []
+}
+
 /**
  * The pairing of this device with a nexa-server (Einstellungen › Geräte): pairs with an invite or a
  * pairing code, keeps the connection, the list of devices and who of them is a member, and stores it all
  * in `nexa-server.json` with the keys encrypted. Off until paired; without a server nothing runs.
  */
-export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLinkState] }> {
+export class ServerLinkService extends TypedEmitter<Events> {
   private readonly store: LinkStore
   private readonly fetch: typeof fetch
   private readonly defaultName: string
@@ -95,6 +113,7 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
         signKey: link.signKey,
         dhKey: link.dhKey,
         paused: link.paused,
+        remote: link.remote,
       }
       const active = await this.activate(profile, { signKey: secrets.signKey, dhKey: secrets.dhKey }, secrets.keys, link.members, link.devices)
       if (!profile.paused) active.connection.start()
@@ -115,11 +134,14 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
         instance: this.locked.instance,
         name: this.locked.name,
         clockSkew: null,
-        devices: deviceList(this.locked.devices, this.locked.instance, false, (id) => ({ trusted: members.has(id), issue: null })),
+        remoteEnabled: false,
+        devices: deviceList(this.locked.devices, this.locked.instance, false, (id) => ({ trusted: members.has(id), issue: null, level: 'off' })),
       }
     }
     const active = this.active
-    if (!active) return { ...base, status: 'unpaired', url: null, namespace: null, instance: null, name: null, clockSkew: null, devices: [] }
+    if (!active) {
+      return { ...base, status: 'unpaired', url: null, namespace: null, instance: null, name: null, clockSkew: null, remoteEnabled: false, devices: [] }
+    }
     const { profile, connection, membership } = active
     const online = !profile.paused && connection.status === 'online'
     return {
@@ -131,9 +153,11 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
       instance: profile.instance,
       name: profile.name,
       clockSkew: online ? clockSkew(active) : null,
+      remoteEnabled: profile.remote.enabled,
       devices: deviceList([...active.devices.values()], profile.instance, online, (id) => {
         const trusted = membership.isMember(id)
-        return { trusted, issue: trusted ? null : membership.issueOf(id) }
+        const level = id === profile.instance ? 'off' : (profile.remote.levels[id] ?? DEFAULT_REMOTE_LEVEL)
+        return { trusted, issue: trusted ? null : membership.issueOf(id), level }
       }),
     }
   }
@@ -170,6 +194,7 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
         signKey: identity.signKey,
         dhKey: identity.dhKey,
         paused: false,
+        remote: { enabled: false, levels: {} },
       }
       this.error = null
       const active = await this.activate(profile, secrets, [key], [], [], identity)
@@ -251,6 +276,61 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
     this.changed()
   }
 
+  // --- For Remote Control (main/remote) -----------------------------------------------------------
+
+  /**
+   * Seals `data` for the member `to` alone and relays it: the message's id (an answer names it), or null
+   * when this device isn't connected or `to` isn't a member. Throws `MessageTooLargeError`.
+   */
+  sendToDevice(to: string, kind: string, data: unknown): Promise<string | null> {
+    const active = this.active
+    if (!active || active.connection.status !== 'online') return Promise.resolve(null)
+    return active.channel.send(to, kind, data)
+  }
+
+  /** This device in the namespace, while paired. */
+  self(): { instance: string; name: string } | null {
+    const profile = this.active?.profile
+    return profile ? { instance: profile.instance, name: profile.name } : null
+  }
+
+  /** Another device as the server lists it, and whether it is a member here. */
+  device(id: string): { name: string; online: boolean; trusted: boolean } | null {
+    const active = this.active
+    const info = active?.devices.get(id)
+    if (!active || !info) return null
+    return { name: info.name, online: active.connection.status === 'online' && info.online, trusted: active.membership.isMember(id) }
+  }
+
+  /** What this device lets `id` do: nothing while Remote Control is off, nor for a device that isn't a member. */
+  remoteLevel(id: string): RemoteLevel {
+    const active = this.active
+    if (!active?.profile.remote.enabled || id === active.profile.instance || !active.membership.isMember(id)) return 'off'
+    return active.profile.remote.levels[id] ?? DEFAULT_REMOTE_LEVEL
+  }
+
+  remoteEnabled(): boolean {
+    return !!this.active?.profile.remote.enabled
+  }
+
+  /** Lets the other devices in (each with its level) or no one. */
+  async setRemoteEnabled(on: boolean): Promise<void> {
+    const active = this.paired()
+    active.profile.remote = { ...active.profile.remote, enabled: on }
+    await this.saveNow()
+    this.changed()
+    this.emit('remoteChanged')
+  }
+
+  async setRemoteLevel(id: string, level: RemoteLevel): Promise<void> {
+    const active = this.paired()
+    if (id === active.profile.instance) throw new Error('Dieses Gerät steuert sich nicht selbst.')
+    active.profile.remote = { ...active.profile.remote, levels: { ...active.profile.remote.levels, [id]: level } }
+    await this.saveNow()
+    this.changed()
+    this.emit('remoteChanged')
+  }
+
   /** After the computer woke up: the connection is likely gone, and waiting for the next attempt helps nobody. */
   retryNow(): void {
     this.active?.connection.retryNow()
@@ -294,6 +374,12 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
       clockSkew: () => clockSkew(active),
       log: this.deps.log,
     })
+    const channel = new DeviceChannel({
+      instance: profile.instance,
+      identity: id,
+      member: (memberId) => membership.member(memberId),
+      send: (to, kind, msgId, body) => connection.send(to, kind, msgId, body),
+    })
     const active: Active = {
       profile,
       privateKeys,
@@ -301,6 +387,7 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
       devices: new Map(devices.map((d) => [d.id, d])),
       membership,
       connection,
+      channel,
       offs: [],
       leaving: false,
       clock: null,
@@ -318,16 +405,24 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
         this.scheduleSave()
         void membership.ready(ready.instances)
         this.changed()
+        this.emit('connected')
       }),
-      connection.on('relayed', (msg) => void membership.receive(msg)),
+      connection.on('relayed', (msg) => {
+        if (msg.kind.startsWith('rc.')) void this.onDeviceMessage(active, msg)
+        else void membership.receive(msg)
+      }),
+      connection.on('sendFailed', (msgId, error) => this.emit('deviceSendFailed', msgId, error.code)),
       connection.on('instance', (event) => {
         if (event.t === 'removed') {
           active.devices.delete(event.instance)
           void membership.removed(event.instance)
+          this.emit('deviceStatus', event.instance, false)
         } else {
+          const before = active.devices.get(event.instance.id)
           active.devices.set(event.instance.id, event.instance)
           membership.instanceChanged(event.instance)
           if (event.instance.id === profile.instance) profile.name = event.instance.name
+          if (before?.online !== event.instance.online) this.emit('deviceStatus', event.instance.id, event.instance.online)
         }
         this.scheduleSave()
         this.changed()
@@ -336,6 +431,15 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
     )
     this.active = active
     return active
+  }
+
+  private async onDeviceMessage(active: Active, msg: RelayedMessage): Promise<void> {
+    try {
+      const opened = await active.channel.receive(msg)
+      if (opened && this.active === active) this.emit('deviceMessage', msg.from, msg.kind, msg.id, opened.data)
+    } catch (error) {
+      this.deps.log?.(`device message: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   private async onStopped(active: Active, reason: StopReason): Promise<void> {
@@ -407,6 +511,12 @@ export class ServerLinkService extends TypedEmitter<{ changed: [state: ServerLin
   private stopClockWatch(active: Active): void {
     if (active.clockTimer) clearTimeout(active.clockTimer)
     active.clockTimer = null
+  }
+
+  private paired(): Active {
+    const active = this.active
+    if (!active) throw new Error('Dieses Gerät ist mit keinem Server gekoppelt.')
+    return active
   }
 
   private online(): Active {
@@ -509,7 +619,7 @@ function deviceList(
   devices: readonly InstanceInfo[],
   self: string,
   connected: boolean,
-  trust: (id: string) => Pick<LinkedDevice, 'trusted' | 'issue'>,
+  trust: (id: string) => Pick<LinkedDevice, 'trusted' | 'issue' | 'level'>,
 ): LinkedDevice[] {
   return devices
     .map((d) => ({

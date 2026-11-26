@@ -5,6 +5,7 @@
  */
 
 import type { Role } from './nexa-server/protocol'
+import type { RemoteLevel } from './remote'
 
 type Unsubscribe = () => void
 
@@ -48,6 +49,8 @@ export interface LinkedDevice {
   trusted: boolean
   /** Why its last hello didn't count; null once it does, and for trusted devices. */
   issue: DeviceIssue | null
+  /** What this device lets it do by Remote Control, if turned on (`ServerLinkState.remoteEnabled`). */
+  level: RemoteLevel
 }
 
 export interface ServerLinkState {
@@ -68,6 +71,8 @@ export interface ServerLinkState {
    * never trusted: the server could lie about its time.
    */
   clockSkew: number | null
+  /** The other devices may control this one, each as far as its `level` says. */
+  remoteEnabled: boolean
   /** As the server listed them last; while offline the last known list. */
   devices: LinkedDevice[]
   /** The name a device gets unless the user picks one: the computer's. */
@@ -98,6 +103,8 @@ export const ServerLinkInvoke = {
   unpair: 'server-link:unpair',
   connect: 'server-link:connect',
   disconnect: 'server-link:disconnect',
+  setRemote: 'server-link:set-remote',
+  setLevel: 'server-link:set-level',
 } as const
 
 export const ServerLinkEvent = {
@@ -117,5 +124,9 @@ export interface ServerLinkApi {
   unpair(): Promise<void>
   connect(): Promise<void>
   disconnect(): Promise<void>
+  /** Lets the other devices control this one (each as far as its level), or none. */
+  setRemote(enabled: boolean): Promise<void>
+  /** What another device may do here by Remote Control. */
+  setLevel(instance: string, level: RemoteLevel): Promise<void>
   onChanged(cb: (state: ServerLinkState) => void): Unsubscribe
 }

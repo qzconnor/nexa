@@ -129,11 +129,16 @@ nicht von selbst neu, bei 4403 (entfernt) vergisst es die Kopplung.
 
 ## Remote Control
 
-- **Aus, bis man es einschaltet**, je Host. Dazu je steuernder Instanz eine Stufe: *nur mitlesen*,
-  *Prompts senden und abbrechen*, *Berechtigungen und Rückfragen beantworten*.
-- Wird ein Host gerade gesteuert, zeigt er das (Leiste mit Name des Geräts und „Trennen“).
-- **Instanz wählen**: Auf der steuernden Seite stehen Projekte und Chats je Instanz. Ein neuer Chat fragt
-  zuerst nach der Instanz, dann nach deren Projekten.
+Von Desktop zu Desktop **gebaut** (Protokoll in `PROTOCOLS.md`, „Remote Control“).
+
+- **Aus, bis man es einschaltet**, je Host (Einstellungen › Geräte › Fernsteuerung). Dazu je steuernder
+  Instanz eine Stufe: *Aus*, *Nur mitlesen* (Vorgabe für Geräte ohne eigene Einstellung), *Prompts senden
+  und abbrechen*, *Alles, auch Rückfragen und Freigaben*.
+- Wird ein Host gerade beobachtet oder gesteuert, zeigt er das (Leiste mit Name des Geräts und „Trennen“,
+  das die Stufe des Geräts auf „Aus“ setzt).
+- **Instanz wählen**: Auf der steuernden Seite (Seite „Geräte“ unter „Neuer Chat“) stehen die Geräte, die
+  Projekte und Chats des gewählten. Offen: ein neuer Chat auf einem anderen Gerät, der zuerst nach der
+  Instanz fragt, dann nach deren Projekten.
 - **Bausteine**: Die lokale API (`src/main/api/routes.ts`) kann schon Chats auflisten, anlegen, Prompt
   senden, abbrechen und Ereignisse streamen. Ihre Handler sollten Relay und REST gemeinsam nutzen. Neu
   dazu kommen:
@@ -194,7 +199,8 @@ Secrets), Berechtigungen und Hooks der CLIs. Logins und Tokens der Accounts nie.
 1. Server mit Namespaces, Einladungen, Instanzen und Relay; Kopplung zweier Desktops. **Gebaut.**
    Ungeprüft: hinter einem Proxy des Systems (der WebSocket von Node nutzt ihn nicht), und über HTTPS/WSS
    mit einem echten Zertifikat (getestet gegen den Server auf `localhost`).
-2. Remote Control von Desktop zu Desktop.
+2. Remote Control von Desktop zu Desktop. **Gebaut** (Lesen, Prompts, Abbrechen, Rückfragen); offen sind
+   neue Chats auf dem anderen Gerät und die Werkzeuge `chat_*` über Geräte hinweg.
 3. PWA als Steuerung, mit Web Push für Rückfragen und Berechtigungen.
 4. Settings-Sync.
 

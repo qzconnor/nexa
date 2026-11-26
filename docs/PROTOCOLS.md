@@ -1261,3 +1261,46 @@ eines Namespace macht den Schlüssel selbst (Generation 1).
   Entfernung weg, kann er ihm den neuen Schlüssel vorenthalten; es schreibt dann weiter mit dem alten. Ein
   Gerät, das der Server allein in die Liste setzt, sieht man in Einstellungen › Geräte als „Nicht
   bestätigt“.
+
+### Remote Control (`rc.*`)
+
+Zwischen zwei Mitgliedern, mit dem Schlüssel `pair` (nur diese beiden lesen mit). Der Host prüft jede
+Anfrage selbst gegen die Stufe, die er dem fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht.
+Typen und Prüfungen in `src/shared/remote.ts`, Host und Steuerung in `src/main/remote`.
+
+- **Stufen** je Gerät, beim Host eingestellt (Einstellungen › Geräte › Fernsteuerung, gespeichert in
+  `nexa-server.json` unter `remote`): `off`, `read` (Chats und Verlauf lesen, beobachten), `prompt`
+  (dazu Prompts senden und abbrechen), `full` (dazu Rückfragen, Freigaben und Pläne beantworten). Jede
+  Stufe schließt die davor ein. Ohne Eintrag gilt `read`; solange die Fernsteuerung aus ist, `off` für alle.
+- **`rc.request`** `{ m, p }`, beantwortet mit **`rc.response`** `{ re, r }` oder `{ re, e: { code, message } }`;
+  `re` ist die `id` der Anfrage. `code`: `disabled`, `forbidden`, `not-found`, `bad-request`, `too-large`,
+  `failed` (`message` sagt dann warum, auf Deutsch).
+
+| `m` | `p` | Antwort | Stufe |
+|---|---|---|---|
+| `hello` | – | `{ name, enabled, level, version }`: wer der Host ist und wie weit er das fragende Gerät lässt | jede |
+| `chats` | – | `{ projects, sessions, runtimes }`: Projekte (mit dem Namen ihres Trenners), Chats ohne archivierte, Laufzustand der nicht ruhenden | `read` |
+| `open` | `{ id, before? }` | `{ session, items, start, total, runtime }`: die Items vor `before` (ohne: bis zum Ende), höchstens 300 und etwa 400 KB, ab `start` | `read` |
+| `watch` | `{ ids }` | `{ renewed }`: welche Chats das Gerät beobachtet, ersetzt die letzte Wahl | `read` |
+| `unwatch` | – | `null` | jede |
+| `send` | `{ id, text }` | `null`, sobald der Chat den Prompt hat | `prompt` |
+| `interrupt` | `{ id }` | `null` | `prompt` |
+| `respond` | `{ id, itemId, response }` | `null`; `response` wie im Fenster (`InteractionResponse`) | `full` |
+
+- **Beobachten**: Eine Wahl gilt 90 Sekunden; die Steuerung erneuert sie alle 30 Sekunden, solange ein
+  Fenster die Seite „Geräte“ zeigt. `renewed: false` heißt, der Host kannte keine (Neustart, abgelaufen):
+  Was dazwischen geschah, kam nicht an, die Steuerung liest die Chats neu. Geht das Gerät offline oder
+  sinkt seine Stufe unter `read`, endet die Beobachtung sofort.
+- **`rc.events`** `{ events }`: die `SessionEvent`s der beobachteten Chats (`item`, `delta`, `truncated`),
+  dazu `runtime` aller Chats und `{ type: "chats" }`, wenn sich die Liste geändert hat (höchstens alle
+  2 Sekunden). Gebündelt alle 100 ms und bis etwa 400 KB je Nachricht; Deltas desselben Items hängt der
+  Host aneinander, ein neuer Stand eines Items oder Laufzustands ersetzt den wartenden.
+- **Was nicht mitgeht**: Bilder (Pfade auf dem Host), die Seiten der MCP Apps, Eingaben und Render-Specs
+  über 64 KB. Lange Texte kürzt der Host, Ausgaben von Werkzeugen von vorn (das Ende zählt).
+- **Reihenfolge**: Nachrichten zwischen zwei Geräten verlassen und erreichen `DeviceChannel` in der
+  Reihenfolge, in der sie geschrieben wurden, auch wenn das Verschlüsseln unterschiedlich lange dauert.
+  Öffnet ein Gerät einen beobachteten Chat, verwirft der Host die für ihn noch wartenden Ereignisse dieses
+  Chats: Sie stecken in der Seite, und was danach kommt, folgt der Antwort. Die Steuerung ignoriert
+  Ereignisse eines Chats, bis seine Seite da ist, wie ein Fenster bei einem lokalen.
+- **Größe**: Nachrichten über 900 KB schickt ein Gerät nicht (der Server trennt ab 1 MB die ganze
+  Verbindung); eine zu große Antwort wird zu `too-large`, ein zu großes Ereignis fällt weg.
