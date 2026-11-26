@@ -4,13 +4,15 @@ import type { ChatItem, SessionEvent } from '@shared/chat'
 import { IpcEvent, IpcInvoke } from '@shared/ipc'
 import { SESSIONS_OLDER, type RemoteBroadcast } from '@shared/remote'
 import type { SessionMeta } from '@shared/types'
+import { nextTick } from 'vue'
+import { useAppStore } from './app'
 
 vi.mock('./devices', () => ({ useDevicesStore: () => ({ devices: [], can: () => true }) }))
 // No chat is in a window of its own.
 vi.mock('./chat-windows', () => ({ useChatWindowsStore: () => ({ elsewhere: () => false, show: () => {} }) }))
 
-function meta(id: string): SessionMeta {
-  return { id, projectId: 'p', title: id, titleSource: 'auto', provider: 'claude', model: '', effort: '', permissionMode: 'ask', createdAt: 0, updatedAt: 0, cli: {} }
+function meta(id: string, more: Partial<SessionMeta> = {}): SessionMeta {
+  return { id, projectId: 'p', title: id, titleSource: 'auto', provider: 'claude', model: '', effort: '', permissionMode: 'ask', createdAt: 0, updatedAt: 0, cli: {}, ...more }
 }
 const user = (id: string): ChatItem => ({ kind: 'user', id, ts: 1, provider: 'claude', text: id })
 const idle = { status: 'idle', connected: false } as const
@@ -31,6 +33,7 @@ const api = {
     list: vi.fn(async () => [meta('s1')]),
     runtimes: vi.fn(async () => ({})),
     open: vi.fn(async (id: string) => ({ meta: meta(id), items: [user('u1')], runtime: idle })),
+    seen: vi.fn(async (_id: string) => {}),
     onChanged: () => () => {},
     onEvent: () => () => {},
   },
@@ -45,6 +48,40 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
+})
+
+describe('unread chats', () => {
+  async function opened() {
+    const { useSessionsStore } = await import('./sessions')
+    const sessions = useSessionsStore(null)
+    await sessions.load()
+    await sessions.open('s1')
+    return sessions
+  }
+
+  it('are those the device says no window has shown since their turn ended, but the one on screen', async () => {
+    const sessions = await opened()
+    sessions.all = [meta('s1', { finishedAt: 5 }), meta('s2', { finishedAt: 5, seenAt: 2 }), meta('s3', { finishedAt: 5, seenAt: 5 })]
+    await nextTick()
+    expect([...sessions.unread]).toEqual(['s2'])
+    // The chat on screen in a window in front is read: the device hears so, once per finished turn.
+    expect(api.sessions.seen.mock.calls).toEqual([['s1']])
+    sessions.all = [meta('s1', { finishedAt: 5, title: 'umbenannt' }), meta('s2', { finishedAt: 5, seenAt: 2 })]
+    await nextTick()
+    expect(api.sessions.seen).toHaveBeenCalledTimes(1)
+  })
+
+  it('stay unread while the window is in the background, until it comes to the front', async () => {
+    const sessions = await opened()
+    const app = useAppStore()
+    app.windowState.focused = false
+    sessions.all = [meta('s1', { finishedAt: 5 })]
+    await nextTick()
+    expect(api.sessions.seen).not.toHaveBeenCalled()
+    app.windowState.focused = true
+    await nextTick()
+    expect(api.sessions.seen).toHaveBeenCalledWith('s1')
+  })
 })
 
 describe('a long chat of another device', () => {

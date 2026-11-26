@@ -21,7 +21,7 @@ import { decodePairingCode, isPairingCode } from '@shared/nexa-server/pairing-co
 import { isRemoteLevel, REMOTE_LEVEL_LABELS, REMOTE_LEVELS } from '@shared/remote'
 import type { RemoteController } from '@shared/remote-ipc'
 import { SYNC_GROUPS, type SyncGroup, type SyncKey } from '@shared/remote-sync'
-import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type ServerLinkState } from '@shared/server-link'
+import { CLOCK_SKEW_WARN_MS, hasChats, type DeviceInvite, type LinkedDevice, type ServerLinkState } from '@shared/server-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -384,9 +384,9 @@ async function remove(device: LinkedDevice): Promise<void> {
                 <span v-if="issueOf(device)" class="text-warning"> · {{ issueOf(device)!.short }}</span>
               </span>
             </div>
-            <!-- Shown in this device's sidebar or not: here only, so also while not connected. -->
+            <!-- Shown in this device's sidebar or not: here only, so also while not connected. A phone never is. -->
             <Switch
-              v-if="!device.self"
+              v-if="!device.self && hasChats(device)"
               :model-value="!hidden(device)"
               :aria-label="`„${device.name}“ in der Seitenleiste zeigen`"
               v-tooltip="hidden(device) ? 'Ausgeblendet: steht auf diesem Gerät nicht in der Seitenleiste' : 'In der Seitenleiste dieses Geräts'"

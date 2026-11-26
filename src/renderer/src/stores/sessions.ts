@@ -1,8 +1,9 @@
-import { computed, reactive, ref, shallowReactive } from 'vue'
-import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
+import { computed, reactive, ref, shallowReactive, watch } from 'vue'
+import { isUnread, type ChatItem, type InteractionResponse, type SessionEvent, type SessionRuntime } from '@shared/chat'
 import { SESSIONS_OLDER, type RemoteItems } from '@shared/remote'
 import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
 import { chatKey } from '@/lib/session-tree'
+import { useAppStore } from './app'
 import { useChatWindowsStore } from './chat-windows'
 import { apiOf, scopedStore, useShownDeviceStore } from './device'
 import { useKeptHereStore } from './kept-here'
@@ -55,11 +56,26 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
   const runtimes = reactive(new Map<string, SessionRuntime>())
   const chats = shallowReactive(new Map<string, SessionChat>())
   const activeId = ref<string | null>(null)
-  /** Sessions that finished a turn while another one was shown. */
-  const unread = reactive(new Set<string>())
   let listening = false
 
   const active = computed(() => metas.value.find((m) => m.id === activeId.value) ?? null)
+  /**
+   * Chats that finished a turn no window of any device has shown since (`isUnread`, kept by the device
+   * the chat is on); the one on screen here is being read.
+   */
+  const unread = computed(() => new Set(metas.value.filter((m) => m.id !== activeId.value && isUnread(m)).map((m) => m.id)))
+  // The chat on screen, in a window in front, is read: said once per finished turn. In a window in the
+  // background it waits until the window comes to the front, so the phone's inbox still shows it.
+  const app = useAppStore()
+  watch(
+    () => {
+      const meta = active.value
+      return meta && isUnread(meta) && app.windowState.focused ? `${meta.id}:${meta.finishedAt}` : null
+    },
+    (key) => {
+      if (key && activeId.value) void api.sessions.seen(activeId.value).catch(() => undefined)
+    },
+  )
   const activeChat = computed(() => (activeId.value ? chats.get(activeId.value) : undefined))
   const activeRuntime = computed(() => (activeId.value ? runtime(activeId.value) : IDLE))
 
@@ -123,11 +139,7 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
 
   function onEvent(event: SessionEvent): void {
     if (event.type === 'runtime') {
-      const previous = runtimes.get(event.sessionId)
       runtimes.set(event.sessionId, event.runtime)
-      const finished = previous && (previous.status === 'running' || previous.status === 'waiting') && event.runtime.status === 'idle'
-      // A chat in a window of its own is on screen there.
-      if (finished && event.sessionId !== activeId.value && !elsewhere(event.sessionId)) unread.add(event.sessionId)
       return
     }
     const chat = chats.get(event.sessionId)
@@ -169,7 +181,6 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
     if (elsewhere(id)) return useChatWindowsStore().show(id)
     shown.show(device)
     activeId.value = id
-    unread.delete(id)
     const loaded = chats.get(id)
     if (loaded?.loaded) {
       if (device) {
@@ -329,7 +340,6 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
     for (const id of gone) {
       chats.delete(id)
       runtimes.delete(id)
-      unread.delete(id)
     }
     if (activeId.value && gone.has(activeId.value)) activeId.value = null
   }

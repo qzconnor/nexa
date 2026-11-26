@@ -3,6 +3,7 @@ import { app, BrowserWindow, dialog, nativeTheme, powerMonitor, shell, type Mess
 import { ChatWindowsEvent, type MainWindowRequest } from '@shared/chat-windows'
 import { IpcEvent, IpcInvoke } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
+import { hasChats } from '@shared/server-link'
 import { findTheme } from '@shared/themes/builtin'
 import { trayChats, type TrayMenuAction } from '@shared/tray-menu'
 import { ApiServer } from './api/api-server'
@@ -368,7 +369,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   chatTools.setDevices(
     new DeviceChats({
       request: (device, m, p) => remote.client.request(device, m, p),
-      devices: () => serverLink.getState().devices.flatMap((d) => (!d.self && d.trusted ? [{ id: d.id, name: d.name, online: d.online }] : [])),
+      devices: () => serverLink.getState().devices.flatMap((d) => (!d.self && d.trusted && hasChats(d) ? [{ id: d.id, name: d.name, online: d.online }] : [])),
       selfName: () => serverLink.self()?.name ?? null,
       outgoing: (from) => sessions.chatOrigin(from),
       projectOf: (from) => sessions.peerChats().find((chat) => chat.id === from)?.project ?? null,

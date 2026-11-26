@@ -53,6 +53,14 @@ export interface LinkedDevice {
   level: RemoteLevel
 }
 
+/**
+ * A device with chats of its own: a computer running Nexa. A phone (the PWA, role `controller`) only
+ * controls, so it isn't in the sidebar and no chat goes to it; what it may do here is still its level.
+ */
+export function hasChats(device: Pick<LinkedDevice, 'role'>): boolean {
+  return device.role === 'host'
+}
+
 export interface ServerLinkState {
   status: ServerLinkStatus
   url: string | null

@@ -142,6 +142,8 @@ export const IpcInvoke = {
   sessionsPlugins: 'sessions:plugins',
   sessionsSetPlugin: 'sessions:set-plugin',
   sessionsSync: 'sessions:sync',
+  sessionsSeen: 'sessions:seen',
+  sessionsInbox: 'sessions:inbox',
   sessionsUpdate: 'sessions:update',
   sessionsRemove: 'sessions:remove',
   sessionsStorage: 'sessions:storage',
@@ -435,6 +437,8 @@ export interface NexaApi {
      * else one is open (`SessionRuntime.openElsewhere`); the number of items added.
      */
     sync(id: string): Promise<number>
+    /** A window shows the chat: what it finished counts as read, on every device (`isUnread`). */
+    seen(id: string): Promise<void>
     update(id: string, patch: SessionUpdateInput): Promise<SessionMeta>
     /** Deletes chats, with their CLIs' conversations into the recycle bin (setting `chat.deleteCliConversations`). */
     remove(ids: string[]): Promise<SessionRemoveResult>

@@ -23,10 +23,12 @@ import {
   type TodoEntry,
   type ToolItem,
   type UserItem,
+  isUnread,
 } from '@shared/chat'
 import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
 import type { ChatChanges, RewindPreview, RewindResult } from '@shared/checkpoints'
 import type { FileDiff, WorktreeBaseChoice } from '@shared/files'
+import { inboxEntries, type InboxEntry } from '@shared/inbox'
 import type { McpAppRef, McpAppToolResult } from '@shared/mcp-apps'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { redactSecrets } from '@shared/redact'
@@ -842,6 +844,23 @@ export class SessionService extends TypedEmitter<Events> {
    * only, and notes where else one is open now. Nexa's own CLI of the chat, idle, holds the
    * conversation as it was: it ends, and the next prompt resumes with what came. The number of items added.
    */
+  /** The chats that need the user, for the phone's inbox (shared/inbox.ts). */
+  inbox(): InboxEntry[] {
+    return inboxEntries(
+      this.list(),
+      (id) => this.sessions.get(id)?.runtime,
+      (id) => this.sessions.get(id)?.items ?? null,
+    )
+  }
+
+  /** A window of this or another device shows the chat: its last turn counts as read everywhere. */
+  seen(id: string): void {
+    const s = this.sessions.get(id)
+    if (!s || !isUnread(s.meta)) return
+    s.meta.seenAt = Date.now()
+    this.saveSoon()
+  }
+
   syncCli(id: string): Promise<number> {
     const s = this.get(id)
     s.syncing ??= this.readOutside(s).finally(() => (s.syncing = undefined))
@@ -2407,9 +2426,16 @@ export class SessionService extends TypedEmitter<Events> {
   }
 
   private setRuntime(s: SessionState, runtime: SessionRuntime): void {
+    const before = s.runtime.status
     s.runtime = runtime
     // Saved with the next save of the session (a turn's end at the latest), not on every count.
     if (runtime.context) s.meta.context = runtime.context
+    // A turn that ended is unread until a window shows the chat (`seen`); a window showing it says so
+    // when this event reaches it, so the time is set first.
+    if ((before === 'running' || before === 'waiting') && runtime.status === 'idle') {
+      s.meta.finishedAt = Date.now()
+      this.saveSoon()
+    }
     this.releaseWhenIdle(s)
     this.emit('event', { type: 'runtime', sessionId: s.meta.id, runtime })
   }

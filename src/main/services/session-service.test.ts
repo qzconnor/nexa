@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/defaults'
 import type { AppSettings, SessionMeta } from '@shared/types'
-import type { ChatItem, SessionEvent, SessionRuntime, ToolItem } from '@shared/chat'
+import { isUnread, type ChatItem, type SessionEvent, type SessionRuntime, type ToolItem } from '@shared/chat'
 import type { WorktreeOptions } from '@shared/files'
 import { antigravityPaths, claudeProjectKey, codexPaths } from '../accounts/cli-files'
 import { inFolder } from '@shared/folders'
@@ -274,6 +274,39 @@ describe('SessionService.send while the agent works', () => {
   })
 })
 
+describe('SessionService read and unread', () => {
+  it('keeps a finished turn unread until a window shows the chat, and lists it in the inbox meanwhile', async () => {
+    let sink: RunSink | null = null
+    const run = { alive: true, send: async () => {}, stop: async () => {} } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], {
+      start: async (_options, s) => {
+        sink = s
+        return run
+      },
+    })
+    const chat = () => sessions.list().find((m) => m.id === 'chat')!
+    await sessions.send('chat', { text: 'erste' })
+    sink!.cliSession(GONE)
+    sink!.runtime({ status: 'running' })
+    expect(isUnread(chat())).toBe(false)
+    expect(sessions.inbox().map((e) => e.section)).toEqual(['running'])
+
+    sink!.runtime({ status: 'idle' })
+    expect(chat().finishedAt).toBeTypeOf('number')
+    expect(isUnread(chat())).toBe(true)
+    expect(sessions.inbox().map((e) => e.section)).toEqual(['unread'])
+
+    sessions.seen('chat')
+    expect(isUnread(chat())).toBe(false)
+    expect(sessions.inbox()).toEqual([])
+    // Seen again, nothing changes; an unknown chat is no error.
+    const seenAt = chat().seenAt
+    sessions.seen('chat')
+    sessions.seen('gone')
+    expect(chat().seenAt).toBe(seenAt)
+  })
+})
+
 describe('SessionService.ask (ask_user)', () => {
   const form = { type: 'form' as const, title: 'Angaben', fields: [{ key: 'name', label: 'Name', type: 'text' as const }] }
 
@@ -362,7 +395,10 @@ describe('SessionService with checkpoints', () => {
     await sessions.send('chat', { text: 'ändere a' })
     sink!.item({ kind: 'turn', id: 'turn1', ts: 2, provider: 'claude', status: 'done' })
     sink!.runtime({ status: 'idle' })
-    await vi.waitFor(() => expect(items.findLast((i) => i.kind === 'turn')).toMatchObject({ fileChanges: { files: 1, insertions: 1, deletions: 1 } }))
+    // Counting runs git: under the load of the whole suite that takes longer than `waitFor`'s second.
+    await vi.waitFor(() => expect(items.findLast((i) => i.kind === 'turn')).toMatchObject({ fileChanges: { files: 1, insertions: 1, deletions: 1 } }), {
+      timeout: 15_000,
+    })
 
     const prompt = items.find((i) => i.kind === 'user')!
     expect((await sessions.changes('chat')).prompts.map((p) => [p.promptId, p.files.map((f) => f.rel)])).toEqual([[prompt.id, ['a.txt']]])
@@ -375,7 +411,7 @@ describe('SessionService with checkpoints', () => {
     await sessions.send('chat', { text: 'weiter' })
     expect(sent[1]).toContain('<nexa-rewind>')
     expect(sent[1]).toContain(join(projectPath, 'a.txt'))
-  })
+  }, 30_000)
 
   it('keeps none with the setting off', async () => {
     projectPath = join(root, 'project')

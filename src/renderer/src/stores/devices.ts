@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, watch } from 'vue'
 import { levelAllows, type RemoteHostInfo, type RemoteLevel } from '@shared/remote'
 import { SYNC_KEYS } from '@shared/remote-sync'
-import type { LinkedDevice } from '@shared/server-link'
+import { hasChats, type LinkedDevice } from '@shared/server-link'
 import { errorMessage } from '@/lib/errors'
 import { useAccountsStore } from './accounts'
 import { useShownDeviceStore } from './device'
@@ -48,9 +48,9 @@ export const useDevicesStore = defineStore('devices', () => {
   const known = reactive(new Map<string, Known>())
   let started = false
 
-  /** Trusted, so they hold the namespace's key; this device itself not, nor those the user hid here. */
+  /** Trusted, so they hold the namespace's key, and with chats; this device itself not, nor those the user hid here. */
   const linked = computed<LinkedDevice[]>(
-    () => link.state?.devices.filter((d) => !d.self && d.trusted && !ui.hiddenDevices.has(d.id)) ?? [],
+    () => link.state?.devices.filter((d) => !d.self && d.trusted && hasChats(d) && !ui.hiddenDevices.has(d.id)) ?? [],
   )
   const online = computed(() => link.state?.status === 'online')
 

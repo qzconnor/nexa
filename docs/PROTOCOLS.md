@@ -1452,6 +1452,20 @@ fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht. Typen, Liste d
   sich die Blöcke darüber nicht, wenn die davor kommen; in einem einzelnen langen Turn geht es bis zu
   4 MB zurück zu seinem Prompt. `truncated { length }` zählt alle Items des Chats, auch die noch nicht
   geholten.
+- **Gelesen und ungelesen**: Der Host führt je Chat `finishedAt` (Ende des letzten Turns, von `running`
+  oder `waiting` zu `idle`) und `seenAt` in `SessionMeta`; ungelesen ist ein Chat mit `finishedAt` nach
+  `seenAt` (`isUnread`). Zeigt ein Fenster im Vordergrund den Chat, ruft es **`sessions:seen`** `[id]`,
+  Stufe `read`, einmal je Turn, auch für den Chat eines anderen Geräts. Die Änderung geht wie jede an der
+  Liste an alle Geräte (`sessions:changed`): Was auf einem gelesen wurde, ist auf allen gelesen.
+- **Inbox fürs Handy**: **`sessions:inbox`** → `InboxEntry[]` (`shared/inbox.ts`), Stufe `read`, die Chats
+  des Hosts, die den Nutzer brauchen: `waiting` (mit den offenen Rückfragen, Freigaben und Plänen in
+  `pending`, beantwortbar mit `sessions:respond`), `trouble` (`error`, `resume` am Limit), `unread`,
+  `running`; in dieser Reihenfolge, je Abschnitt die neuesten zuerst, archivierte nie. Die Fenster der App
+  nutzen ihn nicht; die PWA fragt neu, wenn `sessions:changed` oder ein `runtime`-Ereignis kommt (die gehen
+  an jedes Gerät, das beobachtet, für alle Chats).
+- **Rolle**: Geräte mit der Rolle `controller` (die PWA) haben keine Chats (`hasChats`): Sie stehen nicht
+  in der Seitenleiste, kein Fenster lädt etwas von ihnen, `chat_*` schickt ihnen nichts. Was sie beim Host
+  dürfen, bestimmt ihre Stufe wie bei einem Rechner.
 - **Reihenfolge**: Nachrichten zwischen zwei Geräten verlassen und erreichen `DeviceChannel` in der
   Reihenfolge, in der sie geschrieben wurden, auch wenn das Verschlüsseln unterschiedlich lange dauert.
   Öffnet ein Gerät einen Chat (`sessions:open`), verwirft der Host die für ihn noch wartenden Ereignisse
