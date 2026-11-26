@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { randomNamespaceKey } from './envelope'
-import { compareKeys, helloMatches, keepNewest, parseKeyShare, ReplayGuard, REPLAY_WINDOW_MS, rotationLeader, type KeyRecord } from './members'
+import { compareKeys, helloMatches, keepNewest, parseHello, parseKeyShare, ReplayGuard, REPLAY_WINDOW_MS, rotationLeader, type KeyRecord } from './members'
 import type { InstanceInfo } from './protocol'
 
 const KEY_A = 'A'.repeat(87)
@@ -30,6 +30,13 @@ describe('hello', () => {
     expect(helloMatches(hello, 'dev1', undefined)).toBe(false)
     expect(helloMatches({ ...hello, dhKey: KEY_A }, 'dev1', info)).toBe(false)
     expect(helloMatches({ ...hello, instance: 'dev2' }, 'dev1', info)).toBe(false)
+  })
+
+  it('reads `reply` only when it is true', () => {
+    const hello = { instance: 'dev1', signKey: KEY_A, dhKey: KEY_B }
+    expect(parseHello(hello)?.reply).toBe(false)
+    expect(parseHello({ ...hello, reply: 'yes' })?.reply).toBe(false)
+    expect(parseHello({ ...hello, reply: true })?.reply).toBe(true)
   })
 })
 

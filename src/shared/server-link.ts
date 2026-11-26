@@ -15,6 +15,22 @@ type Unsubscribe = () => void
  */
 export type ServerLinkStatus = 'unpaired' | 'connecting' | 'online' | 'offline' | 'paused' | 'stopped'
 
+/**
+ * From this difference to the server's clock on, the window warns. Devices drop each other's messages
+ * from 5 minutes apart (`REPLAY_WINDOW_MS`), so a warning at one minute comes before anything fails.
+ */
+export const CLOCK_SKEW_WARN_MS = 60_000
+
+/** Why a device that said hello isn't trusted (yet). */
+export type DeviceIssue =
+  /** Its clock is `skew` ms ahead of the server's (behind when negative), too far for its messages to count. */
+  | { kind: 'clock'; skew: number }
+  /**
+   * It said hello with a key this device doesn't have, or an old one: paired with the server's invite
+   * instead of a pairing code, or with a code from before a change of key.
+   */
+  | { kind: 'key' }
+
 /** A device of the namespace. */
 export interface LinkedDevice {
   id: string
@@ -30,6 +46,8 @@ export interface LinkedDevice {
    * put it on the list.
    */
   trusted: boolean
+  /** Why its last hello didn't count; null once it does, and for trusted devices. */
+  issue: DeviceIssue | null
 }
 
 export interface ServerLinkState {
@@ -45,6 +63,11 @@ export interface ServerLinkState {
   /** Paired, but the keys no longer decrypt (another user account, a new key store): only leaving helps. */
   locked: boolean
   retryAt: number | null
+  /**
+   * This device's clock minus the server's in ms, measured at login; null while not connected. Only shown,
+   * never trusted: the server could lie about its time.
+   */
+  clockSkew: number | null
   /** As the server listed them last; while offline the last known list. */
   devices: LinkedDevice[]
   /** The name a device gets unless the user picks one: the computer's. */

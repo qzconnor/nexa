@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   CheckIcon,
+  ClockAlertIcon,
   CopyIcon,
   EllipsisIcon,
   LogOutIcon,
@@ -14,7 +15,7 @@ import {
 import { useIntervalFn } from '@vueuse/core'
 import { computed, onMounted, ref } from 'vue'
 import { decodePairingCode, isPairingCode } from '@shared/nexa-server/pairing-code'
-import type { DeviceInvite, LinkedDevice, ServerLinkState } from '@shared/server-link'
+import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type ServerLinkState } from '@shared/server-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -86,6 +87,22 @@ const status = computed(() => {
 })
 const connected = computed(() => state.value?.status === 'online' || state.value?.status === 'connecting')
 
+function clockOff(skew: number | null): skew is number {
+  return skew !== null && Math.abs(skew) >= CLOCK_SKEW_WARN_MS
+}
+
+/** „7 Minuten vor“, „1 Stunde nach“. */
+function skewText(skew: number): string {
+  const minutes = Math.round(Math.abs(skew) / 60_000)
+  const hours = Math.round(minutes / 60)
+  const days = Math.round(hours / 24)
+  const span =
+    minutes < 90 ? `${minutes} ${minutes === 1 ? 'Minute' : 'Minuten'}` : hours < 48 ? `${hours} Stunden` : `${days} Tage`
+  return `${span} ${skew > 0 ? 'vor' : 'nach'}`
+}
+
+const clockWarning = computed(() => (clockOff(state.value.clockSkew) ? skewText(state.value.clockSkew) : null))
+
 async function unpair(): Promise<void> {
   const online = state.value?.status === 'online'
   const ok = await ui.confirm({
@@ -129,6 +146,31 @@ function describe(device: LinkedDevice): string {
   if (device.online) return `${role} · online`
   if (state.value?.status !== 'online') return role
   return device.lastSeen ? `${role} · zuletzt online ${formatRelative(device.lastSeen, now.value)}` : `${role} · noch nie verbunden`
+}
+
+const UNTRUSTED_HINT =
+  'Hat sich noch nicht mit dem Schlüssel des Namespace ausgewiesen. Ein neu gekoppeltes Gerät tut das, sobald es verbunden ist, und Nexa fragt immer wieder nach. Bleibt es dabei, kennst du es vermutlich nicht: Entferne es.'
+
+/** Why a device isn't trusted, as far as its last hello tells: a line under its name and the badge's tooltip. */
+function issueOf(device: LinkedDevice): { short: string; long: string } | null {
+  const issue = device.issue
+  if (!issue) return null
+  if (issue.kind === 'key') {
+    return {
+      short: 'Anderer Schlüssel',
+      long: `„${device.name}“ hat sich mit einem Schlüssel gemeldet, den dieses Gerät nicht hat. Wurde es mit dem Einladungscode des Servers statt mit einem Kopplungscode aus „Gerät hinzufügen“ gekoppelt? Dann melde es dort ab und kopple es mit einem neuen Kopplungscode.`,
+    }
+  }
+  if (clockOff(issue.skew)) {
+    return {
+      short: `Seine Uhr geht ${skewText(issue.skew)}`,
+      long: `Die Uhr von „${device.name}“ geht ${skewText(issue.skew)}. Geräte nehmen Nachrichten nur an, wenn ihre Uhren höchstens 5 Minuten auseinanderliegen. Schalte dort in den Windows-Einstellungen unter „Zeit und Sprache“ die Option „Uhrzeit automatisch festlegen“ ein; danach bestätigen sich die Geräte von selbst.`,
+    }
+  }
+  return {
+    short: 'Die Uhr dieses Geräts geht falsch',
+    long: `Die Uhren dieses Geräts und von „${device.name}“ liegen mehr als 5 Minuten auseinander, und es liegt an diesem Gerät (siehe „Verbindung“).`,
+  }
 }
 
 async function rename(device: LinkedDevice): Promise<void> {
@@ -207,6 +249,13 @@ async function remove(device: LinkedDevice): Promise<void> {
           {{ status.text }}
         </div>
         <p v-if="state.error" class="text-xs text-destructive">{{ state.error }}</p>
+        <p v-if="clockWarning" class="flex gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
+          <ClockAlertIcon class="mt-px size-3.5 shrink-0" />
+          <span>
+            Die Uhr dieses Geräts geht {{ clockWarning }}. Andere Geräte nehmen seine Nachrichten dann nicht an. Schalte in den
+            Windows-Einstellungen unter „Zeit und Sprache“ die Option „Uhrzeit automatisch festlegen“ ein; Nexa merkt es von selbst.
+          </span>
+        </p>
       </SettingsSection>
 
       <SettingsSection
@@ -264,15 +313,16 @@ async function remove(device: LinkedDevice): Promise<void> {
                   v-if="!device.trusted && !device.self"
                   variant="outline"
                   class="text-warning"
-                  v-tooltip="
-                    'Hat sich noch nicht mit dem Schlüssel des Namespace ausgewiesen. Ein neu gekoppeltes Gerät tut das, sobald es verbunden ist. Bleibt es dabei, kennst du es vermutlich nicht: Entferne es.'
-                  "
+                  v-tooltip="issueOf(device)?.long ?? UNTRUSTED_HINT"
                 >
                   <ShieldQuestionIcon data-icon="inline-start" />
                   Nicht bestätigt
                 </Badge>
               </div>
-              <span class="truncate text-xs text-muted-foreground">{{ describe(device) }}</span>
+              <span class="truncate text-xs text-muted-foreground">
+                {{ describe(device) }}
+                <span v-if="issueOf(device)" class="text-warning"> · {{ issueOf(device)!.short }}</span>
+              </span>
             </div>
             <DropdownMenu v-if="state.status === 'online'">
               <DropdownMenuTrigger as-child>

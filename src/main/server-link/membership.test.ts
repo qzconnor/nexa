@@ -3,7 +3,7 @@ import { importNamespaceKey, keyIdOf, randomMessageId, randomNamespaceKey, seal 
 import { MessageKind, type KeyRecord } from '@shared/nexa-server/members'
 import { BROADCAST, type InstanceInfo, type RelayedMessage } from '@shared/nexa-server/protocol'
 import { generateIdentity, type Identity } from './link-store'
-import { Membership, ROTATION_FALLBACK_MS } from './membership'
+import { HELLO_RETRY_MS, Membership, ROTATION_FALLBACK_MS } from './membership'
 
 vi.mock('electron', () => ({ safeStorage: {} }))
 
@@ -20,7 +20,7 @@ class Relay {
   readonly sent: RelayedMessage[] = []
   private queue: RelayedMessage[] = []
 
-  async add(id: string, keys: KeyRecord[], online = true): Promise<Device> {
+  async add(id: string, keys: KeyRecord[], online = true, now?: () => number): Promise<Device> {
     const { identity } = await generateIdentity()
     const device: Device = {
       id,
@@ -31,6 +31,7 @@ class Relay {
         identity,
         keys,
         members: [],
+        now,
         send: (to, kind, msgId, body) => {
           if (!device.online) return false
           const msg = { t: 'msg' as const, id: msgId, from: id, to, kind, body }
@@ -242,6 +243,81 @@ describe('Membership', () => {
     await vi.advanceTimersByTimeAsync(ROTATION_FALLBACK_MS + 10_000)
     await relay.settle()
     expect(b.membership.currentKey.gen).toBe(2)
+  })
+
+  it('drops the hello of a device whose clock is off, says why, and takes it in once the clock is right', async () => {
+    const key = await namespaceKey()
+    const hour = 60 * 60_000
+    let behind = hour
+    const a = await relay.add('a', [key])
+    const b = await relay.add('b', [key], true, () => Date.now() - behind)
+    await a.membership.ready(relay.infos())
+    await b.membership.ready(relay.infos())
+    await relay.settle()
+    expect(a.membership.isMember('b')).toBe(false)
+    expect(b.membership.isMember('a')).toBe(false)
+    const issue = a.membership.issueOf('b')
+    expect(issue?.kind).toBe('clock')
+    expect(issue?.kind === 'clock' && Math.round(issue.skew / 60_000)).toBe(-60)
+
+    // The user sets the clock: `b` says hello again, `a` takes it in and answers, and `b` takes `a` in.
+    behind = 0
+    b.membership.askAgain()
+    await relay.settle()
+    expect(a.membership.isMember('b')).toBe(true)
+    expect(b.membership.isMember('a')).toBe(true)
+    expect(a.membership.issueOf('b')).toBeNull()
+    expect(b.membership.issueOf('a')).toBeNull()
+  })
+
+  it('says hello again to a device that is no member yet, ever less often', async () => {
+    const key = await namespaceKey()
+    const a = await relay.add('a', [key])
+    // Paired with the server's invite instead of a pairing code: a key of its own.
+    const x = await relay.add('x', [await namespaceKey()])
+    await a.membership.ready(relay.infos())
+    await x.membership.ready(relay.infos())
+    await relay.settle()
+    expect(a.membership.issueOf('x')).toEqual({ kind: 'key' })
+    expect(x.membership.issueOf('a')).toEqual({ kind: 'key' })
+
+    const asked = () => relay.sent.filter((m) => m.from === 'a' && m.to === 'x').length
+    expect(asked()).toBe(0)
+    // Asks at 30 s, 90 s, 210 s; looked at a second after the first and well between the others.
+    for (const [wait, count] of [
+      [HELLO_RETRY_MS + 1_000, 1],
+      [HELLO_RETRY_MS, 1],
+      [HELLO_RETRY_MS, 2],
+      [2 * HELLO_RETRY_MS, 2],
+      [2 * HELLO_RETRY_MS, 3],
+    ]) {
+      await vi.advanceTimersByTimeAsync(wait)
+      // Neither answers a hello it can't read, so nothing goes back and forth.
+      await relay.settle()
+      expect(asked()).toBe(count)
+    }
+  })
+
+  it('answers a hello sent to it alone, but not an answer', async () => {
+    const key = await namespaceKey()
+    const a = await relay.add('a', [key])
+    const b = await relay.add('b', [key])
+    // `a` logged in while `b` was away, so its hello to all never reached `b`.
+    b.online = false
+    await a.membership.ready(relay.infos((d) => d.id === 'a'))
+    await relay.settle()
+    b.online = true
+    // `b` knows `a`'s keys from the server's list, but not yet that it is online, so only `a` asks.
+    b.membership.instanceChanged({ ...relay.infos().find((i) => i.id === 'a')!, online: false })
+    // The server's word that `b` is online now; `a` asks it after a while.
+    a.membership.instanceChanged(relay.infos().find((i) => i.id === 'b')!)
+    await vi.advanceTimersByTimeAsync(HELLO_RETRY_MS)
+    await relay.settle()
+
+    expect(a.membership.isMember('b')).toBe(true)
+    expect(b.membership.isMember('a')).toBe(true)
+    // The ask and its answer, nothing more.
+    expect(relay.sent.filter((m) => m.to !== BROADCAST).map((m) => `${m.from}>${m.to}`)).toEqual(['a>b', 'b>a'])
   })
 
   it('ignores a key share that is not from a member or not sealed for the pair', async () => {

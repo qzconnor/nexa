@@ -36,7 +36,18 @@ import SettingsUsage from './SettingsUsage.vue'
 const ui = useUiStore()
 const accounts = useAccountsStore()
 
-const SECTIONS: { id: SettingsSection; label: string; description: string; icon: Component; page: Component }[] = [
+interface Section {
+  id: SettingsSection
+  label: string
+  description: string
+  icon: Component
+  page: Component
+  /** At the foot of the list: about the user and the app rather than how it works. */
+  bottom?: boolean
+}
+
+// In the order of the list, top group first: the search shows its hits in this order too.
+const SECTIONS: Section[] = [
   {
     id: 'general',
     label: 'Allgemein',
@@ -45,7 +56,6 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
     page: SettingsGeneral,
   },
   { id: 'appearance', label: 'Darstellung', description: 'Theme, Skalierung, Fenster und Chat-Breite', icon: SETTINGS_ICONS.appearance, page: SettingsAppearance },
-  { id: 'accounts', label: 'Accounts', description: 'Mehrere Logins je CLI, Vorgabe für neue Chats', icon: SETTINGS_ICONS.accounts, page: SettingsAccounts },
   { id: 'usage', label: 'Verbrauch', description: 'Limits je Account und Tokens der Chats', icon: SETTINGS_ICONS.usage, page: SettingsUsage },
   { id: 'providers', label: 'CLIs', description: 'Claude Code, Codex und Antigravity CLI', icon: SETTINGS_ICONS.providers, page: SettingsProviders },
   {
@@ -63,17 +73,34 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
     icon: SETTINGS_ICONS.notifications,
     page: SettingsNotifications,
   },
+  { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: SETTINGS_ICONS.api, page: SettingsApi },
+  {
+    id: 'accounts',
+    label: 'Accounts',
+    description: 'Mehrere Logins je CLI, Vorgabe für neue Chats',
+    icon: SETTINGS_ICONS.accounts,
+    page: SettingsAccounts,
+    bottom: true,
+  },
   {
     id: 'devices',
     label: 'Geräte',
     description: 'Deine Geräte über einen eigenen nexa-server verbinden',
     icon: SETTINGS_ICONS.devices,
     page: SettingsDevices,
+    bottom: true,
   },
-  { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: SETTINGS_ICONS.api, page: SettingsApi },
-  { id: 'updates', label: 'Updates', description: 'Neue Versionen und was sich geändert hat', icon: SETTINGS_ICONS.updates, page: SettingsUpdates },
-  { id: 'about', label: 'Info', description: 'Version und App-Daten', icon: SETTINGS_ICONS.about, page: SettingsAbout },
+  {
+    id: 'updates',
+    label: 'Updates',
+    description: 'Neue Versionen und was sich geändert hat',
+    icon: SETTINGS_ICONS.updates,
+    page: SettingsUpdates,
+    bottom: true,
+  },
+  { id: 'about', label: 'Info', description: 'Version und App-Daten', icon: SETTINGS_ICONS.about, page: SettingsAbout, bottom: true },
 ]
+const SECTION_GROUPS = [SECTIONS.filter((s) => !s.bottom), SECTIONS.filter((s) => s.bottom)]
 const current = computed(() => SECTIONS.find((s) => s.id === ui.settingsSection) ?? SECTIONS[0])
 
 const query = ref('')
@@ -197,7 +224,7 @@ function onSearchEnter(): void {
       @open-auto-focus="onOpen"
       @keydown="onKeydown"
     >
-      <nav class="flex w-56 shrink-0 flex-col gap-0.5 border-r bg-muted/30 p-2">
+      <nav class="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r bg-muted/30 p-2">
         <DialogTitle class="px-2.5 pt-2 pb-3 text-base">Einstellungen</DialogTitle>
         <DialogDescription class="sr-only">Änderungen gelten sofort.</DialogDescription>
         <InputGroup class="mb-2 h-8 bg-background/40">
@@ -216,26 +243,28 @@ function onSearchEnter(): void {
             <Kbd v-else>Strg+F</Kbd>
           </InputGroupAddon>
         </InputGroup>
-        <button
-          v-for="section in SECTIONS"
-          :key="section.id"
-          type="button"
-          :class="
-            cn(
-              'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-muted/70',
-              !match && current.id === section.id && 'bg-muted font-medium',
-              match && !match.tabs.has(section.id) && 'opacity-45',
-            )
-          "
-          :aria-current="!match && current.id === section.id ? 'page' : undefined"
-          @click="select(section.id)"
-        >
-          <component :is="section.icon" class="size-4 text-muted-foreground" />
-          <span class="flex-1">{{ section.label }}</span>
-          <span v-if="match?.tabs.get(section.id)" class="rounded-full bg-primary/15 px-1.5 text-[0.7rem] font-medium text-primary tabular-nums">
-            {{ match.tabs.get(section.id) }}
-          </span>
-        </button>
+        <div v-for="(group, index) in SECTION_GROUPS" :key="index" :class="cn('flex flex-col gap-0.5', index > 0 && 'mt-auto border-t pt-2')">
+          <button
+            v-for="section in group"
+            :key="section.id"
+            type="button"
+            :class="
+              cn(
+                'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-muted/70',
+                !match && current.id === section.id && 'bg-muted font-medium',
+                match && !match.tabs.has(section.id) && 'opacity-45',
+              )
+            "
+            :aria-current="!match && current.id === section.id ? 'page' : undefined"
+            @click="select(section.id)"
+          >
+            <component :is="section.icon" class="size-4 text-muted-foreground" />
+            <span class="flex-1">{{ section.label }}</span>
+            <span v-if="match?.tabs.get(section.id)" class="rounded-full bg-primary/15 px-1.5 text-[0.7rem] font-medium text-primary tabular-nums">
+              {{ match.tabs.get(section.id) }}
+            </span>
+          </button>
+        </div>
       </nav>
 
       <div class="flex min-w-0 flex-1 flex-col">

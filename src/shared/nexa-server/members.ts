@@ -11,7 +11,10 @@ import { isInstanceId, type InstanceInfo } from './protocol'
 
 /** `kind`s of the messages devices send each other; the server sees them in plain text. */
 export const MessageKind = {
-  /** „I am this instance, with these keys“, sealed with the namespace's key; to all after login. */
+  /**
+   * „I am this instance, with these keys“, sealed with the namespace's key: to all after login, to one
+   * device that isn't a member yet now and then, and back to whoever sent one (then marked `reply`).
+   */
   hello: 'member.hello',
   /** A namespace key and the members it is for, sealed with the pairwise key; to one member. */
   keyShare: 'key.share',
@@ -59,6 +62,8 @@ export interface Hello {
   instance: string
   signKey: string
   dhKey: string
+  /** Answers a hello: not answered itself, so two devices don't answer each other forever. */
+  reply: boolean
 }
 
 /** What `key.share` holds. */
@@ -82,9 +87,9 @@ function isPublicKey(value: unknown): value is string {
 
 export function parseHello(data: unknown): Hello | null {
   if (!isRecord(data)) return null
-  const { instance, signKey, dhKey } = data
+  const { instance, signKey, dhKey, reply } = data
   if (!isInstanceId(instance) || !isPublicKey(signKey) || !isPublicKey(dhKey)) return null
-  return { instance, signKey, dhKey }
+  return { instance, signKey, dhKey, reply: reply === true }
 }
 
 function parseMember(data: unknown): Member | null {
@@ -123,7 +128,7 @@ export function parseKeyShare(data: unknown): KeyShare | null {
  * keys. A device the server made up has keys of its own but no namespace key; one that copied a real
  * device's hello has the wrong instance.
  */
-export function helloMatches(hello: Hello, from: string, info: InstanceInfo | undefined): boolean {
+export function helloMatches(hello: Omit<Hello, 'reply'>, from: string, info: InstanceInfo | undefined): boolean {
   return !!info && info.id === from && hello.instance === from && info.signKey === hello.signKey && info.dhKey === hello.dhKey
 }
 

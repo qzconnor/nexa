@@ -85,10 +85,14 @@ eigene hineinsetzen. Die Geräte halten sich deshalb an diese Regeln (die Hinwei
    anerkannter Instanzen. Ein neues Gerät stellt sich nach der Anmeldung mit einer Nachricht vor, die mit
    dem Schlüssel des Namespace verschlüsselt ist und seine ID und öffentlichen Schlüssel nennt; erst dann
    nehmen die anderen es auf. Neue Schlüssel bekommen nur anerkannte Instanzen. In der Geräteliste steht
-   ein Gerät ohne Vorstellung als „Nicht bestätigt“.
+   ein Gerät ohne Vorstellung als „Nicht bestätigt“, mit dem Grund, wenn seine Vorstellung verworfen
+   wurde (Uhr falsch, anderer Schlüssel). Geht eine Vorstellung verloren, fragen die Geräte in
+   wachsenden Abständen von selbst erneut.
 2. **Kopfdaten mitverschlüsseln.** AES-GCM mit `from`, `to`, `kind` und `id` als Associated Data, damit der
    Server Chiffretext nicht umleiten oder als andere Art ausgeben kann. Jede `id` gilt nur einmal, und
-   Nachrichten, deren Zeit mehr als 5 Minuten von der eigenen Uhr abweicht, gelten nicht.
+   Nachrichten, deren Zeit mehr als 5 Minuten von der eigenen Uhr abweicht, gelten nicht. Die Uhren der
+   Geräte müssen also stimmen; Nexa vergleicht die eigene beim Anmelden mit der des Servers und warnt ab
+   1 Minute Abweichung.
 3. **Absender prüfen.** `from` setzt der Server, und den Schlüssel des Namespace kennen alle Geräte. Deshalb
    signiert jedes Gerät jede Nachricht mit dem Schlüssel, mit dem es sich anmeldet (eigener
    Kontext-String), und der Empfänger prüft mit dem Schlüssel, den er für dieses Mitglied gespeichert hat.

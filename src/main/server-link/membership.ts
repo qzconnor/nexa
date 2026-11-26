@@ -19,17 +19,27 @@ import {
   MessageKind,
   parseHello,
   parseKeyShare,
+  REPLAY_WINDOW_MS,
   ReplayGuard,
   rotationLeader,
+  type Hello,
   type KeyRecord,
   type Member,
 } from '@shared/nexa-server/members'
 import { BROADCAST, type InstanceInfo, type RelayedMessage } from '@shared/nexa-server/protocol'
+import type { DeviceIssue } from '@shared/server-link'
 import type { Identity } from './link-store'
 
 /** How long a device that isn't the leader waits for a new key after a removal before it makes one. */
 export const ROTATION_FALLBACK_MS = 20_000
 const ROTATION_JITTER_MS = 10_000
+/**
+ * A device the server lists online that isn't a member yet gets a hello of its own after this, then
+ * after twice as long each time up to `HELLO_RETRY_MAX_MS`: its hello may have been dropped, e.g. for a
+ * wrong clock that is right by now. A device that never answers costs a message every quarter hour.
+ */
+export const HELLO_RETRY_MS = 30_000
+const HELLO_RETRY_MAX_MS = 15 * 60_000
 
 export interface MembershipDeps {
   instance: string
@@ -40,8 +50,10 @@ export interface MembershipDeps {
   send(to: string, kind: string, id: string, body: unknown): boolean
   /** Members or keys changed: to be stored. */
   persist(): void
-  /** What the window shows changed (trust of a device). */
+  /** What the window shows changed (trust of a device, or why it isn't trusted). */
   changed(): void
+  /** This device's clock minus the server's, to tell whose clock is wrong; only shown, never trusted. */
+  clockSkew?: () => number | null
   now?: () => number
   log?: (message: string) => void
 }
@@ -56,6 +68,9 @@ export interface MembershipDeps {
  * 3. The sender checked by its signature with the key stored for the member, not the server's word.
  * 4. After a removal a new key, sent to each remaining member alone (pairwise ECDH), with the members.
  *    A device that missed it says hello with the old key, and a member that has the new one shares it.
+ *
+ * A hello is answered once (the answer is marked `reply` and not answered), so after one of the two got
+ * through, both know each other.
  */
 export class Membership {
   private keys: KeyRecord[]
@@ -67,6 +82,11 @@ export class Membership {
   private rotationTimer: ReturnType<typeof setTimeout> | null = null
   /** A member was removed and no newer key is there yet: nobody new is taken in meanwhile. */
   private rotationPending = false
+  /** Devices to say hello to again (`HELLO_RETRY_MS`), with the wait before it. */
+  private readonly asks = new Map<string, { timer: ReturnType<typeof setTimeout>; delay: number }>()
+  /** Why the last hello of a device didn't count, for the window. */
+  private readonly issues = new Map<string, DeviceIssue>()
+  private disposed = false
   private queue: Promise<void> = Promise.resolve()
   private readonly now: () => number
 
@@ -94,10 +114,18 @@ export class Membership {
     return this.members.some((m) => m.id === id)
   }
 
+  /** Why the last hello of `id` didn't count; null once one did. */
+  issueOf(id: string): DeviceIssue | null {
+    return this.issues.get(id) ?? null
+  }
+
   /** Logged in: the server's list, and hello to everyone. */
   ready(instances: readonly InstanceInfo[]): Promise<void> {
+    // Right away, not in the queue: `instance` events that follow must not be overwritten by this older list.
+    this.instances = new Map(instances.map((i) => [i.id, i]))
+    // A new connection: whoever wasn't a member gets asked again soon, not at the pace of the last one.
+    for (const id of [...this.asks.keys()]) this.cancelAsk(id)
     return this.serial(async () => {
-      this.instances = new Map(instances.map((i) => [i.id, i]))
       // Gone from the server while this device was away: removed. If the server lies, it only hides a device.
       const kept = this.members.filter((m) => m.id === this.deps.instance || this.instances.has(m.id))
       if (kept.length !== this.members.length) {
@@ -107,17 +135,31 @@ export class Membership {
       }
       this.deps.changed()
       await this.sayHello(BROADCAST)
+      for (const id of this.instances.keys()) this.planAsk(id)
     })
   }
 
   /** `instance` events: the list of the server changes; who is a member changes only by hello or removal. */
   instanceChanged(info: InstanceInfo): void {
+    const before = this.instances.get(info.id)
     this.instances.set(info.id, info)
+    // Back online: its own hello likely comes now; if not, it gets one soon, not at the slowed-down pace.
+    if (info.online && !before?.online) this.cancelAsk(info.id)
+    this.planAsk(info.id)
+  }
+
+  /** Says hello to every device that isn't a member yet right away, e.g. once this device's clock is right again. */
+  askAgain(): void {
+    for (const info of this.instances.values()) {
+      if (this.needsAsk(info.id)) this.askLater(info.id, 0)
+    }
   }
 
   removed(id: string): Promise<void> {
     return this.serial(async () => {
       this.instances.delete(id)
+      this.cancelAsk(id)
+      this.issues.delete(id)
       if (id === this.deps.instance || !this.isMember(id)) return
       this.members = this.members.filter((m) => m.id !== id)
       this.deps.persist()
@@ -139,8 +181,9 @@ export class Membership {
   }
 
   dispose(): void {
-    if (this.rotationTimer) clearTimeout(this.rotationTimer)
-    this.rotationTimer = null
+    this.disposed = true
+    this.clearRotation()
+    for (const id of [...this.asks.keys()]) this.cancelAsk(id)
   }
 
   private async onHello(msg: RelayedMessage): Promise<void> {
@@ -149,9 +192,12 @@ export class Membership {
     const member = this.members.find((m) => m.id === msg.from)
     const record = this.keys.find((k) => k.id === sealed.k)
     if (!record) {
-      // A key this device doesn't hold, e.g. a newer one it missed. Its own hello shows the member
-      // which key it has, so the member can share the new one. Only to a broadcast: no ping-pong.
-      if (member && msg.to === BROADCAST) await this.sayHello(msg.from)
+      // A key this device doesn't hold. From a member a newer one it missed: its own hello shows the
+      // member which key it has, so the member can share the new one. Only to a broadcast, since the hello
+      // can't be read to see whether it was an answer: two devices with keys foreign to each other would
+      // answer each other forever.
+      if (member && msg.to === BROADCAST) await this.sayHello(msg.from, true)
+      else if (!member) this.noteIssue(msg.from, { kind: 'key' })
       return
     }
     const opened = await openSealed(header(msg), sealed, await this.namespaceKey(record))
@@ -160,21 +206,26 @@ export class Membership {
     if (member) {
       // A member's keys never change; another pair under its id is someone else.
       if (member.signKey !== hello.signKey || member.dhKey !== hello.dhKey) return
-    } else {
-      // New members only under the newest key: an old one may be known to a removed device.
-      if (record.id !== this.currentKey.id || this.rotationPending) return
-      if (!helloMatches(hello, msg.from, this.instances.get(msg.from))) return
+    } else if (this.rotationPending || !helloMatches(hello, msg.from, this.instances.get(msg.from))) {
+      return
     }
     if (!(await verifyOpened(opened, hello.signKey))) return
+    // New members only under the newest key: an old one may be known to a removed device.
+    if (!member && record.id !== this.currentKey.id) return this.noteIssue(msg.from, { kind: 'key' })
+    // Signed, so the time is the sender's: worth telling the user whose clock is off.
+    const offset = opened.at - this.now()
+    if (Math.abs(offset) > REPLAY_WINDOW_MS) return this.noteIssue(msg.from, { kind: 'clock', skew: offset + (this.deps.clockSkew?.() ?? 0) })
     if (!this.guard.accept(msg.from, msg.id, opened.at, this.now())) return
+    this.cancelAsk(msg.from)
+    const hadIssue = this.issues.delete(msg.from)
     if (!member) {
       this.members.push({ id: hello.instance, signKey: hello.signKey, dhKey: hello.dhKey, since: this.now() })
       this.deps.persist()
-      this.deps.changed()
     }
+    if (!member || hadIssue) this.deps.changed()
     // Before the hello back: it is sealed with the newest key, which the other needs first.
     if (record.id !== this.currentKey.id) await this.shareKey(msg.from)
-    if (msg.to === BROADCAST) await this.sayHello(msg.from)
+    if (!hello.reply) await this.sayHello(msg.from, true)
   }
 
   private async onKeyShare(msg: RelayedMessage): Promise<void> {
@@ -199,6 +250,7 @@ export class Membership {
       this.members = [self, ...share.members.filter((m) => m.id !== this.deps.instance)]
       this.rotationPending = false
       this.clearRotation()
+      for (const id of this.instances.keys()) this.planAsk(id)
       this.deps.changed()
     }
     this.deps.persist()
@@ -239,10 +291,52 @@ export class Membership {
     await this.sendSealed(to, MessageKind.keyShare, PAIRWISE, key, { key: this.currentKey, members: this.members })
   }
 
-  private async sayHello(to: string): Promise<void> {
+  private async sayHello(to: string, reply = false): Promise<void> {
     const record = this.currentKey
-    const hello = { instance: this.deps.instance, signKey: this.deps.identity.signKey, dhKey: this.deps.identity.dhKey }
+    const hello: Hello = { instance: this.deps.instance, signKey: this.deps.identity.signKey, dhKey: this.deps.identity.dhKey, reply }
     await this.sendSealed(to, MessageKind.hello, record.id, await this.namespaceKey(record), hello)
+  }
+
+  /** Online at the server and not a member: its hello may have been lost, so it gets one of ours. */
+  private needsAsk(id: string): boolean {
+    return id !== this.deps.instance && !!this.instances.get(id)?.online && !this.isMember(id)
+  }
+
+  private planAsk(id: string): void {
+    if (!this.needsAsk(id)) this.cancelAsk(id)
+    else if (!this.asks.has(id)) this.askLater(id, HELLO_RETRY_MS)
+  }
+
+  private askLater(id: string, delay: number): void {
+    if (this.disposed) return
+    this.cancelAsk(id)
+    const timer = setTimeout(() => {
+      void this.serial(async () => {
+        // Cancelled or planned anew meanwhile.
+        if (this.asks.get(id)?.timer !== timer) return
+        this.asks.delete(id)
+        if (!this.needsAsk(id)) return
+        await this.sayHello(id)
+        this.askLater(id, Math.min(Math.max(2 * delay, HELLO_RETRY_MS), HELLO_RETRY_MAX_MS))
+      })
+    }, delay)
+    this.asks.set(id, { timer, delay })
+  }
+
+  private cancelAsk(id: string): void {
+    const ask = this.asks.get(id)
+    if (ask) clearTimeout(ask.timer)
+    this.asks.delete(id)
+  }
+
+  private noteIssue(id: string, issue: DeviceIssue): void {
+    const before = this.issues.get(id)
+    this.issues.set(id, issue)
+    // The window shows whole minutes; a few seconds more or less are no news.
+    const same = before?.kind === issue.kind && (issue.kind !== 'clock' || (before.kind === 'clock' && minutes(before.skew) === minutes(issue.skew)))
+    if (same) return
+    this.deps.log?.(`hello from ${id} not taken: ${issue.kind === 'clock' ? `its clock is ${Math.round(issue.skew / 1000)} s off` : 'unknown or old key'}`)
+    this.deps.changed()
   }
 
   private async sendSealed(to: string, kind: string, keyRef: string, key: Key, data: unknown): Promise<void> {
@@ -295,4 +389,8 @@ export class Membership {
 
 function header(msg: RelayedMessage): Header {
   return { from: msg.from, to: msg.to, kind: msg.kind, id: msg.id }
+}
+
+function minutes(ms: number): number {
+  return Math.round(ms / 60_000)
 }
