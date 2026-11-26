@@ -164,6 +164,29 @@ describe('DeviceChannel', () => {
     expect(opened.at(-1)).toEqual({ kind: 'rc.response', id, data })
   })
 
+  // Pieces are opened side by side; the one opened last was taken as the last piece, which made the
+  // message whole with an earlier one on a slow machine (CI on Linux).
+  it('puts a message together with its last piece, however long opening each one takes', async () => {
+    const { b, wire, from, to } = await pair(SMALL)
+    const data = mixed(200)
+    const id = await from.send(b.id, 'rc.events', data)
+    expect(wire.length).toBeGreaterThan(2)
+    const decrypt = crypto.subtle.decrypt.bind(crypto.subtle)
+    let calls = 0
+    const slow = vi.spyOn(crypto.subtle, 'decrypt').mockImplementation(async (...args: Parameters<typeof crypto.subtle.decrypt>) => {
+      // The first piece takes longest to open.
+      if (calls++ === 0) await new Promise((resolve) => setTimeout(resolve, 50))
+      return decrypt(...args)
+    })
+    try {
+      const opened = await Promise.all(wire.map((msg) => to.receive(msg)))
+      expect(opened.slice(0, -1)).toEqual(wire.slice(0, -1).map(() => null))
+      expect(opened.at(-1)).toEqual({ kind: 'rc.events', id, data })
+    } finally {
+      slow.mockRestore()
+    }
+  })
+
   it('sends in pieces what the server once refused whole', async () => {
     const { b, wire, from, to } = await pair(16 * 1024)
     const data = { t: 'x'.repeat(sealedLimit(16 * 1024)) }
