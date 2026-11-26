@@ -170,8 +170,11 @@ Entschieden am 26.11.2026:
   (`scripts/sync-from-app.ts` in nexa-server), damit die Regeln für Mitglieder auf beiden Seiten gleich
   sind. Sie bleiben ohne Node-APIs, und relativ importieren sie nur, was die PWA selbst stellt:
   `TypedEmitter` ohne `node:events`, `Identity` (nur als Typ; die PWA hält die Schlüssel nicht exportierbar
-  in IndexedDB) und den Fehler des Kanals. Das prüft `server-link/pwa-copies.test.ts`. Wer eine der
-  Dateien verschiebt oder einen relativen Import dazunimmt, sagt es vorher im Chat „Nexa-Server“.
+  in IndexedDB) und den Fehler des Kanals. Ebenso `renderer/src/lib/tools.ts` (Blöcke der Zeitleiste,
+  Zusammenfassungen der Werkzeuge), damit die PWA den Verlauf gruppiert wie die App: Importe nur aus
+  `@shared/…`, `@lucide/vue` und Typen aus `vue`, an Farben nur die `--tool-*`, die die PWA in ihrer
+  `main.css` hat. Das prüft `server-link/pwa-copies.test.ts`. Wer eine der Dateien verschiebt, einen
+  Import oder eine `--tool-*`-Farbe dazunimmt, sagt es vorher im Chat „Nexa-Server“.
 - **Aufbau**: unten eine Leiste mit „Inbox“ und „Chats“.
   - *Inbox* (Startseite): die Chats aller Rechner, die Aufmerksamkeit brauchen, in Abschnitten: „Wartet auf
     dich“ (Rückfrage, Freigabe, Plan, direkt dort beantwortbar), „Fehler und Limit“, „Fertig, ungelesen“,
