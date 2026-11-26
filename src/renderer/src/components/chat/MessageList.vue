@@ -4,6 +4,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, useTemplate
 import type { ChatItem } from '@shared/chat'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
+import { Spinner } from '@/components/ui/spinner'
+import { attempt } from '@/lib/errors'
 import { formatDay, sameDay } from '@/lib/format'
 import { chatBlocks, type ChatBlock } from '@/lib/tools'
 import { useDevice } from '@/stores/device'
@@ -107,18 +109,35 @@ function watchTop(): void {
   observer.observe(top.value)
 }
 
+/** Another device's chat with items before the ones here (main thread only: a subagent's are in its parent's turn). */
+const chat = computed(() => sessions.chats.get(props.sessionId))
+const olderThere = computed(() => (props.parentId ? 0 : (chat.value?.older ?? 0)))
+
 let adding = false
-/** Adds the page before the shown blocks, keeping in view what the user was looking at. */
+/**
+ * Adds the page before the shown blocks, keeping in view what the user was looking at. All of them
+ * shown, another device's chat first gets the items before them from there.
+ */
 async function showOlder(): Promise<void> {
   // Folded, the page above the `/clear` comes only when the user opens it.
-  if (!first.value || adding || (folded.value && first.value <= clearedAt.value)) return
+  if (adding || (folded.value && first.value <= clearedAt.value)) return
+  if (!first.value && !olderThere.value) return
   adding = true
-  const el = scroller
-  const fromBottom = el ? el.scrollHeight - el.scrollTop : 0
-  anchor.value = keyOf(blocks.value[Math.max(0, first.value - PAGE)]!)
-  await nextTick()
-  if (el) el.scrollTop = el.scrollHeight - fromBottom
-  adding = false
+  try {
+    const el = scroller
+    const fromBottom = el ? el.scrollHeight - el.scrollTop : 0
+    if (!first.value) {
+      await attempt(() => sessions.loadOlder(props.sessionId), 'Ältere Nachrichten ließen sich nicht holen')
+      // The window stays at its oldest block, which now has the ones that came before it.
+      await nextTick()
+      if (!first.value) return
+    }
+    anchor.value = keyOf(blocks.value[Math.max(0, first.value - PAGE)]!)
+    await nextTick()
+    if (el) el.scrollTop = el.scrollHeight - fromBottom
+  } finally {
+    adding = false
+  }
   watchTop()
 }
 
@@ -138,6 +157,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => observer?.disconnect())
+// Another device's chat that came with its newest items: the top may be in reach already (a short last page).
+watch(olderThere, (count, before) => {
+  if (count && !before) void nextTick(watchTop)
+})
 
 /** All blocks at once, for the search in the chat, also those above a `/clear`; what the user was looking at stays in view. */
 async function showAll(): Promise<void> {
@@ -243,13 +266,18 @@ const providerChanges = computed(() => {
   <div ref="root" class="flex flex-col" data-find-blocks>
     <div ref="top" />
     <button
-      v-if="start > (folded ? clearedAt : 0)"
+      v-if="start > (folded ? clearedAt : 0) || (!folded && olderThere > 0)"
       type="button"
       data-find-skip
-      class="mx-auto mb-2 rounded-full px-3 py-1 text-[0.78rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      class="mx-auto mb-2 flex items-center gap-2 rounded-full px-3 py-1 text-[0.78rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none"
+      :disabled="chat?.loadingOlder"
       @click="showOlder"
     >
-      Ältere Nachrichten laden
+      <template v-if="chat?.loadingOlder">
+        <Spinner class="size-3" />
+        Ältere Nachrichten werden geholt …
+      </template>
+      <template v-else>Ältere Nachrichten laden</template>
     </button>
     <template v-for="block in shown" :key="keyOf(block)">
       <div v-if="days.has(keyOf(block))" data-find-skip class="flex items-center gap-3 py-2 text-[0.72rem] text-muted-foreground" role="separator">

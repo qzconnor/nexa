@@ -37,9 +37,12 @@ const api: NexaApi = {
     download: () => invoke(UpdatesInvoke.download),
     install: () => invoke(UpdatesInvoke.install),
     releases: () => invoke(UpdatesInvoke.releases),
+    reloadReleases: () => invoke(UpdatesInvoke.reloadReleases),
+    moreReleases: () => invoke(UpdatesInvoke.moreReleases),
     reference: (number) => invoke(UpdatesInvoke.reference, number),
     onChanged: (cb) => subscribe(UpdatesEvent.changed, cb),
     onShow: (cb) => subscribe(UpdatesEvent.show, cb),
+    onReleases: (cb) => subscribe(UpdatesEvent.releases, cb),
   },
   serverLink: {
     state: () => invoke(ServerLinkInvoke.state),

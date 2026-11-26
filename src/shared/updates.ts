@@ -35,6 +35,27 @@ export interface ReleaseNote {
   references: number[]
 }
 
+/**
+ * The release notes loaded so far. The newest page comes with every check for updates (and is kept
+ * across starts), older ones page by page when asked for: opening the page asks GitHub nothing.
+ */
+export interface ReleaseNotes {
+  /** Newest first. */
+  notes: ReleaseNote[]
+  /** All published versions are there: there are no older ones to ask for. */
+  complete: boolean
+  /** When the newest page arrived last (epoch ms); null: never yet. */
+  loadedAt: number | null
+  /** The newest page is being asked for. */
+  loading: boolean
+  /** Why the newest page couldn't be loaded the last time, null when it could. */
+  error: string | null
+  /** An older page is being asked for. */
+  loadingMore: boolean
+  /** Why the last older page couldn't be loaded, null when it could. */
+  moreError: string | null
+}
+
 /** A pull request (or issue) from the release notes with its description. */
 export interface ReleaseReference {
   number: number
@@ -50,6 +71,8 @@ export const UpdatesInvoke = {
   download: 'updates:download',
   install: 'updates:install',
   releases: 'updates:releases',
+  reloadReleases: 'updates:reload-releases',
+  moreReleases: 'updates:more-releases',
   reference: 'updates:reference',
 } as const
 
@@ -57,6 +80,7 @@ export const UpdatesEvent = {
   changed: 'event:updates-changed',
   /** The update notification was clicked. */
   show: 'event:updates-show',
+  releases: 'event:updates-releases',
 } as const
 
 export interface UpdatesApi {
@@ -65,10 +89,15 @@ export interface UpdatesApi {
   download(): Promise<void>
   /** Quits and installs a downloaded update; the new version starts by itself. */
   install(): Promise<void>
-  /** Published versions with their notes, newest first. */
-  releases(): Promise<ReleaseNote[]>
+  /** The release notes loaded so far; asks GitHub nothing. */
+  releases(): Promise<ReleaseNotes>
+  /** Asks GitHub for the newest page of the notes again (a check does too). */
+  reloadReleases(): Promise<void>
+  /** Asks GitHub for the next older page of the notes. */
+  moreReleases(): Promise<void>
   /** Title and description of a pull request (or issue) the notes link to. */
   reference(number: number): Promise<ReleaseReference>
   onChanged(cb: (state: UpdateState) => void): Unsubscribe
   onShow(cb: () => void): Unsubscribe
+  onReleases(cb: (notes: ReleaseNotes) => void): Unsubscribe
 }

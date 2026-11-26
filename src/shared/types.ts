@@ -647,6 +647,11 @@ export interface SessionDetail {
   meta: SessionMeta
   items: ChatItem[]
   runtime: SessionRuntime
+  /**
+   * Items before `items` that didn't come along: another device's long chat comes with its newest
+   * items only, the ones before as it scrolls up (`sessions:older`, shared/remote.ts).
+   */
+  older?: number
 }
 
 /** What deleting chats did (`sessions.remove`). */
