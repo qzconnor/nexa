@@ -144,6 +144,35 @@ export function recordTouch(record: TouchRecord | undefined, kind: FileTouchKind
   return Object.freeze({ ...record, [kind]: at })
 }
 
+/**
+ * How long a touch counts as what the agent is doing now (ms): a look at a file passes quickly, a
+ * change stays a while. The activity shows only what is that recent, not everything the chat ever did.
+ */
+export const ACTIVITY_MS: Record<FileTouchKind, number> = { search: 60_000, read: 60_000, commit: 120_000, write: 300_000 }
+
+/** The kinds of a record still current at `now`; null when none is. The same record when all are. */
+export function liveRecord(record: TouchRecord, now: number): TouchRecord | null {
+  let live: Partial<Record<FileTouchKind, number>> | null = null
+  let all = true
+  for (const kind of TOUCH_KINDS) {
+    const at = record[kind]
+    if (at === undefined) continue
+    if (at + ACTIVITY_MS[kind] > now) (live ??= {})[kind] = at
+    else all = false
+  }
+  return all ? record : live && Object.freeze(live)
+}
+
+/** When the first kind of a record stops being current: the moment it shows differently. */
+export function recordChange(record: TouchRecord): number {
+  let next = Infinity
+  for (const kind of TOUCH_KINDS) {
+    const at = record[kind]
+    if (at !== undefined) next = Math.min(next, at + ACTIVITY_MS[kind])
+  }
+  return next
+}
+
 export const STATUS_LETTER: Record<GitFileStatus, string> = {
   modified: 'M',
   added: 'A',

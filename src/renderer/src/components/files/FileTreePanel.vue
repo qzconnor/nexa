@@ -30,7 +30,7 @@ import {
   XIcon,
 } from '@lucide/vue'
 import { useElementSize } from '@vueuse/core'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { FileTouchKind, FileTreeSide, GitFileState, GitFileStatus } from '@shared/files'
 import {
   ContextMenu,
@@ -80,7 +80,7 @@ import {
   type TouchRecord,
   type TreeRow,
 } from '@/lib/file-tree'
-import { TOUCH_ICON } from '@/lib/file-touch'
+import { TOUCH_DONE, TOUCH_ICON } from '@/lib/file-touch'
 import { fileManagerLabel, isWindows } from '@/lib/platform'
 import { childPath, type NameKind, type NameRequest } from '@/lib/tree-names'
 import { separatorValue } from '@/lib/separator-keys'
@@ -159,9 +159,10 @@ const branchTooltip = computed(() => {
 
 // ── Filters ──
 
-/** Which files the trees show: the changed ones, those Claude touched in the session, or both. */
+/** Which files the trees show: the changed ones, those the agent is at in the session, or both. */
 const filters = fileTree.filters
-const filtered = computed(() => filters.changes || filters.activity)
+/** A filter is switched on; whether the tree is filtered depends on there being something to show (`filtered`). */
+const filterOn = computed(() => filters.changes || filters.activity)
 /** Files git ignores, while they are hidden. */
 const hidden = computed(() => (fileTree.showIgnored ? undefined : (path: string) => decorations.value.ignored(path)))
 /** Folders git reports as new as a whole (`dir/`); their files come from the search's list. */
@@ -170,7 +171,7 @@ const untrackedDirs = computed(() => untrackedFolders(git.value))
 const changedPaths = computed(() => changedFiles(git.value, model.value.search?.paths))
 const changesTooltip = computed(() => summary.value.map((item) => `${STATUS_LABEL[item.status]}: ${item.count}`).join(' · '))
 
-/** What Claude did in the tab's session with the files of the tree, by their path in the tree. */
+/** What the agent is doing in the tab's session with the files of the tree, by their path in the tree. */
 const recorded = computed(() => {
   const files = new Map<string, TouchRecord>()
   for (const [absolute, record] of fileTree.activityOf(props.target.id) ?? []) {
@@ -189,7 +190,18 @@ const kindCounts = computed(() => {
   return counts
 })
 
-/** The files the filters let through: the changes in the states shown, the files Claude touched in the kinds shown. */
+/** The strongest kind (of those shown) the agent is at each file of the tree with, while the activity filter is on. */
+const activityKinds = computed(() => {
+  const kinds = new Map<string, FileTouchKind>()
+  if (!filters.activity) return kinds
+  for (const [path, record] of recorded.value) {
+    const kind = hidden.value?.(path) ? null : recordKind(record, fileTree.hiddenKinds)
+    if (kind) kinds.set(path, kind)
+  }
+  return kinds
+})
+
+/** The files the filters let through: the changes in the states shown, the files the agent is at in the kinds shown. */
 const filteredPaths = computed(() => {
   const paths = new Set<string>()
   if (filters.changes) {
@@ -199,25 +211,105 @@ const filteredPaths = computed(() => {
       if (!status || !fileTree.hiddenStatuses.has(status)) paths.add(path)
     }
   }
-  if (filters.activity) {
-    for (const [path, record] of recorded.value) {
-      if (!hidden.value?.(path) && recordKind(record, fileTree.hiddenKinds)) paths.add(path)
-    }
-  }
+  for (const path of activityKinds.value.keys()) paths.add(path)
   return [...paths]
 })
 
-const filterLabel = computed(() =>
-  filters.changes && filters.activity ? 'Änderungen und Aktivität' : filters.changes ? 'Nur Änderungen' : 'Nur Aktivität',
+// ── Coming and going ──
+// Filtered, the tree shows what goes on: a file that comes in slides in, one the agent left alone (or
+// that was committed) fades out before the rows below it move up. A change of the filters themselves
+// just shows the other files, as does another chat.
+
+const ENTER_MS = 450
+const LEAVE_MS = 500
+
+/** Files that just left the filtered tree, until they are gone, with the kind they showed. */
+const leaving = shallowRef(new Map<string, { until: number; kind: FileTouchKind | null }>())
+/** Files and folders that just came in, until their entrance is over. */
+const entering = shallowRef(new Map<string, number>())
+let motionTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(motionTimer))
+
+/** What decides which files the filters let through, besides what happens to the files. */
+const filterKey = computed(() =>
+  JSON.stringify([
+    props.target.id,
+    props.target.root,
+    filters.changes,
+    filters.activity,
+    fileTree.showIgnored,
+    [...fileTree.hiddenStatuses].sort(),
+    [...fileTree.hiddenKinds].sort(),
+  ]),
 )
-/** Why a filtered tree is empty. */
-const emptyText = computed(() => {
+
+/** The files and the folders they lie in. */
+const withFolders = (paths: readonly string[]) => new Set([...paths, ...foldersOf(paths)])
+
+watch([filteredPaths, filterKey, activityKinds] as const, ([next, key], [before, keyBefore, kindsBefore]) => {
+  if (key !== keyBefore || !filterOn.value) {
+    clearTimeout(motionTimer)
+    if (leaving.value.size) leaving.value = new Map()
+    if (entering.value.size) entering.value = new Map()
+    return
+  }
+  const now = Date.now()
+  const shown = new Set(next)
+  const items = withFolders(next)
+  const was = withFolders(before)
+  // One that comes back while it fades out comes in anew.
+  const gone = new Map([...leaving.value].filter(([path]) => !shown.has(path)))
+  for (const path of before) if (!shown.has(path) && !gone.has(path)) gone.set(path, { until: now + LEAVE_MS, kind: kindsBefore.get(path) ?? null })
+  const come = new Map([...entering.value].filter(([path]) => items.has(path)))
+  for (const path of items) if (!was.has(path)) come.set(path, now + ENTER_MS)
+  leaving.value = gone
+  entering.value = come
+  scheduleMotion()
+})
+
+/** Drops what has come in or gone once its motion is over. */
+function scheduleMotion(): void {
+  clearTimeout(motionTimer)
+  const ends = [...[...leaving.value.values()].map((l) => l.until), ...entering.value.values()]
+  if (ends.length === 0) return
+  motionTimer = setTimeout(
+    () => {
+      const now = Date.now()
+      leaving.value = new Map([...leaving.value].filter(([, l]) => l.until > now))
+      entering.value = new Map([...entering.value].filter(([, until]) => until > now))
+      scheduleMotion()
+    },
+    Math.max(0, Math.min(...ends) - Date.now()) + 20,
+  )
+}
+
+/** What the filtered tree shows: the files the filters let through, and those still fading out. */
+const shownPaths = computed(() => {
+  if (leaving.value.size === 0) return filteredPaths.value
+  const paths = new Set(filteredPaths.value)
+  for (const path of leaving.value.keys()) paths.add(path)
+  return [...paths]
+})
+/** Folders with a file the filters let through: a folder without one fades out with its files. */
+const liveFolders = computed(() => new Set(foldersOf(filteredPaths.value)))
+
+/**
+ * The tree is filtered while a filter is on and there is something to show; with nothing, it shows
+ * all files and turns to what comes up as soon as it does.
+ */
+const filtered = computed(() => filterOn.value && shownPaths.value.length > 0)
+
+const filterLabel = computed(() =>
+  filters.changes && filters.activity ? 'Änderungen und Aktivität' : filters.changes ? 'Änderungen' : 'Gerade aktiv',
+)
+/** Why a filter shows nothing, so the tree shows all files. */
+const idleText = computed(() => {
   const changes = filters.changes && changedPaths.value.length > 0
   const touched = filters.activity && TOUCH_KINDS.some((kind) => kindCounts.value[kind] > 0)
-  if (changes || touched) return 'Keine Datei passt zu den gewählten Arten.'
-  if (filters.changes && filters.activity) return 'Keine Änderungen und keine Aktivität des Agenten.'
-  if (filters.changes) return git.value ? 'Keine Änderungen seit dem letzten Commit.' : 'Kein Git-Repository.'
-  return 'Der Agent hat in diesem Chat noch keine Datei hier angefasst.'
+  if (changes || touched) return 'Nichts in den gewählten Arten'
+  if (filters.changes && filters.activity) return git.value ? 'Keine Änderungen, gerade keine Aktivität' : 'Gerade keine Aktivität'
+  if (filters.changes) return git.value ? 'Keine Änderungen seit dem letzten Commit' : 'Kein Git-Repository'
+  return 'Gerade keine Aktivität'
 })
 
 function showAll() {
@@ -225,11 +317,20 @@ function showAll() {
   filters.activity = false
 }
 
-// A search goes on in the other list, which starts at its top, at the selected entry if it has it.
+// The filtered list starts at its top, at the selected entry if it has it; back to all files, the tree
+// is where it was before something came up.
+let treeScroll = 0
 watch(
-  () => [filters.changes, filters.activity],
-  () => {
-    if (scroller.value) scroller.value.scrollTop = 0
+  () => [filters.changes, filters.activity, filtered.value] as const,
+  ([, , isFiltered], [, , wasFiltered]) => {
+    const el = scroller.value
+    if (!el || (!isFiltered && !wasFiltered)) return
+    if (!isFiltered) {
+      void nextTick(() => (el.scrollTop = treeScroll))
+      return
+    }
+    if (!wasFiltered) treeScroll = el.scrollTop
+    el.scrollTop = 0
     void nextTick(() => {
       if (selected.value) revealRow(selected.value, true)
     })
@@ -286,7 +387,7 @@ function refresh() {
 const searchInput = ref<HTMLInputElement | null>(null)
 
 /** The list of all files is needed to search them, and for the files in new folders when the changes show. */
-const listNeeded = computed(() => (filtered.value ? filters.changes && untrackedDirs.value.length > 0 : searching.value))
+const listNeeded = computed(() => (filters.changes && untrackedDirs.value.length > 0) || (searching.value && !filtered.value))
 watch(
   () => listNeeded.value && !model.value.searchLoading && (!model.value.search || model.value.searchStale),
   (load) => {
@@ -313,7 +414,7 @@ const searchResult = computed(() =>
 const rows = computed<TreeRow[]>(() => {
   if (searching.value) return searchResult.value?.rows ?? []
   const m = model.value
-  if (filtered.value) return filesTree(filteredPaths.value, m.collapsedFiltered)
+  if (filtered.value) return filesTree(shownPaths.value, m.collapsedFiltered)
   return flattenTree({ listings: m.listings, errors: m.errors, expanded: m.expanded, hidden: hidden.value })
 })
 const entries = computed(() => rows.value.filter((row): row is Extract<TreeRow, { kind: 'entry' }> => row.kind === 'entry'))
@@ -385,7 +486,14 @@ interface RowView {
   touch: FileTouchKind | null
   /** Claude touched a file inside this closed folder. */
   touchInside: FileTouchKind | null
+  /** Filtered by activity: what the agent is at with the file lately, after its touch has stopped glowing. */
+  activity: FileTouchKind | null
+  /** Filtered: the row just came in, or fades out. */
+  motion: 'enter' | 'leave' | null
 }
+
+/** Rows glide to their new place and come and go with an animation while the tree is filtered, not searched. */
+const animated = computed(() => filtered.value && !searching.value)
 
 const visibleRows = computed<RowView[]>(() => {
   const height = rowHeight.value
@@ -393,6 +501,8 @@ const visibleRows = computed<RowView[]>(() => {
   const last = Math.min(rows.value.length, Math.ceil((scrollTop.value + viewHeight.value) / height) + OVERSCAN)
   const marks = decorations.value
   const now = touched.value
+  const motion = animated.value
+  const kinds = filtered.value ? activityKinds.value : null
   return rows.value.slice(first, last).map((row, i) => {
     if (row.kind !== 'entry') {
       return {
@@ -404,9 +514,12 @@ const visibleRows = computed<RowView[]>(() => {
         ignored: false,
         touch: null,
         touchInside: null,
+        activity: null,
+        motion: null,
       }
     }
     const dir = row.entry.dir
+    const gone = motion && (dir ? !liveFolders.value.has(row.path) : leaving.value.has(row.path))
     return {
       row,
       index: first + i,
@@ -416,6 +529,8 @@ const visibleRows = computed<RowView[]>(() => {
       ignored: marks.ignored(row.path),
       touch: (!dir && now?.files.get(row.path)) || null,
       touchInside: (dir && !row.expanded && now?.folders.get(row.path)) || null,
+      activity: (!dir && kinds && (kinds.get(row.path) ?? leaving.value.get(row.path)?.kind)) || null,
+      motion: gone ? 'leave' : motion && entering.value.has(row.path) ? 'enter' : null,
     }
   })
 })
@@ -1027,7 +1142,12 @@ const iconButton =
         }}
         <template v-if="model.search?.truncated && !filtered"> · nicht alle Dateien durchsucht</template>
       </p>
-      <p v-else-if="filtered && filteredPaths.length && !contentShown" class="flex items-center gap-1 px-2.5 pt-1.5 text-[11px] text-muted-foreground">
+      <p v-else-if="filtered && filteredPaths.length && !contentShown" class="flex items-center gap-1.5 px-2.5 pt-1.5 text-[11px] text-muted-foreground">
+        <!-- Something goes on: the dot glows while the agent is at a file. -->
+        <span v-if="filters.activity" class="relative flex size-[6px] shrink-0" aria-hidden="true">
+          <span v-if="touched" class="absolute inset-0 animate-ping rounded-full bg-success/60 motion-reduce:hidden" />
+          <span :class="cn('relative size-[6px] rounded-full transition-colors', touched ? 'bg-success' : 'bg-success/50')" />
+        </span>
         <span class="min-w-0 truncate">
           {{ filterLabel }}: {{ filteredPaths.length }} {{ filteredPaths.length === 1 ? 'Datei' : 'Dateien' }}
           <template v-if="filters.changes && git && (git.truncated || (untrackedDirs.length && model.search?.truncated))"> · nicht alle</template>
@@ -1039,6 +1159,15 @@ const iconButton =
         >
           Alle zeigen
         </button>
+      </p>
+      <!-- A filter is on, but there is nothing to show: all files, until something comes up. -->
+      <p
+        v-else-if="filterOn && !filteredPaths.length && !contentShown"
+        class="flex items-center gap-1.5 px-2.5 pt-1.5 text-[11px] text-muted-foreground"
+        v-tooltip="'Tut sich etwas, zeigt der Baum nur das'"
+      >
+        <span class="size-[6px] shrink-0 rounded-full bg-muted-foreground/40" aria-hidden="true" />
+        <span class="min-w-0 truncate">{{ idleText }} · alle Dateien</span>
       </p>
     </div>
 
@@ -1075,7 +1204,8 @@ const iconButton =
           @blur="listFocused = false"
           @contextmenu="onContextMenu"
         >
-          <div class="relative w-full" :style="{ height: `${rows.length * rowHeight}px` }">
+          <!-- All files and the filtered ones are two lists: the one that takes over fades in. -->
+          <div :key="filtered ? 'filtered' : 'all'" class="file-tree-swap relative w-full" :style="{ height: `${rows.length * rowHeight}px` }">
             <template v-for="view in visibleRows" :key="view.row.path">
               <div
                 v-if="view.row.kind === 'entry'"
@@ -1085,7 +1215,14 @@ const iconButton =
                 :aria-expanded="view.row.entry.dir ? view.row.expanded : undefined"
                 :aria-selected="selected === view.row.path"
                 draggable="true"
-                class="group/row absolute inset-x-0 top-0 cursor-pointer"
+                :class="
+                  cn(
+                    'group/row absolute inset-x-0 top-0 cursor-pointer',
+                    animated && 'file-tree-glide',
+                    view.motion === 'enter' && 'file-tree-enter',
+                    view.motion === 'leave' && 'file-tree-leave',
+                  )
+                "
                 :style="{ transform: `translateY(${view.index * rowHeight}px)`, height: `${rowHeight}px` }"
                 @click="onRowClick(view.row)"
                 @dblclick="onRowDoubleClick(view.row)"
@@ -1148,7 +1285,7 @@ const iconButton =
                     <span v-if="view.state.added && view.state.removed">&nbsp;</span>
                     <span v-if="view.state.removed" class="text-destructive">−{{ view.state.removed }}</span>
                   </span>
-                  <!-- What the agent does with the file, in its colour. -->
+                  <!-- What the agent does with the file, in its colour; filtered by activity, quieter after the moment. -->
                   <component
                     :is="TOUCH_ICON[view.touch]"
                     v-if="view.touch"
@@ -1156,6 +1293,15 @@ const iconButton =
                     :aria-label="TOUCH_LABEL[view.touch]"
                     class="file-tree-touch-icon ml-2 size-3.5 shrink-0"
                   />
+                  <span
+                    v-else-if="view.activity"
+                    :data-touch="view.activity"
+                    class="ml-2 flex shrink-0"
+                    :aria-label="`Gerade vom Agenten ${TOUCH_DONE[view.activity]}`"
+                    v-tooltip="`Gerade vom Agenten ${TOUCH_DONE[view.activity]}`"
+                  >
+                    <component :is="TOUCH_ICON[view.activity]" class="size-3.5 text-(--touch) opacity-60" />
+                  </span>
                   <span
                     v-if="view.touchInside"
                     class="relative ml-2 flex w-[12px] shrink-0 items-center justify-center"
@@ -1193,18 +1339,8 @@ const iconButton =
               </div>
             </template>
           </div>
-          <template v-if="rows.length === 0 && !searching">
-            <div v-if="!filtered" class="px-4 pt-3 text-center text-xs text-muted-foreground">Der Ordner ist leer.</div>
-            <div v-else-if="model.searchLoading" class="flex justify-center pt-6">
-              <Spinner class="size-[16px] text-muted-foreground" />
-            </div>
-            <div v-else class="flex flex-col items-center gap-2 px-4 pt-3 text-center text-xs text-muted-foreground">
-              {{ emptyText }}
-              <button type="button" class="cursor-pointer rounded px-1.5 py-0.5 text-foreground/80 hover:bg-accent hover:text-foreground" @click="showAll">
-                Alle Dateien zeigen
-              </button>
-            </div>
-          </template>
+          <!-- Filtered, there is always something: with nothing to show the tree shows all files. -->
+          <div v-if="rows.length === 0 && !searching" class="px-4 pt-3 text-center text-xs text-muted-foreground">Der Ordner ist leer.</div>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent class="w-64" @close-auto-focus="onMenuCloseFocus">

@@ -772,7 +772,11 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   Anzeigen ergänzt um `files.history(sessionId)`. Main leitet beides aus den `tool`-Items ab
   (`SessionService` meldet `tool` und `turnEnded`, `FileActivityTracker` wertet sie aus,
   `shared/file-touches.ts` liest Pfade aus Items). Shell-Befehle schreiben, was sich in ihrem Ordner
-  ändert, solange sie laufen.
+  ändert, solange sie laufen. Die Aktivität ist, was gerade geschieht: Jede Art läuft ab (`ACTIVITY_MS`
+  in `lib/file-tree.ts`: Lesen und Suchen nach 1 Minute, Commit nach 2, Schreiben nach 5), der Store
+  räumt sie höchstens sekündlich weg. Die Filter (Änderungen, Aktivität) zeigen nur, wenn etwas da ist;
+  sonst steht der ganze Baum da. Gefiltert gleitet, was kommt, herein und, was geht, hinaus
+  (`file-tree-enter`/`-leave` in `main.css`, Zeilen behalten ihren Platz, bis sie ausgeblendet sind).
 - **Browser** (`components/browser/*`, aus dem Claude Manager): `BrowserPanel` rechts im Chat (Tabs, Breite,
   Platz für die Seite), `BrowserToggle` im Chat-Kopf. Die Seiten selbst (`BrowserPane` mit `<webview>`)
   liegen in `BrowserLayer` in `App.vue` über dem Inhalt: ein `<webview>` lädt neu, wenn es den Parent

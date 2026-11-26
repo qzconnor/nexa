@@ -116,24 +116,44 @@ describe('activity', () => {
     expect([...fileTree.activityOf('s1')!.keys()]).toEqual(['C:\\dev\\d.ts'])
   })
 
-  it('starts with the chat’s history, what was seen live staying the most recent', async () => {
+  it('starts with the chat’s recent history, what was seen live staying the most recent', async () => {
     const fileTree = await load(['s1'])
+    const now = Date.now()
     history = [
-      { path: 'C:\\dev\\a.ts', kind: 'read', at: 1 },
-      { path: 'C:\\dev\\b.ts', kind: 'write', at: 2 },
+      { path: 'C:\\dev\\old.ts', kind: 'write', at: now - 10 * 60_000 },
+      { path: 'C:\\dev\\a.ts', kind: 'read', at: now - 2000 },
+      { path: 'C:\\dev\\b.ts', kind: 'write', at: now - 1000 },
     ]
     touched('s1', [read('C:\\dev\\a.ts')])
     await fileTree.loadHistory('s1')
     const activity = fileTree.activityOf('s1')!
     expect([...activity.keys()]).toEqual(['C:\\dev\\b.ts', 'C:\\dev\\a.ts'])
-    expect(activity.get('C:\\dev\\a.ts')!.read).toBeGreaterThan(1)
-    expect(activity.get('C:\\dev\\b.ts')!.write).toBe(2)
+    expect(activity.get('C:\\dev\\a.ts')!.read).toBeGreaterThan(now - 2000)
+    expect(activity.get('C:\\dev\\b.ts')!.write).toBe(now - 1000)
+  })
+
+  it('lets each kind run out: a read after a minute, a write after five', async () => {
+    const fileTree = await load(['s1'])
+    vi.useFakeTimers()
+    try {
+      touched('s1', [read('C:\\dev\\a.ts'), read('C:\\dev\\b.ts'), { path: 'C:\\dev\\b.ts', kind: 'write' }])
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(fileTree.activityOf('s1')?.size).toBe(2)
+      await vi.advanceTimersByTimeAsync(2000)
+      expect([...fileTree.activityOf('s1')!.keys()]).toEqual(['C:\\dev\\b.ts'])
+      expect(Object.keys(fileTree.activityOf('s1')!.get('C:\\dev\\b.ts')!)).toEqual(['write'])
+      await vi.advanceTimersByTimeAsync(4 * 60_000)
+      expect(fileTree.activityOf('s1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('asks for the history once, also after it was cleared', async () => {
     const fileTree = await load(['s1'])
-    history = [{ path: 'C:\\dev\\a.ts', kind: 'read', at: 1 }]
+    history = [{ path: 'C:\\dev\\a.ts', kind: 'read', at: Date.now() }]
     await fileTree.loadHistory('s1')
+    expect(fileTree.activityOf('s1')?.size).toBe(1)
     fileTree.clearActivity('s1')
     await fileTree.loadHistory('s1')
     expect(api.files.history).toHaveBeenCalledTimes(1)

@@ -24,6 +24,8 @@
       fortsetzen“ auch ohne Wechsel; danach eine einstellbare Nachricht („Mach weiter“)
 - [x] Dateien und Aktivität wie im Claude Manager: Dateibaum mit Git, angefasste Dateien, Diffs und
       Review-Kommentare als Panel neben dem Chat
+- [x] Aktivität als Live-Anzeige: nur, woran der Agent gerade ist (Gelesenes verschwindet nach einer Minute,
+      Geschriebenes nach fünf), mit Animation beim Kommen und Gehen; zeigen die Filter nichts, der ganze Baum
 - [x] Eigener Browser aus dem Claude Manager als Panel rechts neben dem Chat, mit allen Browser-Werkzeugen
       im Nexa-MCP-Server (Claude und Codex) und im Systemprompt
 - [x] Browser im Chat: was der Agent im Browser tut, als Karte mit Live-Bild der Seite (nur zum Zusehen);

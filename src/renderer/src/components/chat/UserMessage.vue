@@ -114,7 +114,8 @@ function onKey(event: KeyboardEvent): void {
       <ProviderIcon :provider="sender.provider" class="size-3 shrink-0" />
       <span class="truncate">Nachricht von „{{ sender.title }}“</span>
     </button>
-    <div v-if="item.images?.length" :class="cn('flex flex-wrap justify-end gap-2', queued && 'opacity-60')">
+    <!-- Images of different heights sit on the message, not centred in their row above it. -->
+    <div v-if="item.images?.length" :class="cn('flex max-w-[85%] flex-wrap items-end justify-end gap-2', queued && 'opacity-60')">
       <button
         v-for="(image, i) in item.images"
         :key="image"
@@ -123,7 +124,7 @@ function onKey(event: KeyboardEvent): void {
         aria-label="Bild groß ansehen"
         @click="viewing = i"
       >
-        <img :src="fileImageUrl(image)" alt="" draggable="false" class="max-h-40 max-w-60 rounded-lg border object-cover" />
+        <img :src="fileImageUrl(image)" alt="" draggable="false" class="block max-h-40 max-w-60 rounded-lg border object-cover" />
       </button>
     </div>
     <div v-if="editing" class="flex w-full max-w-[85%] flex-col gap-1.5 rounded-2xl rounded-br-md bg-secondary p-2 ring-1 ring-ring/40">

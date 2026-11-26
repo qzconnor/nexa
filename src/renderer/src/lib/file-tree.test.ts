@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest'
 import type { FileEntry, FileListing, GitTreeStatus } from '@shared/files'
 import {
   absolutePath,
+  ACTIVITY_MS,
   ancestors,
   changedFiles,
   filesTree,
   flattenTree,
   folderName,
   gitDecorations,
+  liveRecord,
   parentPath,
+  recordChange,
   recordKind,
   recordTouch,
   searchTree,
@@ -226,5 +229,20 @@ describe('touch records', () => {
     expect(recordKind(record, new Set(['write'] as const))).toBe('read')
     expect(recordKind({ search: 1 }, new Set(['search'] as const))).toBeNull()
     expect(recordKind({ commit: 1, read: 2 })).toBe('commit')
+  })
+
+  it('keep a kind only while it is current: a read a minute, a write five', () => {
+    const record = recordTouch(recordTouch(undefined, 'read', 0), 'write', 0)
+    expect(liveRecord(record, ACTIVITY_MS.read - 1)).toBe(record)
+    expect(liveRecord(record, ACTIVITY_MS.read)).toEqual({ write: 0 })
+    expect(liveRecord(record, ACTIVITY_MS.write)).toBeNull()
+    expect(ACTIVITY_MS.read).toBe(60_000)
+    expect(ACTIVITY_MS.write).toBe(300_000)
+  })
+
+  it('tell when the first kind runs out', () => {
+    expect(recordChange({ read: 1_000, write: 0 })).toBe(1_000 + ACTIVITY_MS.read)
+    expect(recordChange({ write: 0 })).toBe(ACTIVITY_MS.write)
+    expect(recordChange({})).toBe(Infinity)
   })
 })
