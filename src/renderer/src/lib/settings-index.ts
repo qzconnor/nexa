@@ -14,6 +14,8 @@ interface FieldDef {
   readonly keywords?: string
   /** Only shown on Windows, e.g. what needs the window material. */
   readonly windowsOnly?: boolean
+  /** Not shown on macOS, where the system decides it (the spellchecker's languages). */
+  readonly notMac?: boolean
 }
 
 interface SectionDef {
@@ -335,6 +337,8 @@ const TREE = [
             label: 'Vorschlag für den nächsten Prompt',
             keywords: 'Vorschläge Prompt Tab grau Eingabefeld nächster Schritt vorhersagen Claude Code',
           },
+          { id: 'chat.spellcheck', label: 'Rechtschreibprüfung', keywords: 'Rechtschreibung Tippfehler Spellcheck unterstrichen rot Wörterbuch Korrektur Vorschläge Rechtsklick' },
+          { id: 'chat.spellcheckLanguages', label: 'Sprachen der Rechtschreibprüfung', keywords: 'Rechtschreibung Wörterbuch Deutsch Englisch Sprache Spellcheck', notMac: true },
           { id: 'chat.shell', label: 'Shell für „!“', keywords: 'Ausrufezeichen Befehl Terminal Konsole PowerShell pwsh Git Bash cmd Kommandozeile Shell-Modus Startbefehle Dev-Server', windowsOnly: true },
         ],
       },
@@ -521,7 +525,7 @@ export function settingsIndex(platform: string, claudeManagerData = true): Setti
         text: searchText(section.title, section.keywords, tab.label),
       })
       for (const field of section.fields ?? []) {
-        if (field.windowsOnly && !windows) continue
+        if ((field.windowsOnly && !windows) || (field.notMac && platform === 'darwin')) continue
         entries.push({
           id: field.id as SettingsAnchor,
           kind: 'field',

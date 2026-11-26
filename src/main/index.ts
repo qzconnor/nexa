@@ -63,6 +63,7 @@ import { ServerLinkService } from './server-link/server-link-service'
 import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { ChatWindows } from './window/chat-windows'
+import { applySpellcheck } from './window/edit-menu'
 import { registerChatWindowsIpc } from './window/chat-windows-ipc'
 import { handleFileProtocol, registerFileScheme, setRemoteImages, type RemoteImage } from './window/file-protocol'
 import { createChatWindow, createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
@@ -510,6 +511,10 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     })().finally(() => (askingToQuit = null))
     return askingToQuit
   }
+
+  // One for all windows: the spellchecker belongs to the app's session.
+  applySpellcheck(settings.get().chat)
+  settings.on('changed', (next) => applySpellcheck(next.chat))
 
   /** What every window of the app gets: the material and scale of the settings, its state, notifications. */
   const setUpWindow = (win: BrowserWindow) => {

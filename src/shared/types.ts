@@ -69,6 +69,13 @@ export interface ChatSettings {
    * (`SessionRuntime.suggestion`). It asks its model once more for it, from the cached conversation.
    */
   promptSuggestions: boolean
+  /** Misspelled words in the text fields get squiggles, with suggestions on a right click (main/window/edit-menu.ts). */
+  spellcheck: boolean
+  /**
+   * The languages to check in (`de-DE`, `en-US` …, shared/spellcheck.ts); none: the system's and English.
+   * Not on macOS, which checks in the languages the system has set.
+   */
+  spellcheckLanguages: string[]
   /**
    * A chat's CLI ends after this many minutes without a turn (0: never), with its MCP servers; the next
    * prompt starts it again on the same conversation. Not while a turn runs or waits, prompts wait, or
@@ -711,6 +718,10 @@ export interface AppInfo {
   homeDir: string
   /** Windows build number, for the window material. */
   windowsBuild: number | null
+  /** The languages the system prefers, first the one it shows (`de-DE`, `en-US`). */
+  systemLanguages: string[]
+  /** The languages the spellchecker has dictionaries for; none on macOS, where the system chooses. */
+  spellcheckLanguages: string[]
 }
 
 export interface WindowState {

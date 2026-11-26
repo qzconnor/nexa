@@ -2,9 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { SETTING_RANGES } from '@shared/defaults'
 import type { AppSettings, DeepPartial, UserShell } from '@shared/types'
+import { languageName, MAX_SPELLCHECK_LANGUAGES, shortLanguageNames, spellcheckLanguages } from '@shared/spellcheck'
 import { voiceAvailable, VOICE_LANGUAGES, voiceLanguage as resolveVoiceLanguage, voiceLanguageLabel } from '@shared/voice'
+import { ChevronDownIcon } from '@lucide/vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useChatActions } from '@/composables/useChatActions'
@@ -12,6 +15,7 @@ import { attempt } from '@/lib/errors'
 import { microphonesOf, systemMicrophone, type Microphone } from '@/lib/microphones'
 import { isWindows } from '@/lib/platform'
 import { useAccountsStore } from '@/stores/accounts'
+import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import SettingField from './SettingField.vue'
@@ -59,6 +63,27 @@ const shell = computed({
   get: () => s.value.chat.shell,
   set: (value: UserShell) => update({ chat: { shell: value } }),
 })
+
+const app = useAppStore()
+const SPELLCHECK_DEFAULT = 'Wie das System und Englisch'
+const spellcheckAvailable = computed(() => app.info?.spellcheckLanguages ?? [])
+/** The languages checked in now, as the main process sets them (main/window/edit-menu.ts). */
+const spellcheckActive = computed(() => spellcheckLanguages(s.value.chat.spellcheckLanguages, app.info?.systemLanguages ?? [], spellcheckAvailable.value))
+/** By name; a language without its region (`de`) only where there is none with it (`de-DE`), or it is set. */
+const spellcheckChoices = computed(() =>
+  spellcheckAvailable.value
+    .filter((code) => spellcheckActive.value.includes(code) || !spellcheckAvailable.value.some((other) => other.startsWith(`${code}-`)))
+    .map((code) => ({ code, name: languageName(code) }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de')),
+)
+// Short: whether these are the system's shows the menu's first item.
+const spellcheckText = computed(() => shortLanguageNames(spellcheckActive.value).join(', ') || 'Keine verfügbar')
+/** From the languages checked in now, so choosing one more keeps the system's. */
+function toggleSpellcheckLanguage(code: string): void {
+  const active = spellcheckActive.value
+  const next = active.includes(code) ? active.filter((c) => c !== code) : [...active, code]
+  if (next.length) update({ chat: { spellcheckLanguages: next } })
+}
 
 // The selects can't hold an empty value: these stand for the setting's `''`.
 const SYSTEM = 'system'
@@ -183,6 +208,43 @@ function cleanUp(): void {
         description="Nur Claude Code: Nach einer Antwort steht grau im Eingabefeld, was du wahrscheinlich als Nächstes schreibst, etwa „ja, mach weiter“. Tab übernimmt es. Claude Code fragt dafür sein Modell noch einmal kurz; das zählt etwas zum Limit."
       >
         <Switch :model-value="s.chat.promptSuggestions" @update:model-value="(v: boolean) => update({ chat: { promptSuggestions: v } })" />
+      </SettingField>
+      <SettingField
+        anchor="chat.spellcheck"
+        label="Rechtschreibprüfung"
+        description="Tippfehler in den Textfeldern werden rot unterstrichen. Ein Rechtsklick auf das Wort zeigt Vorschläge und nimmt es auf Wunsch ins Wörterbuch auf."
+      >
+        <Switch :model-value="s.chat.spellcheck" @update:model-value="(v: boolean) => update({ chat: { spellcheck: v } })" />
+      </SettingField>
+      <SettingField
+        v-if="spellcheckAvailable.length"
+        anchor="chat.spellcheckLanguages"
+        label="Sprachen"
+        description="In welchen Sprachen geprüft wird. Ohne Auswahl in der des Systems und in Englisch, weil Prompts oft englische Fachwörter enthalten."
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="outline" class="max-w-72 min-w-44 justify-between bg-background/60 font-normal" :disabled="!s.chat.spellcheck" aria-label="Sprachen der Rechtschreibprüfung">
+              <span class="truncate">{{ spellcheckText }}</span>
+              <ChevronDownIcon class="text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="max-h-80 w-64 overflow-y-auto">
+            <DropdownMenuCheckboxItem :model-value="!s.chat.spellcheckLanguages.length" @select.prevent="update({ chat: { spellcheckLanguages: [] } })">
+              {{ SPELLCHECK_DEFAULT }}
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              v-for="language in spellcheckChoices"
+              :key="language.code"
+              :model-value="spellcheckActive.includes(language.code)"
+              :disabled="spellcheckActive.includes(language.code) ? spellcheckActive.length === 1 : spellcheckActive.length >= MAX_SPELLCHECK_LANGUAGES"
+              @select.prevent="toggleSpellcheckLanguage(language.code)"
+            >
+              {{ language.name }}
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SettingField>
       <SettingField
         v-if="isWindows"

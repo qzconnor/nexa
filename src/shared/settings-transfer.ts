@@ -1,6 +1,7 @@
 import { PROVIDER_IDS, type ProviderId } from './chat'
 import { ACTIVITY_CHOICES, defaultSettings, SETTING_RANGES } from './defaults'
 import { PERMISSION_MODES } from './providers'
+import { isLanguageCode, MAX_SPELLCHECK_LANGUAGES } from './spellcheck'
 import { CUSTOM_THEME_PREFIX } from './themes/file'
 import { THEMES } from './themes/builtin'
 import type { ThemeContent } from './themes/types'
@@ -194,6 +195,7 @@ const CHECKS: Record<string, Check> = {
   'defaults.provider': oneOf(PROVIDER_IDS),
   'defaults.permissionMode': oneOf(Object.keys(PERMISSION_MODES)),
   'chat.shell': oneOf(['powershell', 'gitbash', 'cmd']),
+  'chat.spellcheckLanguages': (value) => Array.isArray(value) && value.length <= MAX_SPELLCHECK_LANGUAGES && value.every(isLanguageCode),
   'chat.voiceLanguage': oneOf(['', ...VOICE_LANGUAGES.map((language) => language.code)]),
   'chat.voiceAccount': text(200),
   'chat.voiceMicrophone': text(500),
