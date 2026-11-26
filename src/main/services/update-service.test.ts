@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { splitNoteItems } from '@shared/release-notes'
 
@@ -425,6 +428,25 @@ const FEED = `<?xml version="1.0" encoding="UTF-8"?>
   </entry>
 </feed>`
 
+/** `count` releases from `1.<from>.0` down, newest first. */
+function apiReleases(from: number, count: number) {
+  return Array.from({ length: count }, (_, i) => apiRelease(`v1.${from - i}.0`))
+}
+
+/** GitHub with these releases, page by page as the API pages them; an empty feed. */
+function github(releases: ReturnType<typeof apiRelease>[]): void {
+  fakes.fetch.mockImplementation(async (url) => {
+    if (url.endsWith('releases.atom')) return new Response('<feed></feed>')
+    const query = new URL(url).searchParams
+    const size = Number(query.get('per_page'))
+    const page = Number(query.get('page'))
+    return json(releases.slice((page - 1) * size, page * size))
+  })
+}
+
+const versions = (updates: UpdateService) => updates.releaseNotes().notes.map((note) => note.version)
+const LIMIT = 'GitHub nimmt gerade keine weiteren Anfragen an (Limit pro Stunde). Bitte später noch einmal versuchen.'
+
 describe('UpdateService release notes', () => {
   it('lists the published releases of the API without drafts and prereleases, with the pull requests they link to', async () => {
     fakes.fetch.mockResolvedValue(
@@ -437,13 +459,16 @@ describe('UpdateService release notes', () => {
         apiRelease('v1.1.0', { published_at: null, body_html: undefined }),
       ]),
     )
-    const notes = await new UpdateService('nexa-test').releases()
+    const updates = new UpdateService('nexa-test')
+    await updates.refreshReleases()
 
     expect(fakes.fetch).toHaveBeenCalledTimes(1)
     const [url, init] = fakes.fetch.mock.calls[0]!
-    expect(url).toBe('https://api.github.com/repos/qzconnor/nexa/releases?per_page=30')
+    expect(url).toBe('https://api.github.com/repos/qzconnor/nexa/releases?per_page=10&page=1')
     expect(init?.headers).toMatchObject({ 'User-Agent': 'nexa-test' })
-    expect(notes).toEqual([
+    const notes = updates.releaseNotes()
+    expect(notes).toMatchObject({ complete: true, loadedAt: NOW, loading: false, error: null })
+    expect(notes.notes).toEqual([
       {
         version: '1.2.0',
         date: '2026-11-01T08:00:00Z',
@@ -456,19 +481,21 @@ describe('UpdateService release notes', () => {
       { version: '1.1.0', date: '', html: '', url: `${REPO_URL}/releases/tag/v1.1.0`, references: [] },
     ])
     // One line per change, also in releases whose title named several.
-    expect(notes[0]!.html.match(/<li>/g)).toHaveLength(2)
+    expect(notes.notes[0]!.html.match(/<li>/g)).toHaveLength(2)
   })
 
   it('reads the releases feed when the API refuses or lists no release', async () => {
     fakes.fetch.mockImplementation(async (url) =>
       url.endsWith('releases.atom') ? new Response(FEED, { status: 200 }) : json({ message: 'API rate limit exceeded' }, 403),
     )
-    const notes = await new UpdateService('nexa-test').releases()
+    const updates = new UpdateService('nexa-test')
+    await updates.refreshReleases()
     expect(fakes.fetch.mock.calls.map(([url]) => url)).toEqual([
-      'https://api.github.com/repos/qzconnor/nexa/releases?per_page=30',
+      'https://api.github.com/repos/qzconnor/nexa/releases?per_page=10&page=1',
       `${REPO_URL}/releases.atom`,
     ])
-    expect(notes).toEqual([
+    expect(updates.releaseNotes()).toMatchObject({ complete: true, error: null })
+    expect(updates.releaseNotes().notes).toEqual([
       {
         version: '1.2.0',
         date: '2026-11-02T09:00:00Z',
@@ -481,30 +508,130 @@ describe('UpdateService release notes', () => {
 
     fakes.fetch.mockReset()
     fakes.fetch.mockImplementation(async (url) => (url.endsWith('releases.atom') ? new Response(FEED, { status: 200 }) : json([])))
-    vi.setSystemTime(NOW + HOUR)
-    expect((await new UpdateService('nexa-test').releases()).map((note) => note.version)).toEqual(['1.2.0', '1.1.0'])
+    const fresh = new UpdateService('nexa-test')
+    await fresh.refreshReleases()
+    expect(versions(fresh)).toEqual(['1.2.0', '1.1.0'])
     expect(fakes.fetch).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps the releases for ten minutes, but never an empty answer', async () => {
-    const updates = new UpdateService('nexa-test')
-    fakes.fetch.mockImplementation(async (url) => (url.endsWith('releases.atom') ? new Response('<feed></feed>') : json([])))
-    expect(await updates.releases()).toEqual([])
-    expect(await updates.releases()).toEqual([])
-    // Nothing kept: GitHub is asked again each time (API and feed).
-    expect(fakes.fetch).toHaveBeenCalledTimes(4)
+  it('loads the notes with the checks, not when they are asked for', async () => {
+    github(apiReleases(12, 3))
+    const updates = started()
+    expect(updates.releaseNotes()).toMatchObject({ notes: [], loadedAt: null, loading: false })
+    expect(fakes.fetch).not.toHaveBeenCalled()
 
-    fakes.fetch.mockReset()
-    fakes.fetch.mockResolvedValue(json([apiRelease('v1.2.0')]))
-    expect((await updates.releases()).map((note) => note.version)).toEqual(['1.2.0'])
-    vi.setSystemTime(Date.now() + 10 * MINUTE - 1)
-    expect((await updates.releases()).map((note) => note.version)).toEqual(['1.2.0'])
+    await vi.advanceTimersByTimeAsync(10_000)
     expect(fakes.fetch).toHaveBeenCalledTimes(1)
+    expect(versions(updates)).toEqual(['1.12.0', '1.11.0', '1.10.0'])
 
-    fakes.fetch.mockResolvedValue(json([apiRelease('v1.3.0'), apiRelease('v1.2.0')]))
-    vi.setSystemTime(Date.now() + 1)
-    expect((await updates.releases()).map((note) => note.version)).toEqual(['1.3.0', '1.2.0'])
+    const loading: boolean[] = []
+    updates.on('releases', (notes) => loading.push(notes.loading))
+    await updates.check(true)
     expect(fakes.fetch).toHaveBeenCalledTimes(2)
+    expect(loading).toEqual([true, false])
+
+    // Asked for twice at once, GitHub is asked once.
+    const first = updates.refreshReleases()
+    expect(updates.refreshReleases()).toBe(first)
+    await first
+    expect(fakes.fetch).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(4 * HOUR)
+    expect(fakes.fetch).toHaveBeenCalledTimes(4)
+  })
+
+  it('loads the notes in development too, where the app never checks for updates', async () => {
+    fakes.app.isPackaged = false
+    github(apiReleases(12, 3))
+    const updates = started()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(versions(updates)).toHaveLength(3)
+    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  it('loads older releases page by page, without the ones it has, and knows when all are there', async () => {
+    const releases = apiReleases(30, 25)
+    github(releases)
+    const updates = new UpdateService('nexa-test')
+    // Before the newest page there is nothing to go on from.
+    await updates.moreReleases()
+    expect(fakes.fetch).not.toHaveBeenCalled()
+
+    await updates.refreshReleases()
+    expect(updates.releaseNotes()).toMatchObject({ complete: false })
+    expect(versions(updates)).toHaveLength(10)
+    await updates.moreReleases()
+    expect(versions(updates)).toHaveLength(20)
+
+    // Two releases published since push the pages back: the third one repeats two of the list.
+    github([apiRelease('v1.32.0'), apiRelease('v1.31.0'), ...releases])
+    await updates.moreReleases()
+    expect(versions(updates)).toEqual(releases.map((release) => release.tag_name.slice(1)))
+    expect(updates.releaseNotes()).toMatchObject({ complete: true, loadingMore: false, moreError: null })
+    expect(fakes.fetch.mock.calls.map(([url]) => new URL(url).searchParams.get('page'))).toEqual(['1', '2', '3'])
+
+    await updates.moreReleases()
+    expect(fakes.fetch).toHaveBeenCalledTimes(3)
+
+    // The newest page puts the new ones on top and keeps the older ones loaded.
+    await updates.refreshReleases()
+    expect(versions(updates)).toEqual(['1.32.0', '1.31.0', ...releases.map((release) => release.tag_name.slice(1))])
+    expect(updates.releaseNotes().complete).toBe(true)
+  })
+
+  it('keeps the notes when GitHub refuses, and says why', async () => {
+    const updates = new UpdateService('nexa-test')
+    fakes.fetch.mockImplementation(async () => json({}, 403, { 'x-ratelimit-remaining': '0' }))
+    await updates.refreshReleases()
+    expect(updates.releaseNotes()).toMatchObject({ notes: [], loadedAt: null, loading: false, error: LIMIT })
+
+    github(apiReleases(30, 25))
+    await updates.refreshReleases()
+    expect(updates.releaseNotes()).toMatchObject({ loadedAt: NOW, error: null })
+
+    fakes.fetch.mockRejectedValue(new Error('net::ERR_INTERNET_DISCONNECTED\nmore'))
+    await updates.refreshReleases()
+    expect(updates.releaseNotes()).toMatchObject({ error: 'net::ERR_INTERNET_DISCONNECTED' })
+    expect(versions(updates)).toHaveLength(10)
+    await updates.moreReleases()
+    expect(updates.releaseNotes()).toMatchObject({ loadingMore: false, moreError: 'net::ERR_INTERNET_DISCONNECTED' })
+    expect(versions(updates)).toHaveLength(10)
+
+    github(apiReleases(30, 25))
+    await updates.moreReleases()
+    expect(updates.releaseNotes()).toMatchObject({ moreError: null })
+    expect(versions(updates)).toHaveLength(20)
+
+    // An empty answer next to the notes is GitHub's hiccup: they stay.
+    github([])
+    await updates.refreshReleases()
+    expect(updates.releaseNotes()).toMatchObject({ error: null })
+    expect(versions(updates)).toHaveLength(20)
+  })
+
+  it('has the newest page right after the start, kept from before', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nexa-updates-'))
+    const file = join(dir, 'release-notes.json')
+    try {
+      github(apiReleases(30, 25))
+      const before = new UpdateService('nexa-test', file)
+      await before.refreshReleases()
+      await before.moreReleases()
+
+      fakes.fetch.mockClear()
+      const after = new UpdateService('nexa-test', file)
+      expect(after.releaseNotes()).toMatchObject({ complete: false, loadedAt: NOW, loading: false, error: null })
+      expect(versions(after)).toEqual(versions(before).slice(0, 10))
+      expect(fakes.fetch).not.toHaveBeenCalled()
+      await after.moreReleases()
+      expect(new URL(fakes.fetch.mock.calls[0]![0]).searchParams.get('page')).toBe('2')
+      expect(versions(after)).toHaveLength(20)
+
+      // A broken file is just loaded again.
+      writeFileSync(file, '{"notes": [{"version": 1}], "complete": false, "loadedAt": 1}')
+      expect(new UpdateService('nexa-test', file).releaseNotes()).toMatchObject({ notes: [], loadedAt: null })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('loads title and description of a pull request the notes link to', async () => {

@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
-import type { ReleaseNote, ReleaseReference, UpdateState } from '@shared/updates'
-import { attempt, errorMessage } from '@/lib/errors'
+import type { ReleaseNotes, ReleaseReference, UpdateState } from '@shared/updates'
+import { attempt } from '@/lib/errors'
 import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
 
@@ -41,9 +41,16 @@ export const useUpdatesStore = defineStore('updates', () => {
     error: null,
     foundByUser: false,
   })
-  const releases = ref<ReleaseNote[] | null>(null)
-  const releasesLoading = ref(false)
-  const releasesError = ref<string | null>(null)
+  /** The release notes as main has them: the newest page comes with each check, older ones on request. */
+  const releases = ref<ReleaseNotes>({
+    notes: [],
+    complete: false,
+    loadedAt: null,
+    loading: false,
+    error: null,
+    loadingMore: false,
+    moreError: null,
+  })
   /** Version whose notes were looked at – if the installed one differs, the app was updated. */
   const seenVersion = ref<string | null>(readSeen())
   /** Version installed by an update since the notes were looked at last – highlighted while the app runs. */
@@ -92,7 +99,9 @@ export const useUpdatesStore = defineStore('updates', () => {
   async function load(): Promise<void> {
     window.api.updates.onChanged(apply)
     window.api.updates.onShow(show)
+    window.api.updates.onReleases((notes) => (releases.value = notes))
     apply(await window.api.updates.state())
+    releases.value = await window.api.updates.releases()
 
     // A fresh install has nothing new to announce.
     if (seenVersion.value === null) {
@@ -121,19 +130,10 @@ export const useUpdatesStore = defineStore('updates', () => {
     references.value[number] = await window.api.updates.reference(number)
   }
 
-  /** Loads the notes again – the main process keeps them for a few minutes, so this is cheap. */
-  async function loadReleases(): Promise<void> {
-    releasesLoading.value = true
-    try {
-      releases.value = await window.api.updates.releases()
-      releasesError.value = null
-    } catch (error) {
-      // Notes shown already stay; the error only matters without them.
-      if (!releases.value?.length) releasesError.value = errorMessage(error)
-    } finally {
-      releasesLoading.value = false
-    }
-  }
+  /** Asks GitHub for the newest notes again; how it went comes with the notes (`error`). */
+  const reloadReleases = () => attempt(() => window.api.updates.reloadReleases(), 'Versionshinweise konnten nicht geladen werden')
+  /** Asks GitHub for the next older notes; how it went comes with the notes (`moreError`). */
+  const moreReleases = () => attempt(() => window.api.updates.moreReleases(), 'Ältere Versionen konnten nicht geladen werden')
 
   const check = () => attempt(() => window.api.updates.check(), 'Update-Suche fehlgeschlagen')
   const download = () => attempt(() => window.api.updates.download(), 'Download fehlgeschlagen')
@@ -160,8 +160,6 @@ export const useUpdatesStore = defineStore('updates', () => {
   return {
     state,
     releases,
-    releasesLoading,
-    releasesError,
     references,
     justUpdated,
     hasUpdate,
@@ -169,7 +167,8 @@ export const useUpdatesStore = defineStore('updates', () => {
     unseen,
     load,
     markSeen,
-    loadReleases,
+    reloadReleases,
+    moreReleases,
     loadReference,
     check,
     download,

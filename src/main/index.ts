@@ -327,8 +327,9 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const cliImport = new CliSessionImport(projects, sessions, accounts, providers, () => settings.get())
   registerImportIpc(new ClaudeManagerImport(app.getPath('appData'), projects, sessions, accounts, themes, () => settings.get()), cliImport)
 
-  // New versions from the GitHub releases: checked after the start and every 4 hours (installed app only).
-  const updates = new UpdateService(`nexa/${app.getVersion()}`)
+  // New versions from the GitHub releases: checked after the start and every 4 hours (installed app
+  // only), the release notes along with each check.
+  const updates = new UpdateService(`nexa/${app.getVersion()}`, join(userDataDir, 'release-notes.json'))
   registerUpdatesIpc(updates)
   updates.init()
 
