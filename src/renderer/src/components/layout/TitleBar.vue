@@ -69,8 +69,14 @@ function openProject(): void {
     :data-unfocused="!app.windowState.focused || undefined"
     class="app-drag flex h-(--titlebar-height) shrink-0 items-center gap-1 pr-(--caption-buttons-width) pl-3"
   >
-    <!-- As wide as the sidebar while it is open, so the project starts above the page's corner. -->
-    <div :class="cn('flex shrink-0 items-center', sidebarOpen && 'w-[calc(var(--sidebar-width)-0.75rem)]')">
+    <!-- As wide as the sidebar while it is open, so the project starts above the page's corner. A
+         narrower window takes that room back first (the high shrink factor), before the project, the
+         search or the usage give way; it ends at the logo and the button. -->
+    <div
+      :class="
+        cn('flex items-center', sidebarOpen ? 'min-w-max shrink-[1000] basis-[calc(var(--sidebar-width)-0.75rem)]' : 'shrink-0')
+      "
+    >
       <div class="flex items-center gap-2.5 transition-opacity in-data-unfocused:opacity-75">
         <AppLogo class="size-5" />
         <span class="text-[0.95rem] font-semibold tracking-tight">Nexa</span>
@@ -87,18 +93,22 @@ function openProject(): void {
       </Button>
     </div>
     <!-- The search in the middle above the page, between the open chat's place and the usage. The right
-         column never gets narrower than the usage: the search moves left rather than cover it. -->
+         column never gets narrower than the usage: the search moves left rather than cover it. Its
+         natural width (`w-max`) is its basis, so the room left of it goes before any of it does. -->
     <div
       :class="
         cn(
-          'grid h-full min-w-0 flex-1 items-center gap-2',
+          'grid h-full w-max min-w-0 flex-auto items-center gap-2',
           isChatWindow
             ? 'grid-cols-[minmax(0,1fr)_minmax(max-content,auto)]'
             : 'grid-cols-[minmax(0,1fr)_minmax(11rem,min(30rem,42%))_minmax(max-content,1fr)]',
         )
       "
     >
-      <div :class="cn('flex min-w-0 items-center gap-1.5 transition-opacity in-data-unfocused:opacity-75', !sidebarOpen && 'ml-2')">
+      <!-- Clipped: in a very narrow window the folder's icon and the branch would reach over the search. -->
+      <div
+        :class="cn('flex min-w-0 items-center gap-1.5 overflow-x-clip transition-opacity in-data-unfocused:opacity-75', !sidebarOpen && 'ml-2')"
+      >
         <template v-if="project">
           <button
             type="button"
