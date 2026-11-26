@@ -293,8 +293,25 @@
 - [x] Benachrichtigungen der Agents (`notify` im Nexa-MCP-Server): Toast im Fenster oder Meldung des
       Systems, ein Klick öffnet den Chat, bis zu drei Knöpfe, deren Wahl der Agent abwartet; abschaltbar
       unter Einstellungen › Benachrichtigungen
+- [x] Rechtschreibprüfung in der Eingabe und allen Textfeldern: Rechtsklick mit Vorschlägen, „Zum
+      Wörterbuch hinzufügen“ und Bearbeiten-Befehlen (`window/edit-menu.ts`). Geprüft wird ab Werk in
+      Systemsprache und Englisch, abschaltbar und mit eigenen Sprachen unter Einstellungen › Chat › Eingabe.
 
 ## Als Nächstes
+
+- [ ] **Portweiterleitung über den nexa-server**: den Port eines Dev-Servers eines anderen Geräts hier
+      unter `127.0.0.1:<port>` öffnen, etwa den Vite-Server des Desktops auf dem Laptop. Der Tunnel läuft in
+      der App über neue `rc.`-Arten im Remote Control (die Verbindung reicht nur `rc.*` weiter), der Server
+      muss dafür nichts lernen. Was zu beachten ist:
+  - Grenzen des Servers je Verbindung: 100 Nachrichten pro Sekunde (Burst 200), danach `rate-limited`
+    ohne `id`; höchstens 1 MiB je Nachricht, nur Text-JSON (Daten also base64); ab 16 MiB Puffer beim
+    Empfänger `busy`. Die Nachrichten eines Geräts gehen der Reihe nach durch einen Kanal, zusammen mit den
+    Ereignissen der Chats. Also kleine Stücke, Gutschriften (Flusskontrolle) und ein Takt, damit ein großer
+    Download die Chats nicht ausbremst.
+  - Sicherheit: nur mit der Stufe „Alles“, auf dem freigebenden Gerät eine Liste erlaubter Ports, dort nur
+    zu `localhost`; das steuernde Gerät bindet nur `127.0.0.1`.
+  - Am Server (im Chat „Nexa-Server“) ginge es besser: `id` in `rate-limited`-Fehlern, Binärframes,
+    höhere Grenzen für Tunnel. Später eine direkte Verbindung (WebRTC) mit dem Server nur als Vermittler.
 
 - [ ] **Nachrichten an Claude-Sitzungen außerhalb von Nexa** (Terminal, VS Code) über das Peer-Protokoll
       von Claude Code (`PROTOCOLS.md`, „Nachrichten zwischen Sitzungen“). Senden ist einfach, für Antworten

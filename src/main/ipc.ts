@@ -27,6 +27,7 @@ import type { SettingsService } from './services/settings-service'
 import { SettingsTransfer } from './services/settings-transfer'
 import { gitBash } from './services/user-shells'
 import type { ThemeService } from './services/theme-service'
+import { availableSpellcheckLanguages } from './window/edit-menu'
 import { fromAppWindow, openAppWindows, windowState } from './window/main-window'
 
 export interface AppContext {
@@ -199,6 +200,8 @@ export function appInfo(userDataDir: string): AppInfo {
     userData: userDataDir,
     homeDir: homedir(),
     windowsBuild: process.platform === 'win32' ? Number(release().split('.')[2]) || null : null,
+    systemLanguages: app.getPreferredSystemLanguages(),
+    spellcheckLanguages: availableSpellcheckLanguages(),
   }
 }
 

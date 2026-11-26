@@ -5,6 +5,7 @@ import type { AppSettings, WindowState } from '@shared/types'
 import { normalizeZoom } from '@shared/zoom'
 import { readJsonSync, writeJsonAtomic } from '../lib/json-file'
 import { guardBrowserGuests } from './browser-guests'
+import { attachEditMenu } from './edit-menu'
 import { chatWindowPlace, onScreen, type SavedBounds } from './window-place'
 
 export const TITLE_BAR_HEIGHT = 40
@@ -194,6 +195,7 @@ function createAppWindow(
   appWindows.set(win, kind)
   guardAppSession()
   guardBrowserGuests(win)
+  attachEditMenu(win)
   win.setMenu(null)
   if (place.maximized) {
     // Maximizing also shows the window, so a hidden one does it when it appears.

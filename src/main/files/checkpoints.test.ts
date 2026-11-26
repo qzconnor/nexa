@@ -1,8 +1,11 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Checkpoints, isSafeRel, unsafeRoot } from './checkpoints'
+
+// Each test runs a dozen real git processes: 1–2 s, but on a busy Windows runner well over 5.
+vi.setConfig({ testTimeout: 20_000 })
 
 let base: string
 let root: string

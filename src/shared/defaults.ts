@@ -67,6 +67,8 @@ export function defaultSettings(): AppSettings {
       collapseDiffs: false,
       enterSends: true,
       promptSuggestions: true,
+      spellcheck: true,
+      spellcheckLanguages: [],
       releaseIdleMinutes: 15,
       autoTitles: true,
       deleteCliConversations: true,

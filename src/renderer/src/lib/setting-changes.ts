@@ -2,6 +2,7 @@ import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import { SYNC_GROUPS } from '@shared/remote-sync'
 import type { SettingChange, SettingsFileTheme, SettingsImportPreview, SkippedSetting } from '@shared/settings-transfer'
+import { languageName } from '@shared/spellcheck'
 import { VOICE_LANGUAGES } from '@shared/voice'
 import { formatArgs } from './args'
 import { effortLabel } from './effort'
@@ -49,6 +50,8 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'chat.checkpoints': { anchor: 'chat.checkpoints' },
   'chat.enterSends': { anchor: 'chat.enterSends' },
   'chat.promptSuggestions': { anchor: 'chat.promptSuggestions' },
+  'chat.spellcheck': { anchor: 'chat.spellcheck' },
+  'chat.spellcheckLanguages': { anchor: 'chat.spellcheckLanguages' },
   'chat.releaseIdleMinutes': { anchor: 'chat.releaseIdleMinutes', label: 'CLI nach Ruhe beenden' },
   'chat.shell': { anchor: 'chat.shell' },
   'chat.voiceMicrophone': { anchor: 'chat.voiceMicrophone', label: 'Mikrofon der Spracheingabe' },
@@ -187,6 +190,7 @@ const CHOICES: Record<string, Record<string, string>> = {
 const EMPTY: Record<string, string> = {
   'appearance.uiFont': 'Geist (Standard)',
   'appearance.codeFont': 'Geist Mono (Standard)',
+  'chat.spellcheckLanguages': 'Wie das System und Englisch',
   'chat.voiceLanguage': 'Wie das System',
   'chat.voiceMicrophone': 'Wie das System',
   'chat.voiceAccount': 'Automatisch',
@@ -239,6 +243,7 @@ export function settingValueText(path: string, value: unknown, names: ValueNames
         return value.toLocaleString('de-DE')
     }
   }
+  if (path === 'chat.spellcheckLanguages' && Array.isArray(value)) return value.map((code) => languageName(String(code))).join(', ')
   if (Array.isArray(value)) return formatArgs(value.map(String))
   if (path === 'chat.continuePrompt' && typeof value === 'string') return `„${value}“`
   return String(value)
