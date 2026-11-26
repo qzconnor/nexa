@@ -399,6 +399,27 @@ const TREE = [
     ],
   },
   {
+    tab: 'devices',
+    label: 'Geräte',
+    sections: [
+      {
+        id: 'devices.server',
+        title: 'Verbindung mit nexa-server',
+        keywords: 'Verbindung Server selbst gehostet Remote Fernsteuerung Kopplung koppeln Abmelden Trennen Namespace Sync',
+        fields: [
+          { id: 'devices.code', label: 'Code', keywords: 'Einladungscode Kopplungscode Einladung nexa1' },
+          { id: 'devices.url', label: 'Adresse des Servers', keywords: 'URL HTTPS Domain' },
+          { id: 'devices.name', label: 'Name dieses Geräts', keywords: 'Gerätename Rechner' },
+        ],
+      },
+      {
+        id: 'devices.list',
+        title: 'Geräte',
+        keywords: 'Instanzen Gerät hinzufügen entfernen umbenennen Laptop Desktop Handy bestätigt Schlüssel',
+      },
+    ],
+  },
+  {
     tab: 'api',
     label: 'Lokale API',
     sections: [

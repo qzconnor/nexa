@@ -21,6 +21,7 @@ import SettingsApi from './SettingsApi.vue'
 import SettingsAppearance from './SettingsAppearance.vue'
 import SettingsChat from './SettingsChat.vue'
 import SettingsCliConfig from './SettingsCliConfig.vue'
+import SettingsDevices from './SettingsDevices.vue'
 import SettingsGeneral from './SettingsGeneral.vue'
 import SettingsNotifications from './SettingsNotifications.vue'
 import SettingsProviders from './SettingsProviders.vue'
@@ -61,6 +62,13 @@ const SECTIONS: { id: SettingsSection; label: string; description: string; icon:
     description: 'Fertige Chats, Rückfragen und Limits',
     icon: SETTINGS_ICONS.notifications,
     page: SettingsNotifications,
+  },
+  {
+    id: 'devices',
+    label: 'Geräte',
+    description: 'Deine Geräte über einen eigenen nexa-server verbinden',
+    icon: SETTINGS_ICONS.devices,
+    page: SettingsDevices,
   },
   { id: 'api', label: 'Lokale API', description: 'Für Stream Deck und Skripte', icon: SETTINGS_ICONS.api, page: SettingsApi },
   { id: 'updates', label: 'Updates', description: 'Neue Versionen und was sich geändert hat', icon: SETTINGS_ICONS.updates, page: SettingsUpdates },

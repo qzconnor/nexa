@@ -8,6 +8,7 @@ import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@sha
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
 import { McpAppsInvoke } from '@shared/mcp-apps'
 import { ScheduledEvent, ScheduledInvoke } from '@shared/scheduled-tasks'
+import { ServerLinkEvent, ServerLinkInvoke } from '@shared/server-link'
 import { StartCommandsEvent, StartCommandsInvoke } from '@shared/start-commands'
 import { TerminalsEvent, TerminalsInvoke } from '@shared/terminals'
 import { UpdatesEvent, UpdatesInvoke } from '@shared/updates'
@@ -53,6 +54,17 @@ const api: NexaApi = {
     reference: (number) => invoke(UpdatesInvoke.reference, number),
     onChanged: (cb) => subscribe(UpdatesEvent.changed, cb),
     onShow: (cb) => subscribe(UpdatesEvent.show, cb),
+  },
+  serverLink: {
+    state: () => invoke(ServerLinkInvoke.state),
+    pair: (input) => invoke(ServerLinkInvoke.pair, input),
+    invite: () => invoke(ServerLinkInvoke.invite),
+    rename: (instance, name) => invoke(ServerLinkInvoke.rename, instance, name),
+    remove: (instance) => invoke(ServerLinkInvoke.remove, instance),
+    unpair: () => invoke(ServerLinkInvoke.unpair),
+    connect: () => invoke(ServerLinkInvoke.connect),
+    disconnect: () => invoke(ServerLinkInvoke.disconnect),
+    onChanged: (cb) => subscribe(ServerLinkEvent.changed, cb),
   },
   claudeManager: {
     detect: () => invoke(ImportInvoke.detect),

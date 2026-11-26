@@ -1189,3 +1189,62 @@ Knöpfe mit je 40 Zeichen (doppelte fallen weg).
 Wie `limits` und `ask_user` ohne eigenen Schalter beim Server und ohne Rückfrage (`NexaToolGrant`,
 `app`), nur für Verbindungen eines Chats. Chats geplanter Aufgaben bekommen im Systemprompt den Hinweis,
 dass niemand zusieht und `notify` der Weg zum Nutzer ist.
+
+## nexa-server (Geräte)
+
+Was der Server spricht (HTTP, WebSocket, Anmeldung, Relay, Schließcodes), steht im Repo nexa-server unter
+`docs/PROTOCOL.md`; `src/shared/nexa-server/protocol.ts` und `auth.ts` sind Kopien seiner Dateien. Hier
+steht, was die Geräte untereinander vereinbaren: Der Server reicht `body` nur weiter und gilt für Inhalte
+als nicht vertrauenswürdig.
+
+### Kopplungscode
+
+`nexa1:` + base64url von `{ u, c, k, g }`: Adresse, Einladung, Schlüssel des Namespace (32 Byte) und
+seine Generation. `g` ist Nexas Zusatz; das Protokoll lässt Clients Felder ergänzen, und ohne `g` ließe
+sich der Schlüssel aus dem Code nicht gegen einen späteren ordnen (fehlt es, gilt 0). Das erste Gerät
+eines Namespace macht den Schlüssel selbst (Generation 1).
+
+### Nachrichten
+
+`body` jeder `send`:
+
+```json
+{ "v": 1, "k": "<Id des Schlüssels oder pair>", "n": "<IV, 12 Byte>", "c": "<AES-256-GCM>" }
+```
+
+- `k`: die Id eines Schlüssels des Namespace (SHA-256 über `nexa/key-id/v1:` und den Schlüssel, die
+  ersten 12 Byte, base64url) oder `pair` für den Schlüssel nur zweier Geräte: ECDH ihrer `dhKey`, durch
+  HKDF-SHA-256 mit `nexa/pair/v1:<kleinere Id>:<größere Id>`.
+- Associated Data: UTF-8 von `["nexa/msg/v1", from, to, kind, id, k]` (JSON). Ein Body, den der Server
+  einer anderen Nachricht, einem anderen Absender oder einer anderen Art unterschiebt, geht nicht auf.
+- Klartext: 64 Byte ECDSA-Signatur (P-256, SHA-256, IEEE P1363) mit dem Schlüssel, mit dem sich das Gerät
+  anmeldet, dann UTF-8-JSON `{ at, d }`. Signiert sind die Associated Data und dieses JSON; den Schlüssel
+  des Namespace kennen alle Geräte, erst die Signatur sagt, wer schrieb. `at` ist die Uhr des Absenders.
+- Jede Nachricht hat eine zufällige `id` (12 Byte). Ein Gerät nimmt `(from, id)` nur einmal und nichts,
+  dessen `at` mehr als 5 Minuten von seiner Uhr abweicht (`ReplayGuard`). Die gesehenen Ids hält es nur
+  im Speicher: Kurz nach einem Neustart ginge eine Wiederholung aus dem Fenster davor noch durch.
+
+### Mitglieder und Schlüssel
+
+- **`member.hello`** (`{ instance, signKey, dhKey }`, mit dem Schlüssel des Namespace): nach jedem
+  `ready` an alle. Wer ihn öffnen kann, dessen Signatur stimmt und dessen Schlüssel denen in der Liste
+  des Servers gleichen, wird Mitglied; neue Mitglieder nur unter dem neuesten Schlüssel und nicht, solange
+  nach einer Entfernung ein neuer aussteht. Ein Mitglied antwortet auf einen Hello an alle mit einem
+  eigenen an den Absender (nicht auf einen direkten, sonst ginge es hin und her). Die Schlüssel eines
+  Mitglieds ändern sich nie; ein Hello mit anderen unter seiner Id gilt nicht.
+- **`key.share`** (`{ key, members }`, mit dem Schlüssel `pair`): ein Schlüssel des Namespace und die
+  Mitglieder, wie der Absender sie kennt. Nur von Mitgliedern, nur direkt, nur wenn der Empfänger und der
+  Absender in `members` stehen. Ist der Schlüssel neuer (höhere Generation, bei gleicher die kleinere Id),
+  wird er der aktuelle und `members` ersetzt die eigene Liste: So erfährt ein Gerät, das weg war, auch von
+  Entfernungen. Ältere Schlüssel behält es (die letzten 4), um Geräte zu verstehen, die noch mit ihnen
+  schreiben.
+- **Sagt ein Mitglied Hallo mit einem älteren Schlüssel**, schickt ihm ein Gerät mit dem neueren einen
+  `key.share`, vor dem eigenen Hello, der schon den neuen Schlüssel nutzt.
+- **Nach `removed`** (oder fehlt ein Mitglied in der Liste von `ready`) macht das Mitglied mit der
+  kleinsten Id unter den verbundenen einen neuen Schlüssel und schickt ihn jedem übrigen Mitglied als
+  `key.share`. Die anderen warten 20 bis 30 Sekunden und machen ihn selbst, wenn keiner kam; ändern zwei
+  ihn zugleich, setzt sich der mit der kleineren Id durch.
+- **Grenzen**: Arbeitet der Server mit einem entfernten Gerät zusammen und war ein Gerät während der
+  Entfernung weg, kann er ihm den neuen Schlüssel vorenthalten; es schreibt dann weiter mit dem alten. Ein
+  Gerät, das der Server allein in die Liste setzt, sieht man in Einstellungen › Geräte als „Nicht
+  bestätigt“.

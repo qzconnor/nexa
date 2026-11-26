@@ -17,6 +17,7 @@ export type SettingsSection =
   | 'cliConfig'
   | 'chat'
   | 'notifications'
+  | 'devices'
   | 'api'
   | 'updates'
   | 'about'

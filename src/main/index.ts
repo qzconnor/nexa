@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, nativeTheme, shell, type MessageBoxOptions } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, powerMonitor, shell, type MessageBoxOptions } from 'electron'
 import { ChatWindowsEvent, type MainWindowRequest } from '@shared/chat-windows'
 import { IpcEvent } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
@@ -54,6 +54,8 @@ import { ThemeService } from './services/theme-service'
 import { UpdateService } from './services/update-service'
 import { registerUpdatesIpc } from './services/updates-ipc'
 import { shellLaunch } from './services/user-shells'
+import { registerServerLinkIpc } from './server-link/server-link-ipc'
+import { ServerLinkService } from './server-link/server-link-service'
 import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
 import { VoiceService } from './voice/voice-service'
 import { ChatWindows } from './window/chat-windows'
@@ -319,6 +321,13 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   registerUpdatesIpc(updates)
   updates.init()
 
+  // The pairing with a nexa-server: connects only once paired. After sleep the socket is likely dead,
+  // and the next attempt could be a minute away.
+  const serverLink = new ServerLinkService({ userDataDir, log: (message) => console.info('[nexa-server]', message) })
+  registerServerLinkIpc(serverLink)
+  void serverLink.init().catch((error: unknown) => console.warn('[nexa-server] init failed', error))
+  powerMonitor.on('resume', () => serverLink.retryNow())
+
   // Which CLIs are installed and logged in, then their usage; the window shows it once known.
   const detected = providers.detect()
   void detected.then(() => providers.refreshUsage())
@@ -569,13 +578,14 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     cleanedUp = true
     tray.dispose()
     updates.dispose()
+    const serverLinkSaved = serverLink.dispose()
     // Before the runs end: nothing goes on after a limit while Nexa quits.
     const switchSaved = autoSwitch.dispose()
     // Ends the CLI processes and start commands (they would outlive the app) and writes what is pending.
     terminals.dispose()
     // Before the chats end: no run starts while Nexa quits.
     const scheduledSaved = scheduled.dispose()
-    void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), chatWindows.flush(), switchSaved, scheduledSaved])
+    void Promise.allSettled([sessions.dispose(), providers.dispose(), startCommands.dispose(), browserTabs.flush(), chatWindows.flush(), switchSaved, scheduledSaved, serverLinkSaved])
       .then(() => {
         api.dispose()
         notifications.dispose()
