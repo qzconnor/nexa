@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import type { ContentSearchResult } from '@shared/files'
 import { errorMessage } from '@/lib/errors'
+import { useDeviceApi } from '@/stores/device'
 import type { TreeModel } from '@/stores/file-tree'
 
 /** Shorter text finds too much to help. */
@@ -10,9 +11,11 @@ const DEBOUNCE_MS = 250
 
 /**
  * The content search of a tree: the lines of its files that hold what is typed into its search, while
- * the search looks into the files (`searchContent`). An answer to an older text is dropped.
+ * the search looks into the files (`searchContent`), on the device of the chat (`useDevice`). An
+ * answer to an older text is dropped.
  */
 export function useContentSearch(model: () => TreeModel) {
+  const api = useDeviceApi()
   const result = shallowRef<ContentSearchResult | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -36,7 +39,7 @@ export function useContentSearch(model: () => TreeModel) {
     loading.value = true
     timer = setTimeout(async () => {
       try {
-        const next = await window.api.files.grep(root, text)
+        const next = await api.files.grep(root, text)
         if (id !== request) return
         result.value = Object.freeze(next)
         error.value = null

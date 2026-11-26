@@ -288,6 +288,16 @@ export function toolSummary(all: readonly ToolItem[]): string {
 }
 
 /** `nexa-file://` URL of an image on disk (main/window/file-protocol.ts). */
-export function fileImageUrl(path: string): string {
+export function fileImageUrl(path: string, from?: ImageSource | null): string {
+  if (from) return `nexa-file://device?instance=${encodeURIComponent(from.device)}&session=${encodeURIComponent(from.sessionId)}&path=${encodeURIComponent(path)}`
   return `nexa-file://image?path=${encodeURIComponent(path)}`
+}
+
+/**
+ * A picture in a chat of another device: its path is one there, so main fetches it from that device
+ * (Remote Control), which gives out only pictures of that chat's prompts.
+ */
+export interface ImageSource {
+  device: string
+  sessionId: string
 }

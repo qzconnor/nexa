@@ -1,7 +1,7 @@
 import { RemoteKind } from '@shared/remote'
 import type { ServerLinkService } from '../server-link/server-link-service'
 import { RemoteClient } from './remote-client'
-import { RemoteHost } from './remote-host'
+import { RemoteHost, type RemoteHostDeps } from './remote-host'
 
 /** What Remote Control needs of the server link (tests hand in the real one, with a fake server). */
 export type RemoteLink = Pick<
@@ -11,10 +11,12 @@ export type RemoteLink = Pick<
 
 export interface RemoteDeps {
   link: RemoteLink
-  /** A call of the window API, answered by the windows' own handlers (`invokeHandler` of main/ipc.ts). */
-  invoke(channel: string, args: unknown[]): Promise<unknown>
+  /** A call of the window API by the device `from`, answered by the windows' own handlers (`invokeHandler` of main/ipc.ts). */
+  invoke(channel: string, args: unknown[], from: string): Promise<unknown>
   /** The window events as they go out (`onBroadcast` of main/ipc.ts). */
   onBroadcast(listener: (channel: string, args: unknown[]) => void): () => void
+  /** Requests of other devices' chat tools (`chats.*`, `RemoteChatsHost`). */
+  chats?: RemoteHostDeps['chats']
   version: string
   log?: (message: string) => void
 }
@@ -42,6 +44,7 @@ export function createRemote(deps: RemoteDeps): Remote {
       limits: () => link.limits(),
     },
     invoke: deps.invoke,
+    chats: deps.chats,
     version: deps.version,
     log: deps.log,
   })

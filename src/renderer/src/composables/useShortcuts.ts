@@ -4,9 +4,11 @@ import { toast } from 'vue-sonner'
 import { chatAt, cycleChat, matchAppShortcut, type AppShortcut } from '@shared/shortcuts'
 import { DEFAULT_ZOOM, normalizeZoom, stepZoom } from '@shared/zoom'
 import { isChatWindow } from '@/lib/chat-window'
+import { chatRefs, chatSources, newChatTarget } from '@/lib/device-chats'
 import { attempt } from '@/lib/errors'
 import { chatKey } from '@/lib/session-tree'
 import { useShownDeviceStore } from '@/stores/device'
+import { useDevicesStore } from '@/stores/devices'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useTerminalsStore } from '@/stores/terminals'
@@ -25,18 +27,22 @@ export function useShortcuts(ready: Ref<boolean>): void {
   const settings = useSettingsStore()
   const ui = useUiStore()
   const terminals = useTerminalsStore()
-  const chat = useChatActions()
   const shown = useShownDeviceStore()
+  const devices = useDevicesStore()
+
+  /** Every chat of this device and of the other devices shown in the sidebar, for when it is hidden. */
+  const allChats = () => chatRefs(chatSources(devices.devices).map((s) => ({ device: s.id, metas: useSessionsStore(s.id).metas })))
 
   /**
-   * The chats in the order the sidebar shows them, as one counts them there: a folded project's
-   * aren't among them. A pinned chat shows twice (on top and in its project) and counts where it
-   * shows first. With the sidebar hidden, the latest first.
+   * The chats in the order the sidebar shows them, as one counts them there: a folded project's or
+   * device's aren't among them. A pinned chat shows twice (on top, with those of every device, and in
+   * its project) and counts where it shows first. With the sidebar hidden, this device's latest first,
+   * then each other device's.
    */
   function chatOrder(): string[] {
     const rows = [...document.querySelectorAll<HTMLElement>(CHAT_ROW)].filter((row) => row.getClientRects().length > 0)
     if (rows.length) return [...new Set(rows.map((row) => row.dataset.chatKey!).filter(Boolean))]
-    return sessions.metas.filter((m) => !m.archived).map((m) => chatKey(null, m.id))
+    return allChats().map((c) => c.key)
   }
 
   /** The open chat, of whichever device; none on the start page. */
@@ -47,11 +53,21 @@ export function useShortcuts(ready: Ref<boolean>): void {
     return id ? chatKey(shown.device, id) : null
   }
 
-  /** Opens a chat of the sidebar as its row would (of another device too), else one of this device. */
+  /** Opens a chat of the sidebar as its row would, else (sidebar hidden) on its device all the same. */
   function openChat(key: string): void {
     const row = [...document.querySelectorAll<HTMLElement>(CHAT_ROW)].find((r) => r.dataset.chatKey === key)
-    if (row) row.click()
-    else if (key.startsWith(':')) void chat.open(key.slice(1))
+    if (row) return row.click()
+    const target = allChats().find((c) => c.key === key)
+    if (target) void useChatActions(target.device).open(target.id)
+  }
+
+  /** In the project of the chat on screen, on its device; another device has to let this one start chats. */
+  function newChat(): void {
+    const meta = ui.view === 'chat' ? useSessionsStore(shown.device).active : null
+    const target = newChatTarget(meta ? { device: shown.device, projectId: meta.projectId } : null, devices.level)
+    if (target !== 'denied') return useChatActions(target.device).newChat(target.projectId)
+    const name = devices.devices.find((d) => d.id === shown.device)?.name ?? 'Das Gerät'
+    toast(`Kein neuer Chat auf „${name}“`, { description: `„${name}“ lässt dieses Gerät nur mitlesen: Neue Chats startest du dort.` })
   }
 
   /**
@@ -84,7 +100,7 @@ export function useShortcuts(ready: Ref<boolean>): void {
         ui.openPalette(shortcut.prefix)
         return
       case 'new-chat':
-        chat.newChat(openId() ? (sessions.active?.projectId ?? null) : null)
+        newChat()
         return
       case 'cycle-chat': {
         // A chat's own window has no sidebar to step through.

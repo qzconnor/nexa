@@ -4,8 +4,6 @@ import {
   ClockAlertIcon,
   CopyIcon,
   EllipsisIcon,
-  EyeIcon,
-  EyeOffIcon,
   LogOutIcon,
   MonitorIcon,
   PencilIcon,
@@ -380,22 +378,21 @@ async function remove(device: LinkedDevice): Promise<void> {
                   <ShieldQuestionIcon data-icon="inline-start" />
                   Nicht bestätigt
                 </Badge>
-                <Badge
-                  v-if="hidden(device)"
-                  variant="outline"
-                  class="text-muted-foreground"
-                  v-tooltip="'Steht auf diesem Gerät nicht in der Seitenleiste. Einblenden über „…“.'"
-                >
-                  <EyeOffIcon data-icon="inline-start" />
-                  Ausgeblendet
-                </Badge>
               </div>
               <span class="truncate text-xs text-muted-foreground">
                 {{ describe(device) }}
                 <span v-if="issueOf(device)" class="text-warning"> · {{ issueOf(device)!.short }}</span>
               </span>
             </div>
-            <DropdownMenu v-if="state.status === 'online' || !device.self">
+            <!-- Shown in this device's sidebar or not: here only, so also while not connected. -->
+            <Switch
+              v-if="!device.self"
+              :model-value="!hidden(device)"
+              :aria-label="`„${device.name}“ in der Seitenleiste zeigen`"
+              v-tooltip="hidden(device) ? 'Ausgeblendet: steht auf diesem Gerät nicht in der Seitenleiste' : 'In der Seitenleiste dieses Geräts'"
+              @update:model-value="(shown: boolean) => ui.setDeviceHidden(device.id, !shown)"
+            />
+            <DropdownMenu v-if="state.status === 'online'">
               <DropdownMenuTrigger as-child>
                 <Button variant="ghost" size="icon-xs">
                   <EllipsisIcon />
@@ -403,14 +400,10 @@ async function remove(device: LinkedDevice): Promise<void> {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" class="w-48">
-                <DropdownMenuItem v-if="state.status === 'online'" @select="rename(device)"><PencilIcon /> Umbenennen</DropdownMenuItem>
+                <DropdownMenuItem @select="rename(device)"><PencilIcon /> Umbenennen</DropdownMenuItem>
                 <template v-if="!device.self">
-                  <DropdownMenuItem v-if="hidden(device)" @select="ui.setDeviceHidden(device.id, false)"><EyeIcon /> Einblenden</DropdownMenuItem>
-                  <DropdownMenuItem v-else @select="ui.setDeviceHidden(device.id, true)"><EyeOffIcon /> Ausblenden</DropdownMenuItem>
-                  <template v-if="state.status === 'online'">
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" @select="remove(device)"><Trash2Icon /> Entfernen</DropdownMenuItem>
-                  </template>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" @select="remove(device)"><Trash2Icon /> Entfernen</DropdownMenuItem>
                 </template>
               </DropdownMenuContent>
             </DropdownMenu>

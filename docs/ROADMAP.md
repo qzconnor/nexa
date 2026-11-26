@@ -365,8 +365,12 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] Weitere CLIs über das Provider-System.
 - [ ] Verbrauchs-Dashboard: Tokens je Tag, Modell und Ordner, Verlauf der Limits als Diagramm, ohne
       Dollar (`DashboardView.vue`, `usage-history.ts` im Claude Manager).
-- [ ] Änderungen je Prompt aus den Checkpoints von Claude Code, Zurückspulen mit Vorschau (Claude
-      `rewind_files`, Codex `thread/revert`; `SessionChangesView.vue` im Claude Manager).
+- [x] Änderungen je Prompt und Zurückspulen mit Vorschau, für jede CLI: Nexa hält die Ordner des Chats
+      vor jedem Prompt und am Ende seines Turns selbst fest (Schatten-Repository je Ordner, das Projekt
+      bleibt unberührt), denn Claude Code sichert in `-p` nichts, Codex' `thread/revert` lässt die Dateien
+      und ACP kennt es nicht. Zahlen unter dem Turn, Dialog „Änderungen je Prompt“ mit Diffs (auch `/rewind`),
+      Zurückspulen von einem Prompt aus mit Vorschau, Hinweis an die CLI und Zurücknehmen; Einstellung
+      „Checkpoints der Dateien“.
 - [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).
 - [ ] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager).
 - [x] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude
@@ -394,12 +398,16 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       - [x] „Angeheftet“ oben mit den angehefteten Chats aller Geräte in einer Liste (andere Geräte mit
             Bildschirm-Symbol), per Drag & Drop sortierbar; neu Angeheftetes kommt oben dazu. Die
             Reihenfolge bleibt auf diesem Gerät (`nexa.pinnedOrder`).
-      - [x] Andere Geräte auf diesem ausblenden (Kontextmenü in der Seitenleiste, Ein- und Ausblenden unter
+      - [x] Andere Geräte auf diesem ausblenden (Kontextmenü in der Seitenleiste, Schalter neben „…“ unter
             Einstellungen › Geräte): nicht in der Seitenleiste, nicht unter „Angeheftet“, nicht geladen.
-      - [ ] Bilder und Dateien im Verlauf eines Chats vom anderen Gerät zeigen (bisher Pfade dort).
-      - [ ] Schnellsuche (Strg+K) und Tastenkürzel über die Chats der anderen Geräte.
-      - [ ] Dateibaum, Änderungen und MCP Apps eines Chats auf einem anderen Gerät.
-      - [ ] Nachrichten zwischen Chats über Geräte hinweg: `chat_list`, `chat_read`, `chat_send`,
+      - [x] Bilder im Verlauf eines Chats vom anderen Gerät zeigen: main holt sie dort (`sessions:image`, nur
+            Bilder aus Prompts des Chats).
+      - [x] Schnellsuche (Strg+Umschalt+A) und Tastenkürzel über die Chats der anderen Geräte: Titel, Inhalt
+            (online), Projekte für neue Chats, Strg+Tab, Strg+1–9 und Strg+Umschalt+T.
+      - [x] Dateibaum, Änderungen und MCP Apps eines Chats auf einem anderen Gerät: Lesen ab „Nur mitlesen“,
+            Schreiben (Anlegen, Umbenennen, Papierkorb, Vormerken, Verwerfen) und Werkzeuge der Seiten nur mit
+            „Alles“; der Host lässt nur Pfade in den Ordnern seiner Chats zu.
+      - [x] Nachrichten zwischen Chats über Geräte hinweg: `chat_list`, `chat_read`, `chat_send`,
             `chat_new` und `sessions_search` im Nexa-MCP-Server finden auch die Chats der gekoppelten Geräte
             (mit dem Gerät im Namen, etwa „Laptop › Server-Umbau“) und schicken ihnen Nachrichten,
             Ende-zu-Ende verschlüsselt über den Server. Nur an bestätigte Geräte. Ob eine Nachricht ankommt,

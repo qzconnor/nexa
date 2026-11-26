@@ -5,6 +5,7 @@
  * which CLI produced it, and a session can move from one CLI to another.
  */
 
+import type { FileChangeSummary } from './checkpoints'
 import type { McpAppRef, McpAppToolResult } from './mcp-apps'
 
 export type ProviderId = 'claude' | 'codex' | 'antigravity'
@@ -41,9 +42,15 @@ export interface UserItem extends ItemBase {
 
 /** The chat a message came from, as it was when it sent it. */
 export interface ChatOrigin {
+  /** Its id on its own device (`device`, else this one). */
   sessionId: string
   title: string
   provider: ProviderId
+  /**
+   * The paired device the chat is on (Remote Control, `chats.send`), named as the receiving device
+   * knows it; none: a chat of the device that keeps this item.
+   */
+  device?: { id: string; name: string }
 }
 
 export interface AssistantItem extends ItemBase {
@@ -271,6 +278,16 @@ export interface NoticeItem extends ItemBase {
   compaction?: Compaction
   /** The context was emptied here (`/clear`): what is above it, no CLI knows any more. */
   cleared?: boolean
+  /** The user rewound files here to before a prompt (Nexa's checkpoints), or took that back (`undone`). */
+  rewind?: FileRewind
+}
+
+/** A rewind of files: the prompt it went back to (its first line) and the files it changed, absolute. */
+export interface FileRewind {
+  promptId: string
+  prompt: string
+  files: string[]
+  undone?: boolean
 }
 
 /**
@@ -311,6 +328,8 @@ export interface TurnItem extends ItemBase {
   error?: string
   /** It stopped at a usage limit of the account: the CLI refuses work until the limit resets. */
   limit?: boolean
+  /** What the turn's prompt changed in the chat's folders (Nexa's checkpoints); unset when nothing. */
+  fileChanges?: FileChangeSummary
 }
 
 export type ChatItem =

@@ -70,6 +70,7 @@ export function defaultSettings(): AppSettings {
       releaseIdleMinutes: 15,
       autoTitles: true,
       deleteCliConversations: true,
+      checkpoints: true,
       shell: 'powershell',
       voiceLanguage: '',
       voiceAccount: '',

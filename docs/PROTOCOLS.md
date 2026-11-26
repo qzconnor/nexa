@@ -161,9 +161,18 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   (`.claude.json` bleibt gleich), Nexa schickt es deshalb nach jedem Start für die Server, die im Projekt
   aus sind. Ohne laufenden Chat fragt Nexa einen kurzen Prozess (`initialize`, gut 2 s warten, bis die
   Server verbunden sind, dann `mcp_status`). Weitere Untertypen, die Nexa noch nicht nutzt:
-  `rewind_files`, `cancel_async_message` (eine eingereihte Nachricht zurücknehmen),
-  `apply_flag_settings`, `get_session_cost`, `set_cwd`. `mcp_read_resource` und `mcp_call` siehe
-  „MCP Apps“.
+  `cancel_async_message` (eine eingereihte Nachricht zurücknehmen), `apply_flag_settings`,
+  `get_session_cost`, `set_cwd`; zu `rewind_files` und `rewind_conversation` siehe „Checkpoints“.
+  `mcp_read_resource` und `mcp_call` siehe „MCP Apps“.
+- **Checkpoints** (geprüft am Binary von 2.1.332): Mit `-p` legt Claude Code keine Sicherungen unter
+  `file-history/<id>/` an, außer mit der Umgebungsvariablen `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`
+  (`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING` oder `fileCheckpointingEnabled: false` in den Einstellungen
+  schalten sie ganz ab). Dann setzt `rewind_files { user_message_id, dry_run? }` die Dateien auf den Stand
+  vor der Nachricht `user_message_id` (ihre `uuid` im Transkript) und antwortet mit `{ canRewind, error?,
+  filesChanged?, insertions?, deletions?, skippedLinks? }`; `rewind_conversation { target_message_uuid }`
+  kürzt die Unterhaltung. Gesichert ist nur, was Claude Code mit seinen eigenen Werkzeugen schreibt, nicht
+  was ein Befehl in `Bash` ändert. Nexa nutzt beides nicht, sondern eigene Checkpoints für alle CLIs
+  (unten, „Checkpoints (Nexa)“).
 - **Neu verbinden und Anmelden** (geprüft mit 2.1.330): `mcp_reconnect { serverName }` antwortet ohne
   Inhalt, sobald der Server wieder verbunden ist, sonst mit dem Fehler des Servers.
   `mcp_authenticate { serverName }` antwortet mit `authUrl`, `requiresUserAction` und
@@ -528,6 +537,10 @@ Ein Prozess je Account für alle seine Sessions, JSON-RPC 2.0 über stdio
   wie die von `thread/resume`, mit der neuen `thread.id`. Ein unbekannter Turn ergibt den Fehler
   „turn not found: …“; Nexa zweigt dann den ganzen Thread ab. Mit `ephemeral: true` (nichts wird
   gespeichert) verlangt der Server `excludeTurns: true`. Geprüft mit 0.169.
+- **Zurückspulen**: `thread/revert { threadId, beforeTurnId }` nimmt die Turns ab `beforeTurnId` aus dem
+  Verlauf (Benachrichtigung `thread/reverted`), lässt die Dateien aber, wie sie sind (geprüft mit 0.169).
+  Nexa spult Dateien mit seinen eigenen Checkpoints zurück („Checkpoints (Nexa)“) und den Verlauf mit
+  „Bearbeiten“ eines Prompts (`thread/fork` mit `lastTurnId`).
 - **Liste und Verlauf** (Übernahme vorhandener Threads): `thread/list { limit, cursor, sourceKinds }`
   antwortet mit `{ data, nextCursor }`, den Threads im `CODEX_HOME` des Servers: `id`, `cwd`, `name`
   (vom Nutzer gesetzt, sonst `null`), `preview` (der erste Prompt), `createdAt`/`updatedAt` in Sekunden,
@@ -1075,6 +1088,42 @@ Werkzeug aufrufen darf: `model`, `app` oder beide (ohne Angabe beide). Das `_met
   darauf achten, geben Codex keine Seite.
 - **Antigravity CLI**: ACP kennt keine Seiten von Werkzeugen; Nexa zeigt dort keine.
 
+## Checkpoints (Nexa)
+
+Keine CLI gibt Nexa, was es für „Änderungen je Prompt“ braucht: Claude Code sichert in `-p` nichts
+(„Checkpoints“ oben), Codex' `thread/revert` lässt die Dateien, ACP kennt nichts dergleichen. Nexa hält die
+Ordner eines Chats deshalb selbst fest, für jede CLI gleich (`src/main/files/checkpoints.ts`):
+
+- **Schatten-Repository** je Ordner unter `<Datenordner>/checkpoints/repos/<sha1 des Ordners>`, mit
+  `GIT_DIR` dorthin und `GIT_WORK_TREE` auf den Ordner. Das Repository des Projekts bleibt unberührt (kein
+  Index, keine Refs, kein Stash). Jeder Aufruf setzt `core.autocrlf=false`, `core.fsmonitor=false`,
+  `gc.auto=0` und weitere Schalter selbst, ohne die `GIT_*`-Variablen der Umgebung; `info/attributes`
+  (`* -text -filter -ident -working-tree-encoding`) steht über den `.gitattributes` des Projekts, so kommt
+  eine Datei Byte für Byte zurück, auch unter LFS.
+- **Stand** (`snapshot`): `ls-files --others --exclude-standard` und `--modified`, die Dateien per
+  `update-index --add --remove`, dann `write-tree`. Unveränderte erkennt git am Index (wie `git status`),
+  ab dem zweiten Stand dauert das nur so lange, wie sich etwas geändert hat. Weggelassen: was die
+  `.gitignore` des Ordners ausschließt, `node_modules/`, `.venv/` u. a., die Regeln ohne Pfad aus
+  `.gitignore`-Dateien darüber und das `info/exclude` des Projekts (auch eines Worktrees, über
+  `commondir`), Dateien über 5 MB und Verknüpfungen (beide als „nicht gesichert“ mit Größe und Zeit, damit
+  sich zeigt, wenn sie sich änderten), eingebettete Repositories. Der erste Stand eines Ordners mit über
+  30 000 Dateien oder 500 MB unterbleibt (zehn Minuten lang nicht neu versucht), ebenso Laufwerke, der
+  Benutzerordner und seine großen Ordner (Desktop, Dokumente, Downloads …).
+- **Je Prompt** (`<Datenordner>/checkpoints/sessions/<Chat>.json`): vor einem Prompt, der einen Turn
+  beginnt (nicht einem, der in einen laufenden geht), der Stand aller Ordner des Chats (Arbeitsordner und
+  hinzugefügte, verschachtelte nur einmal); der Prompt wartet darauf höchstens 5 s. Am Ende des Turns der
+  Stand danach und was sich geändert hat (`diff-tree --name-status` und `--numstat`), als `fileChanges` am
+  Turn. Wartet ein Prompt auf den nächsten Turn, beginnt sein Stand, wo der letzte endet. Ein Stand, dessen
+  Turn nie endete (CLI beendet), endet mit dem nächsten Prompt.
+- **Zurückspulen** auf vor Prompt N: die Dateien, die der Agent in den Turns ab N änderte und die heute
+  anders sind als vor N, als Vorschau (gegen einen frischen Stand); was seit dem letzten Turn auch
+  außerhalb geändert wurde, ist markiert. Dann schreibt Nexa ihren Inhalt vor N selbst (`cat-file
+  --batch`), löscht, was es vor N nicht gab (mit leer gewordenen Ordnern), und hält den Stand davor für
+  „Zurücknehmen“ fest. Der Chat bleibt; die CLI erfährt es mit dem nächsten Prompt (`<nexa-rewind>`).
+- **Aufräumen**: Abzweigen kopiert die Checkpoints, Bearbeiten eines Prompts streicht die der
+  wegfallenden Prompts, Löschen des Chats seine. Ein Schatten-Repository, von dem kein Chat mehr
+  Checkpoints hat, geht ganz; gc läuft sonst nie (keine Ref hält die Bäume).
+
 ## Nexa-MCP-Server
 
 Streamable HTTP auf `127.0.0.1:<port>/mcp`, Bearer-Token. Jeder Run bekommt ein eigenes Token, das seinen
@@ -1131,6 +1180,42 @@ Nutzer ist, keine Freigaben ersetzt und mit `chat_send` an `chat-id` beantwortet
 (`instructions.ts`, `chatMessage`). Grenzen: 20 Nachrichten und neue Chats je Chat in 10 Minuten
 (`RATE_LIMIT`), 10 Nachrichten zwischen Chats in Folge, ohne dass der Nutzer in einem davon schrieb
 (`MAX_CHAT_CHAIN`, `SessionState.chatChain`).
+
+**Über Geräte hinweg** (`remote/remote-chats.ts`, `shared/remote-chats.ts`): Die Werkzeuge reichen auch in
+die Chats der gekoppelten, bestätigten Geräte (`LinkedDevice.trusted`), über Remote Control (`chats.*`, siehe
+„Remote Control“), Ende-zu-Ende verschlüsselt für die beiden Geräte.
+
+- **Namen**: Ein Chat eines anderen Geräts heißt für den Agent „Gerät › Titel“ (`Laptop › Server-Umbau`) und
+  hat die ID `<Instanz>:<Session>` (`remoteChatId`); ein Doppelpunkt steht in keiner Instanz- und keiner
+  Session-ID, mit einer ID dieses Geräts verwechselt wird sie also nicht.
+- **Auflisten und Suchen**: `chat_list` zeigt nach den eigenen Chats die jedes anderen Geräts, `limit` je
+  Gerät, `query` trifft auch den Namen des Geräts. `sessions_search` lässt jedes Gerät selbst suchen
+  (`findChats`) und mischt die Treffer nach letzter Aktivität. Ein Gerät, das nicht antwortet, nicht
+  verbunden ist oder ablehnt, steht als eigene Zeile darunter; die übrigen Ergebnisse kommen trotzdem.
+- **Auflösen** (`chat_read`, `chat_send`): erst wie bisher unter den eigenen Chats (`resolveChat`). Nur ein
+  Name, der hier keinen trifft, meint einen anderswo: als ID, als „Gerät › Titel“ (auch mit `>`, `/`, `:` oder
+  nur einem Leerzeichen, längster Gerätename zuerst; `splitDevice`), sonst als Titel unter den Chats aller
+  Geräte, die antworten.
+- **`chat_new { …, device?, project? }`**: legt den Chat auf dem genannten Gerät an (Name, Anfang des Namens
+  oder Instanz; der eigene Name heißt hier), im Projekt `project` (ganzer Name, sonst Teil von Name oder
+  Ordner), ohne es in dem, das heißt wie das des Absenders; sonst bekommt der Agent die Projekte dort.
+- **Nicht erreichbar**: Ein Gerät, das der Server nicht als verbunden führt, wird nicht gefragt. Auflisten,
+  Lesen und Suchen warten 10 Sekunden (`LOOK_TIMEOUT_MS`), Senden und Anlegen die 30 von Remote Control
+  (danach: „kam vielleicht an, `chat_read` zeigt es“). Der Agent bekommt jeden Fehler und jede Ablehnung als
+  englischen Satz mit dem Namen des Geräts (`DeviceChats`, `explain`).
+
+Ob eine Nachricht ankommt, entscheidet das empfangende Gerät (`RemoteChatsHost`): nur von einem bestätigten
+Mitglied, nur mit seiner eigenen Einstellung „Nachrichten zwischen Chats“ und nur so weit, wie die Stufe reicht,
+die es dem Absender gibt (`read` zum Auflisten, Lesen und Suchen, `prompt` zum Senden und Anlegen; aus,
+solange seine Fernsteuerung aus ist). Die Grenze der Kette gilt über Geräte hinweg: Der Absender schickt die
+Stelle der Nachricht mit (`SessionService.chatOrigin`, abgelehnt schon dort über `MAX_CHAT_CHAIN`), der
+Empfänger lehnt darüber ebenfalls ab und merkt sich die Stelle im Chat, sodass dessen Antwort weiterzählt;
+der Prompt des Nutzers setzt sie wie bisher zurück. Dazu nimmt er je sendendem Chat 20 und je Gerät 60
+Nachrichten in 10 Minuten. Die Nachricht steht mit `UserItem.from.device` im Chat, mit dem Namen, unter dem
+der Empfänger das Gerät kennt (nicht dem, den der Absender nennt): „Nachricht von „Titel“ auf Laptop“. Die
+CLI bekommt sie als `<nexa-message from-chat="…" device="…" chat-id="<Instanz>:<Session>" cli="…">`, sodass
+`chat_send` an `chat-id` zum Chat auf dem anderen Gerät zurückfindet; `chat_read` nennt solche Nachrichten
+„Message from the chat "…" on the device "…"“.
 
 ### Limits (`limits`)
 
@@ -1288,18 +1373,53 @@ fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht. Typen, Liste d
 | `watch` | `{ ids, fresh? }` | `{ name, enabled, level, version, renewed }`: welche Chats das Gerät offen hat, ersetzt die letzte Wahl | `read` |
 | `unwatch` | – | `null` | jede |
 | `invoke` | `{ ch, args }` | was der Handler des Kanals im Fenster liefert | je Kanal |
+| `chats.list` | – | `{ chats }`: die Chats des Hosts, die neuesten zuerst, archivierte eingeschlossen (höchstens 500) | `read` |
+| `chats.read` | `{ id, last }` | `{ chat, transcript }`: die letzten Prompts und Antworten als Text (`chatTranscript`, `last` höchstens 30) | `read` |
+| `chats.search` | `{ query, project? }` | `{ found: [{ chat, hit? }], total }` (höchstens 50) | `read` |
+| `chats.send` | `{ from, chain, to, text }` | `{ chat }`, wie er vor der Nachricht war | `prompt` |
+| `chats.new` | `{ from, chain, provider, text, title?, project?, near? }` | `{ id, title, project }` | `prompt` |
 
+- **`chats.*`**: die Werkzeuge der Agents (`chat_*`, „Nachrichten zwischen Chats“), mit Absicht getrennt von
+  `invoke`. Nach der Stufe prüft der Host (`RemoteChatsHost`), ob das Gerät bestätigt ist, ob seine Einstellung
+  `tools.chatTools` an ist, die Kette (`chain` über `MAX_CHAT_CHAIN`: `failed`) und wie viel der Chat und das
+  Gerät schon schickten (`forbidden`). `from` ist `{ sessionId, title, provider }` des sendenden Chats; das
+  Gerät dazu nimmt der Host aus seiner eigenen Liste. Texte höchstens 100 000 Zeichen; `near` ist der Name des
+  Projekts des Absenders. `message` von Ablehnungen und Fehlern ist hier Englisch, für den Agent;
+  `forbidden` der Stufe sagt `needs level <Stufe>`.
 - **`invoke`**: `ch` ist ein IPC-Kanal (`sessions:send`, `settings:get` …), `args` seine Argumente (höchstens
   8). Der Host führt ihn mit dem Handler aus, den seine Fenster nutzen (`invokeHandler` in
-  `src/main/ipc.ts`, mit einem Absender `{ sender: null, remote: true }`). Nur Kanäle in `CHANNELS`
-  (`channelLevel`) gehen, jeder mit seiner Stufe; was mit den Fenstern, Dialogen, Dateien, Terminals oder
-  dem Browser des Hosts arbeitet, nicht. Manche hängen von den Argumenten ab: `sessions:update` braucht
+  `src/main/ipc.ts`, mit einem Absender `{ sender: null, remote: true, device }`, den `remoteCaller`
+  erkennt). Nur Kanäle in `CHANNELS` (`channelLevel`) gehen, jeder mit seiner Stufe; was mit den Fenstern,
+  Dialogen, Terminals oder dem Browser des Hosts arbeitet, nicht, Dateien nur in den Ordnern seiner Chats
+  (siehe „Dateien“). Manche hängen von den Argumenten ab: `sessions:update` braucht
   `full`, sobald es Felder des Agents ändert (`provider`, `account`, `model`, `effort`, `ultracode`,
   `permissionMode`, `dirs` …), sonst `prompt`; `sessions:create` braucht `full` mit `cliArgs` oder einem
   Modus außer `ask` und `plan`.
 - **Bilder** eines Prompts liegen auf dem steuernden Gerät: Es liest sie selbst (`remote:upload-image`,
   höchstens 20 MB, png/jpg/gif/webp) und schickt sie als `invoke` von `app:save-image` mit den Bytes als
-  base64; der Host legt sie zu seinen Anhängen und gibt den Pfad zurück, der dann im Prompt steht.
+  base64; der Host legt sie zu seinen Anhängen und gibt den Pfad zurück, der dann im Prompt steht. Im
+  Verlauf bleiben die Pfade des Hosts; das Fenster lädt sie über `nexa-file://device?instance=…&session=…&path=…`,
+  main holt sie mit `invoke` von `sessions:image { id, path }` (`read`): `{ type, data }` mit den Bytes als
+  base64, nur für ein Bild, das ein Prompt dieses Chats hat (sonst `null`), höchstens 20 MB. main hält
+  zuletzt gezeigte bis 64 MB.
+- **MCP Apps** eines Chats des Hosts: `mcp-apps:page { id, itemId }` (`read`) gibt die Seite (`html`,
+  `meta`) und das Ergebnis des Werkzeugs (`result`, das `slimItem` aus dem Item lässt). Das steuernde Gerät
+  prüft die Seite wie eine eigene (`appPageOf`) und stellt sie unter seiner eigenen Adresse
+  (`nexa-app://<token>/`) mit ihrer CSP bereit. Was die Seite von ihrem Server will, geht an den Host:
+  `mcp-apps:read-resource` (`read`), `mcp-apps:call-tool` (`full`, ein Werkzeug handelt wie der Agent).
+- **Checkpoints**: `sessions:changes`, `sessions:change-diff` und `sessions:rewind-preview` mit `read`,
+  `sessions:rewind` und `sessions:rewind-undo` (schreiben Dateien des Hosts) mit `full`.
+- **Dateien** (Dateibaum, Änderungen, Branch eines Chats des Hosts): `files:list`, `files:status`,
+  `files:search-list`, `files:watch`, `files:diff`, `files:review-base`, `files:grep`, `files:history`,
+  `git:branch`, `git:watch`, `git:web-url` und `git:main-worktree` mit `read`; `files:create`,
+  `files:rename`, `files:trash`, `files:stage`, `files:unstage`, `files:discard` und `files:hunk` mit
+  `full`. Jeder Pfad muss absolut sein und in einem Ordner der Chats des Hosts liegen (Projektordner,
+  Arbeitsordner, Worktree, zusätzliche Ordner), sonst `failed` „Der Ordner gehört zu keinem Chat auf
+  diesem Gerät.“. Geprüft wird der Pfad selbst (nach `path.resolve`, `..` führt nicht hinaus); wohin
+  eine Verknüpfung in einem solchen Ordner zeigt, prüft der Host nicht. `files:watch` und `git:watch` nimmt der Host nur von einem Gerät, das beobachtet (sonst
+  `null` ohne Wirkung); die Listen ersetzen jeweils die letzte des Geräts und gelten getrennt von denen
+  der eigenen Fenster, bis die Beobachtung endet. Danach (auch nach `fresh: true`) meldet die Steuerung
+  ihre Ordner neu. `git:worktree-check` bleibt beim Host.
 - **Beobachten**: Mit `watch` nennt das Gerät die Chats, die es geöffnet hat (höchstens 32); `sessions:open`
   über `invoke` nimmt den Chat sofort dazu. Eine Wahl gilt 90 Sekunden, die Steuerung erneuert sie alle
   30 Sekunden. `renewed: false` heißt, der Host kannte keine (Neustart, abgelaufen) oder das Gerät bat mit
@@ -1307,7 +1427,10 @@ fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht. Typen, Liste d
   Geht das Gerät offline oder sinkt seine Stufe unter `read`, endet die Beobachtung sofort.
 - **`rc.events`** `{ events }`: die Fenster-Ereignisse des Hosts, jedes als `{ ch, args }` (`REMOTE_EVENTS`):
   Einstellungen, CLIs, Nutzung, Konten, Projekte, Trenner, die Liste der Chats und `session:event`; davon
-  `item`, `delta` und `truncated` nur für die beobachteten Chats, `runtime` für alle. Die Listen
+  `item`, `delta` und `truncated` nur für die beobachteten Chats, `runtime` für alle. Dazu die des
+  Dateibaums: `event:files-changed` und `event:git-branch-changed` nur für Ordner, die das Gerät mit
+  `files:watch` bzw. `git:watch` überwacht, `event:files-touched` nur für seine beobachteten Chats; wartende Änderungen
+  desselben Ordners fasst der Host zusammen (Ordner vereint, `git`/`repo` verodert). Die Listen
   (`LIST_EVENTS`: Konten, Projekte, Trenner, Chats) gehen als `{ ch, diff: { ids, changed } }`: die Ids in
   ihrer Reihenfolge und die Einträge, die sich gegenüber dem letzten Stand dieses Geräts geändert haben.
   Die Steuerung setzt daraus die ganze Liste zusammen (`applyDiff`); fehlt ihr ein Eintrag, beginnt sie mit
@@ -1317,10 +1440,9 @@ fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht. Typen, Liste d
   Kommt ein Bündel nicht an (der Server meldet `busy` oder `unreachable`), endet die Beobachtung dieses
   Geräts: Mit der nächsten Erneuerung bekommt es `renewed: false` und liest neu, statt mit einer Lücke
   weiterzumachen.
-- **Was nicht mitgeht**: die Seiten der MCP Apps (sie sprechen mit Servern auf dem Host), lange Texte über
-  die Textgrenze (64 KB) in Items, die der Host nach UTF-8-Bytes kürzt (`slimItem`): Prompts und
-  Antworten bei der vierfachen Grenze, Ausgaben von Werkzeugen von vorn (das Ende zählt). Bilder im
-  Verlauf sind Pfade auf dem Host und zeigen sich auf dem steuernden Gerät noch nicht.
+- **Was nicht mitgeht**: lange Texte über die Textgrenze (64 KB) in Items, die der Host nach UTF-8-Bytes
+  kürzt (`slimItem`): Prompts und Antworten bei der vierfachen Grenze, Ausgaben von Werkzeugen von vorn
+  (das Ende zählt); die Ergebnisse der Werkzeuge mit Seite (`appResult`), die mit der Seite kommen.
 - **Reihenfolge**: Nachrichten zwischen zwei Geräten verlassen und erreichen `DeviceChannel` in der
   Reihenfolge, in der sie geschrieben wurden, auch wenn das Verschlüsseln unterschiedlich lange dauert.
   Öffnet ein Gerät einen Chat (`sessions:open`), verwirft der Host die für ihn noch wartenden Ereignisse

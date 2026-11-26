@@ -86,6 +86,11 @@ export interface ChatSettings {
    */
   deleteCliConversations: boolean
   /**
+   * Nexa keeps the chat's folders as they were before each prompt and at the end of its turn (in git
+   * repositories of its own, main/files/checkpoints.ts): what each prompt changed, and rewinding to it.
+   */
+  checkpoints: boolean
+  /**
    * The shell that runs what is typed after `!` in the composer, on Windows: PowerShell (7 where it is
    * installed, else 5.1), Git Bash or cmd. Elsewhere the user's login shell.
    */

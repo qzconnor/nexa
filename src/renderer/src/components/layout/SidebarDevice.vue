@@ -35,7 +35,7 @@ function hide(): void {
   const { id, name } = props.device
   ui.setDeviceHidden(id, true)
   toast(`„${name}“ ausgeblendet`, {
-    description: 'Unter Einstellungen › Geräte blendest du es wieder ein.',
+    description: 'Unter Einstellungen › Geräte blendest du es mit seinem Schalter wieder ein.',
     action: { label: 'Rückgängig', onClick: () => ui.setDeviceHidden(id, false) },
   })
 }

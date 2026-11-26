@@ -2,6 +2,7 @@
 import { CircleAlertIcon } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ToolItem } from '@shared/chat'
+import type { McpAppOpened, McpAppToolResult } from '@shared/mcp-apps'
 import { Spinner } from '@/components/ui/spinner'
 import { errorMessage } from '@/lib/errors'
 import { CODE_FONT_FALLBACKS, fontStack, UI_FONT_FALLBACKS } from '@/lib/fonts'
@@ -9,6 +10,7 @@ import { appStyleVariables, MAX_APP_HEIGHT, McpAppHost, type McpAppHostContext }
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useComposerStore } from '@/stores/composer'
+import { useDevice, useDeviceApi } from '@/stores/device'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemesStore } from '@/stores/themes'
 import ToolRow from './ToolRow.vue'
@@ -16,13 +18,19 @@ import ToolRow from './ToolRow.vue'
 /**
  * An MCP tool with a page of its own (MCP Apps): its row, and below it the page in a sandboxed frame,
  * served by main/mcp-apps (each page its own address and CSP). The page talks to Nexa only through
- * `postMessage`; McpAppHost answers it. It is read the first time it comes into view.
+ * `postMessage`; McpAppHost answers it. It is read the first time it comes into view. In a chat of
+ * another device main fetches the page from there and serves it here; the tool's result comes with it,
+ * and what the page asks of its server goes there.
  */
 const props = defineProps<{ tool: ToolItem; sessionId: string }>()
 const settings = useSettingsStore()
 const themes = useThemesStore()
 const app = useAppStore()
 const composer = useComposerStore()
+const device = useDevice()
+const api = useDeviceApi()
+/** The result as the page of another device's chat got it (its chat here leaves results out). */
+const remoteResult = ref<McpAppToolResult | null>(null)
 
 const root = ref<HTMLElement | null>(null)
 const frame = ref<HTMLIFrameElement | null>(null)
@@ -64,8 +72,8 @@ function makeHost(): McpAppHost {
     // A copy as JSON: the tool's input and result are the store's reactive proxies, which postMessage
     // can't clone; JSON-RPC is JSON anyway.
     post: (message) => frame.value?.contentWindow?.postMessage(JSON.parse(JSON.stringify(message)), '*'),
-    callTool: (name, args) => window.api.mcpApps.callTool(props.sessionId, props.tool.id, name, args),
-    readResource: (uri) => window.api.mcpApps.readResource(props.sessionId, props.tool.id, uri),
+    callTool: (name, args) => api.mcpApps.callTool(props.sessionId, props.tool.id, name, args),
+    readResource: (uri) => api.mcpApps.readResource(props.sessionId, props.tool.id, uri),
     openLink: (link) => void window.api.app.openExternal(link),
     message: (text) => composer.insert(props.sessionId, text),
     resize: (next) => (height.value = next),
@@ -79,7 +87,8 @@ function sync(): void {
   if (!host) return
   host.setInput(props.tool.input)
   const tool = props.tool
-  if (tool.appResult) host.setResult(tool.appResult)
+  const result = tool.appResult ?? remoteResult.value
+  if (result) host.setResult(result)
   else if (tool.status === 'error') host.setResult({ content: [{ type: 'text', text: tool.output ?? '' }], isError: true })
   else if (tool.status === 'denied') host.cancel('Abgelehnt')
 }
@@ -93,7 +102,12 @@ function onMessage(event: MessageEvent): void {
 async function open(): Promise<void> {
   if (url.value || error.value) return
   try {
-    const opened = await window.api.mcpApps.open(props.sessionId, props.tool.id)
+    let opened: McpAppOpened
+    if (device) {
+      const remote = await window.api.mcpApps.openRemote(device, props.sessionId, props.tool.id)
+      remoteResult.value = remote.result
+      opened = remote
+    } else opened = await window.api.mcpApps.open(props.sessionId, props.tool.id)
     bordered.value = opened.prefersBorder !== false
     host = makeHost()
     url.value = opened.url
@@ -104,6 +118,20 @@ async function open(): Promise<void> {
 }
 
 watch(() => [props.tool.input, props.tool.appResult, props.tool.status], sync)
+// In another device's chat the result isn't in the item: once the tool is done, it comes with the page again.
+watch(
+  () => props.tool.status,
+  (status) => {
+    if (!device || !url.value || status === 'running' || remoteResult.value) return
+    void window.api.mcpApps
+      .openRemote(device, props.sessionId, props.tool.id)
+      .then((opened) => {
+        remoteResult.value = opened.result
+        sync()
+      })
+      .catch(() => undefined)
+  },
+)
 watch([theme, () => settings.settings.appearance.uiFont, () => settings.settings.appearance.codeFont], () => host?.contextChanged())
 
 onMounted(() => {

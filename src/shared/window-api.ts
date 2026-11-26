@@ -5,15 +5,20 @@
  * same channels, and the host answers another device's with the handlers its own windows use.
  */
 
-import { FilesInvoke, type FilesApi } from './files-ipc'
+import { FilesEvent, FilesInvoke, type FilesApi, type GitApi } from './files-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from './ipc'
+import { McpAppsInvoke, type McpAppsApi } from './mcp-apps'
 
 export type ChannelInvoke = <T>(channel: string, ...args: unknown[]) => Promise<T>
 export type ChannelSubscribe = <Args extends unknown[]>(channel: string, cb: (...args: Args) => void) => Unsubscribe
 
 /** What a device offers the chat window: its settings, CLIs, accounts, projects and chats. */
 export type DeviceApi = Pick<NexaApi, 'settings' | 'providers' | 'accounts' | 'usage' | 'projects' | 'sessions'> & {
-  files: Pick<FilesApi, 'searchList'>
+  /** What the page of an MCP tool asks of its server, there (opening it goes through main: `openRemote`). */
+  mcpApps: Pick<McpAppsApi, 'callTool' | 'readResource'>
+  /** The file panel beside a chat: on another device only in the folders of its chats (the host checks). */
+  files: FilesApi
+  git: Pick<GitApi, 'branch' | 'watch' | 'onBranchChanged' | 'webUrl' | 'mainWorktree'>
 }
 
 export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): DeviceApi {
@@ -107,13 +112,45 @@ export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): D
       clear: (id) => invoke(IpcInvoke.sessionsClear, id),
       exportMarkdown: (id) => invoke(IpcInvoke.sessionsExportMarkdown, id),
       lastAnswer: (id) => invoke(IpcInvoke.sessionsLastAnswer, id),
+      changes: (id, live) => invoke(IpcInvoke.sessionsChanges, id, live === true),
+      changeDiff: (id, promptId, path, full) => invoke(IpcInvoke.sessionsChangeDiff, id, promptId, path, full),
+      rewindPreview: (id, promptId) => invoke(IpcInvoke.sessionsRewindPreview, id, promptId),
+      rewind: (id, promptId) => invoke(IpcInvoke.sessionsRewind, id, promptId),
+      rewindUndo: (id) => invoke(IpcInvoke.sessionsRewindUndo, id),
       onChanged: (cb) => subscribe(IpcEvent.sessionsChanged, cb),
       onEvent: (cb) => subscribe(IpcEvent.sessionEvent, cb),
       onShow: (cb) => subscribe(IpcEvent.showSession, cb),
       onFind: (cb) => subscribe(IpcEvent.findSessions, cb),
     },
+    mcpApps: {
+      callTool: (sessionId, itemId, name, args) => invoke(McpAppsInvoke.callTool, sessionId, itemId, name, args),
+      readResource: (sessionId, itemId, uri) => invoke(McpAppsInvoke.readResource, sessionId, itemId, uri),
+    },
     files: {
+      list: (dir) => invoke(FilesInvoke.list, dir),
+      status: (root) => invoke(FilesInvoke.status, root),
       searchList: (root) => invoke(FilesInvoke.searchList, root),
+      watch: (trees) => invoke(FilesInvoke.watch, trees),
+      onChanged: (cb) => subscribe(FilesEvent.changed, cb),
+      diff: (root, path, full, base) => invoke(FilesInvoke.diff, root, path, full, base ?? null),
+      reviewBase: (root) => invoke(FilesInvoke.reviewBase, root),
+      create: (root, path, dir) => invoke(FilesInvoke.create, root, path, dir),
+      rename: (root, from, to) => invoke(FilesInvoke.rename, root, from, to),
+      trash: (root, path) => invoke(FilesInvoke.trash, root, path),
+      grep: (root, query) => invoke(FilesInvoke.grep, root, query),
+      stage: (root, path) => invoke(FilesInvoke.stage, root, path),
+      unstage: (root, path) => invoke(FilesInvoke.unstage, root, path),
+      discard: (root, path) => invoke(FilesInvoke.discard, root, path),
+      hunk: (root, path, change) => invoke(FilesInvoke.hunk, root, path, change),
+      history: (sessionId) => invoke(FilesInvoke.history, sessionId),
+      onTouched: (cb) => subscribe(FilesEvent.touched, cb),
+    },
+    git: {
+      branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),
+      watch: (cwds) => invoke(FilesInvoke.gitWatch, cwds),
+      webUrl: (cwd) => invoke(FilesInvoke.gitWebUrl, cwd),
+      mainWorktree: (cwd) => invoke(FilesInvoke.gitMainWorktree, cwd),
+      onBranchChanged: (cb) => subscribe(FilesEvent.gitBranchChanged, cb),
     },
   }
 }

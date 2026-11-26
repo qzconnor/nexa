@@ -72,19 +72,31 @@ export function onBroadcast(listener: BroadcastListener): () => void {
 }
 
 /**
- * The event a handler gets for a call that came from another device: no window sent it, so whatever
- * needs one (a dialog, the window's state) fails, as it should.
+ * The event a handler gets for a call that came from another device (`device`, its instance): no
+ * window sent it, so whatever needs one (a dialog, the window's state) fails, as it should.
  */
-const REMOTE_CALL = { sender: null, remote: true } as unknown as IpcMainInvokeEvent
+interface RemoteCall {
+  sender: null
+  remote: true
+  device: string
+}
 
 /**
- * Runs the handler of `channel` as for a window, for a call of another device by Remote Control; which
- * calls are allowed is Remote Control's to check before (`channelLevel`).
+ * Runs the handler of `channel` as for a window, for a call of the device `from` by Remote Control;
+ * which calls are allowed is Remote Control's to check before (`channelLevel`), how far a handler goes
+ * for another device its own (`remoteCaller`).
  */
-export async function invokeHandler(channel: string, args: unknown[]): Promise<unknown> {
+export async function invokeHandler(channel: string, args: unknown[], from = ''): Promise<unknown> {
   const listener = handlers.get(channel)
   if (!listener) throw new Error(`Unbekannter Kanal: ${channel}`)
-  return listener(REMOTE_CALL, ...args)
+  const call: RemoteCall = { sender: null, remote: true, device: from }
+  return listener(call as unknown as IpcMainInvokeEvent, ...args)
+}
+
+/** The device a call came from by Remote Control (`invokeHandler`); null for one of this device's windows. */
+export function remoteCaller(event: IpcMainInvokeEvent): string | null {
+  const call = event as unknown as Partial<RemoteCall>
+  return call.remote === true ? (call.device ?? '') : null
 }
 
 /**
@@ -435,6 +447,14 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsFork, (_e, id: unknown) => sessions.fork(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsClear, (_e, id: unknown) => sessions.clear(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsLastAnswer, (_e, id: unknown) => sessions.lastAnswer(str(id, 'Die Session')))
+  handle(IpcInvoke.sessionsChanges, (_e, id: unknown, live: unknown) => sessions.changes(str(id, 'Die Session'), live === true))
+  handle(IpcInvoke.sessionsImage, (_e, id: unknown, path: unknown) => sessions.promptImage(str(id, 'Die Session'), str(path, 'Das Bild')))
+  handle(IpcInvoke.sessionsChangeDiff, (_e, id: unknown, promptId: unknown, path: unknown, full: unknown) =>
+    sessions.changeDiff(str(id, 'Die Session'), str(promptId, 'Der Prompt'), str(path, 'Die Datei'), full === true),
+  )
+  handle(IpcInvoke.sessionsRewindPreview, (_e, id: unknown, promptId: unknown) => sessions.rewindPreview(str(id, 'Die Session'), str(promptId, 'Der Prompt')))
+  handle(IpcInvoke.sessionsRewind, (_e, id: unknown, promptId: unknown) => sessions.rewindFiles(str(id, 'Die Session'), str(promptId, 'Der Prompt')))
+  handle(IpcInvoke.sessionsRewindUndo, (_e, id: unknown) => sessions.rewindUndo(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsExportMarkdown, async (event, id: unknown) => {
     const { markdown, fileName } = await sessions.markdown(str(id, 'Die Session'), async (cwd) => (await ctx.git.branch(cwd))?.name ?? null)
     const { canceled, filePath } = await dialog.showSaveDialog(windowOf(event), {

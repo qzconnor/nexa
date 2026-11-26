@@ -81,7 +81,8 @@ import { formatDateTime, formatRelative } from '@/lib/format'
 import { commitsLabel, reviewLabel, reviewStatus } from '@/lib/review-base'
 import { spanOfComment, type ReviewComment } from '@/lib/review-comments'
 import { hasLanguage, highlightDiff, languageOf, loadLanguage } from '@/lib/syntax'
-import { SEPARATOR, useFileTreeStore } from '@/stores/file-tree'
+import { useDevice, useDeviceApi } from '@/stores/device'
+import { useFileTreeStore } from '@/stores/file-tree'
 import ChangesFileHeader from './ChangesFileHeader.vue'
 import DiffLineRow from './DiffLineRow.vue'
 import ImageDiff from './ImageDiff.vue'
@@ -107,6 +108,9 @@ const emit = defineEmits<{ close: [] }>()
 
 const fileTree = useFileTreeStore()
 const openPath = useOpenFile()
+/** The folder is on the device of the chat (`useDevice`): its calls go there, and a file opens only here. */
+const device = useDevice()
+const api = useDeviceApi()
 const { colors, fontSize, rowHeight, font } = useDiffStyle()
 // The tree of the folder: git's state, the list of its files, and its folders watched.
 const model = useFileTreeModel(() => props.root)
@@ -139,7 +143,7 @@ let reviewAsk = 0
 async function loadReview(): Promise<void> {
   const root = props.root
   const ask = ++reviewAsk
-  const next = await window.api.files.reviewBase(root).catch(() => null)
+  const next = await api.files.reviewBase(root).catch(() => null)
   if (ask !== reviewAsk || root !== props.root) return
   review.value = next
   reviewLoaded.value = true
@@ -178,7 +182,7 @@ watch(
   () => props.root,
   (root) => {
     checked.value = false
-    void window.api.files
+    void api.files
       .status(root)
       .catch(() => null)
       .finally(() => {
@@ -239,7 +243,7 @@ async function load(path: string): Promise<void> {
   /** Asked for another folder or base meanwhile, or the file is no longer shown. */
   const gone = () => root !== props.root || base !== diffBase.value || !paths.value.includes(path)
   try {
-    const diff = await window.api.files.diff(root, path, false, base)
+    const diff = await api.files.diff(root, path, false, base)
     if (gone()) return
     const mode = diffMode(diff, decorations.value.file(path)?.status)
     const hash = diffHash(diff)
@@ -280,7 +284,7 @@ async function load(path: string): Promise<void> {
 /** The diff of the whole file for its highlighting; null without (the changes are highlighted hunk by hunk). */
 async function wholeOf(root: string, path: string, base: string | null): Promise<readonly DiffLine[] | null> {
   try {
-    const all = await window.api.files.diff(root, path, true, base)
+    const all = await api.files.diff(root, path, true, base)
     return all.patch && !all.tooLarge ? Object.freeze(parsePatch(all.patch).lines) : null
   } catch {
     return null
@@ -337,7 +341,7 @@ const stale = new Set<string>()
 /** The repository changed (a commit, a checkout, a push): where the branch started is asked again. */
 let reviewStale = false
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
-const offChanged = window.api.files.onChanged((root, dirs, _git, repo) => {
+const offChanged = api.files.onChanged((root, dirs, _git, repo) => {
   if (root !== props.root) return
   if (repo) reviewStale = true
   for (const path of paths.value) if (repo || dirs.includes(parentPath(path))) stale.add(path)
@@ -691,7 +695,7 @@ const emptyText = computed(() => {
   return baseMode.value ? `Keine Änderungen seit dem Abzweig von ${review.value!.base}.` : 'Keine Änderungen seit dem letzten Commit.'
 })
 
-const absolute = (path: string) => absolutePath(props.root, path, SEPARATOR)
+const absolute = (path: string) => absolutePath(props.root, path, fileTree.separatorOf(props.root))
 
 function openFile(path: string) {
   void openPath(absolute(path))
@@ -866,6 +870,7 @@ const iconButton =
             :notice="stuck.block.entry?.parsed.eol"
             :collapsed="stuck.block.collapsed"
             :seen="seenState(stuck.block.path)"
+            :openable="!device"
             @toggle="setCollapsed(stuck.block.path, !stuck.block.collapsed)"
             @seen="toggleSeen(stuck.block.path)"
             @open="openFile(stuck.block.path)"
@@ -896,6 +901,7 @@ const iconButton =
                   :notice="block.entry?.parsed.eol"
                   :collapsed="block.collapsed"
                   :seen="seenState(block.path)"
+                  :openable="!device"
                   @toggle="setCollapsed(block.path, !block.collapsed)"
                   @seen="toggleSeen(block.path)"
                   @open="openFile(block.path)"

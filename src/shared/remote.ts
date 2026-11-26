@@ -8,8 +8,10 @@
  */
 
 import type { ChatItem, InteractionResponse, PermissionMode, SessionEvent } from './chat'
-import { FilesInvoke } from './files-ipc'
+import { FilesEvent, FilesInvoke } from './files-ipc'
 import { IpcEvent, IpcInvoke } from './ipc'
+import { McpAppsInvoke } from './mcp-apps'
+import { CHAT_METHOD_LEVEL, parseChatRequest, type RemoteChatMethods } from './remote-chats'
 import type { SessionCreateInput, SessionUpdateInput } from './types'
 
 /** `kind`s of Remote Control messages; the server sees them in plain text. */
@@ -54,8 +56,8 @@ export interface RemoteHostInfo {
   version: string
 }
 
-/** The requests, with what each takes and returns. */
-export interface RemoteMethods {
+/** The requests, with what each takes and returns; those of the agents' chat tools in remote-chats.ts. */
+export interface RemoteMethods extends RemoteChatMethods {
   hello: { params: Record<string, never>; result: RemoteHostInfo }
   /**
    * The host's events come as `rc.events` from now on, those of the chats in `ids` with their items
@@ -77,6 +79,7 @@ export const METHOD_LEVEL: Record<RemoteMethod, RemoteLevel | null> = {
   watch: 'read',
   unwatch: null,
   invoke: null,
+  ...CHAT_METHOD_LEVEL,
 }
 
 /** A watch lasts this long unless renewed; the controller renews it every `WATCH_RENEW_MS`. */
@@ -100,9 +103,11 @@ function record(value: unknown): Record<string, unknown> {
 
 /**
  * The calls of the window API another device may make here, with the level each takes: what the chat
- * window, its dock and the sidebar need, nothing of the host's own windows, dialogs, files or
- * terminals. Renaming, pinning and arranging chats is ordering them; how an agent runs (model,
- * permissions, CLI arguments) and what it may do (answers to its questions) is the full level's.
+ * window, its dock and the sidebar need, nothing of the host's own windows, dialogs or terminals, and
+ * of its files only those in the folders of its chats (the file panel; main/files/files-ipc.ts checks
+ * every path). Renaming, pinning and arranging chats is ordering them; how an agent runs (model,
+ * permissions, CLI arguments), what it may do (answers to its questions) and changing files is the
+ * full level's.
  */
 const CHANNELS: Record<string, ChannelRule> = {
   [IpcInvoke.settingsGet]: 'read',
@@ -132,6 +137,15 @@ const CHANNELS: Record<string, ChannelRule> = {
   [IpcInvoke.sessionsPlugins]: 'read',
   [IpcInvoke.sessionsShellOutput]: 'read',
   [IpcInvoke.sessionsLastAnswer]: 'read',
+  // A picture of the chat's prompts (only those), as bytes (base64).
+  [IpcInvoke.sessionsImage]: 'read',
+  // The pages of MCP tools (MCP Apps): the page and what it reads; a tool it calls acts as the agent would.
+  [McpAppsInvoke.page]: 'read',
+  [McpAppsInvoke.readResource]: 'read',
+  [McpAppsInvoke.callTool]: 'full',
+  [IpcInvoke.sessionsChanges]: 'read',
+  [IpcInvoke.sessionsChangeDiff]: 'read',
+  [IpcInvoke.sessionsRewindPreview]: 'read',
   [IpcInvoke.sessionsSearch]: 'read',
   [IpcInvoke.sessionsCreate]: (args) => {
     const input = record(args[0]) as Partial<SessionCreateInput>
@@ -156,8 +170,31 @@ const CHANNELS: Record<string, ChannelRule> = {
   [IpcInvoke.sessionsReconnectMcp]: 'full',
   [IpcInvoke.sessionsSetPlugin]: 'full',
   [IpcInvoke.sessionsRemove]: 'full',
-  // `@` in the composer: the names of the project's files.
-  [FilesInvoke.searchList]: 'prompt',
+  // Writes and deletes files in the chat's folders.
+  [IpcInvoke.sessionsRewind]: 'full',
+  [IpcInvoke.sessionsRewindUndo]: 'full',
+  // The file panel beside the chat: its tree, the changes, a file's diff, the search (also the names
+  // for `@` in the composer), the branch; watched while it shows them.
+  [FilesInvoke.list]: 'read',
+  [FilesInvoke.status]: 'read',
+  [FilesInvoke.searchList]: 'read',
+  [FilesInvoke.watch]: 'read',
+  [FilesInvoke.diff]: 'read',
+  [FilesInvoke.reviewBase]: 'read',
+  [FilesInvoke.grep]: 'read',
+  [FilesInvoke.history]: 'read',
+  [FilesInvoke.gitBranch]: 'read',
+  [FilesInvoke.gitWatch]: 'read',
+  [FilesInvoke.gitWebUrl]: 'read',
+  [FilesInvoke.gitMainWorktree]: 'read',
+  // Changes the files: new, renamed and trashed entries, what git stages and discards.
+  [FilesInvoke.create]: 'full',
+  [FilesInvoke.rename]: 'full',
+  [FilesInvoke.trash]: 'full',
+  [FilesInvoke.stage]: 'full',
+  [FilesInvoke.unstage]: 'full',
+  [FilesInvoke.discard]: 'full',
+  [FilesInvoke.hunk]: 'full',
   // A picture for a prompt, as bytes (base64): the host keeps it with its own attachments.
   [IpcInvoke.appSaveImage]: 'prompt',
 }
@@ -169,7 +206,11 @@ export function channelLevel(ch: string, args: readonly unknown[]): RemoteLevel 
   return typeof rule === 'function' ? rule(args) : rule
 }
 
-/** The host's window events another device gets while it watches (a chat's own only for its open chats). */
+/**
+ * The host's window events another device gets while it watches: a chat's own (its items, the files
+ * its agent touches) only for its open chats, a folder's changes and branch only for the folders it
+ * watches (`files:watch`, `git:watch`).
+ */
 export const REMOTE_EVENTS: ReadonlySet<string> = new Set<string>([
   IpcEvent.settingsChanged,
   IpcEvent.providersChanged,
@@ -179,6 +220,9 @@ export const REMOTE_EVENTS: ReadonlySet<string> = new Set<string>([
   IpcEvent.sectionsChanged,
   IpcEvent.sessionsChanged,
   IpcEvent.sessionEvent,
+  FilesEvent.changed,
+  FilesEvent.touched,
+  FilesEvent.gitBranchChanged,
 ])
 
 /**
@@ -318,7 +362,7 @@ export function parseRemoteRequest(data: unknown): RemoteRequest | null {
       return { m: 'invoke', p: { ch: p.ch, args: p.args } }
     }
     default:
-      return null
+      return parseChatRequest(data.m, p)
   }
 }
 
@@ -375,6 +419,7 @@ export function parseRemoteEvents(data: unknown): RemoteEvent[] | null {
     if (!isRecord(event) || typeof event.ch !== 'string' || !REMOTE_EVENTS.has(event.ch)) continue
     if (Array.isArray(event.args)) {
       if (event.ch === IpcEvent.sessionEvent && !isSessionEvent(event.args[0])) continue
+      if (!isFilesEvent(event.ch, event.args)) continue
       events.push({ ch: event.ch, args: event.args })
     } else if (LIST_EVENTS.has(event.ch) && isRecord(event.diff)) {
       const { ids, changed } = event.diff
@@ -383,6 +428,20 @@ export function parseRemoteEvents(data: unknown): RemoteEvent[] | null {
     }
   }
   return events
+}
+
+/** The file panel's events in the shapes it reads them (other channels pass). */
+function isFilesEvent(ch: string, args: unknown[]): boolean {
+  switch (ch) {
+    case FilesEvent.changed:
+      return typeof args[0] === 'string' && isStringArray(args[1])
+    case FilesEvent.touched:
+      return typeof args[0] === 'string' && Array.isArray(args[1]) && args[1].every((t) => isRecord(t) && typeof t.path === 'string' && typeof t.kind === 'string')
+    case FilesEvent.gitBranchChanged:
+      return typeof args[0] === 'string' && (args[1] === null || isRecord(args[1]))
+    default:
+      return true
+  }
 }
 
 const SESSION_EVENT_TYPES = new Set(['item', 'delta', 'runtime', 'truncated'])
@@ -449,12 +508,14 @@ export function jsonBytes(value: unknown): number {
 export function slimItem(item: ChatItem, limit = REMOTE_TEXT_LIMIT): ChatItem {
   switch (item.kind) {
     case 'user':
-      return item.images?.length ? { ...item, images: undefined, text: head(item.text, 4 * limit)! } : { ...item, text: head(item.text, 4 * limit)! }
+      // The pictures as their paths there: the window fetches them with `sessions:image`.
+      return { ...item, text: head(item.text, 4 * limit)! }
     case 'assistant':
     case 'thinking':
       return { ...item, text: head(item.text, 4 * limit)! }
     case 'tool': {
-      const slim = { ...item, output: tail(item.output, limit), app: undefined, appResult: undefined }
+      // The page's own reference stays (small); its result comes with the page (`mcp-apps:page`).
+      const slim = { ...item, output: tail(item.output, limit), appResult: undefined }
       if (jsonBytes(item.input) > limit) slim.input = undefined
       if (jsonBytes(item.render) > limit) slim.render = undefined
       if (item.changes) {

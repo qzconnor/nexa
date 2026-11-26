@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { errorMessage } from '@/lib/errors'
 import { childPath, stemEnd, typedPath, type NameRequest } from '@/lib/tree-names'
+import { useDevice, useDeviceApi } from '@/stores/device'
+import { useFileTreeStore } from '@/stores/file-tree'
 
 /**
  * Asks the file tree for a name: of a new file or folder in a folder of the tree, or a new one for an
@@ -26,7 +28,12 @@ const emit = defineEmits<{
   done: [path: string, request: NameRequest]
 }>()
 
-const platform = window.api.platform
+/** The tree's files are on the device of the chat (`useDevice`): its calls go there. */
+const device = useDevice()
+const api = useDeviceApi()
+const fileTree = useFileTreeStore()
+/** The rules for names are those of the system the folder is on: another device may run another one. */
+const platform = computed(() => (device === null ? window.api.platform : fileTree.separatorOf(props.root) === '\\' ? 'win32' : 'posix'))
 
 const open = computed({
   get: () => props.request !== null,
@@ -54,7 +61,7 @@ watch(
 )
 watch(name, () => (failed.value = null))
 
-const typed = computed(() => typedPath(shown.value, name.value, platform))
+const typed = computed(() => typedPath(shown.value, name.value, platform.value))
 /** Nothing typed yet isn't wrong: the button waits. */
 const problem = computed(() => failed.value ?? (name.value.trim() ? typed.value.problem : null))
 
@@ -74,8 +81,8 @@ async function submit() {
   if (request.kind === 'rename' && path === from) return emit('close')
   saving.value = true
   try {
-    if (request.kind === 'rename') await window.api.files.rename(props.root, from, path)
-    else await window.api.files.create(props.root, path, request.kind === 'folder')
+    if (request.kind === 'rename') await api.files.rename(props.root, from, path)
+    else await api.files.create(props.root, path, request.kind === 'folder')
     emit('done', path, request)
   } catch (error) {
     failed.value = errorMessage(error)

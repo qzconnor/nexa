@@ -3,8 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { defaultSettings } from '@shared/defaults'
 import type { FileTouch, TimedTouch } from '@shared/files'
+import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
+import { IpcInvoke } from '@shared/ipc'
+import type { RemoteBroadcast } from '@shared/remote'
 import type { SessionMeta } from '@shared/types'
 import { mergeKnown } from '@shared/utils'
+
+// Another device that lets this one do everything; whether it is reachable doesn't matter here.
+vi.mock('./devices', () => ({ useDevicesStore: () => ({ devices: [], can: () => true }) }))
 
 /** What the agent did in a chat: from its history once shown, then live; cleared by hand. */
 
@@ -29,8 +35,18 @@ let metasChanged: (next: SessionMeta[]) => void
 let touched: (sessionId: string, touches: FileTouch[]) => void
 let filesChanged: (root: string, dirs: string[], git: boolean, repo: boolean) => void
 let history: TimedTouch[]
+/** Events of other devices, as Remote Control hands them to the window. */
+let remoteEvents: (instance: string, events: RemoteBroadcast[]) => void = () => {}
 
 const api = {
+  remote: {
+    invoke: vi.fn(async (_instance: string, _ch: string, _args: unknown[]): Promise<unknown> => null),
+    onEvents: (cb: typeof remoteEvents) => {
+      remoteEvents = cb
+      return () => {}
+    },
+    onResync: () => () => {},
+  },
   platform: 'win32',
   settings: {
     onChanged: () => () => {},
@@ -200,5 +216,81 @@ describe('target', () => {
     const fileTree = await load(['s1'])
     expect(fileTree.targetOf('s1')).toEqual({ id: 's1', root: 'C:\\dev' })
     expect(fileTree.targetOf('missing')).toBeNull()
+  })
+})
+
+describe('the tree of another device’s chat', () => {
+  /** A device on Linux with the chat `r1` in `/home/me/dev`. */
+  async function loadDevice() {
+    api.remote.invoke.mockImplementation(async (_instance, ch, args) => {
+      switch (ch) {
+        case IpcInvoke.sessionsList:
+          return [{ ...meta('r1'), projectId: 'q' }]
+        case IpcInvoke.sessionsRuntimes:
+          return {}
+        case IpcInvoke.projectsList:
+          return [{ id: 'q', name: 'dev', path: '/home/me/dev' }]
+        case IpcInvoke.sectionsList:
+          return []
+        case FilesInvoke.list:
+          return { entries: [{ name: `in ${String(args[0])}`, dir: false }], omitted: 0 }
+        default:
+          return null
+      }
+    })
+    const own = await load(['s1'])
+    const { useSessionsStore } = await import('./sessions')
+    const { useProjectsStore } = await import('./projects')
+    const { useFileTreeStore } = await import('./file-tree')
+    await Promise.all([useSessionsStore('dev1').load(), useProjectsStore('dev1').load()])
+    return { own, remote: useFileTreeStore('dev1') }
+  }
+  const callsOf = (ch: string) => api.remote.invoke.mock.calls.filter((c) => c[1] === ch).map((c) => [c[0], ...c[2]])
+
+  it('is of that device’s folder, its paths with that system’s separator', async () => {
+    const { own, remote } = await loadDevice()
+    expect(remote.targetOf('r1')).toEqual({ id: 'r1', root: '/home/me/dev' })
+    expect(own.targetOf('r1')).toBeNull()
+    expect(remote.separatorOf('/home/me/dev')).toBe('/')
+    expect(remote.separatorOf('D:\\work')).toBe('\\')
+    // This device's own trees go by its own system.
+    expect(own.separatorOf('/home/me/dev')).toBe('\\')
+  })
+
+  it('reads and watches the folder there, and follows its changes', async () => {
+    const { remote } = await loadDevice()
+    const model = remote.hold('/home/me/dev')
+    await vi.waitFor(() => expect(model.listings.has('')).toBe(true))
+    remote.setExpanded(model, 'src', true)
+    await vi.waitFor(() => expect(model.listings.has('src')).toBe(true))
+    expect(callsOf(FilesInvoke.list)).toEqual([
+      ['dev1', '/home/me/dev'],
+      ['dev1', '/home/me/dev/src'],
+    ])
+    expect(callsOf(FilesInvoke.status)).toEqual([['dev1', '/home/me/dev']])
+    await vi.waitFor(() => expect(callsOf(FilesInvoke.watch).at(-1)).toEqual(['dev1', [{ root: '/home/me/dev', dirs: expect.any(Array) }]]))
+    // This device's own files stay out of it.
+    expect(api.files.list).not.toHaveBeenCalled()
+    expect(api.files.watch).not.toHaveBeenCalled()
+
+    remoteEvents('dev1', [{ ch: FilesEvent.changed, args: ['/home/me/dev', ['src'], false, false] }])
+    await vi.waitFor(() => expect(callsOf(FilesInvoke.list)).toHaveLength(3))
+    // The same folder changing on this device is another one.
+    filesChanged('/home/me/dev', ['src'], false, false)
+    remoteEvents('other', [{ ch: FilesEvent.changed, args: ['/home/me/dev', ['src'], false, false] }])
+    await Promise.resolve()
+    expect(callsOf(FilesInvoke.list)).toHaveLength(3)
+  })
+
+  it('looks like the trees of this device, but keeps its open folders to itself', async () => {
+    const { own, remote } = await loadDevice()
+    own.setWidth(420)
+    own.open = true
+    expect(remote.width).toBe(420)
+    expect(remote.open).toBe(true)
+    const model = remote.hold('/home/me/dev')
+    remote.setExpanded(model, 'src', true)
+    remote.release('/home/me/dev')
+    expect(own.hold('/home/me/dev').expanded.has('src')).toBe(false)
   })
 })

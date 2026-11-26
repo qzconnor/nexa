@@ -11,6 +11,7 @@ import { inFolder } from '@shared/folders'
 import type { AgentProvider, AgentRun, RunInput, RunOptions, RunSink } from '../providers/provider'
 import { conversationFile, readSteps, USER_STEP } from '../providers/antigravity/antigravity-conversations'
 import { writeConversation } from '../providers/antigravity/conversation-fixture'
+import { Checkpoints } from '../files/checkpoints'
 import { SessionService, type WorktreeGit } from './session-service'
 
 const CWD = 'F:\\Projekte\\demo'
@@ -69,7 +70,7 @@ async function claudeSession(configDir: string, sessionId: string): Promise<void
   await put(join(configDir, 'file-history', sessionId, 'abc@v1'), '1')
 }
 
-async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}, git: WorktreeGit | null = null): Promise<SessionService> {
+async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}, git: WorktreeGit | null = null, checkpoints: Checkpoints | null = null): Promise<SessionService> {
   await put(join(dataDir, 'sessions.json'), JSON.stringify({ sessions: metas }))
   const accounts = {
     list: () => [
@@ -122,6 +123,7 @@ async function start(metas: SessionMeta[], provider: Partial<AgentProvider> = {}
       await rm(path, { recursive: true })
     },
     git,
+    checkpoints,
   )
   return service
 }
@@ -320,6 +322,69 @@ describe('SessionService.ask (ask_user)', () => {
     const abandoned = sessions.ask('chat', form, gone.signal)
     gone.abort()
     expect(await abandoned).toBeNull()
+  })
+})
+
+describe('SessionService prompt pictures', () => {
+  it('gives another device only the pictures of the chat’s prompts', async () => {
+    const picture = join(root, 'bild.png')
+    const other = join(root, 'geheim.png')
+    await put(picture, 'PNG')
+    await put(other, 'PNG')
+    const run = { alive: true, send: async () => {}, stop: async () => {} } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], { start: async () => run })
+    await sessions.send('chat', { text: 'schau', images: [picture] })
+    expect(await sessions.promptImage('chat', picture)).toEqual({ type: 'image/png', data: Buffer.from('PNG').toString('base64') })
+    expect(await sessions.promptImage('chat', other)).toBeNull()
+  })
+})
+
+describe('SessionService with checkpoints', () => {
+  it('keeps the files before a prompt, counts its turn’s changes and rewinds them', async () => {
+    projectPath = join(root, 'project')
+    await put(join(projectPath, 'a.txt'), 'before\n')
+    let sink: RunSink | null = null
+    const sent: string[] = []
+    const run = {
+      alive: true,
+      // The agent at work: it changes the file once the prompt reached it.
+      send: async (input: RunInput) => {
+        sent.push(input.text)
+        await writeFile(join(projectPath, 'a.txt'), 'after\n')
+      },
+      stop: async () => {},
+    } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], { start: async (_options, s) => ((sink = s), run) }, null, new Checkpoints(join(root, 'checkpoints')))
+    const items: ChatItem[] = []
+    sessions.on('event', (event) => {
+      if (event.type === 'item') items.push(event.item)
+    })
+    await sessions.send('chat', { text: 'ändere a' })
+    sink!.item({ kind: 'turn', id: 'turn1', ts: 2, provider: 'claude', status: 'done' })
+    sink!.runtime({ status: 'idle' })
+    await vi.waitFor(() => expect(items.findLast((i) => i.kind === 'turn')).toMatchObject({ fileChanges: { files: 1, insertions: 1, deletions: 1 } }))
+
+    const prompt = items.find((i) => i.kind === 'user')!
+    expect((await sessions.changes('chat')).prompts.map((p) => [p.promptId, p.files.map((f) => f.rel)])).toEqual([[prompt.id, ['a.txt']]])
+    expect((await sessions.rewindPreview('chat', prompt.id)).files.map((f) => [f.rel, f.status])).toEqual([['a.txt', 'modified']])
+    expect(await sessions.rewindFiles('chat', prompt.id)).toEqual({ files: 1, failed: [] })
+    expect(await readFile(join(projectPath, 'a.txt'), 'utf8')).toBe('before\n')
+    expect(items.findLast((i) => i.kind === 'notice')).toMatchObject({ rewind: { promptId: prompt.id, prompt: 'ändere a', files: [join(projectPath, 'a.txt')] } })
+
+    // The CLI hears of it with the next prompt.
+    await sessions.send('chat', { text: 'weiter' })
+    expect(sent[1]).toContain('<nexa-rewind>')
+    expect(sent[1]).toContain(join(projectPath, 'a.txt'))
+  })
+
+  it('keeps none with the setting off', async () => {
+    projectPath = join(root, 'project')
+    await put(join(projectPath, 'a.txt'), 'before\n')
+    settings = { ...settings, chat: { ...settings.chat, checkpoints: false } }
+    const run = { alive: true, send: async () => {}, stop: async () => {} } as unknown as AgentRun
+    const sessions = await start([meta('chat', {})], { start: async () => run }, null, new Checkpoints(join(root, 'checkpoints')))
+    await sessions.send('chat', { text: 'ändere a' })
+    expect(await sessions.changes('chat')).toEqual({ prompts: [], undo: null, disabled: true })
   })
 })
 

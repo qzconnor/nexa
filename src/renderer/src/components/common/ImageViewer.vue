@@ -6,7 +6,7 @@ import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import DialogOverlay from '@/components/ui/dialog/DialogOverlay.vue'
 import { canPan, clampView, detailScale, fitScale, wheelFactor, zoomAt, type Point, type Size, type View } from '@/lib/image-zoom'
-import { fileImageUrl } from '@/lib/tools'
+import { fileImageUrl, type ImageSource } from '@/lib/tools'
 import { cn } from '@/lib/utils'
 
 /**
@@ -14,7 +14,8 @@ import { cn } from '@/lib/utils'
  * pointer is, dragging moves a zoomed one, a double click goes between fitted and close up. With more
  * than one, the arrows (buttons and keys) go through them. A click beside the picture closes.
  */
-const props = defineProps<{ images: string[] }>()
+/** `source`: the pictures of a chat on another device, fetched from there; they don't open in a program here. */
+const props = defineProps<{ images: string[]; source?: ImageSource | null }>()
 /** The picture shown; null while closed. */
 const index = defineModel<number | null>('index', { required: true })
 
@@ -204,7 +205,7 @@ const openExternally = () => path.value && void window.api.app.openPath(path.val
             v-if="path && !broken"
             ref="image"
             :key="path"
-            :src="fileImageUrl(path)"
+            :src="fileImageUrl(path, source)"
             alt=""
             draggable="false"
             :class="
@@ -261,8 +262,8 @@ const openExternally = () => path.value && void window.api.app.openPath(path.val
           <Button variant="ghost" size="icon-sm" class="rounded-full" :disabled="!natural" aria-label="Vergrößern" v-tooltip="'Vergrößern (+)'" @click="zoomIn">
             <ZoomInIcon />
           </Button>
-          <div class="mx-1 h-4 w-px bg-border" />
-          <Button variant="ghost" size="icon-sm" class="rounded-full" aria-label="Mit dem Standardprogramm öffnen" v-tooltip="'Mit dem Standardprogramm öffnen'" @click="openExternally">
+          <div v-if="!source" class="mx-1 h-4 w-px bg-border" />
+          <Button v-if="!source" variant="ghost" size="icon-sm" class="rounded-full" aria-label="Mit dem Standardprogramm öffnen" v-tooltip="'Mit dem Standardprogramm öffnen'" @click="openExternally">
             <ExternalLinkIcon />
           </Button>
         </div>

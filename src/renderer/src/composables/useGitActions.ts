@@ -1,14 +1,17 @@
 import type { GitFileStatus } from '@shared/files'
 import { attempt } from '@/lib/errors'
 import { baseName } from '@/lib/file-tree'
+import { useDeviceApi } from '@/stores/device'
 import { useUiStore } from '@/stores/ui'
 
 /**
  * Staging and discarding the changes of a file of a tree, as the tree's menu and the view of a file's
- * changes offer them. Discarding always asks first; the file as it was goes to the recycle bin.
+ * changes offer them, on the device of the chat (`useDevice`). Discarding always asks first; the file
+ * as it was goes to the recycle bin (there).
  */
 export function useGitActions() {
   const ui = useUiStore()
+  const api = useDeviceApi()
 
   /** Runs `action`, with a toast when it fails; whether it went through. */
   async function run(action: () => Promise<void>, title: string): Promise<boolean> {
@@ -52,15 +55,15 @@ export function useGitActions() {
   }
 
   return {
-    stage: (root: string, path: string) => run(() => window.api.files.stage(root, path), 'Nicht vorgemerkt'),
-    unstage: (root: string, path: string) => run(() => window.api.files.unstage(root, path), 'Nicht aus dem Vorgemerkten genommen'),
+    stage: (root: string, path: string) => run(() => api.files.stage(root, path), 'Nicht vorgemerkt'),
+    unstage: (root: string, path: string) => run(() => api.files.unstage(root, path), 'Nicht aus dem Vorgemerkten genommen'),
     async discard(root: string, path: string, status: GitFileStatus): Promise<boolean> {
       if (!(await ui.confirm({ ...discardText(path, status), destructive: status !== 'deleted' }))) return false
-      return run(() => window.api.files.discard(root, path), 'Nicht verworfen')
+      return run(() => api.files.discard(root, path), 'Nicht verworfen')
     },
     /** `patch`: the changes as the view shows them; `index`: the section of them. */
     stageHunk: (root: string, path: string, patch: string, index: number) =>
-      run(() => window.api.files.hunk(root, path, { patch, index, discard: false }), 'Abschnitt nicht vorgemerkt'),
+      run(() => api.files.hunk(root, path, { patch, index, discard: false }), 'Abschnitt nicht vorgemerkt'),
     async discardHunk(root: string, path: string, patch: string, index: number): Promise<boolean> {
       const confirmed = await ui.confirm({
         title: 'Diesen Abschnitt verwerfen?',
@@ -69,7 +72,7 @@ export function useGitActions() {
         destructive: true,
       })
       if (!confirmed) return false
-      return run(() => window.api.files.hunk(root, path, { patch, index, discard: true }), 'Abschnitt nicht verworfen')
+      return run(() => api.files.hunk(root, path, { patch, index, discard: true }), 'Abschnitt nicht verworfen')
     },
   }
 }

@@ -906,36 +906,57 @@
 .file-tree-touch-dot {
   background: var(--touch);
 }
-/* The filtered tree, live: rows glide to their place, come in from the left and leave to the right.
-   `translate` adds to the row's own `transform`, which places it in the list. */
+/* The filtered tree, live: rows glide to their place, come forward out of the background and sink back
+   into it, growing and shrinking where they stand rather than moving sideways. The row's own `transform`
+   places it in the list (a scale there would pull it towards the top of the list), so the pill inside
+   it scales, around the start of its name (`--row-start`). */
 .file-tree-glide {
   transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .file-tree-enter {
   animation: file-tree-enter 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+.file-tree-enter > .file-tree-pill {
+  animation: file-tree-grow 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
 @keyframes file-tree-enter {
   from {
     opacity: 0;
-    translate: -12px 0;
     filter: blur(3px);
   }
   to {
     opacity: 1;
-    translate: 0 0;
     filter: blur(0);
+  }
+}
+@keyframes file-tree-grow {
+  from {
+    scale: 0.82;
+  }
+  to {
+    scale: 1;
   }
 }
 .file-tree-leave {
   pointer-events: none;
   animation: file-tree-leave 500ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
+.file-tree-leave > .file-tree-pill {
+  animation: file-tree-shrink 500ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
 @keyframes file-tree-leave {
   to {
     opacity: 0;
-    translate: 16px 0;
     filter: blur(3px);
   }
+}
+@keyframes file-tree-shrink {
+  to {
+    scale: 0.82;
+  }
+}
+.file-tree-pill {
+  transform-origin: var(--row-start, 0) 50%;
 }
 /* All files giving way to the filtered ones, and back. */
 .file-tree-swap {
@@ -960,6 +981,8 @@
     transition: none;
   }
   .file-tree-enter,
+  .file-tree-enter > .file-tree-pill,
+  .file-tree-leave > .file-tree-pill,
   .file-tree-swap {
     animation: none;
   }

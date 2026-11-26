@@ -3,7 +3,7 @@ import { ArtifactsInvoke } from '@shared/artifacts'
 import { ChatWindowsEvent, ChatWindowsInvoke } from '@shared/chat-windows'
 import { BrowserEvent, BrowserInvoke } from '@shared/browser-ipc'
 import { CliConfigEvent, CliConfigInvoke } from '@shared/cli-config'
-import { FilesEvent, FilesInvoke } from '@shared/files-ipc'
+import { FilesInvoke } from '@shared/files-ipc'
 import { CliImportEvent, CliImportInvoke, ImportEvent, ImportInvoke } from '@shared/import-ipc'
 import { IpcEvent, IpcInvoke, type NexaApi, type Unsubscribe } from '@shared/ipc'
 import { McpAppsInvoke } from '@shared/mcp-apps'
@@ -26,30 +26,11 @@ function subscribe<Args extends unknown[]>(channel: string, cb: (...args: Args) 
 
 const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args) as Promise<T>
 
-// Its `files` is the one call of the full namespace below that another device answers too.
-const { files: _files, ...device } = deviceApi(invoke, subscribe)
+// The full namespace below has more of `git` (and of `mcpApps`) than another device answers.
+const { git: deviceGit, mcpApps: _mcpApps, ...device } = deviceApi(invoke, subscribe)
 
 const api: NexaApi = {
   platform: process.platform,
-  files: {
-    list: (dir) => invoke(FilesInvoke.list, dir),
-    status: (root) => invoke(FilesInvoke.status, root),
-    searchList: (root) => invoke(FilesInvoke.searchList, root),
-    watch: (trees) => invoke(FilesInvoke.watch, trees),
-    onChanged: (cb) => subscribe(FilesEvent.changed, cb),
-    diff: (root, path, full, base) => invoke(FilesInvoke.diff, root, path, full, base ?? null),
-    reviewBase: (root) => invoke(FilesInvoke.reviewBase, root),
-    create: (root, path, dir) => invoke(FilesInvoke.create, root, path, dir),
-    rename: (root, from, to) => invoke(FilesInvoke.rename, root, from, to),
-    trash: (root, path) => invoke(FilesInvoke.trash, root, path),
-    grep: (root, query) => invoke(FilesInvoke.grep, root, query),
-    stage: (root, path) => invoke(FilesInvoke.stage, root, path),
-    unstage: (root, path) => invoke(FilesInvoke.unstage, root, path),
-    discard: (root, path) => invoke(FilesInvoke.discard, root, path),
-    hunk: (root, path, change) => invoke(FilesInvoke.hunk, root, path, change),
-    history: (sessionId) => invoke(FilesInvoke.history, sessionId),
-    onTouched: (cb) => subscribe(FilesEvent.touched, cb),
-  },
   updates: {
     state: () => invoke(UpdatesInvoke.state),
     check: () => invoke(UpdatesInvoke.check),
@@ -117,6 +98,7 @@ const api: NexaApi = {
     open: (sessionId, itemId) => invoke(McpAppsInvoke.open, sessionId, itemId),
     callTool: (sessionId, itemId, name, args) => invoke(McpAppsInvoke.callTool, sessionId, itemId, name, args),
     readResource: (sessionId, itemId, uri) => invoke(McpAppsInvoke.readResource, sessionId, itemId, uri),
+    openRemote: (device, sessionId, itemId) => invoke(McpAppsInvoke.openRemote, device, sessionId, itemId),
   },
   voice: {
     start: (input) => invoke(VoiceInvoke.start, input),
@@ -176,12 +158,8 @@ const api: NexaApi = {
     onChanged: (cb) => subscribe(TerminalsEvent.changed, cb),
   },
   git: {
-    branch: (cwd) => invoke(FilesInvoke.gitBranch, cwd),
-    watch: (cwds) => invoke(FilesInvoke.gitWatch, cwds),
-    webUrl: (cwd) => invoke(FilesInvoke.gitWebUrl, cwd),
-    mainWorktree: (cwd) => invoke(FilesInvoke.gitMainWorktree, cwd),
+    ...deviceGit,
     worktreeCheck: (cwd) => invoke(FilesInvoke.gitWorktreeCheck, cwd),
-    onBranchChanged: (cb) => subscribe(FilesEvent.gitBranchChanged, cb),
   },
   browser: {
     tabs: () => invoke(BrowserInvoke.tabs),

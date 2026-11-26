@@ -23,6 +23,8 @@ const props = defineProps<{
   seen: SeenState
   /** Something to know about the changes, beside the name (e.g. that only line endings changed). */
   notice?: string | null
+  /** The file is on this computer, so it can open in its program (not one of another device). */
+  openable?: boolean
 }>()
 const emit = defineEmits<{ toggle: []; seen: []; open: [] }>()
 
@@ -96,7 +98,7 @@ const iconButton =
       </span>
       Gesehen
     </button>
-    <button type="button" aria-label="Mit dem Standardprogramm öffnen" :class="iconButton" v-tooltip="'Mit dem Standardprogramm öffnen'" @click.stop="emit('open')">
+    <button v-if="openable" type="button" aria-label="Mit dem Standardprogramm öffnen" :class="iconButton" v-tooltip="'Mit dem Standardprogramm öffnen'" @click.stop="emit('open')">
       <ExternalLinkIcon class="size-[14px]" />
     </button>
   </div>

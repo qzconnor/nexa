@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { defineStore, storeToRefs } from 'pinia'
 import { computed, reactive, ref, shallowReactive, shallowRef, watch } from 'vue'
 import type { FileListing, FileSearchList, FileTouch, FileTouchKind, FileTreeWatch, GitFileStatus, GitTreeStatus } from '@shared/files'
 import { sameData } from '@shared/utils'
@@ -16,6 +16,8 @@ import {
   type TouchRecord,
 } from '@/lib/file-tree'
 import { useAppStore } from './app'
+import { apiOf, scopedStore } from './device'
+import { useDevicesStore } from './devices'
 import { useProjectsStore } from './projects'
 import { useSessionsStore } from './sessions'
 import { useSettingsStore } from './settings'
@@ -143,16 +145,10 @@ export interface Touch {
 }
 
 /**
- * The file panel beside the chats, as in the Claude Manager. Whether it is open holds for every chat;
- * the tree belongs to the folder: chats of the same project share its open folders, which are also
- * remembered for the next time. Folders on screen are watched, so the tree follows what the agent
- * changes, and the files it touches light up (main reports them from the chat's tool calls).
+ * How the file panel looks, the same beside the chats of every device: open or not, its width, its
+ * filters, how changes show; and the open folders of this device's trees. Kept for the next start.
  */
-export const useFileTreeStore = defineStore('file-tree', () => {
-  const app = useAppStore()
-  const sessions = useSessionsStore(null)
-  const projects = useProjectsStore(null)
-  const settings = useSettingsStore(null)
+const useFileTreeViewStore = defineStore('file-tree-view', () => {
   const saved = readSaved()
 
   const width = ref(clampWidth(typeof saved.width === 'number' ? saved.width : DEFAULT_TREE_WIDTH))
@@ -167,27 +163,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   const diffSplit = ref(saved.diffSplit === true)
   const hiddenStatuses = reactive(new Set(knownValues(saved.hiddenStatuses, GIT_STATUSES)))
   const hiddenKinds = reactive(new Set(knownValues(saved.hiddenKinds, TOUCH_KINDS)))
-  /**
-   * The files the agent is at in a session, by session and absolute path, the most recently touched
-   * last: what the activity filter shows. Each kind of touch stays only a while (`durations`), a file
-   * with none left goes. From the chat's recent history once the tree shows it, then live.
-   */
-  const activity = shallowRef(new Map<string, ReadonlyMap<string, TouchRecord>>())
-  /** The file whose changes a chat shows over its timeline, by session. */
-  const diffs = reactive(new Map<string, DiffFile>())
   const remembered: Record<string, string[]> = saved.expanded && typeof saved.expanded === 'object' ? { ...saved.expanded } : {}
-
-  // A deleted chat's tree state goes with it.
-  watch(
-    () => sessions.metas,
-    (list) => {
-      const ids = new Set(list.map((m) => m.id))
-      for (const id of diffs.keys()) if (!ids.has(id)) diffs.delete(id)
-      if ([...activity.value.keys()].some((id) => !ids.has(id))) {
-        activity.value = new Map([...activity.value].filter(([id]) => ids.has(id)))
-      }
-    },
-  )
 
   function save(): void {
     try {
@@ -210,6 +186,63 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   }
   watch([width, open, showIgnored, filtersOpen, diffWrap, diffSplit, filters, hiddenStatuses, hiddenKinds], save)
 
+  /** The open folders remembered of a tree of this device. */
+  const expandedOf = (root: string): readonly string[] => remembered[root] ?? []
+
+  /** Remembers the open folders of a tree of this device, as the one most recently used. */
+  function rememberExpanded(root: string, dirs: string[]): void {
+    delete remembered[root]
+    if (dirs.length > 0) remembered[root] = dirs
+    const roots = Object.keys(remembered)
+    for (const r of roots.slice(0, Math.max(0, roots.length - MAX_REMEMBERED_ROOTS))) delete remembered[r]
+    save()
+  }
+
+  return { width, open, showIgnored, filters, filtersOpen, diffWrap, diffSplit, hiddenStatuses, hiddenKinds, expandedOf, rememberExpanded }
+})
+
+/**
+ * The file panel beside the chats, as in the Claude Manager; each device has its own (`scopedStore`):
+ * another device's trees are of its folders, read there by Remote Control, its agents' touches come
+ * from there. How the panel looks holds for every chat (`useFileTreeViewStore`); the tree belongs to
+ * the folder: chats of the same project share its open folders, which this device's trees also
+ * remember for the next time. Folders on screen are watched, so the tree follows what the agent
+ * changes, and the files it touches light up (main reports them from the chat's tool calls).
+ */
+export const useFileTreeStore = scopedStore('file-tree', (device) => {
+  const app = useAppStore()
+  const api = apiOf(device)
+  const sessions = useSessionsStore(device)
+  const projects = useProjectsStore(device)
+  // How long the agent's touches last is this device's setting, for another device's chats too.
+  const settings = useSettingsStore(null)
+  const view = useFileTreeViewStore()
+  const { width, open, showIgnored, filters, filtersOpen, diffWrap, diffSplit, hiddenStatuses, hiddenKinds } = storeToRefs(view)
+
+  /** The separator of the system a tree's folder is on: another device may run another one than this. */
+  const separatorOf = (root: string): string => (device ? (root.startsWith('/') ? '/' : '\\') : SEPARATOR)
+
+  /**
+   * The files the agent is at in a session, by session and absolute path, the most recently touched
+   * last: what the activity filter shows. Each kind of touch stays only a while (`durations`), a file
+   * with none left goes. From the chat's recent history once the tree shows it, then live.
+   */
+  const activity = shallowRef(new Map<string, ReadonlyMap<string, TouchRecord>>())
+  /** The file whose changes a chat shows over its timeline, by session. */
+  const diffs = reactive(new Map<string, DiffFile>())
+
+  // A deleted chat's tree state goes with it.
+  watch(
+    () => sessions.metas,
+    (list) => {
+      const ids = new Set(list.map((m) => m.id))
+      for (const id of diffs.keys()) if (!ids.has(id)) diffs.delete(id)
+      if ([...activity.value.keys()].some((id) => !ids.has(id))) {
+        activity.value = new Map([...activity.value].filter(([id]) => ids.has(id)))
+      }
+    },
+  )
+
   /** The tree of a chat: the folder its agent works in (its project's, or one in it). Null without one. */
   function targetOf(sessionId: string | null | undefined): TreeTarget | null {
     const meta = sessions.get(sessionId)
@@ -224,6 +257,12 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   function setWidth(next: number): void {
     width.value = clampWidth(next)
   }
+
+  /**
+   * Open folders a tree starts with: those remembered of this device's; another device's trees keep
+   * theirs only while the app runs (`models`), so the same folder on two devices doesn't share them.
+   */
+  const rememberedOf = (root: string): readonly string[] => (device ? [] : view.expandedOf(root))
 
   // ── A file's changes ──
 
@@ -267,7 +306,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
       root,
       listings: shallowReactive(new Map()),
       errors: shallowReactive(new Map()),
-      expanded: reactive(new Set(remembered[root] ?? [])),
+      expanded: reactive(new Set(rememberedOf(root))),
       git: null,
       search: null,
       searchLoading: false,
@@ -332,7 +371,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     const id = ++loadCount
     loads.set(key(model, dir), id)
     try {
-      const listing = await window.api.files.list(absolutePath(model.root, dir, SEPARATOR))
+      const listing = await api.files.list(absolutePath(model.root, dir, separatorOf(model.root)))
       if (loads.get(key(model, dir)) !== id) return
       const old = model.listings.get(dir)
       // Unchanged: the rows aren't computed again.
@@ -381,7 +420,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     }
     statusBusy.add(root)
     try {
-      const status = await window.api.files.status(root).catch(() => null)
+      const status = await api.files.status(root).catch(() => null)
       if (models.get(root) === model && !sameData(model.git, status)) {
         model.git = status ? Object.freeze(status) : null
         // Files came or went, maybe in a folder that isn't watched (e.g. in a new one).
@@ -422,11 +461,14 @@ export const useFileTreeStore = defineStore('file-tree', () => {
       const next = JSON.stringify(trees)
       if (next === watching) return
       watching = next
-      void window.api.files.watch(trees).catch(() => {})
+      // Not taken (another device not reachable): asked again with the next change.
+      void api.files.watch(trees).catch(() => {
+        if (watching === next) watching = ''
+      })
     })
   }
 
-  window.api.files.onChanged((root, dirs, git) => {
+  api.files.onChanged((root, dirs, git) => {
     const model = models.get(root)
     if (!model) return
     for (const dir of dirs) {
@@ -449,15 +491,38 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     },
   )
 
+  // Another device watches its folders for this one only while this one watches it: once that ended
+  // (it went offline, the watch ran out, it let this one in again), the trees on screen ask again and
+  // are read anew, as what changed meanwhile came as no event.
+  if (device) {
+    const again = () => {
+      watching = ''
+      queueWatch()
+      for (const root of holders.keys()) {
+        const model = models.get(root)
+        if (model) refresh(model)
+      }
+    }
+    window.api.remote.onResync((id) => {
+      if (id === device) again()
+    })
+    const devices = useDevicesStore()
+    watch(
+      () => devices.devices.find((d) => d.id === device)?.state === 'ready',
+      (ready, before) => {
+        if (ready && before === false) again()
+      },
+    )
+  }
+
   function remember(model: TreeModel): void {
-    delete remembered[model.root]
+    if (device) return
     // Folders opened only to show what the agent touches aren't the user's to remember.
     const agent = agentFolders.get(model.root)
-    const dirs = [...model.expanded].filter((dir) => !agent?.has(dir))
-    if (dirs.length > 0) remembered[model.root] = dirs
-    const roots = Object.keys(remembered)
-    for (const root of roots.slice(0, Math.max(0, roots.length - MAX_REMEMBERED_ROOTS))) delete remembered[root]
-    save()
+    view.rememberExpanded(
+      model.root,
+      [...model.expanded].filter((dir) => !agent?.has(dir)),
+    )
   }
 
   function setExpanded(model: TreeModel, dir: string, value: boolean): void {
@@ -498,7 +563,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     model.searchLoading = true
     model.searchStale = false
     try {
-      const list = await window.api.files.searchList(model.root)
+      const list = await api.files.searchList(model.root)
       model.search = Object.freeze({ paths: Object.freeze(list.paths) as string[], truncated: list.truncated })
     } catch {
       model.search = { paths: [], truncated: false }
@@ -516,7 +581,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   const agentFolders = new Map<string, Map<string, number>>()
   let folderTimer: ReturnType<typeof setTimeout> | null = null
 
-  window.api.files.onTouched((sessionId, list) => {
+  api.files.onTouched((sessionId, list) => {
     const now = Date.now()
     const next = new Map(touches.value)
     const mine = new Map(next.get(sessionId))
@@ -641,7 +706,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   function loadHistory(sessionId: string): Promise<void> {
     let loading = histories.get(sessionId)
     if (!loading) {
-      loading = window.api.files.history(sessionId).then(
+      loading = api.files.history(sessionId).then(
         (list) => {
           const now = Date.now()
           const mine = new Map<string, TouchRecord>()
@@ -708,7 +773,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
   function revealForAgent(touch: FileTouch, now: number): void {
     for (const root of holders.keys()) {
       const model = models.get(root)
-      const path = model ? treePathOf(root, touch.path, window.api.platform === 'win32') : null
+      const path = model ? treePathOf(root, touch.path, separatorOf(root) === '\\') : null
       if (!model || !path) continue
       // A new file in a folder that isn't watched (Linux watches only the open ones) joins the list of files.
       if (touch.kind === 'write') model.searchStale = true
@@ -762,6 +827,7 @@ export const useFileTreeStore = defineStore('file-tree', () => {
     diffSplit,
     hiddenStatuses,
     hiddenKinds,
+    separatorOf,
     targetOf,
     toggle,
     setWidth,

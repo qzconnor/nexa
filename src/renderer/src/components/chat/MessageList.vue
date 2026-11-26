@@ -287,7 +287,7 @@ const providerChanges = computed(() => {
           <RenderBlock v-if="block.item.render" :spec="block.item.render" />
           <UserShellBlock v-else-if="block.item.byUser" :tool="block.item" :session-id="sessionId" />
           <!-- An MCP app's frame talks to its server on the device the chat runs on: another one's shows as a tool. -->
-          <McpAppBlock v-else-if="block.item.app && !device" :tool="block.item" :session-id="sessionId" />
+          <McpAppBlock v-else-if="block.item.app" :tool="block.item" :session-id="sessionId" />
           <ToolRow v-else :tool="block.item" />
         </template>
         <AgentCard v-else-if="block.item.kind === 'agent'" :item="block.item" />

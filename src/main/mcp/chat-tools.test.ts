@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem, ProviderId } from '@shared/chat'
+import type { RemoteChat } from '@shared/remote-chats'
 import type { SessionSearchHit } from '@shared/types'
 import type { PeerChat } from '../services/session-service'
-import { ChatTools, chatTranscript, resolveChat, type ChatPeers } from './chat-tools'
+import { ChatTools, chatTranscript, resolveChat, splitDevice, type ChatDevice, type ChatPeers, type DeviceChatPeers } from './chat-tools'
 
 const NOW = 1_800_000_000_000
 
@@ -183,5 +184,175 @@ describe('ChatTools', () => {
     expect(sent).toHaveLength(20)
     later(10 * 60_000 + 1)
     expect(await call('chat_send', { to: 'c1', text: 'wieder' })).toMatchObject({ error: false })
+  })
+})
+
+describe('splitDevice', () => {
+  const devices = [{ name: 'Laptop' }, { name: 'Laptop alt' }, { name: 'Büro-PC' }]
+  const split = (ref: string) => {
+    const found = splitDevice(ref, devices)
+    return found && [found.device.name, found.rest]
+  }
+
+  it('takes the device in front of a chat’s name, however it is separated', () => {
+    expect(split('Laptop › Server-Umbau')).toEqual(['Laptop', 'Server-Umbau'])
+    expect(split('„laptop > Server-Umbau“')).toEqual(['Laptop', 'Server-Umbau'])
+    expect(split('Laptop: Server-Umbau')).toEqual(['Laptop', 'Server-Umbau'])
+    expect(split('Laptop Server-Umbau')).toEqual(['Laptop', 'Server-Umbau'])
+    expect(split('Laptop alt › Plan')).toEqual(['Laptop alt', 'Plan'])
+    expect(split('buero-pc/Plan')).toBeNull()
+    expect(split('Büro-PC/Plan')).toEqual(['Büro-PC', 'Plan'])
+  })
+
+  it('takes nothing that only starts like a device', () => {
+    expect(split('Laptops einrichten')).toBeNull()
+    expect(split('Laptop')).toBeNull()
+    expect(split('Laptop › ')).toBeNull()
+  })
+})
+
+describe('chatTranscript of a message from another device', () => {
+  it('names the device the sending chat is on', () => {
+    const item: ChatItem = { kind: 'user', id: 'u', ts: 1, provider: 'claude', text: 'Prüf das', from: { sessionId: 'x', title: 'Hier', provider: 'codex', device: { id: 'lap', name: 'Laptop' } } }
+    expect(chatTranscript([item], 5)).toBe('Message from the chat "Hier" on the device "Laptop" (Codex): Prüf das')
+  })
+})
+
+describe('ChatTools with the user’s other devices', () => {
+  const laptop: ChatDevice = { id: 'lap', name: 'Laptop', online: true }
+  const tablet: ChatDevice = { id: 'tab', name: 'Tablet', online: false }
+  const remote = (id: string, title: string, patch: Partial<RemoteChat> = {}): RemoteChat => ({ ...chat(id, title, { projectId: 'rp', project: 'nexa' }), ...patch })
+  const LAPTOP_CHATS = [remote('r1', 'Server-Umbau', { status: 'running' }), remote('r2', 'Code-Review MCP'), remote('r3', 'Alter Plan', { archived: true })]
+
+  function tools(devices: ChatDevice[] = [laptop, tablet], patch: Partial<DeviceChatPeers> = {}) {
+    const sent: { device: string; from: string; to: string; text: string }[] = []
+    const created: unknown[] = []
+    const local: string[] = []
+    const peers: ChatPeers = {
+      list: () => CHATS,
+      items: async () => [],
+      search: async () => [{ sessionId: 'c5', role: 'assistant', provider: 'codex', snippet: '…der alte Plan war gut' }],
+      send: async (_from, to) => void local.push(to),
+      create: async () => ({ id: 'new', title: 'Neu' }),
+    }
+    const notConnected = (device: ChatDevice) => new Error(`The device "${device.name}" is not connected right now, so its chats are out of reach.`)
+    const others: DeviceChatPeers = {
+      devices: () => devices,
+      selfName: () => 'Desktop',
+      list: async (device) => {
+        if (!device.online) throw notConnected(device)
+        return LAPTOP_CHATS
+      },
+      read: async (device, id) => {
+        if (!device.online) throw notConnected(device)
+        return { chat: LAPTOP_CHATS.find((c) => c.id === id)!, transcript: 'User: Bau den Server um' }
+      },
+      search: async (device) => {
+        if (!device.online) throw notConnected(device)
+        return { found: [{ chat: { ...LAPTOP_CHATS[2]!, updatedAt: NOW - 10_000 }, hit: { sessionId: 'r3', role: 'user', provider: 'claude', snippet: '…Plan vom Laptop' } }], total: 1 }
+      },
+      send: async (device, from, to, text) => {
+        sent.push({ device: device.id, from, to, text })
+        return LAPTOP_CHATS.find((c) => c.id === to)!
+      },
+      create: async (device, from, input) => {
+        created.push({ device: device.id, from, ...input })
+        return { id: 'n1', title: input.title ?? 'Neue Session', project: input.project ?? 'nexa' }
+      },
+      ...patch,
+    }
+    const chatTools = new ChatTools(peers, () => NOW, others)
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await chatTools.call('self', name, args)
+      return { text: result.content.map((c) => (c.type === 'text' ? c.text : '')).join(''), error: !!result.isError }
+    }
+    return { call, sent, created, local }
+  }
+
+  it('lists the chats of each device after this one’s, and says which device it couldn’t reach', async () => {
+    const { text } = await tools().call('chat_list', {})
+    expect(text).toContain('You are in "Hier" (id: self, project nexa) on the device "Desktop".\nChats on this device, newest first:\n- "Code-Review MCP"')
+    expect(text).toContain('Chats on the device "Laptop", newest first:\n- "Laptop › Server-Umbau" (Claude Code, project nexa, working right now, active 1 min ago) id: lap:r1')
+    expect(text).not.toContain('Laptop › Alter Plan')
+    expect(text).toContain('The device "Tablet" is not connected right now')
+    const narrowed = (await tools().call('chat_list', { query: 'laptop review' })).text
+    expect(narrowed).toContain('No other chat on this device fits.')
+    expect(narrowed).toContain('- "Laptop › Code-Review MCP"')
+  })
+
+  it('keeps finding this device’s chats first, by the same names as before', async () => {
+    const { call, local, sent } = tools()
+    expect((await call('chat_send', { to: 'Code-Review', text: 'Hier bitte' })).text).toMatch(/^Sent to "Code-Review MCP" \(Codex\)/)
+    expect(local).toEqual(['c1'])
+    expect(sent).toEqual([])
+  })
+
+  it('reaches another device’s chat by its id, by „Device › Title“, or by a title only it has', async () => {
+    const { call, sent } = tools()
+    expect((await call('chat_send', { to: 'lap:r1', text: 'eins' })).text).toMatch(/^Sent to "Laptop › Server-Umbau" \(Claude Code\)\. It is busy/)
+    expect((await call('chat_send', { to: 'Laptop › Code-Review', text: 'zwei' })).text).toMatch(/^Sent to "Laptop › Code-Review MCP"/)
+    expect((await call('chat_send', { to: 'Server-Umbau', text: 'drei' })).text).toMatch(/^Sent to "Laptop › Server-Umbau"/)
+    expect(sent).toEqual([
+      { device: 'lap', from: 'self', to: 'r1', text: 'eins' },
+      { device: 'lap', from: 'self', to: 'r2', text: 'zwei' },
+      { device: 'lap', from: 'self', to: 'r1', text: 'drei' },
+    ])
+  })
+
+  it('says when a device isn’t connected or has no such chat, and names who couldn’t be asked', async () => {
+    const { call, sent } = tools()
+    expect(await call('chat_send', { to: 'Tablet › Notizen', text: 'x' })).toMatchObject({ error: true, text: expect.stringMatching(/^The device "Tablet" is not connected right now/) })
+    expect(await call('chat_send', { to: 'Laptop › Gibt es nicht', text: 'x' })).toMatchObject({ error: true, text: expect.stringMatching(/^No chat on the device "Laptop" is called "Gibt es nicht"/) })
+    expect(await call('chat_send', { to: 'lap:weg', text: 'x' })).toMatchObject({ error: true, text: expect.stringContaining('The device "Laptop" has no chat with the id weg') })
+    const nowhere = await call('chat_send', { to: 'Nirgends', text: 'x' })
+    expect(nowhere.text).toMatch(/^No chat in Nexa is called "Nirgends", neither on this device nor on the user's other devices\./)
+    expect(nowhere.text).toContain('The device "Tablet" is not connected right now')
+    expect(sent).toEqual([])
+  })
+
+  it('passes on what the other device refused', async () => {
+    const { call } = tools(undefined, {
+      send: async () => {
+        throw new Error('The device "Laptop" refused: messages between chats are turned off there (Einstellungen › Chat).')
+      },
+    })
+    expect(await call('chat_send', { to: 'Laptop › Server-Umbau', text: 'x' })).toEqual({
+      error: true,
+      text: 'The device "Laptop" refused: messages between chats are turned off there (Einstellungen › Chat).',
+    })
+  })
+
+  it('reads another device’s chat', async () => {
+    const { text } = await tools().call('chat_read', { chat: 'Laptop › Server-Umbau' })
+    expect(text).toBe('"Laptop › Server-Umbau" (Claude Code, working right now), id: lap:r1\n\nUser: Bau den Server um')
+  })
+
+  it('searches all devices and merges what they found, newest first', async () => {
+    const { text } = await tools().call('sessions_search', { query: 'plan' })
+    expect(text).toMatch(/^2 chats fit "plan", newest first:\n- "Laptop › Alter Plan" .* id: lap:r3\n {2}User: …Plan vom Laptop\n- "Alter Plan" .* id: c5\n/)
+    expect(text).toContain('The device "Tablet" is not connected right now')
+  })
+
+  it('starts a chat on another device, in the project named there', async () => {
+    const { call, created } = tools()
+    const result = await call('chat_new', { cli: 'codex', text: 'Review bitte', device: 'laptop', project: 'cm' })
+    expect(result.text).toMatch(/^Started the chat "Laptop › Neue Session" on the device "Laptop" \(Codex, project cm, id: lap:n1\)/)
+    expect(created).toEqual([{ device: 'lap', from: 'self', provider: 'codex', text: 'Review bitte', title: undefined, project: 'cm' }])
+    expect(await call('chat_new', { cli: 'codex', text: 'x', device: 'Handy' })).toMatchObject({ error: true, text: 'The user has no device called "Handy". Their other devices: "Laptop", "Tablet".' })
+    // This device by its name: started here, as without a device.
+    expect((await call('chat_new', { cli: 'codex', text: 'x', device: 'Desktop' })).text).toMatch(/^Started the chat "Neu" \(Codex, id: new\)/)
+  })
+
+  it('counts messages to other devices against the same limit', async () => {
+    const { call, sent } = tools()
+    for (let i = 0; i < 20; i++) await call('chat_send', { to: i % 2 ? 'lap:r1' : 'c1', text: `#${i}` })
+    expect(await call('chat_send', { to: 'lap:r1', text: 'eins zu viel' })).toMatchObject({ error: true, text: expect.stringContaining('Nexa stopped this') })
+    expect(sent).toHaveLength(10)
+  })
+
+  it('works as without devices when none is paired', async () => {
+    const { text } = await tools([]).call('chat_list', {})
+    expect(text).toContain('You are in "Hier" (id: self, project nexa).\nChats, newest first:')
+    expect(text).not.toContain('device')
   })
 })
