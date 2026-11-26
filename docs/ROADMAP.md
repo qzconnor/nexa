@@ -315,6 +315,20 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 
 ## Später
 
+- [ ] **Menü des Symbols im Infobereich gestalten** (`main/window/tray.ts`). Farben, Schrift, Abstände und
+      Ecken des nativen Menüs zeichnet das System selbst; Nexa bestimmt dort nur hell oder dunkel.
+  - [x] Eigenes Menü unter Windows (`window/tray-menu.ts`, `ARCHITECTURE.md`): rahmenloses Fenster am
+        Zeiger, in der Arbeitsfläche gehalten, Theme-Tokens, Acrylic aus den Einstellungen (sonst die
+        Menüfarbe des Themes), kleine runde Ecken über `DwmSetWindowAttribute`. Inhalt: Chats, die warten
+        oder arbeiten (ein Klick öffnet sie), „Neuer Chat“, Schalter der Benachrichtigungen, „Nexa öffnen“,
+        „Beenden“; Pfeiltasten, Esc. Die Seite startet, sobald der Zeiger über dem Symbol ist. Geprüft
+        mit einem per Code geöffneten Menü (dunkles und helles Theme, Acrylic, Ecken). Ungeprüft: der
+        echte Rechtsklick (bekommt das Fenster den Fokus, sonst schließt `blur` es nie), Taskleiste oben
+        oder seitlich, Symbol im Überlaufbereich, Bildschirme mit verschiedener Skalierung.
+  - [ ] Limits der Accounts im eigenen Menü.
+  - [ ] macOS: eigenes Menü ausprobieren (Electron meldet `right-click` auch dort); bis dahin das des
+        Systems. Linux bleibt beim Menü des Systems, Electron meldet dort keinen Rechtsklick.
+
 - [ ] **Antigravity CLI, was noch fehlt** (`PROTOCOLS.md`, „Antigravity CLI“):
   - [x] Mehrere Google-Logins: weitere Google-Accounts mit eigenem `--gemini-dir` und
         `AGY_CLI_FORCE_FILE_TOKEN_STORAGE=true`, der Token liegt dann im Ordner statt im Schlüsselbund.
@@ -358,3 +372,5 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       Frame mit eigener Adresse und CSP. Offen: Vollbild und Bild-im-Bild (`ui/request-display-mode`),
       `ui/update-model-context`, mit einem echten Server und einem echten Turn prüfen.
 - [ ] Remote Control wie in Claude Desktop (Claude Code `remote-control`, Codex `remoteControl/*`).
+  - [ ] Eigene Fernsteuerung über einen selbst gehosteten `nexa-server`, mit PWA fürs Handy und
+        Settings-Sync. Konzept in `NEXA-SERVER.md`.

@@ -11,6 +11,12 @@ export default defineConfig({
   },
   preload: {
     resolve: { alias: { '@shared': shared } },
+    build: {
+      // The tray menu's window gets a preload of its own. Sandboxed preloads can't load a chunk they
+      // share, so each is one file.
+      isolatedEntries: true,
+      rollupOptions: { input: { index: resolve('src/preload/index.ts'), tray: resolve('src/preload/tray.ts') } },
+    },
   },
   renderer: {
     resolve: {
@@ -22,6 +28,10 @@ export default defineConfig({
     plugins: [vue(), tailwindcss()],
     // electron-vite leaves it off: the start chunk had 3.5 MB to load and parse. Main stays readable
     // for its stack traces.
-    build: { minify: true },
+    build: {
+      minify: true,
+      // The app's page and the tray menu's (Windows), which only loads what the menu needs.
+      rollupOptions: { input: { index: resolve('src/renderer/index.html'), tray: resolve('src/renderer/tray.html') } },
+    },
   },
 })
