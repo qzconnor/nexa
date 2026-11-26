@@ -165,6 +165,13 @@ Entschieden am 26.11.2026:
   Kopiert und gleich gehalten wie `protocol.ts`: die Themes (`shared/themes`), das Modell der Chats
   (`shared/chat.ts`), Remote Control (`shared/remote.ts`), Umschlag, Mitglieder und Kopplungscode
   (`shared/nexa-server`). Gleicher Look über dieselben Theme-Tokens; das Theme wählt man in der PWA.
+- **Verbindung und Mitglieder aus der App**: Die PWA übernimmt `server-link/connection.ts`,
+  `device-channel.ts`, `membership.ts` und `remote/remote-client.ts` aus `src/main` Byte für Byte
+  (`scripts/sync-from-app.ts` in nexa-server), damit die Regeln für Mitglieder auf beiden Seiten gleich
+  sind. Sie bleiben ohne Node-APIs, und relativ importieren sie nur, was die PWA selbst stellt:
+  `TypedEmitter` ohne `node:events`, `Identity` (nur als Typ; die PWA hält die Schlüssel nicht exportierbar
+  in IndexedDB) und den Fehler des Kanals. Das prüft `server-link/pwa-copies.test.ts`. Wer eine der
+  Dateien verschiebt oder einen relativen Import dazunimmt, sagt es vorher im Chat „Nexa-Server“.
 - **Aufbau**: unten eine Leiste mit „Inbox“ und „Chats“.
   - *Inbox* (Startseite): die Chats aller Rechner, die Aufmerksamkeit brauchen, in Abschnitten: „Wartet auf
     dich“ (Rückfrage, Freigabe, Plan, direkt dort beantwortbar), „Fehler und Limit“, „Fertig, ungelesen“,
