@@ -308,6 +308,13 @@ export class SessionService extends TypedEmitter<Events> {
     return this.sessions.get(id)?.runtime.status ?? null
   }
 
+  /** What each chat that isn't idle does, for a list on another device (Remote Control). */
+  activeRuntimes(): Record<string, SessionRuntime> {
+    const result: Record<string, SessionRuntime> = {}
+    for (const s of this.sessions.values()) if (s.runtime.status !== 'idle') result[s.meta.id] = s.runtime
+    return result
+  }
+
   /** The chats whose CLI is up or at work; `nx` goes to one of them rather than starting another. */
   running(): Set<string> {
     const busy = (s: SessionState) => s.runtime.connected || ['starting', 'running', 'waiting'].includes(s.runtime.status)

@@ -71,6 +71,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `providers/antigravity/*` | Antigravity CLI: ein Prozess je Chat (`agy acp`), Item-Abbildung (`antigravity-items.ts`), Warteschlange der Prompts, Rückfragen und Plan (`antigravity-run.ts`), Zustand der MCP-Server über den lokalen Server des Prozesses (`antigravity-server.ts`). In der CLI-Wahl der Chats, der Vorgabe für neue Chats und auf der Startseite steht Antigravity erst, wenn Nexa es gefunden hat (`ProviderMeta.untilInstalled`, `offeredProviders`); Einstellungen › CLIs zeigt es immer |
 | `lib/secrets.ts` | Ver- und Entschlüsseln von Token und Keys (`safeStorage`) |
 | `server-link/*` | Kopplung mit einem selbst gehosteten nexa-server (Einstellungen › Geräte, Konzept in `NEXA-SERVER.md`): `server-link-service.ts` koppelt mit Einladung oder Kopplungscode (`POST /v1/join`), hält Zustand und Geräteliste für das Fenster und speichert alles in `nexa-server.json` (`link-store.ts`, die privaten Schlüssel und die Schlüssel des Namespace über `safeStorage`); `connection.ts` ist der WebSocket mit Anmeldung, Anfragen nach `id`, Neuverbindung mit wachsender Pause und den Schließcodes, die nicht neu verbinden (4401, 4403, 4409); `membership.ts` führt die eigene Liste anerkannter Geräte und wechselt den Schlüssel nach einer Entfernung (siehe PROTOCOLS.md, „nexa-server“). Kanäle `server-link:*` in `server-link-ipc.ts`; `fake-server.ts` ist ein kleiner nexa-server nur für die Tests |
+| `remote/*` | Remote Control über den nexa-server (PROTOCOLS.md, „Remote Control“): `remote-host.ts` beantwortet die Anfragen der anderen Geräte nach der Stufe, die dieses ihnen gibt (Einstellungen › Geräte › Fernsteuerung), und schickt den beobachtenden Geräten die Ereignisse ihrer Chats, gebündelt; `remote-client.ts` stellt die Anfragen dieses Geräts, ordnet die Antworten zu und hält die Beobachtung der Chats am Leben, die die Fenster zeigen; `remote.ts` verbindet beide mit `ServerLinkService` und `SessionService`, `remote-ipc.ts` mit dem Fenster (Kanäle `remote:*`, Seite „Geräte“). Die Nachrichten gehen über `server-link/device-channel.ts`: nur für die beiden Geräte verschlüsselt, signiert, in Reihenfolge |
 | `shared/nexa-server/*` | Für Desktop und spätere PWA, nur WebCrypto: `protocol.ts` und `auth.ts` aus dem Repo nexa-server kopiert (gleich halten), `server-messages.ts` prüft, was der Server schickt, `envelope.ts` verschlüsselt und signiert die Nachrichten zwischen Geräten, `members.ts` die Regeln für Mitglieder und Schlüssel, `pairing-code.ts` Adresse und Kopplungscode |
 | `lib/shell-env.ts` | Linux: übernimmt beim Start die Umgebung der Login-Shell (PATH mit nvm & Co.), damit die CLIs auch beim Start aus dem Anwendungsmenü gefunden werden |
 | `lib/linux.ts` | Wie die Linux-Version installiert ist (AppImage, deb, rpm); `cliEnv` nimmt mit `withoutAppImageEnv` die Pfade des AppImage-Mounts aus der Umgebung der CLIs |
@@ -715,6 +716,14 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   (`ScheduledTaskDialog`, `scheduled.dialog`) hat unter den Anweisungen CLI, Account, Freigaben und Modell
   wie der Composer, dazu Projekt, Zeitplan mit Vorschau des nächsten Laufs, erweiterte Einstellungen und
   die letzten Läufe. `stores/scheduled.ts` hält die Liste aktuell (`event:scheduled-changed`).
+- **Geräte** (`views/DevicesView.vue`, `ui.view = 'devices'`, Eintrag unter „Geplant“, nur mit gekoppeltem
+  Server): links die bestätigten anderen Geräte und die Chats des gewählten nach Projekt, rechts der offene
+  (`components/remote/RemoteChat.vue`, mit `MessageList`, „Ältere vom Gerät laden“ und einem einfachen
+  Eingabefeld, so weit die Stufe reicht). `stores/remote.ts` legt dessen Items in `stores/sessions.ts` unter
+  `remote:<Gerät>:<Chat>` ab, damit die Komponenten des Chats sie zeigen; `respond` und `interrupt` des
+  Sessions-Stores gehen bei solchen Ids an das Gerät, Bearbeiten gibt es dort nicht. Beobachtet wird nur,
+  solange die Seite zu sehen ist (`remote.watch`). `RemoteControlBar` über der Seite nennt die Geräte, die
+  gerade die Chats dieses Geräts beobachten, mit „Trennen“ (Stufe „Aus“).
 - **Benachrichtigungen der Agents** (`composables/useAgentNotifications.ts`, in jedem Fenster): Toasts zu
   `notify` mit Chat, Text und Knöpfen (`AgentNotificationBody` als Beschreibung des Sonner-Toasts, dessen
   eigener Platz nur einen Knopf fasst). Ein Knopf oder das Schließen antwortet Main genau einmal;

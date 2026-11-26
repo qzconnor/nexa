@@ -417,6 +417,12 @@ const TREE = [
         title: 'Geräte',
         keywords: 'Instanzen Gerät hinzufügen entfernen umbenennen Laptop Desktop Handy bestätigt Schlüssel',
       },
+      {
+        id: 'devices.remote',
+        title: 'Fernsteuerung',
+        keywords: 'Remote Control steuern mitlesen Prompts Freigaben Rückfragen Stufe Berechtigung erlauben',
+        fields: [{ id: 'devices.remoteEnabled', label: 'Andere Geräte dürfen dieses steuern', keywords: 'einschalten aktivieren an aus' }],
+      },
     ],
   },
   {

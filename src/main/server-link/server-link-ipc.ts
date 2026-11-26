@@ -1,3 +1,4 @@
+import { isRemoteLevel } from '@shared/remote'
 import { ServerLinkEvent, ServerLinkInvoke, type PairInput } from '@shared/server-link'
 import { broadcast, handle } from '../ipc'
 import type { ServerLinkService } from './server-link-service'
@@ -25,5 +26,13 @@ export function registerServerLinkIpc(link: ServerLinkService): void {
   handle(ServerLinkInvoke.unpair, () => link.unpair())
   handle(ServerLinkInvoke.connect, () => link.connect())
   handle(ServerLinkInvoke.disconnect, () => link.disconnect())
+  handle(ServerLinkInvoke.setRemote, (_e, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') throw new Error('Ungültiger Parameter: enabled')
+    return link.setRemoteEnabled(enabled)
+  })
+  handle(ServerLinkInvoke.setLevel, (_e, instance: unknown, level: unknown) => {
+    if (!isRemoteLevel(level)) throw new Error('Ungültiger Parameter: level')
+    return link.setRemoteLevel(text(instance, 'instance', 64), level)
+  })
   link.on('changed', (state) => broadcast(ServerLinkEvent.changed, state))
 }

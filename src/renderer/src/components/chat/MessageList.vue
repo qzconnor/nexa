@@ -2,6 +2,7 @@
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, useTemplateRef, watch } from 'vue'
 import type { ChatItem } from '@shared/chat'
+import { isRemoteChatId } from '@shared/remote'
 import BrowserCard from '@/components/browser/BrowserCard.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
 import { formatDay, sameDay } from '@/lib/format'
@@ -168,6 +169,8 @@ defineExpose({ hidden, showAll })
 
 /** The newest browser card shows the page live; the others as it was when they ended. */
 const liveBrowser = computed(() => {
+  // The browser of another device's chat runs there; here only the pictures in its cards show.
+  if (isRemoteChatId(props.sessionId)) return null
   const last = blocks.value.findLast((b) => b.type === 'browser')
   return last?.type === 'browser' ? last.id : null
 })
@@ -177,7 +180,8 @@ const liveBrowser = computed(() => {
  * no CLI knows the chat any more). Also while the agent works (`busy`): sending one ends its turn.
  */
 const editable = computed(() => {
-  if (props.parentId) return new Set<string>()
+  // A chat of another device: its prompts are sent anew there, if at all.
+  if (props.parentId || isRemoteChatId(props.sessionId)) return new Set<string>()
   return new Set(blocks.value.slice(clearedAt.value + 1).flatMap((b) => (b.type === 'item' && b.item.kind === 'user' ? [b.item.id] : [])))
 })
 const busy = computed(() => {

@@ -114,6 +114,11 @@ export class Membership {
     return this.members.some((m) => m.id === id)
   }
 
+  /** Another member with the keys this device took it in with; never this device itself. */
+  member(id: string): Member | undefined {
+    return id === this.deps.instance ? undefined : this.members.find((m) => m.id === id)
+  }
+
   /** Why the last hello of `id` didn't count; null once one did. */
   issueOf(id: string): DeviceIssue | null {
     return this.issues.get(id) ?? null

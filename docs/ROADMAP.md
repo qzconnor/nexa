@@ -376,7 +376,21 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         Settings-Sync. Konzept in `NEXA-SERVER.md`.
     - [x] Phase 1: Server (Repo `nexa-server`) und Kopplung in der App (Einstellungen › Geräte):
           Einladung, Kopplungscode, Geräteliste, Umbenennen, Entfernen mit Schlüsselwechsel, Abmelden.
-          Ungeprüft: hinter einem Proxy und gegen einen Server mit HTTPS/WSS.
+          Mit zwei Rechnern gegen einen echten Server mit HTTPS/WSS geprüft. Ungeprüft: hinter einem Proxy
+          des Systems.
     - [ ] Phase 2: Remote Control von Desktop zu Desktop.
+      - [x] Chats eines anderen Geräts auf der Seite „Geräte“ lesen und live mitverfolgen, Prompts senden,
+            abbrechen, Rückfragen und Freigaben beantworten; je Gerät eine Stufe (Einstellungen › Geräte ›
+            Fernsteuerung, aus bis eingeschaltet, Vorgabe „Nur mitlesen“), Leiste mit „Trennen“ auf dem
+            gesteuerten Gerät. Gegen den Test-Server geprüft, ungeprüft mit zwei Rechnern.
+      - [ ] Neuer Chat auf einem anderen Gerät: erst das Gerät, dann eines seiner Projekte.
+      - [ ] Bilder und Dateien eines Chats vom anderen Gerät zeigen (bisher bleiben sie dort).
+      - [ ] Nachrichten zwischen Chats über Geräte hinweg: `chat_list`, `chat_read`, `chat_send`,
+            `chat_new` und `sessions_search` im Nexa-MCP-Server finden auch die Chats der gekoppelten Geräte
+            (mit dem Gerät im Namen, etwa „Laptop › Server-Umbau“) und schicken ihnen Nachrichten,
+            Ende-zu-Ende verschlüsselt über den Server. Nur an bestätigte Geräte. Ob eine Nachricht ankommt,
+            entscheidet das empfangende Gerät nach seiner Einstellung „Nachrichten zwischen Chats“ und der
+            Stufe, die es dem Absender gibt. Die Grenze von zehn Nachrichten ohne den Nutzer gilt auch über
+            Geräte hinweg. Ist das Gerät nicht verbunden, sagt das Werkzeug es dem Agent.
     - [ ] Phase 3: PWA als Steuerung, mit Web Push und QR-Code zum Koppeln.
     - [ ] Phase 4: Settings-Sync, mit Wiederherstellungscode.

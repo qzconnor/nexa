@@ -64,6 +64,8 @@ type Events = {
   status: [status: ConnectionStatus]
   ready: [ready: ReadyMessage]
   relayed: [msg: RelayedMessage]
+  /** The server refused a `send` (its id): e.g. `unreachable` when the other device isn't connected. */
+  sendFailed: [id: string, error: ServerError]
   instance: [event: InstanceEvent | RemovedEvent]
   stopped: [reason: StopReason]
 }
@@ -242,8 +244,9 @@ export class ServerConnection extends TypedEmitter<Events> {
         this.emit('instance', msg)
         break
       case 'error':
-        // An error for a `send` (e.g. `unreachable`): the device catches up when it is back.
-        this.options.log?.(`server error: ${msg.code}`)
+        // An error for a `send` (e.g. `unreachable`): whoever waits for an answer to it learns at once.
+        if (msg.re !== undefined) this.emit('sendFailed', msg.re, new ServerError(msg.code, msg.message))
+        else this.options.log?.(`server error: ${msg.code}`)
         break
     }
   }

@@ -24,6 +24,7 @@ import { useChatWindowsStore } from '@/stores/chat-windows'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useScheduledStore } from '@/stores/scheduled'
+import { useServerLinkStore } from '@/stores/server-link'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemesStore } from '@/stores/themes'
@@ -47,6 +48,8 @@ const ThemeEditorDialog = defineAsyncComponent(() => import('@/components/themes
 const ArtifactsView = defineAsyncComponent(() => import('@/views/ArtifactsView.vue'))
 const ScheduledTaskDialog = defineAsyncComponent(() => import('@/components/scheduled/ScheduledTaskDialog.vue'))
 const ScheduledView = defineAsyncComponent(() => import('@/views/ScheduledView.vue'))
+const DevicesView = defineAsyncComponent(() => import('@/views/DevicesView.vue'))
+const RemoteControlBar = defineAsyncComponent(() => import('@/components/remote/RemoteControlBar.vue'))
 const SetupView = defineAsyncComponent(() => import('@/views/SetupView.vue'))
 
 const settings = useSettingsStore()
@@ -80,6 +83,8 @@ watch(
 )
 
 const sidebarShown = computed(() => ui.sidebarOpen && !isChatWindow)
+const serverLink = useServerLinkStore()
+const remotePossible = computed(() => !!serverLink.state && serverLink.state.status !== 'unpaired')
 
 if (isChatWindow) {
   // The taskbar and Alt+Tab name the chat.
@@ -147,6 +152,8 @@ onMounted(async () => {
       void scheduled
         .load()
         .catch((error) => console.error('[scheduled]', error))
+      // Whether there is a server: the sidebar's „Geräte“ and the bar about Remote Control depend on it.
+      void serverLink.load().catch((error) => console.error('[nexa-server]', error))
     }
   } catch (error) {
     fatal.value = errorMessage(error)
@@ -158,6 +165,8 @@ onMounted(async () => {
   <TooltipProvider :delay-duration="400">
     <div v-if="ready" class="flex h-full flex-col">
       <TitleBar />
+      <!-- Only with a server: who controls this device, and the way to stop it. -->
+      <RemoteControlBar v-if="!isChatWindow && remotePossible" />
       <div class="flex min-h-0 flex-1">
         <Sidebar v-if="sidebarShown" />
         <!-- The page sits as a panel in the window's frame (title bar and sidebar share its colour). -->
@@ -174,6 +183,7 @@ onMounted(async () => {
           <template v-else-if="!isChatWindow">
             <ArtifactsView v-if="ui.view === 'artifacts'" />
             <ScheduledView v-else-if="ui.view === 'scheduled'" />
+            <DevicesView v-else-if="ui.view === 'devices'" />
             <!-- Chats stay reachable; only the start page waits for the setup. -->
             <SetupView v-else-if="!settings.settings.setup.done" />
             <HomeView v-else />
