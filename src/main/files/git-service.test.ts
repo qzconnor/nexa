@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitBranch } from '@shared/files'
 import { claudeWorktrees, GitService, parseWorktrees, pullRequestUrl, repoWebUrl } from './git-service'
 
+// The tests run real git processes: 1–2 s, but on a busy Windows runner well over 5.
+vi.setConfig({ testTimeout: 20_000 })
+
 const HASH = '0123456789abcdef0123456789abcdef01234567'
 
 let dir: string
