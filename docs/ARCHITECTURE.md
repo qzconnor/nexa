@@ -733,7 +733,10 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   das Gerät den Faden verlor (`onResync`). Von einem Gerät bleiben höchstens 4 Chats geladen.
   `useShownDeviceStore` merkt sich, wessen Chat oder Startseite der Hauptbereich zeigt; ein Chat eines
   Geräts schließt den offenen der anderen. Welche Geräte gerade die Chats dieses Geräts offen haben,
-  steht unter Einstellungen › Geräte › Fernsteuerung, mit „Trennen“ (Stufe „Aus“).
+  steht unter Einstellungen › Geräte › Fernsteuerung, mit „Trennen“ (Stufe „Aus“). Ein Gerät lässt sich
+  hier ausblenden (Kontextmenü in der Seitenleiste, „…“ unter Einstellungen › Geräte; `ui.hiddenDevices`,
+  `nexa.hiddenDevices` im `localStorage`): Es fehlt dann in der Seitenleiste und unter „Angeheftet“ und
+  wird weder geladen noch beobachtet, wie ein entferntes. Wieder eingeblendet liest es alles neu.
 - **Abgleich mit anderen Geräten** (Einstellungen › Geräte, `settings.remote.sync`, Gruppen und Stufen in
   `shared/remote-sync.ts`): je Punkt, ob dieses und ein gesteuertes Gerät dasselbe zeigen (Auf- und
   Zuklappen, Reihenfolge, Anheften, Archiv, Namen, Vorgaben der Startseite, Anzeige im Chat). Was nicht

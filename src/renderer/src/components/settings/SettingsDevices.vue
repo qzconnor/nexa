@@ -4,6 +4,8 @@ import {
   ClockAlertIcon,
   CopyIcon,
   EllipsisIcon,
+  EyeIcon,
+  EyeOffIcon,
   LogOutIcon,
   MonitorIcon,
   PencilIcon,
@@ -182,6 +184,9 @@ function issueOf(device: LinkedDevice): { short: string; long: string } | null {
     long: `Die Uhren dieses Geräts und von „${device.name}“ liegen mehr als 5 Minuten auseinander, und es liegt an diesem Gerät (siehe „Verbindung“).`,
   }
 }
+
+/** Hidden here only (`ui.hiddenDevices`): no server needed, so also while not connected. */
+const hidden = (device: LinkedDevice) => ui.hiddenDevices.has(device.id)
 
 async function rename(device: LinkedDevice): Promise<void> {
   const next = await ui.ask({ title: 'Gerät umbenennen', input: { value: device.name }, confirmText: 'Umbenennen' })
@@ -375,13 +380,22 @@ async function remove(device: LinkedDevice): Promise<void> {
                   <ShieldQuestionIcon data-icon="inline-start" />
                   Nicht bestätigt
                 </Badge>
+                <Badge
+                  v-if="hidden(device)"
+                  variant="outline"
+                  class="text-muted-foreground"
+                  v-tooltip="'Steht auf diesem Gerät nicht in der Seitenleiste. Einblenden über „…“.'"
+                >
+                  <EyeOffIcon data-icon="inline-start" />
+                  Ausgeblendet
+                </Badge>
               </div>
               <span class="truncate text-xs text-muted-foreground">
                 {{ describe(device) }}
                 <span v-if="issueOf(device)" class="text-warning"> · {{ issueOf(device)!.short }}</span>
               </span>
             </div>
-            <DropdownMenu v-if="state.status === 'online'">
+            <DropdownMenu v-if="state.status === 'online' || !device.self">
               <DropdownMenuTrigger as-child>
                 <Button variant="ghost" size="icon-xs">
                   <EllipsisIcon />
@@ -389,10 +403,14 @@ async function remove(device: LinkedDevice): Promise<void> {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" class="w-48">
-                <DropdownMenuItem @select="rename(device)"><PencilIcon /> Umbenennen</DropdownMenuItem>
+                <DropdownMenuItem v-if="state.status === 'online'" @select="rename(device)"><PencilIcon /> Umbenennen</DropdownMenuItem>
                 <template v-if="!device.self">
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" @select="remove(device)"><Trash2Icon /> Entfernen</DropdownMenuItem>
+                  <DropdownMenuItem v-if="hidden(device)" @select="ui.setDeviceHidden(device.id, false)"><EyeIcon /> Einblenden</DropdownMenuItem>
+                  <DropdownMenuItem v-else @select="ui.setDeviceHidden(device.id, true)"><EyeOffIcon /> Ausblenden</DropdownMenuItem>
+                  <template v-if="state.status === 'online'">
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" @select="remove(device)"><Trash2Icon /> Entfernen</DropdownMenuItem>
+                  </template>
                 </template>
               </DropdownMenuContent>
             </DropdownMenu>

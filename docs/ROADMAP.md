@@ -392,6 +392,8 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       - [x] „Angeheftet“ oben mit den angehefteten Chats aller Geräte in einer Liste (andere Geräte mit
             Bildschirm-Symbol), per Drag & Drop sortierbar; neu Angeheftetes kommt oben dazu. Die
             Reihenfolge bleibt auf diesem Gerät (`nexa.pinnedOrder`).
+      - [x] Andere Geräte auf diesem ausblenden (Kontextmenü in der Seitenleiste, Ein- und Ausblenden unter
+            Einstellungen › Geräte): nicht in der Seitenleiste, nicht unter „Angeheftet“, nicht geladen.
       - [ ] Bilder und Dateien im Verlauf eines Chats vom anderen Gerät zeigen (bisher Pfade dort).
       - [ ] Schnellsuche (Strg+K) und Tastenkürzel über die Chats der anderen Geräte.
       - [ ] Dateibaum, Änderungen und MCP Apps eines Chats auf einem anderen Gerät.
