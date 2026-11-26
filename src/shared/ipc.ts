@@ -45,6 +45,7 @@ import type { BrowserApi } from './browser-ipc'
 import type { UpdatesApi } from './updates'
 import type { CliImportApi, ImportApi } from './import-ipc'
 import type { SectionLayout } from './sections'
+import type { ServerLinkApi } from './server-link'
 import type { StartCommandsApi } from './start-commands'
 import type { TerminalsApi } from './terminals'
 import type { VoiceApi } from './voice'
@@ -243,6 +244,8 @@ export interface NexaApi {
   cliConfig: CliConfigApi
   /** Chats in windows of their own (shared/chat-windows.ts). */
   chatWindows: ChatWindowsApi
+  /** The pairing with a nexa-server and the devices of the namespace (shared/server-link.ts). */
+  serverLink: ServerLinkApi
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>

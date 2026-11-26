@@ -374,3 +374,9 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
 - [ ] Remote Control wie in Claude Desktop (Claude Code `remote-control`, Codex `remoteControl/*`).
   - [ ] Eigene Fernsteuerung über einen selbst gehosteten `nexa-server`, mit PWA fürs Handy und
         Settings-Sync. Konzept in `NEXA-SERVER.md`.
+    - [x] Phase 1: Server (Repo `nexa-server`) und Kopplung in der App (Einstellungen › Geräte):
+          Einladung, Kopplungscode, Geräteliste, Umbenennen, Entfernen mit Schlüsselwechsel, Abmelden.
+          Ungeprüft: hinter einem Proxy und gegen einen Server mit HTTPS/WSS.
+    - [ ] Phase 2: Remote Control von Desktop zu Desktop.
+    - [ ] Phase 3: PWA als Steuerung, mit Web Push und QR-Code zum Koppeln.
+    - [ ] Phase 4: Settings-Sync, mit Wiederherstellungscode.

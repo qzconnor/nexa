@@ -1,7 +1,8 @@
 # nexa-server: Remote Control, PWA und Settings-Sync
 
-Konzept vom 26.11.2026, noch nichts davon gebaut. Was hier als **Ungeprüft** markiert ist, stammt aus Doku
-oder Erinnerung, nicht aus einem Versuch.
+Konzept vom 26.11.2026. Gebaut ist Phase 1: der Server (eigenes Repo `nexa-server`) und die Kopplung in
+der App (Einstellungen › Geräte). Was hier als **Ungeprüft** markiert ist, stammt aus Doku oder
+Erinnerung, nicht aus einem Versuch.
 
 ## Ziel
 
@@ -57,15 +58,47 @@ Was der Server kennt:
 
 ## Kopplung
 
-1. **Erste Instanz**: Server-URL und Einladungscode eintragen. Nexa erzeugt den Schlüssel des Namespace und
-   die eigenen Schlüssel, meldet die Instanz an und zeigt einmal den **Wiederherstellungscode**.
+1. **Erste Instanz**: Server-URL und Einladungscode eintragen (Einstellungen › Geräte). Nexa erzeugt den
+   Schlüssel des Namespace und die eigenen Schlüssel und meldet die Instanz an.
 2. **Jede weitere Instanz**: Auf einer gekoppelten Instanz „Gerät hinzufügen“. Sie holt beim Server eine
-   neue Einladung und zeigt einen QR-Code (Handy) oder einen Text zum Kopieren (Desktop) mit URL,
-   Einladung und Schlüssel des Namespace. Die neue Instanz liest ihn und ist drin.
-3. Der Schlüssel steht nur im QR-Code, nie beim Server. Den QR-Code zeigt nur ein Gerät, das schon dazugehört.
+   neue Einladung (15 Minuten, einmal) und zeigt einen Kopplungscode (`nexa1:…`) mit URL, Einladung und
+   Schlüssel des Namespace zum Kopieren; fürs Handy später als QR-Code. Die neue Instanz liest ihn und ist
+   drin, sobald sie sich den anderen vorgestellt hat (siehe „Mitglieder und Schlüssel“).
+3. Der Schlüssel steht nur im Kopplungscode, nie beim Server. Den Code zeigt nur ein Gerät, das schon
+   dazugehört.
 
-Wiederherstellung: Sind alle Instanzen weg, ist ohne Wiederherstellungscode auch der Schlüssel weg und damit
-der Sync-Stand. Remote Control verliert nichts, das hängt an den Hosts.
+Gespeichert ist die Kopplung in `nexa-server.json`; die privaten Schlüssel und die des Namespace darin
+verschlüsselt über `safeStorage`. Lassen sie sich nicht mehr entschlüsseln (anderes Benutzerkonto, neuer
+Schlüsselbund), bleibt nur Abmelden und neu koppeln.
+
+Wiederherstellung: Sind alle Instanzen weg, ist der Schlüssel weg und damit der Sync-Stand. Ein
+**Wiederherstellungscode** kommt mit dem Settings-Sync; Remote Control verliert nichts, das hängt an den
+Hosts.
+
+## Mitglieder und Schlüssel
+
+Der Server ist für Inhalte nicht vertrauenswürdig, auch nicht seine Liste der Instanzen: Er könnte eine
+eigene hineinsetzen. Die Geräte halten sich deshalb an diese Regeln (die Hinweise für Clients im
+`docs/PROTOCOL.md` von nexa-server; Formate in `PROTOCOLS.md`, „nexa-server“):
+
+1. **Mitglied ist, wer den Schlüssel des Namespace hat.** Jedes Gerät führt seine eigene Liste
+   anerkannter Instanzen. Ein neues Gerät stellt sich nach der Anmeldung mit einer Nachricht vor, die mit
+   dem Schlüssel des Namespace verschlüsselt ist und seine ID und öffentlichen Schlüssel nennt; erst dann
+   nehmen die anderen es auf. Neue Schlüssel bekommen nur anerkannte Instanzen. In der Geräteliste steht
+   ein Gerät ohne Vorstellung als „Nicht bestätigt“.
+2. **Kopfdaten mitverschlüsseln.** AES-GCM mit `from`, `to`, `kind` und `id` als Associated Data, damit der
+   Server Chiffretext nicht umleiten oder als andere Art ausgeben kann. Jede `id` gilt nur einmal, und
+   Nachrichten, deren Zeit mehr als 5 Minuten von der eigenen Uhr abweicht, gelten nicht.
+3. **Absender prüfen.** `from` setzt der Server, und den Schlüssel des Namespace kennen alle Geräte. Deshalb
+   signiert jedes Gerät jede Nachricht mit dem Schlüssel, mit dem es sich anmeldet (eigener
+   Kontext-String), und der Empfänger prüft mit dem Schlüssel, den er für dieses Mitglied gespeichert hat.
+   Darauf baut Remote Control mit Stufen je Gerät auf.
+4. **Nach einer Entfernung den Schlüssel wechseln.** Das entfernte Gerät kennt den alten. Eines der übrigen
+   macht einen neuen und schickt ihn jedem anderen Mitglied einzeln (ECDH der beiden). Wer dabei offline
+   war, bekommt ihn beim nächsten Verbinden.
+
+Bei 4401 (Anmeldung abgelehnt) und 4409 (eine zweite Verbindung derselben Instanz) verbindet Nexa sich
+nicht von selbst neu, bei 4403 (entfernt) vergisst es die Kopplung.
 
 ## Verschlüsselung
 
@@ -82,12 +115,13 @@ der Sync-Stand. Remote Control verliert nichts, das hängt an den Hosts.
 ## Protokoll
 
 - Versionierte JSON-Nachrichten über eine WebSocket-Verbindung je Instanz, unabhängig von Electron, damit
-  Desktop, PWA und eine spätere App dasselbe sprechen.
-- Hülle (Klartext für den Server): `{ v, id, from, to, type }`; Nutzlast (`payload`) mit dem Schlüssel des
-  Namespace verschlüsselt. `to` ist eine Instanz oder alle des Namespace.
+  Desktop, PWA und eine spätere App dasselbe sprechen. Was der Server spricht, steht im Repo nexa-server
+  (`docs/PROTOCOL.md`); `protocol.ts` und `auth.ts` liegen als Kopie in `src/shared/nexa-server`.
+- Für den Server sichtbar: `{ t: "send", id, to, kind, body }`; `body` ist verschlüsselt. `to` ist eine
+  Instanz oder alle des Namespace (`*`).
 - Der Server prüft nur: Instanz angemeldet, `to` im selben Namespace, Größe unter der Grenze. Ist `to` nicht
   verbunden, antwortet er mit „nicht erreichbar“; Nachrichten für Remote Control speichert er nicht.
-- Protokolldetails kommen, wenn gebaut, nach `PROTOCOLS.md`.
+- Was die Geräte in `body` vereinbaren (Verschlüsselung, Signatur, Arten), steht in `PROTOCOLS.md`.
 
 ## Remote Control
 
@@ -153,15 +187,17 @@ Secrets), Berechtigungen und Hooks der CLIs. Logins und Tokens der Accounts nie.
 
 ## Reihenfolge
 
-1. Server mit Namespaces, Einladungen, Instanzen und Relay; Kopplung zweier Desktops.
+1. Server mit Namespaces, Einladungen, Instanzen und Relay; Kopplung zweier Desktops. **Gebaut.**
+   Ungeprüft: hinter einem Proxy des Systems (der WebSocket von Node nutzt ihn nicht), und über HTTPS/WSS
+   mit einem echten Zertifikat (getestet gegen den Server auf `localhost`).
 2. Remote Control von Desktop zu Desktop.
 3. PWA als Steuerung, mit Web Push für Rückfragen und Berechtigungen.
 4. Settings-Sync.
 
 ## Offene Fragen
 
-- Eigenes Repo `nexa-server` oder Monorepo mit `nexa-app`? Geteilt werden Protokoll, Krypto und für die PWA
-  die Chat-Komponenten.
+- Eigenes Repo `nexa-server` oder Monorepo mit `nexa-app`? Vorerst eigenes Repo; Protokoll und Anmeldung
+  sind in die App kopiert. Mit der PWA (geteilte Chat-Komponenten) stellt sich die Frage neu.
 - Wird die PWA im Repo von Nexa gebaut und ins Image des Servers kopiert, oder im Server-Repo?
 - Kann eine steuernde Instanz auch Dateien, Diffs und die Shell des Hosts sehen, oder zunächst nur Chats?
 - Abgleich der Projekte: gleiche Projekte auf mehreren Rechnern erkennen (Git-Remote?), oder nie?
