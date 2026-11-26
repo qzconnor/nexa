@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, watch } from 'vue'
 import { levelAllows, type RemoteHostInfo, type RemoteLevel } from '@shared/remote'
+import { SYNC_KEYS } from '@shared/remote-sync'
 import type { LinkedDevice } from '@shared/server-link'
 import { errorMessage } from '@/lib/errors'
 import { useAccountsStore } from './accounts'
 import { useShownDeviceStore } from './device'
+import { forgetKept } from './kept-here'
 import { useProjectsStore } from './projects'
 import { useProvidersStore } from './providers'
 import { useServerLinkStore } from './server-link'
@@ -167,6 +169,16 @@ export const useDevicesStore = defineStore('devices', () => {
         syncWatch()
       },
       { immediate: true },
+    )
+    // A setting of the sharing (Einstellungen › Geräte › Abgleich) changed: what was kept here of it
+    // goes, so either way the devices start from what the other one has.
+    const local = useSettingsStore(null)
+    watch(
+      () => ({ ...local.settings.remote.sync }),
+      (next, before) => {
+        const changed = SYNC_KEYS.filter((key) => next[key] !== before[key])
+        if (changed.length) forgetKept(changed)
+      },
     )
     // A chat of a device opened or let go: its events come or stop.
     watch(

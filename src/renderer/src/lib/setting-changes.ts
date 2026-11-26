@@ -1,5 +1,6 @@
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
+import { SYNC_GROUPS } from '@shared/remote-sync'
 import type { SettingChange, SettingsFileTheme, SettingsImportPreview, SkippedSetting } from '@shared/settings-transfer'
 import { VOICE_LANGUAGES } from '@shared/voice'
 import { formatArgs } from './args'
@@ -69,6 +70,12 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'notifications.flashTaskbar': { anchor: 'notifications.flash' },
   'api.enabled': { anchor: 'api.enabled', label: 'Lokale API' },
   'api.port': { anchor: 'api.port', label: 'Port der API' },
+  // What this device shares with another it controls: named with the card, „Projekte auf- und zuklappen“ alone says too little.
+  ...Object.fromEntries(
+    SYNC_GROUPS.flatMap((group) =>
+      group.items.map((item) => [`remote.sync.${item.key}`, { anchor: `devices.sync.${item.key}` as const, label: `Abgleich: ${item.label}` }]),
+    ),
+  ),
 }
 
 /** The rows every CLI has, by the key of its settings; the effort has no row and goes with the model. */

@@ -1,3 +1,4 @@
+import { SYNC_GROUPS } from '@shared/remote-sync'
 import type { SettingsSection } from '@/stores/ui'
 import { containsTerms, searchText } from './search'
 
@@ -40,6 +41,13 @@ function cliFields<P extends string>(p: P) {
     { id: `${p}.path`, label: 'Pfad zur CLI', keywords: 'Programm exe installiert finden PATH Ordner' },
     { id: `${p}.extraArgs`, label: 'Zusätzliche Argumente', keywords: 'Parameter Flags Optionen Kommandozeile Start' },
   ] as const
+}
+
+/** What this device shares with another it controls, a row each (`shared/remote-sync.ts`). */
+function syncFields() {
+  return SYNC_GROUPS.flatMap((group) =>
+    group.items.map((item) => ({ id: `devices.sync.${item.key}` as const, label: item.label, keywords: `${group.label} ${item.keywords ?? ''}`.trim() })),
+  )
 }
 
 const TREE = [
@@ -422,6 +430,12 @@ const TREE = [
         title: 'Fernsteuerung',
         keywords: 'Remote Control steuern mitlesen Prompts Freigaben Rückfragen Stufe Berechtigung erlauben',
         fields: [{ id: 'devices.remoteEnabled', label: 'Andere Geräte dürfen dieses steuern', keywords: 'einschalten aktivieren an aus' }],
+      },
+      {
+        id: 'devices.sync',
+        title: 'Abgleich mit anderen Geräten',
+        keywords: 'übertragen synchronisieren Sync gemeinsam teilen behalten Fernsteuerung Remote Control',
+        fields: syncFields(),
       },
     ],
   },
