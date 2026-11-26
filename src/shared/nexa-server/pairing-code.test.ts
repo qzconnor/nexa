@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { toBase64url } from './auth'
 import { randomNamespaceKey } from './envelope'
-import { decodePairingCode, encodePairingCode, isPairingCode, normalizeServerUrl, webSocketUrl } from './pairing-code'
+import { decodePairingCode, encodePairingCode, isPairingCode, normalizeServerUrl, webAppPairingLink, webSocketUrl } from './pairing-code'
 
 const encode = (data: unknown) => `nexa1:${toBase64url(new TextEncoder().encode(JSON.stringify(data)))}`
 
@@ -30,6 +30,11 @@ describe('normalizeServerUrl', () => {
   it('gives the WebSocket under the same address', () => {
     expect(webSocketUrl('https://example.com/nexa')).toBe('wss://example.com/nexa/v1/ws')
     expect(webSocketUrl('http://localhost:8080')).toBe('ws://localhost:8080/v1/ws')
+  })
+
+  it('links the web app with the code untouched in the fragment', () => {
+    expect(webAppPairingLink('https://example.com', 'nexa1:abc-_')).toBe('https://example.com/app/#nexa1:abc-_')
+    expect(webAppPairingLink('https://example.com/nexa', 'nexa1:x')).toBe('https://example.com/nexa/app/#nexa1:x')
   })
 })
 

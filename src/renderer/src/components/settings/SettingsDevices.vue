@@ -22,6 +22,7 @@ import { isRemoteLevel, REMOTE_LEVEL_LABELS, REMOTE_LEVELS } from '@shared/remot
 import type { RemoteController } from '@shared/remote-ipc'
 import { SYNC_GROUPS, type SyncGroup, type SyncKey } from '@shared/remote-sync'
 import { CLOCK_SKEW_WARN_MS, hasChats, type DeviceInvite, type LinkedDevice, type ServerLinkState } from '@shared/server-link'
+import QrCode from '@/components/common/QrCode.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -132,6 +133,11 @@ const invite = ref<DeviceInvite | null>(null)
 const inviting = ref(false)
 const copied = ref(false)
 const inviteLeft = computed(() => (invite.value ? invite.value.expiresAt - now.value : 0))
+const inviteHint = computed(() =>
+  invite.value?.webApp
+    ? 'Code und QR-Code enthalten den Schlüssel deines Namespace. Nutze sie nur auf deinen eigenen Geräten.'
+    : 'Der Code enthält den Schlüssel deines Namespace. Gib ihn nur auf deinen eigenen Geräten ein.',
+)
 /** The devices there when the code was made: a new one that shows the namespace's key used it. */
 let devicesBefore = new Set<string>()
 const joined = computed(() => (invite.value ? state.value.devices.find((d) => d.trusted && !devicesBefore.has(d.id)) : undefined))
@@ -348,7 +354,14 @@ async function remove(device: LinkedDevice): Promise<void> {
                 <CopyIcon v-else />
               </Button>
             </div>
-            <p class="text-xs text-muted-foreground">Der Code enthält den Schlüssel deines Namespace. Gib ihn nur auf deinen eigenen Geräten ein.</p>
+            <div v-if="invite.webApp" class="flex items-center gap-3">
+              <QrCode :value="invite.webApp" label="QR-Code zum Koppeln der Web-App" class="size-40 shrink-0 rounded-md" />
+              <p class="text-muted-foreground">
+                Oder scanne den QR-Code mit dem Handy. Er öffnet die Web-App deines Servers mit diesem Kopplungscode, dort bestätigst du
+                nur noch.
+              </p>
+            </div>
+            <p class="text-xs text-muted-foreground">{{ inviteHint }}</p>
           </template>
           <p v-else class="text-muted-foreground">Der Kopplungscode ist abgelaufen. Hol dir mit „Gerät hinzufügen“ einen neuen.</p>
           <div class="flex justify-end">

@@ -1,7 +1,14 @@
 import { hostname } from 'node:os'
 import { keyIdOf, randomNamespaceKey } from '@shared/nexa-server/envelope'
 import type { KeyRecord, Member } from '@shared/nexa-server/members'
-import { decodePairingCode, encodePairingCode, isPairingCode, normalizeServerUrl, webSocketUrl } from '@shared/nexa-server/pairing-code'
+import {
+  decodePairingCode,
+  encodePairingCode,
+  isPairingCode,
+  normalizeServerUrl,
+  webAppPairingLink,
+  webSocketUrl,
+} from '@shared/nexa-server/pairing-code'
 import {
   isInstanceId,
   normalizeInstanceName,
@@ -33,6 +40,8 @@ export interface ServerLinkDeps {
 /** This device as the desktop app pairs it: CLIs run here, and it may control others. */
 const ROLE: Role = 'host'
 const HTTP_TIMEOUT_MS = 15_000
+/** The pairing code shouldn't wait long for the QR code that only comes along with it. */
+const INFO_TIMEOUT_MS = 5_000
 /** Online and offline of devices come often; they reach the disk in one write. */
 const SAVE_DELAY_MS = 1_000
 const CLOCK_CHECK_MS = 10_000
@@ -214,10 +223,26 @@ export class ServerLinkService extends TypedEmitter<Events> {
   /** A pairing code for the next device: a new invite of the server and the namespace's key. */
   async invite(): Promise<DeviceInvite> {
     const active = this.online()
-    const answer = await this.request(active, { t: 'invite' })
+    const url = active.profile.url
+    const [answer, webApp] = await Promise.all([this.request(active, { t: 'invite' }), this.servesWebApp(url)])
     if (answer.t !== 'invite') throw new Error('Der Server hat keine Einladung geschickt.')
     const key = active.membership.currentKey
-    return { code: encodePairingCode({ url: active.profile.url, invite: answer.code, key: key.raw, gen: key.gen }), expiresAt: answer.expiresAt }
+    const code = encodePairingCode({ url, invite: answer.code, key: key.raw, gen: key.gen })
+    return { code, expiresAt: answer.expiresAt, ...(webApp && { webApp: webAppPairingLink(url, code) }) }
+  }
+
+  /**
+   * Whether the server serves its web app (`pwa` of `/v1/info`), asked anew each time since its admin
+   * may switch it with a restart. Any failure only costs the QR code: the code itself still works.
+   */
+  private async servesWebApp(url: string): Promise<boolean> {
+    try {
+      const response = await this.fetch(`${url}/v1/info`, { signal: AbortSignal.timeout(INFO_TIMEOUT_MS) })
+      const info = (await response.json()) as { pwa?: unknown } | null
+      return response.ok && info?.pwa === true
+    } catch {
+      return false
+    }
   }
 
   async rename(instance: string | null, name: string): Promise<void> {

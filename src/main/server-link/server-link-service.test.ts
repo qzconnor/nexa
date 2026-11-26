@@ -23,7 +23,9 @@ const services: ServerLinkService[] = []
 async function service(dir?: string, broken = false): Promise<{ link: ServerLinkService; dir: string }> {
   const userDataDir = dir ?? (await mkdtemp(join(tmpdir(), 'nexa-link-')))
   if (!dir) dirs.push(userDataDir)
-  const link = new ServerLinkService({ userDataDir, defaultName: 'Testrechner', fetch: server.fetch, socket: server.socket, codec: codec(broken) })
+  // The fetch looked up at each call, so a test can make the server's fail.
+  const fetch: typeof server.fetch = (input, init) => server.fetch(input, init)
+  const link = new ServerLinkService({ userDataDir, defaultName: 'Testrechner', fetch, socket: server.socket, codec: codec(broken) })
   services.push(link)
   await link.init()
   return { link, dir: userDataDir }
@@ -72,6 +74,24 @@ describe('ServerLinkService', () => {
     await second.pair({ url: '', code: invite.code, name: 'Laptop' })
     await until(second, (s) => trustedNames(s).join() === 'Desktop,Laptop')
     await until(first, (s) => trustedNames(s).join() === 'Desktop,Laptop')
+  })
+
+  it('links the server’s web app with the pairing code only when the server serves it', async () => {
+    const { link } = await service()
+    await link.pair({ url: 'https://nexa.test', code: server.invite(), name: 'Desktop' })
+    await until(link, (s) => s.status === 'online')
+    expect((await link.invite()).webApp).toBeUndefined()
+
+    server.info = { name: 'nexa-server', version: '0.2.0', protocol: 1, pwa: true }
+    const invite = await link.invite()
+    expect(invite.webApp).toBe(`https://nexa.test/app/#${invite.code}`)
+
+    // The web app is only extra: the code comes without it when `/v1/info` fails.
+    const fetch = server.fetch
+    vi.spyOn(server, 'fetch').mockImplementation((input, init) => (String(input).endsWith('/v1/info') ? Promise.reject(new Error('down')) : fetch(input, init)))
+    const without = await link.invite()
+    expect(without.webApp).toBeUndefined()
+    expect(decodePairingCode(without.code)).toMatchObject({ url: 'https://nexa.test' })
   })
 
   it('tells how far this device’s clock is off from the server’s', async () => {
