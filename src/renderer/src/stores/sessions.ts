@@ -1,10 +1,12 @@
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import type { ChatItem, InteractionResponse, SessionEvent, SessionRuntime } from '@shared/chat'
 import type { SendInput, SessionCreateInput, SessionMeta, SessionMoveInput, SessionRemoveResult, SessionUpdateInput } from '@shared/types'
+import { chatKey } from '@/lib/session-tree'
 import { useChatWindowsStore } from './chat-windows'
 import { apiOf, scopedStore, useShownDeviceStore } from './device'
 import { useKeptHereStore } from './kept-here'
 import { useProjectsStore } from './projects'
+import { useUiStore } from './ui'
 
 /** The chat of an opened session. */
 export interface SessionChat {
@@ -247,6 +249,7 @@ export const useSessionsStore = scopedStore('sessions', (device) => {
   }
 
   async function update(id: string, patch: SessionUpdateInput): Promise<void> {
+    if (patch.pinned !== undefined) useUiStore().forgetPinned(chatKey(device, id))
     const send = kept ? kept.keepChat(id, patch) : patch
     if (!Object.keys(send).length) return
     const meta = await api.sessions.update(id, { ...send })

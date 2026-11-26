@@ -9,7 +9,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { useChatActions } from '@/composables/useChatActions'
 import { provideSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
-import { chatsIn, foldersOf, pinnedChats, projectTree, type ProjectEntry } from '@/lib/session-tree'
+import { chatsIn, foldersOf, projectTree, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
 import { useDevice } from '@/stores/device'
 import { useProjectsStore } from '@/stores/projects'
@@ -17,14 +17,14 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import SidebarGroupState from './SidebarGroupState.vue'
-import SidebarPinned from './SidebarPinned.vue'
 import SidebarProject from './SidebarProject.vue'
 
 /**
  * The projects of a device with their chats, as in Claude, under separators like the workspaces of the
- * Claude Manager: the pinned chats, the separators with their projects in the order the user dragged
- * them into, every project with its sessions (pinned first, then the latest) and their state at a
- * glance. This device's in the sidebar, and below it the same for every other one it controls.
+ * Claude Manager: the separators with their projects in the order the user dragged them into, every
+ * project with its sessions (pinned first, then the latest) and their state at a glance. This device's
+ * in the sidebar, and below it the same for every other one it controls. The pinned chats of all of
+ * them show together above (SidebarPinned).
  */
 defineProps<{ now: number }>()
 const projects = useProjectsStore()
@@ -64,8 +64,6 @@ const groups = computed<SectionGroup[]>(() => {
     }
   })
 })
-
-const pinned = computed(() => pinnedChats(sessions.metas, new Set(projects.projects.map((p) => p.id))))
 
 // The folders of the chat on screen open, so it shows where it is (also when opened from elsewhere).
 watch(
@@ -249,7 +247,6 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
 
 <template>
   <div ref="root" @dragover="overChatTarget" @dragleave="leave" @drop="dropHere">
-    <SidebarPinned v-if="pinned.length" :chats="pinned" :now="now" />
     <section
       v-for="(group, index) in groups"
       :key="group.section.id"

@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { ArchiveIcon, CalendarClockIcon, CopyIcon, FileDownIcon, GitForkIcon, PencilIcon, PinIcon, PinOffIcon, SquareArrowOutUpRightIcon, Trash2Icon } from '@lucide/vue'
+import {
+  ArchiveIcon,
+  CalendarClockIcon,
+  CopyIcon,
+  FileDownIcon,
+  GitForkIcon,
+  MonitorIcon,
+  PencilIcon,
+  PinIcon,
+  PinOffIcon,
+  SquareArrowOutUpRightIcon,
+  Trash2Icon,
+} from '@lucide/vue'
 import { computed } from 'vue'
 import type { SessionMeta } from '@shared/types'
 import AccountDot from '@/components/accounts/AccountDot.vue'
@@ -10,6 +22,7 @@ import { useChatActions } from '@/composables/useChatActions'
 import { useSessionDrag } from '@/composables/useSessionDrag'
 import { attempt } from '@/lib/errors'
 import { formatAge } from '@/lib/format'
+import { chatKey } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useChatWindowsStore } from '@/stores/chat-windows'
@@ -27,6 +40,10 @@ const props = defineProps<{
   now: number
   /** Among the pinned on top: the project it is in, as they come from everywhere. */
   place?: string
+  /** Among the pinned on top, a chat of another device: that device's name. */
+  deviceName?: string
+  /** Among the pinned on top: dragged, it takes another place there (SidebarPinned), also while it works. */
+  sortable?: boolean
 }>()
 const sessions = useSessionsStore()
 const ui = useUiStore()
@@ -36,6 +53,8 @@ const chatWindows = useChatWindowsStore()
 const device = useDevice()
 /** In a window of its own: a click brings that window to the front. */
 const ownWindow = computed(() => !device && chatWindows.hasWindow(props.meta.id))
+/** Where it works, and on which device when it is another's. */
+const placeTitle = computed(() => (props.deviceName && props.meta.cwd ? `${props.deviceName}: ${props.meta.cwd}` : props.meta.cwd))
 const update = (patch: { pinned?: boolean; archived?: boolean }) => void attempt(() => sessions.update(props.meta.id, patch))
 
 /** Whose login the chat runs with; only worth a dot while its CLI has more than one account. */
@@ -73,9 +92,9 @@ function endDrag(): void {
         data-list-row
         data-chat-row
         :data-session-id="meta.id"
-        :data-chat-key="`${device ?? ''}:${meta.id}`"
+        :data-chat-key="chatKey(device, meta.id)"
         :aria-current="sessions.activeId === meta.id && ui.view === 'chat' ? 'page' : undefined"
-        :draggable="!!drag && !chat.working(meta.id)"
+        :draggable="sortable || (!!drag && !chat.working(meta.id))"
         :class="
           cn(
             'group/session flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[0.85rem] transition-colors hover:bg-sidebar-accent/60',
@@ -95,7 +114,13 @@ function endDrag(): void {
           <ProviderIcon v-else :provider="meta.provider" class="size-3 opacity-60" />
         </span>
         <span class="min-w-0 flex-1 truncate">{{ meta.title }}</span>
-        <span v-if="place" class="max-w-[30%] shrink truncate text-[0.7rem] text-muted-foreground/80" :title="meta.cwd">{{ place }}</span>
+        <MonitorIcon
+          v-if="deviceName"
+          v-tooltip="`Auf ${deviceName}`"
+          :aria-label="`Auf ${deviceName}`"
+          class="size-3 shrink-0 text-muted-foreground"
+        />
+        <span v-if="place" class="max-w-[30%] shrink truncate text-[0.7rem] text-muted-foreground/80" :title="placeTitle">{{ place }}</span>
         <!-- Up there under „Angeheftet“ the pin would say it twice. -->
         <PinIcon v-else-if="meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
         <CalendarClockIcon

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionMeta } from '@shared/types'
-import { chatsIn, foldersOf, pinnedChats, projectTree } from './session-tree'
+import { chatsIn, foldersOf, movePinned, orderPinned, pinnedChats, projectTree } from './session-tree'
 
 const meta = (id: string, updatedAt: number, cwd?: string, pinned?: boolean): SessionMeta => ({
   id,
@@ -69,5 +69,41 @@ describe('pinnedChats', () => {
       { ...meta('elsewhere', 40, undefined, true), projectId: 'gone' },
     ]
     expect(pinnedChats(chats, new Set(['p'])).map((s) => s.id)).toEqual(['new', 'old'])
+  })
+})
+
+const row = (key: string, updatedAt: number) => ({ key, meta: meta(key, updatedAt) })
+
+describe('orderPinned', () => {
+  it('keeps the dragged order and puts chats pinned since on top, the latest first', () => {
+    const rows = [row(':a', 1), row('laptop:b', 2), row(':new', 5), row(':newer', 9), row(':c', 3)]
+    expect(orderPinned(rows, ['laptop:b', ':gone', ':c', ':a']).map((r) => r.key)).toEqual([':newer', ':new', 'laptop:b', ':c', ':a'])
+  })
+
+  it('shows the latest first while nothing was dragged', () => {
+    expect(orderPinned([row(':a', 1), row(':b', 2)], []).map((r) => r.key)).toEqual([':b', ':a'])
+  })
+})
+
+describe('movePinned', () => {
+  const all = () => true
+
+  it('moves a chat before another one or to the end', () => {
+    expect(movePinned([], [':a', ':b', ':c'], ':c', ':a', all)).toEqual([':c', ':a', ':b'])
+    expect(movePinned([], [':a', ':b', ':c'], ':a', null, all)).toEqual([':b', ':c', ':a'])
+  })
+
+  it('keeps the chats of a device not loaded behind the one they followed', () => {
+    const order = ['off:x', ':a', 'off:y', ':b', ':c']
+    expect(movePinned(order, [':a', ':b', ':c'], ':c', ':a', all)).toEqual(['off:x', ':c', ':a', 'off:y', ':b'])
+  })
+
+  it('does not take them along with the chat they followed', () => {
+    expect(movePinned([':a', 'off:y', ':b'], [':a', ':b'], ':a', null, all)).toEqual(['off:y', ':b', ':a'])
+  })
+
+  it('drops what `keep` refuses: chats of loaded devices that are gone or let go', () => {
+    const keep = (key: string) => key.startsWith('off:')
+    expect(movePinned([':gone', 'off:x', ':a', ':b'], [':a', ':b'], ':b', ':a', keep)).toEqual(['off:x', ':b', ':a'])
   })
 })
