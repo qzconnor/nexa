@@ -52,6 +52,8 @@ export type ErrorCode =
   | 'namespace-full'
   /** Push: the instance has no push subscription, or its push service dropped it. */
   | 'unsubscribed'
+  /** Push: the payload (the `msg` JSON) would exceed what a push carries (3993 bytes). */
+  | 'too-large'
   | 'internal'
 
 /** An instance as the server shows it to the instances of its namespace. */
