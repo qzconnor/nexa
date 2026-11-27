@@ -34,6 +34,7 @@ import {
 import { report } from '@/composables/useChatRemoval'
 import { useClaudeManager } from '@/composables/useClaudeManager'
 import { useSessionDrag } from '@/composables/useSessionDrag'
+import { useSidebarFold } from '@/composables/useSidebarFold'
 import { worktreeNote } from '@/lib/chat-cleanup'
 import { attempt } from '@/lib/errors'
 import { chatsIn, type ProjectEntry } from '@/lib/session-tree'
@@ -66,7 +67,10 @@ const device = useDevice()
 const LIMIT = 8
 const showAll = ref(false)
 const project = computed(() => props.entry.project)
-const open = computed(() => props.bare || !project.value.collapsed)
+const fold = useSidebarFold()
+const open = computed(() => props.bare || fold.isOpen('project', project.value.id, !project.value.collapsed))
+const toggle = () =>
+  fold.toggle('project', project.value.id, () => void attempt(() => projects.update(project.value.id, { collapsed: !project.value.collapsed })))
 const shown = computed(() => (showAll.value ? props.entry.tree.sessions : props.entry.tree.sessions.slice(0, LIMIT)))
 const otherSections = computed(() => projects.sections.filter((s) => s.id !== sectionIdOf(project.value, projects.sections)))
 /** A separator for its folder makes sense once, and not for the project a separator stands for already. */
@@ -155,7 +159,7 @@ const openFolder = () => void window.api.app.openPath(project.value.path)
             :aria-expanded="open"
             class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-[0.85rem]"
             :title="project.path"
-            @click="attempt(() => projects.update(project.id, { collapsed: !project.collapsed }))"
+            @click="toggle"
           >
             <ChevronRightIcon :class="cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')" />
             <component :is="open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0 text-muted-foreground" />
