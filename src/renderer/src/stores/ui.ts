@@ -22,6 +22,7 @@ export type SettingsSection =
   | 'api'
   | 'updates'
   | 'about'
+export type SidebarFilter = 'all' | 'live'
 /** The quick open's modes by what the query starts with: chats (nothing), commands (`>`), help (`?`). */
 export type PalettePrefix = '' | '>' | '?'
 
@@ -106,6 +107,9 @@ export const useUiStore = defineStore('ui', () => {
   /** The pinned chats on top of the sidebar; they are there to be seen, so open until folded. */
   const pinnedOpen = ref(stored<'open' | 'folded'>('nexa.pinned', 'open') === 'open')
   watch(pinnedOpen, (open) => remember('nexa.pinned', open ? 'open' : 'folded'))
+  /** Which chats the projects in the sidebar show: all, or those that run (`live`, lib/chat-state.ts). */
+  const sidebarFilter = ref<SidebarFilter>(stored<SidebarFilter>('nexa.sidebarFilter', 'all') === 'live' ? 'live' : 'all')
+  watch(sidebarFilter, (filter) => remember('nexa.sidebarFilter', filter))
   /**
    * The order the user dragged the pinned chats on top into, by `chatKey` (lib/session-tree.ts). It
    * mixes the chats of several devices, so it stays on this one. Shared by the windows of the app.
@@ -259,6 +263,7 @@ export const useUiStore = defineStore('ui', () => {
     openFolders,
     toggleFolder,
     pinnedOpen,
+    sidebarFilter,
     pinnedOrder,
     arrangePinned,
     forgetPinned,
