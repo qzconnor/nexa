@@ -1,4 +1,4 @@
-import type { PushUrgency } from '@shared/nexa-server/protocol'
+import { PUSH_TTL_DEFAULT, PUSH_TTL_MAX, type PushUrgency } from '@shared/nexa-server/protocol'
 import { PUSH_KIND, pushNotice } from '@shared/push'
 import { chatAlert } from '../lib/notification-text'
 import type { ProviderService } from '../services/provider-service'
@@ -9,10 +9,10 @@ import type { ServerLinkService } from './server-link-service'
 /** How long the push service keeps a push for a phone that is offline (s). */
 const TTL_SECONDS: Record<Attention['kind'], number> = {
   // A question or a permission still waits tomorrow morning.
-  input: 24 * 60 * 60,
+  input: PUSH_TTL_MAX,
   // That an answer is done or a limit stopped a chat is old news after an hour.
-  done: 60 * 60,
-  limit: 60 * 60,
+  done: PUSH_TTL_DEFAULT,
+  limit: PUSH_TTL_DEFAULT,
 }
 
 export interface PushNotifierDeps {

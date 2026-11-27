@@ -1312,8 +1312,10 @@ eines Namespace macht den Schlüssel selbst (Generation 1).
   (`DeviceChannel.sealed`), aber als Anfrage `{ t: "push", id, to, kind, body, urgency, ttl }` an den
   Server statt `send`. Die `id` der Anfrage ist die der Nachricht (`ServerConnection.request` nimmt sie
   mit), denn der Server baut daraus die Nutzlast `{ t: "msg", id, from, to, kind, body }`. Antwort `ok`,
-  sobald der Push-Dienst ihn angenommen hat; `unsubscribed`, wenn das Handy Push nicht eingeschaltet hat.
-  Inhalt `PushNotice` aus `shared/push.ts`.
+  sobald der Push-Dienst ihn angenommen hat; `unsubscribed`, wenn das Handy Push nicht eingeschaltet hat
+  (die App lässt es dabei). `too-large`, `rate-limited`, `unreachable` und `internal` landen nur im Log
+  (`[push]`); nexa-server beschreibt sie in docs/PROTOCOL.md, „Push“. Inhalt `PushNotice` aus
+  `shared/push.ts`.
 
 ### Mitglieder und Schlüssel
 

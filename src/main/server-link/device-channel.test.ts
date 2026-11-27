@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Member } from '@shared/nexa-server/members'
-import type { RelayedMessage } from '@shared/nexa-server/protocol'
+import { MAX_PUSH_PAYLOAD, type RelayedMessage } from '@shared/nexa-server/protocol'
 import { PUSH_KIND, pushNotice } from '@shared/push'
 import { DeviceChannel, MessageTooLargeError, PART_KIND, payloadLimit, sealedLimit, splitForJson, utf8Length } from './device-channel'
 import { generateIdentity, type Identity } from './link-store'
@@ -345,7 +345,6 @@ describe('DeviceChannel.sealed', () => {
     const notice = pushNotice('input', 'x'.repeat(128), '€'.repeat(500), '€'.repeat(2000))
     const sealed = await from.sealed(b.id, PUSH_KIND, notice)
     const payload = JSON.stringify({ t: 'msg', id: sealed!.id, from: a.id, to: b.id, kind: PUSH_KIND, body: sealed!.body })
-    // 4096 bytes of a push less what aes128gcm adds in one record (RFC 8291).
-    expect(new TextEncoder().encode(payload).length).toBeLessThanOrEqual(3993)
+    expect(new TextEncoder().encode(payload).length).toBeLessThanOrEqual(MAX_PUSH_PAYLOAD)
   })
 })
