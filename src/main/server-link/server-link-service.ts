@@ -15,13 +15,14 @@ import {
   PROTOCOL_VERSION,
   type InstanceInfo,
   type JoinRequest,
+  type PushUrgency,
   type RelayedMessage,
   type Role,
   type ServerLimits,
 } from '@shared/nexa-server/protocol'
 import { DEFAULT_SERVER_LIMITS } from '@shared/nexa-server/server-messages'
 import { DEFAULT_REMOTE_LEVEL, type RemoteLevel } from '@shared/remote'
-import { CLOCK_SKEW_WARN_MS, type DeviceInvite, type LinkedDevice, type PairInput, type ServerLinkState } from '@shared/server-link'
+import { CLOCK_SKEW_WARN_MS, pushPhones, type DeviceInvite, type LinkedDevice, type PairInput, type ServerLinkState } from '@shared/server-link'
 import { TypedEmitter } from '../lib/typed-emitter'
 import { ServerConnection, ServerError, type SocketFactory, type StopReason } from './connection'
 import { generateIdentity, importIdentity, LinkStore, type Identity, type LinkSecrets, type SecretCodec, type StoredLink } from './link-store'
@@ -315,6 +316,30 @@ export class ServerLinkService extends TypedEmitter<Events> {
     const active = this.active
     if (!active || active.connection.status !== 'online') return Promise.resolve(null)
     return active.channel.send(to, kind, data)
+  }
+
+  /**
+   * Pushes `data` to `to` by the server's Web Push, sealed for it alone like a message: true once the
+   * push service took it, false when `to` has no subscription (notifications are off in its web app).
+   * Throws when this device isn't connected, `to` isn't a member or the server failed.
+   */
+  async push(to: string, kind: string, data: unknown, options: { urgency: PushUrgency; ttl: number }): Promise<boolean> {
+    const active = this.online()
+    const sealed = await active.channel.sealed(to, kind, data)
+    if (!sealed) throw new Error(`push: ${to} is no member`)
+    try {
+      await active.connection.request({ t: 'push', id: sealed.id, to, kind, body: sealed.body, ...options })
+      return true
+    } catch (error) {
+      if (error instanceof ServerError && error.code === 'unsubscribed') return false
+      throw new Error(error instanceof ServerError ? `push: ${error.code}` : String(error))
+    }
+  }
+
+  /** Where pushes go (`pushPhones`), while connected. */
+  pushTargets(): string[] {
+    if (this.active?.connection.status !== 'online') return []
+    return pushPhones(this.getState()).map((d) => d.id)
   }
 
   /** This device in the namespace, while paired. */

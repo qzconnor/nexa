@@ -420,6 +420,12 @@ const TREE = [
           { id: 'notifications.flash', label: 'Taskleiste blinkt', keywords: 'Taskleiste blinken Fenster markieren' },
         ],
       },
+      {
+        id: 'notifications.phone',
+        title: 'Aufs Handy',
+        keywords: 'Push Smartphone iPhone Android Web-App PWA unterwegs nexa-server',
+        fields: [{ id: 'notifications.push', label: 'Aufs Handy schicken', keywords: 'Push abwesend weg gesperrt immer' }],
+      },
     ],
   },
   {

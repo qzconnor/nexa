@@ -1,5 +1,6 @@
 import type { InteractionRequest } from '@shared/chat'
-import type { UsageWindow } from '@shared/types'
+import { PROVIDERS } from '@shared/providers'
+import type { NotificationSettings, SessionMeta, UsageWindow } from '@shared/types'
 import type { Attention } from '../services/session-service'
 import type { NearLimit } from './near-limit'
 
@@ -10,6 +11,39 @@ export interface NotificationText {
   title: string
   /** The line below the chat's title; null: only the title. */
   detail: string | null
+}
+
+export interface ChatAlert {
+  title: string
+  /** The chat's title, below it the detail if there is one. */
+  body: string
+}
+
+/**
+ * A chat's notification as the settings want it, the same on this computer and on the phones: null when
+ * notifications or this event are off, or an answer came quicker than `minBusySeconds`. `limitWindows`:
+ * the usage windows of the account a limit stopped the chat at, for when it resets.
+ */
+export function chatAlert(
+  attention: Attention,
+  meta: Pick<SessionMeta, 'title' | 'scheduledTask'>,
+  settings: NotificationSettings,
+  limitWindows: readonly UsageWindow[] = [],
+  now = Date.now(),
+): ChatAlert | null {
+  if (!settings.enabled || !wanted(settings, attention)) return null
+  // A scheduled run ran without anyone watching: its end is news however short it was.
+  if (attention.kind === 'done' && !meta.scheduledTask && attention.busyMs < Math.max(0, settings.minBusySeconds) * 1000) return null
+  const resetsAt = attention.kind === 'limit' ? limitReset(limitWindows) : undefined
+  const { title, detail } = attentionText(attention, PROVIDERS[attention.provider].short, settings.preview, resetsAt, now)
+  const chat = meta.title.trim() || 'Chat'
+  return { title, body: detail ? `${chat}\n${detail}` : chat }
+}
+
+function wanted(settings: NotificationSettings, attention: Attention): boolean {
+  if (attention.kind === 'done') return settings.onDone
+  if (attention.kind === 'input') return settings.onInput
+  return settings.onLimit
 }
 
 /**

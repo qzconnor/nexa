@@ -1,5 +1,14 @@
 import { verifyAuth } from '@shared/nexa-server/auth'
-import { BROADCAST, CloseCode, parseClientMessage, type InstanceInfo, type ServerLimits, type ServerMessage } from '@shared/nexa-server/protocol'
+import {
+  BROADCAST,
+  CloseCode,
+  parseClientMessage,
+  type InstanceInfo,
+  type PushUrgency,
+  type RelayedMessage,
+  type ServerLimits,
+  type ServerMessage,
+} from '@shared/nexa-server/protocol'
 import type { SocketLike } from './connection'
 
 /**
@@ -21,6 +30,10 @@ export class FakeServer {
   limits: ServerLimits | null = { maxMessageBytes: 1024 * 1024, rateLimit: 100 }
   /** Instances that don't keep up with reading: what is sent to them gets `busy`. */
   readonly busy = new Set<string>()
+  /** Instances with a push subscription (`push-subscribe`). */
+  readonly subscribed = new Set<string>()
+  /** Every push the server handed on, with the payload as the push service would get it. */
+  readonly pushed: { to: string; urgency?: PushUrgency; ttl?: number; payload: RelayedMessage }[] = []
   /** Connections closed for a message over the limit. */
   oversized = 0
   private counter = 0
@@ -121,6 +134,18 @@ export class FakeServer {
         info.name = msg.name
         socket.deliver({ t: 'ok', re: msg.id })
         return this.broadcast({ t: 'instance', event: 'renamed', instance: info })
+      }
+      case 'push-subscribe':
+        this.subscribed.add(from)
+        return socket.deliver({ t: 'ok', re: msg.id })
+      case 'push-unsubscribe':
+        this.subscribed.delete(from)
+        return socket.deliver({ t: 'ok', re: msg.id })
+      case 'push': {
+        if (!this.instances.has(msg.to)) return socket.deliver({ t: 'error', re: msg.id, code: 'unknown-instance', message: 'unknown' })
+        if (!this.subscribed.has(msg.to)) return socket.deliver({ t: 'error', re: msg.id, code: 'unsubscribed', message: 'no subscription' })
+        this.pushed.push({ to: msg.to, urgency: msg.urgency, ttl: msg.ttl, payload: { t: 'msg', id: msg.id, from, to: msg.to, kind: msg.kind, body: msg.body } })
+        return socket.deliver({ t: 'ok', re: msg.id })
       }
     }
   }

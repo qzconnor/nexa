@@ -191,12 +191,28 @@ Entschieden am 26.11.2026:
 - **Web Push mit VAPID**: Jeder Server erzeugt seine eigenen VAPID-Schlüssel und spricht die Push-Dienste
   von Apple, Google und Mozilla direkt an. Kein Entwicklerkonto, kein zentrales Gateway. Ungeprüft: iOS ab
   16.4, nur wenn die PWA auf dem Home-Bildschirm liegt.
-- **Inhalt bleibt verschlüsselt**: Der Host verschlüsselt den Text der Benachrichtigung mit dem Schlüssel des
-  Namespace, der Server reicht ihn als Push-Nutzlast weiter, der Service Worker entschlüsselt und zeigt ihn.
-  Grenze etwa 4 KB je Push. Ungeprüft: Safari verlangt zu jedem Push eine sichtbare Benachrichtigung,
-  stille Pushes gibt es nicht.
-- Anlass für Push wie bei den Benachrichtigungen auf dem Desktop (`NotificationSettings`): Antwort fertig,
-  wartet auf Bestätigung, Limit.
+- **Inhalt bleibt verschlüsselt**: Der Host versiegelt die Benachrichtigung für jedes Handy wie eine
+  Nachricht zwischen Geräten (paarweiser Schlüssel, signiert, Kopfdaten als AAD, `DeviceChannel.sealed`).
+  Nicht mit dem Schlüssel des Namespace: Der wechselt, wenn ein Gerät entfernt wird, und ein geschlossenes
+  Handy hätte den neuen noch nicht; außerdem liest so nur das eine Handy mit. Der Server bekommt eine
+  Anfrage `push` mit `to`, `kind` und dem versiegelten `body` und gibt dem Push-Dienst genau den JSON der
+  Nachricht, die ein `send` weiterreichen würde (`{ t: "msg", id, from, to, kind, body }`). Der Service
+  Worker öffnet sie mit demselben Code, prüft aber nicht mit dem `ReplayGuard`, denn Pushes kommen bis
+  zu ihrer `ttl` später. Grenze 4 KB je Push (3993 Byte Nutzlast); Titel und Text sind auf 100 und 300
+  Zeichen begrenzt, damit es auch in Zeichen zu drei Byte passt. Ungeprüft: Safari verlangt zu jedem Push
+  eine sichtbare Benachrichtigung, stille Pushes gibt es nicht.
+- **Inhalt** (`shared/push.ts`, die PWA übernimmt die Datei): `kind: "push.notify"`, Daten
+  `{ v: 1, reason: "done" | "input" | "limit", chat, title, body }`, `chat` ist die Session-ID auf dem
+  Rechner, der den Push geschickt hat (`from`). Ein Tipp öffnet `/app/chats/<from>/<chat>`.
+- **Wann**: dieselben Anlässe und Texte wie die Benachrichtigungen auf dem Desktop (`NotificationSettings`,
+  `chatAlert`): Antwort fertig (mit Mindestdauer), Rückfrage, Freigabe oder Plan, Limit. Dazu die
+  Einstellung „Aufs Handy“ (`notifications.push`): aus, „Wenn du weg bist“ (Vorgabe: Bildschirm gesperrt
+  oder `PUSH_AWAY_MINUTES` ohne Eingabe, `powerMonitor.getSystemIdleState`) oder immer. Rückfragen mit
+  `urgency: "high"` und 24 Stunden `ttl`, sonst `normal` und eine Stunde.
+- **An wen** (`pushPhones`): bestätigte Geräte mit der Rolle `controller`, wenn die Fernsteuerung an ist und
+  ihre Stufe nicht „Aus“. Ein Push erzählt, was in einem Chat passiert; wer den Chat nicht sehen darf,
+  bekommt keinen. Ob ein Handy Push eingeschaltet hat, weiß nur der Server; ohne Anmeldung antwortet er
+  `unsubscribed`, und die App lässt es dabei.
 
 Was die App als Host dafür hat (`PROTOCOLS.md`, „Remote Control“):
 
@@ -206,7 +222,7 @@ Was die App als Host dafür hat (`PROTOCOLS.md`, „Remote Control“):
   damit „Fertig, ungelesen“ überall gleich ist.
 - Den Stand für die Inbox in einer Antwort (`sessions:inbox`), mit den offenen Rückfragen.
 - Den QR-Code unter „Gerät hinzufügen“ (siehe oben).
-- Noch offen: die verschlüsselten Benachrichtigungen für Push.
+- Die Benachrichtigungen per Push (`server-link/push-notifier.ts`, siehe oben).
 
 ## Settings-Sync
 
@@ -245,10 +261,10 @@ Secrets), Berechtigungen und Hooks der CLIs. Logins und Tokens der Accounts nie.
    Ungeprüft: hinter einem Proxy des Systems (der WebSocket von Node nutzt ihn nicht), und über HTTPS/WSS
    mit einem echten Zertifikat (getestet gegen den Server auf `localhost`).
 2. Remote Control von Desktop zu Desktop. **Gebaut** (die anderen Geräte in der Seitenleiste, ihre Chats
-   wie die eigenen bedient, mit Dock und neuen Chats); offen sind Bilder im Verlauf und die Werkzeuge
-   `chat_*` über Geräte hinweg.
-3. PWA als Steuerung (siehe „PWA“): zuerst Koppeln, Inbox, Chats lesen und Prompts senden, dann QR-Code,
-   dann Web Push für Rückfragen und Berechtigungen.
+   wie die eigenen bedient, mit Dock und neuen Chats, Bilder im Verlauf, die Werkzeuge `chat_*` über
+   Geräte hinweg). Ungeprüft mit zwei echten Rechnern.
+3. PWA als Steuerung (siehe „PWA“): Koppeln, Inbox mit Antworten, Chats lesen und Prompts senden, QR-Code
+   **gebaut**; Web Push für fertige Antworten, Rückfragen und Limits in Arbeit (App und Server).
 4. Settings-Sync.
 
 ## Offene Fragen

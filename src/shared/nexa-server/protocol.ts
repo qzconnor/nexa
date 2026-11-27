@@ -50,6 +50,8 @@ export type ErrorCode =
   | 'invite-invalid'
   /** Join: the namespace has as many instances as the server allows. */
   | 'namespace-full'
+  /** Push: the instance has no push subscription, or its push service dropped it. */
+  | 'unsubscribed'
   | 'internal'
 
 /** An instance as the server shows it to the instances of its namespace. */
@@ -76,6 +78,8 @@ export interface ServerInfo {
   protocol: typeof PROTOCOL_VERSION
   /** Whether this server serves the web app at `/app` (`NEXA_PWA`); a QR link to it only works then. */
   pwa: boolean
+  /** The server's VAPID public key (P-256, raw, base64url) for `pushManager.subscribe`; missing without push. */
+  vapidKey?: string
 }
 
 /** Body of `POST /v1/join`. */
@@ -144,7 +148,48 @@ export interface RenameRequest {
   name: string
 }
 
-export type ClientRequest = SendMessage | InviteRequest | InstancesRequest | RemoveRequest | RenameRequest
+/** Register this instance's Web Push subscription; a new one replaces the old. */
+export interface PushSubscribeRequest {
+  t: 'push-subscribe'
+  id: string
+  /** The push service's URL, `https:` only. */
+  endpoint: string
+  /** The subscription's P-256 public key (65 bytes) and auth secret (16 bytes), base64url. */
+  p256dh: string
+  auth: string
+}
+
+export interface PushUnsubscribeRequest {
+  t: 'push-unsubscribe'
+  id: string
+}
+
+export type PushUrgency = 'normal' | 'high'
+
+/**
+ * Push `body` to one instance by Web Push. The payload is the JSON of the `msg` a `send` with the same
+ * `id`, `kind` and `body` would relay, so the receiver opens it the same way.
+ */
+export interface PushRequest {
+  t: 'push'
+  id: string
+  to: string
+  kind: string
+  body?: unknown
+  urgency?: PushUrgency
+  /** Seconds the push service keeps it for a device that is offline. */
+  ttl?: number
+}
+
+export type ClientRequest =
+  | SendMessage
+  | InviteRequest
+  | InstancesRequest
+  | RemoveRequest
+  | RenameRequest
+  | PushSubscribeRequest
+  | PushUnsubscribeRequest
+  | PushRequest
 export type ClientMessage = AuthMessage | ClientRequest
 
 // --- Server → client ------------------------------------------------------------------------------
@@ -304,6 +349,26 @@ export function parseClientMessage(text: string): ParseResult {
       if (name === null) return fail(`name: expected 1 to ${MAX_NAME_LENGTH} characters`)
       const msg: RenameRequest = { t: 'rename', id: re, name }
       if (data.instance !== undefined) msg.instance = data.instance
+      return { ok: true, msg }
+    }
+    case 'push-subscribe':
+      if (typeof data.endpoint !== 'string' || !data.endpoint.startsWith('https://')) return fail('endpoint: expected an https URL')
+      if (typeof data.p256dh !== 'string' || !BASE64URL.test(data.p256dh)) return fail('p256dh: expected base64url')
+      if (typeof data.auth !== 'string' || !BASE64URL.test(data.auth)) return fail('auth: expected base64url')
+      return { ok: true, msg: { t: 'push-subscribe', id: re, endpoint: data.endpoint, p256dh: data.p256dh, auth: data.auth } }
+    case 'push-unsubscribe':
+      return { ok: true, msg: { t: 'push-unsubscribe', id: re } }
+    case 'push': {
+      if (!isInstanceId(data.to)) return fail('to: expected an instance')
+      if (typeof data.kind !== 'string' || !KIND.test(data.kind)) return fail('kind: invalid')
+      if (data.urgency !== undefined && data.urgency !== 'normal' && data.urgency !== 'high') return fail('urgency: expected "normal" or "high"')
+      if (data.ttl !== undefined && !(Number.isInteger(data.ttl) && (data.ttl as number) >= 0 && (data.ttl as number) <= 86_400)) {
+        return fail('ttl: expected 0 to 86400 seconds')
+      }
+      const msg: PushRequest = { t: 'push', id: re, to: data.to, kind: data.kind }
+      if (data.body !== undefined) msg.body = data.body
+      if (data.urgency !== undefined) msg.urgency = data.urgency
+      if (data.ttl !== undefined) msg.ttl = data.ttl as number
       return { ok: true, msg }
     }
     default:

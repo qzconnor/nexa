@@ -24,6 +24,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   'rate-limited',
   'invite-invalid',
   'namespace-full',
+  'unsubscribed',
   'internal',
 ]
 const INSTANCE_EVENTS = ['joined', 'online', 'offline', 'renamed'] as const

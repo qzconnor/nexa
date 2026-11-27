@@ -77,6 +77,7 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'notifications.preview': { anchor: 'notifications.preview', label: 'Vorschau in der Benachrichtigung' },
   'notifications.sound': { anchor: 'notifications.sound', label: 'Ton der Benachrichtigung' },
   'notifications.flashTaskbar': { anchor: 'notifications.flash' },
+  'notifications.push': { anchor: 'notifications.push', label: 'Benachrichtigungen aufs Handy' },
   'api.enabled': { anchor: 'api.enabled', label: 'Lokale API' },
   'api.port': { anchor: 'api.port', label: 'Port der API' },
   // What this device shares with another it controls: named with the card, „Projekte auf- und zuklappen“ alone says too little.
@@ -181,6 +182,7 @@ const CHOICES: Record<string, Record<string, string>> = {
   'appearance.chatWidth': { normal: 'Normal', wide: 'Breit', full: 'Voll' },
   'chat.shell': { powershell: 'PowerShell', gitbash: 'Git Bash', cmd: 'cmd' },
   'notifications.when': { background: 'Im Hintergrund', hidden: 'Chat nicht offen' },
+  'notifications.push': { off: 'Aus', away: 'Wenn du weg bist', always: 'Immer' },
   'defaults.permissionMode': Object.fromEntries(Object.entries(PERMISSION_MODES).map(([id, mode]) => [id, mode.label])),
   'defaults.provider': Object.fromEntries(PROVIDER_IDS.map((id) => [id, providerName(id)])),
   'chat.voiceLanguage': Object.fromEntries(VOICE_LANGUAGES.map((language) => [language.code, language.label])),

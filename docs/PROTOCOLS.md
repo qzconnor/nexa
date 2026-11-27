@@ -1308,6 +1308,12 @@ eines Namespace macht den Schlüssel selbst (Generation 1).
 - Jede Nachricht hat eine zufällige `id` (12 Byte). Ein Gerät nimmt `(from, id)` nur einmal und nichts,
   dessen `at` mehr als 5 Minuten von seiner Uhr abweicht (`ReplayGuard`). Die gesehenen Ids hält es nur
   im Speicher: Kurz nach einem Neustart ginge eine Wiederholung aus dem Fenster davor noch durch.
+- **Push** an die Handys (`kind: "push.notify"`, NEXA-SERVER.md, „PWA“): genauso paarweise versiegelt
+  (`DeviceChannel.sealed`), aber als Anfrage `{ t: "push", id, to, kind, body, urgency, ttl }` an den
+  Server statt `send`. Die `id` der Anfrage ist die der Nachricht (`ServerConnection.request` nimmt sie
+  mit), denn der Server baut daraus die Nutzlast `{ t: "msg", id, from, to, kind, body }`. Antwort `ok`,
+  sobald der Push-Dienst ihn angenommen hat; `unsubscribed`, wenn das Handy Push nicht eingeschaltet hat.
+  Inhalt `PushNotice` aus `shared/push.ts`.
 
 ### Mitglieder und Schlüssel
 

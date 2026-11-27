@@ -9,7 +9,7 @@ import { isPlainObject } from '@shared/utils'
 import type { AccountService } from '../accounts/account-service'
 import { readJson, writeJsonAtomic } from '../lib/json-file'
 import { nearLimits, type NearLimit, type WarnedWindows } from '../lib/near-limit'
-import { attentionText, limitReset, nearLimitLines } from '../lib/notification-text'
+import { chatAlert, nearLimitLines } from '../lib/notification-text'
 import type { ProviderService } from './provider-service'
 import type { Attention, SessionService } from './session-service'
 import type { SettingsService } from './settings-service'
@@ -241,16 +241,10 @@ export class NotificationService {
 
   private attention(sessionId: string, attention: Attention): void {
     const settings = this.settings()
-    if (!settings.enabled || !wanted(settings, attention)) return
     const meta = this.deps.sessions.list().find((s) => s.id === sessionId)
-    if (!meta) return
-    // A scheduled run ran without anyone watching: its end is news however short it was.
-    if (attention.kind === 'done' && !meta.scheduledTask && attention.busyMs < Math.max(0, settings.minBusySeconds) * 1000) return
-    const resetsAt =
-      attention.kind === 'limit' ? limitReset(this.deps.providers.usage().find((u) => u.accountId === attention.accountId)?.windows ?? []) : undefined
-    const { title, detail } = attentionText(attention, PROVIDERS[attention.provider].short, settings.preview, resetsAt)
-    const chat = meta.title.trim() || 'Chat'
-    this.alert(sessionId, title, detail ? `${chat}\n${detail}` : chat, settings)
+    const windows = attention.kind === 'limit' ? (this.deps.providers.usage().find((u) => u.accountId === attention.accountId)?.windows ?? []) : []
+    const alert = meta && chatAlert(attention, meta, settings, windows)
+    if (alert) this.alert(sessionId, alert.title, alert.body, settings)
   }
 
   /** Notification and flashing taskbar button, unless the user looks at the chat anyway (setting `when`). */
@@ -382,12 +376,6 @@ function dismissFrom(map: Map<string, Notification>, id: string): void {
   if (!notification) return
   map.delete(id)
   notification.close()
-}
-
-function wanted(settings: NotificationSettings, attention: Attention): boolean {
-  if (attention.kind === 'done') return settings.onDone
-  if (attention.kind === 'input') return settings.onInput
-  return settings.onLimit
 }
 
 function nearLimitWanted(settings: NotificationSettings): boolean {
