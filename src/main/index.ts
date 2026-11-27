@@ -323,6 +323,11 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     },
     projects,
     accounts,
+    usage: {
+      defaultAccount: (provider) => providers.defaultAccount(provider),
+      get: (accountId) => providers.usage().find((u) => u.accountId === accountId),
+      refresh: (accountId) => providers.refreshAccountUsage(accountId),
+    },
   })
   registerScheduledIpc(scheduled)
   // The microphone in the composer: Claude's speech recognition with a Claude account's login, for every

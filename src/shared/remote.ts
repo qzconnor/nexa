@@ -199,6 +199,8 @@ const CHANNELS: Record<string, ChannelRule> = {
   [FilesInvoke.gitWatch]: 'read',
   [FilesInvoke.gitWebUrl]: 'read',
   [FilesInvoke.gitMainWorktree]: 'read',
+  // The open pull requests of a chat's repository, read with this device's GitHub CLI.
+  [FilesInvoke.gitPullRequests]: 'read',
   // Changes the files: new, renamed and trashed entries, what git stages and discards.
   [FilesInvoke.create]: 'full',
   [FilesInvoke.rename]: 'full',

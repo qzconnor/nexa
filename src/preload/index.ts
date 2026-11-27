@@ -95,6 +95,7 @@ const api: NexaApi = {
     remove: (id) => invoke(ScheduledInvoke.remove, id),
     setEnabled: (id, enabled) => invoke(ScheduledInvoke.setEnabled, id, enabled),
     runNow: (id) => invoke(ScheduledInvoke.runNow, id),
+    stopWaiting: (id) => invoke(ScheduledInvoke.stopWaiting, id),
     onChanged: (cb) => subscribe(ScheduledEvent.changed, cb),
   },
   mcpApps: {

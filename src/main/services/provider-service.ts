@@ -1,4 +1,4 @@
-import { canLogin, type AccountLoginState, type LoginRenewResult } from '@shared/accounts'
+import { canLogin, type Account, type AccountLoginState, type LoginRenewResult } from '@shared/accounts'
 import { PROVIDER_IDS, type ChatItem, type ProviderId } from '@shared/chat'
 import type { McpAppToolResult, McpToolUi } from '@shared/mcp-apps'
 import { PROVIDERS } from '@shared/providers'
@@ -236,21 +236,30 @@ export class ProviderService extends TypedEmitter<Events> {
    * Codex accounts whose server isn't running are asked too.
    */
   async refreshUsage(wake = false): Promise<ProviderUsage[]> {
-    await Promise.all(
-      this.accounts.list().map(async (account) => {
-        // A CLI switched off isn't asked: its limits don't concern the user, and the asking costs.
-        if (!this.isReady(account.provider) || !this.settings()[account.provider].enabled || account.authState === 'missing') return
-        try {
-          // A resting Claude account's expired token first: its limits are asked for with the new one.
-          await this.renewal.renewExpired(account)
-          const usage = await this.providers[account.provider].usage(this.context(account.id), wake)
-          if (usage) this.setUsage(account.id, usage)
-        } catch (error) {
-          console.warn('[usage] reading failed', error)
-        }
-      }),
-    )
+    await Promise.all(this.accounts.list().map((account) => this.readUsage(account, wake)))
     return this.usage()
+  }
+
+  /**
+   * Reads the limits of one account now, waking a Codex server that isn't running (a scheduled task's
+   * check of its limits: its run would start the server anyway).
+   */
+  async refreshAccountUsage(accountId: string): Promise<void> {
+    const account = this.accounts.list().find((a) => a.id === accountId)
+    if (account) await this.readUsage(account, true)
+  }
+
+  private async readUsage(account: Account, wake: boolean): Promise<void> {
+    // A CLI switched off isn't asked: its limits don't concern the user, and the asking costs.
+    if (!this.isReady(account.provider) || !this.settings()[account.provider].enabled || account.authState === 'missing') return
+    try {
+      // A resting Claude account's expired token first: its limits are asked for with the new one.
+      await this.renewal.renewExpired(account)
+      const usage = await this.providers[account.provider].usage(this.context(account.id), wake)
+      if (usage) this.setUsage(account.id, usage)
+    } catch (error) {
+      console.warn('[usage] reading failed', error)
+    }
   }
 
   startPolling(): void {

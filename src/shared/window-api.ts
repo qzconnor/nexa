@@ -18,7 +18,7 @@ export type DeviceApi = Pick<NexaApi, 'settings' | 'providers' | 'accounts' | 'u
   mcpApps: Pick<McpAppsApi, 'callTool' | 'readResource'>
   /** The file panel beside a chat: on another device only in the folders of its chats (the host checks). */
   files: FilesApi
-  git: Pick<GitApi, 'branch' | 'watch' | 'onBranchChanged' | 'webUrl' | 'mainWorktree'>
+  git: Pick<GitApi, 'branch' | 'watch' | 'onBranchChanged' | 'webUrl' | 'mainWorktree' | 'pullRequests'>
 }
 
 export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): DeviceApi {
@@ -152,6 +152,7 @@ export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): D
       watch: (cwds) => invoke(FilesInvoke.gitWatch, cwds),
       webUrl: (cwd) => invoke(FilesInvoke.gitWebUrl, cwd),
       mainWorktree: (cwd) => invoke(FilesInvoke.gitMainWorktree, cwd),
+      pullRequests: (cwd, fresh) => invoke(FilesInvoke.gitPullRequests, cwd, fresh === true),
       onBranchChanged: (cb) => subscribe(FilesEvent.gitBranchChanged, cb),
     },
   }

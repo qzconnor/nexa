@@ -1034,6 +1034,23 @@ und den Zeichenketten der Binärdatei.
 - **Titel**: Antigravitys eigener (`session_info_update`, siehe oben); bis er kommt, die erste Zeile des
   ersten Prompts.
 
+### Sprache (`/voice`)
+
+Nur in der TUI, nicht über ACP: `initialize` meldet `promptCapabilities.audio: false`, Methoden für Sprache
+gibt es dort nicht. Abgelesen an den Zeichenketten von 1.5.18 (nicht ausprobiert):
+
+- **Befehle**: `/voice` („Live mode when it is available, else dictation“), `/voice live`, `/voice dictate`,
+  `stop`, `mute`, `speaker [name]` (Stimmen `FOLA ARLO CLEO FINN GERO LORA NENO OLIN TARI`),
+  `duplex [on|off]` („Voice Mode Full Duplex“: man kann reinreden, während es spricht), `volume [0-100]`,
+  `speed [0.5-3]`.
+- **Live** ist ein Gespräch wie Codex' `/voice`: Ein „Talker“ hört zu und spricht (Gemini Live,
+  `BidiGenerateContent`, über Googles Backend, Protos `remote_agent_proxy_pb` mit `TalkerSpeech` und
+  `voice_trajectory`), Aufgaben gibt er per Handoff an den Agenten. Was im Anruf ohne Handoff gesagt wurde,
+  bekommt der Agent danach als `<voice_call_context>` und soll es nur als Hintergrund nehmen.
+- **Audio** nimmt agy selbst auf und spielt es ab (miniaudio), Aufnahmen liegen unter `voice_recordings`.
+- **Grenzen**: eine Sprachsitzung je Account zugleich („only one live dictation stream is allowed“), Diktat
+  nicht mit Business- oder Enterprise-Accounts.
+
 ### Unterschiede zu Gemini CLI (bis Nexa 0.x)
 
 - Befehl `agy acp` statt `gemini --acp`; Daten unter `<.gemini>/antigravity-cli/`, Einstellungen in

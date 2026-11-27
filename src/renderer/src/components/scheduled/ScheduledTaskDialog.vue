@@ -23,6 +23,7 @@ import AccountDot from '@/components/accounts/AccountDot.vue'
 import ProjectPicker from '@/components/common/ProjectPicker.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
+import TaskLimits from '@/components/scheduled/TaskLimits.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -35,7 +36,18 @@ import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useChatActions } from '@/composables/useChatActions'
 import { attempt, errorMessage } from '@/lib/errors'
-import { SCHEDULE_KINDS, formatWhen, permissionNote, runDetail, runLabel, taskPermissionMode } from '@/lib/scheduled'
+import {
+  SCHEDULE_KINDS,
+  formatWhen,
+  guardOfDraft,
+  limitsDraft,
+  permissionNote,
+  runDetail,
+  runLabel,
+  taskPermissionMode,
+  waitDetail,
+  type LimitsDraft,
+} from '@/lib/scheduled'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProjectsStore } from '@/stores/projects'
@@ -77,6 +89,7 @@ const monthDay = ref('1')
 const hourEvery = ref('1')
 const hourMinute = ref(0)
 const onceAt = ref('')
+const limits = ref<LimitsDraft>(limitsDraft(undefined))
 const advancedOpen = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
@@ -130,8 +143,8 @@ watch(
     }
     editing.value = request.kind === 'edit' ? task! : null
     const blank = blankInput()
-    // Defaults first: a field the task lacks (account) mustn't keep the last dialog's value.
-    Object.assign(form, blank, { account: undefined })
+    // Defaults first: a field the task lacks (account, limits) mustn't keep the last dialog's value.
+    Object.assign(form, blank, { account: undefined, usageGuard: undefined })
     days.value = ['1']
     time.value = '09:00'
     if (task) {
@@ -144,6 +157,7 @@ watch(
       form.schedule = structuredClone(toRaw(request.template.schedule))
     }
     loadSchedule(form.schedule)
+    limits.value = limitsDraft(form.usageGuard)
     advancedOpen.value = false
     saving.value = false
     submitted.value = false
@@ -256,7 +270,7 @@ async function save(): Promise<void> {
   }
   saving.value = true
   try {
-    const input: ScheduledTaskInput = { ...structuredClone(toRaw(form)), schedule: schedule.value.value }
+    const input: ScheduledTaskInput = { ...structuredClone(toRaw(form)), schedule: schedule.value.value, usageGuard: guardOfDraft(limits.value) }
     const task = await store.save(input, editing.value?.id)
     store.dialog = null
     const when = task.nextRunAt !== null ? `Nächster Lauf: ${formatWhen(task.nextRunAt)}` : undefined
@@ -283,6 +297,13 @@ async function remove(): Promise<void> {
 
 /** Runs of the task being changed, the newest first. */
 const runs = computed(() => (editing.value ? (store.get(editing.value.id)?.runs ?? []) : []))
+/** A run of the task being changed that waits for its limits. */
+const waiting = computed(() => (editing.value ? store.get(editing.value.id)?.waiting : undefined))
+
+function stopWaiting(): void {
+  const id = editing.value?.id
+  if (id) void attempt(() => store.stopWaiting(id), 'Warten ließ sich nicht abbrechen')
+}
 
 function openRun(sessionId: string): void {
   store.dialog = null
@@ -527,6 +548,9 @@ const accountDetail = (id: string) => {
             <Switch v-model="form.enabled" :disabled="saving" />
             {{ form.enabled ? 'Läuft nach Zeitplan' : 'Läuft nur von Hand' }}
           </label>
+
+          <span class="self-start pt-0.5 font-medium">Limits</span>
+          <TaskLimits v-model="limits" :account="chosenAccount ?? defaultAccount" :manual="kind === 'manual'" :disabled="saving" />
         </div>
 
         <Collapsible v-model:open="advancedOpen">
@@ -581,9 +605,16 @@ const accountDetail = (id: string) => {
           </CollapsibleContent>
         </Collapsible>
 
-        <div v-if="runs.length" class="flex flex-col gap-1.5">
+        <div v-if="runs.length || waiting" class="flex flex-col gap-1.5">
           <span class="text-sm font-medium">Letzte Läufe</span>
           <ul class="flex flex-col divide-y rounded-xl border text-[0.82rem]">
+            <li v-if="editing && waiting" class="flex items-center gap-3 px-3 py-2">
+              <span class="w-28 shrink-0 text-muted-foreground tabular-nums">{{ formatWhen(waiting.since) }}</span>
+              <span class="min-w-0 flex-1 truncate text-warning" v-tooltip="waitDetail(store.get(editing.id) ?? editing, waiting)">
+                wartet auf Limits: {{ waiting.reason }}
+              </span>
+              <Button type="button" variant="ghost" size="xs" @click="stopWaiting">Nicht mehr warten</Button>
+            </li>
             <li v-for="run in runs.slice(0, 8)" :key="run.at" class="flex items-center gap-3 px-3 py-2">
               <span class="w-28 shrink-0 text-muted-foreground tabular-nums">{{ formatWhen(run.at) }}</span>
               <span

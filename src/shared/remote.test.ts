@@ -62,6 +62,7 @@ describe('channelLevel', () => {
       FilesInvoke.gitWatch,
       FilesInvoke.gitWebUrl,
       FilesInvoke.gitMainWorktree,
+      FilesInvoke.gitPullRequests,
     ]
     for (const ch of read) expect(channelLevel(ch, ['F:\\nexa'])).toBe('read')
     const write = [FilesInvoke.create, FilesInvoke.rename, FilesInvoke.trash, FilesInvoke.stage, FilesInvoke.unstage, FilesInvoke.discard, FilesInvoke.hunk]

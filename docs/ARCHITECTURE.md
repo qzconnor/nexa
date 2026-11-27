@@ -703,6 +703,16 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   „Name · 25.11. 7:05“ und `send` mit den Anweisungen; „Jetzt ausführen“ (`runNow`) gibt den Lauf zurück.
   `scheduledTask` setzt nur Main (`sessions:create` aus dem Fenster verwirft es), ein abgezweigter Chat
   erbt es nicht.
+- **Limits** (`usageGuard`): je Art von Fenster (`session` = kürzer als ein Tag, `week` = länger, auch
+  die Wochen einzelner Modelle) ein Bereich in Prozent, in dem der Verbrauch des Accounts liegen muss;
+  es zählt das vollste Fenster der Art, eines nach seinem Reset als leer (`checkUsage`). Ein Fenster, das
+  der Account nicht hat, hält nichts auf; ein API-Key nie. Vor einem Lauf nach Zeitplan liest Main die
+  Zahlen des Accounts neu, wenn sie älter als 2 Minuten sind (`ProviderService.refreshAccountUsage`, weckt
+  den Server von Codex). Passt es nicht, wird ausgelassen (`skipped` mit Grund) oder gewartet
+  (`waiting`, wird gespeichert): jede Minute neu geprüft, Zahlen höchstens alle 5 Minuten neu gelesen,
+  bis zum nächsten Lauf (ohne einen: eine Woche); `TaskRun.waited` sagt, wie lange. Ohne Zahlen hält es
+  zurück, außer mit `runWithoutNumbers`. „Jetzt ausführen“ prüft nichts und ersetzt einen wartenden Lauf;
+  „Nicht mehr warten“ ist `scheduled:stop-waiting`.
 - **Chats der Läufe**: Symbol in der Seitenleiste, eine Meldung „fertig“ auch unter der Mindestdauer, und
   im Systemprompt der Hinweis, dass niemand zusieht und `notify` der Weg zum Nutzer ist (`instructions.ts`).
   Freigaben, die fragen, halten den Lauf an, bis jemand antwortet; der Dialog nimmt deshalb `auto`, wo die
@@ -887,6 +897,13 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   Hinter dem Zahnrad (`ComposerSettings`) liegen Modell, Denkaufwand als Schieberegler (`EffortSlider`,
   Namen und Farben in `lib/effort.ts`, „Standard“ von der CLI über `providers.modelDefaults`), Ultracode
   (Claude) und Freigaben; CLI und Account bleiben in der Leiste (`ComposerControls`).
+  Rechts daneben die offenen Pull Requests des Repositorys (`ComposerPullRequests`, wie in Claude Code):
+  der des ausgecheckten Branches mit Nummer und Farbe nach Stand (Checks, Review, Entwurf;
+  `lib/pull-requests.ts`), sonst die Zahl; das Menü listet sie und öffnet sie auf GitHub. Main liest sie
+  mit `gh pr list --json` und dessen Login (`files/pull-requests.ts`, Kanal `git:pull-requests`, je
+  Repository eine Minute gemerkt), nur für Remotes auf GitHub; ohne `gh`, ohne Anmeldung oder ohne offene
+  zeigt sich nichts. Neu gelesen bei Wechsel von Ordner oder Branch, Fokus des Fensters, alle 3 Minuten
+  und frisch nach jedem Turn (`usePullRequests`).
   Das „+“ (`ComposerAddMenu`) hängt Dateien an (Bilder als Anhang, andere als `@`-Erwähnung), gibt dem
   Chat weitere Ordner (`SessionMeta.dirs`, Chips über der Eingabe) und schaltet unter „Konnektoren“ die
   MCP-Server des Projekts (`Project.mcpOff`; Claude Code im laufenden Prozess, sonst ab dem nächsten

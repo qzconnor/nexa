@@ -290,6 +290,11 @@
       Account, Modell, Freigaben und Projekt; täglich, wochentags, an Wochentagen, monatlich, stündlich,
       einmalig oder nur von Hand. Jeder Lauf ist ein Chat (oder geht im selben weiter), verpasste Läufe
       holt Nexa einmal nach, Vorlagen für Überblick, Pull Requests, Tests, Abhängigkeiten und mehr
+- [x] Offene Pull Requests unter der Eingabe (wie in Claude Code): der des Branches mit Stand von
+      Checks und Review, sonst die Zahl, Liste zum Öffnen auf GitHub; über die GitHub CLI
+- [x] Limits für geplante Aufgaben: läuft nur, solange der Verbrauch des Accounts (5 Stunden, Woche) in
+      einem einstellbaren Bereich liegt, also unter einer Schwelle, über einem Punkt oder dazwischen; passt
+      es nicht, fällt der Lauf aus oder wartet, bis es passt
 - [x] Benachrichtigungen der Agents (`notify` im Nexa-MCP-Server): Toast im Fenster oder Meldung des
       Systems, ein Klick öffnet den Chat, bis zu drei Knöpfe, deren Wahl der Agent abwartet; abschaltbar
       unter Einstellungen › Benachrichtigungen
@@ -380,6 +385,34 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         (`security` bzw. Secret Service über `gdbus`, nach den Konventionen von go-keyring geschrieben) und
         Pfade sind umgesetzt, aber ohne Mac oder Linux nicht ausprobiert.
 - [ ] Weitere CLIs über das Provider-System.
+- [ ] **Umgebungen: Chats in WSL und über SSH**, für alle CLIs. Die CLI läuft in der Distro bzw. auf dem
+      Host und arbeitet auf dessen Dateien, Nexa bekommt nur ihren JSON-Strom. Das geht für alle drei, weil
+      sie über stdin/stdout sprechen und alle über `jsonl-process.ts` starten: `wsl.exe -d <Distro> --cd
+      <Pfad> --exec claude …` bzw. `ssh <Host> 'cd <Pfad> && exec claude …'`, Freigaben
+      (`--permission-prompt-tool stdio`) laufen mit.
+      Vorbild Claude Desktop (6.28899, im Code nachgesehen): eine Verbindung mit `exec()` und einer
+      SFTP-artigen Datei-API, darunter WSL (`wsl.exe -d <Distro> --exec <Shell> -c …` mit `WSL_UTF8=1`,
+      Dateien über `\\wsl$\…`, `rg` und `git` in der Distro) oder SSH (eingebaute Bibliothek oder OpenSSH
+      mit eigenen Helfern `claude-ssh-askpass/-broker/-proxy.exe` für Passwort, 2FA und Kanäle). Beim
+      Verbinden prüft sie OS und Shell, legt einen eigenen Server nach `~/.claude/remote/srv` und die CLI
+      nach `~/.claude/remote/`; der Server startet die CLI, spricht JSON-RPC über den Kanal und hält
+      Sitzungen über Verbindungsabbrüche. Ordnerauswahl auf dem Host im eigenen Dialog.
+      Plan: zuerst WSL (`\\wsl$\…` ist für Windows ein normaler Pfad, nur Git und Shell über `wsl.exe`),
+      dann SSH mit `ssh2` (exec, SFTP und Tunnel ohne eigene Hilfsprogramme; `~/.ssh/config` und den
+      Agent liest Nexa dann selbst). Abbrüche erst über Neuverbinden und Resume der CLI auffangen (nur der
+      laufende Turn geht verloren), ein eigener Server auf dem Host erst, wenn Turns sie überleben sollen.
+  - [ ] Transport-Schicht (`exec`, Dateien lesen, schreiben, listen) für lokal, WSL und SSH. Darüber
+        `JsonlProcess`, Dateibaum, Git, Checkpoints und Zurückspulen, Worktrees, `@`-Suche, `!`-Shell, Terminal.
+  - [ ] Umgebungen anlegen und bearbeiten (Name, Distro bzw. Host, Ordner) und im Dock wählen, mit
+        Ordnerauswahl auf dem Host.
+  - [ ] CLI auf dem Host finden (`command -v`) oder dort installieren.
+  - [ ] Accounts: auf dem Host anmelden oder Zugangsdaten mitgeben (Token, `auth.json`); Sicherheit klären.
+  - [ ] Nexa-MCP-Server (`127.0.0.1:<Port>`): über SSH mit Rückwärts-Tunnel (`-R`), in WSL2 direkt nur
+        mit Netzwerkmodus „mirrored“, sonst über eine Brücke (etwa `nx.exe` per WSL-Interop).
+  - [ ] Verlauf vom Host lesen (Transkripte von Claude, Sessions von Codex, Gespräche von Antigravity)
+        und Bilder aus Prompts hinbringen (hochladen oder inline).
+  - [ ] Lokaler Server von Antigravity (Zustand der MCP-Server) ist remote nicht erreichbar: bleibt beim
+        Rückfall auf die Dateien.
 - [ ] Verbrauchs-Dashboard: Tokens je Tag, Modell und Ordner, Verlauf der Limits als Diagramm, ohne
       Dollar (`DashboardView.vue`, `usage-history.ts` im Claude Manager).
 - [x] Änderungen je Prompt und Zurückspulen mit Vorschau, für jede CLI: Nexa hält die Ordner des Chats
@@ -390,6 +423,29 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       „Checkpoints der Dateien“.
 - [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).
 - [ ] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager).
+- [ ] **Temporäre Chats**: Schalter „Temporär“ im Dock beim neuen Chat. Der Chat verschwindet, sobald man
+      ihn schließt (anderer Chat, Tab oder Fenster zu, auch beim Beenden von Nexa), mit den 8 s zum
+      Zurückholen. Gelöscht wird über den Weg, den „Löschen“ schon nimmt (Transkript, Subagents,
+      Checkpoints, Worktree), aber ohne Kopie im Papierkorb. Eigenes Symbol in der Seitenleiste, nicht in
+      Sitzungssuche, Posteingang und Fernzugriff; „Behalten“ im Menü „…“ macht ihn zum normalen Chat.
+      Die CLI speichert normal: `--no-session-persistence` (Claude) bzw. `ephemeral: true` (Codex) brächen
+      `--resume` nach Neustart oder Accountwechsel, Abzweigen und Zurückspulen, Antigravity kennt so
+      etwas nicht. Im Dock dazuschreiben, dass nur der Verlauf geht: geänderte Dateien und Einträge im
+      Memory der CLI bleiben. Offen: was passiert, wenn man ihn verlässt, während er noch arbeitet.
+- [ ] **Mit dem Agenten sprechen**, über das Diktat hinaus (Spracheingabe in `ARCHITECTURE.md`).
+  - [ ] Live-Gespräch mit Codex über den App-Server (`PROTOCOLS.md`, Codex, „Sprache“):
+        `thread/realtime/start` mit WebRTC aus dem Renderer (Electron bringt es mit, `codex-voice-host` der
+        TUI braucht Nexa nicht), Transkripte und Handoffs an Codex im Chat. Vorher mit einem Plus- oder
+        Pro-Account prüfen, ob es geht (Free-Plan: 404) und welche `version` es braucht; experimentell,
+        also bei jedem Update von Codex nachsehen.
+  - [ ] Freihändig für alle CLIs: Diktat, Senden nach der Pause (`voiceAutoStop`, `voiceAutoSend` gibt
+        es schon), Antwort vorlesen (`speechSynthesis` mit den Stimmen von Windows, nur Text, keine Code-
+        Blöcke und Werkzeuge), danach wieder zuhören; Reinreden hält das Vorlesen an. Schalter im Dock und
+        eine Anzeige, ob Nexa zuhört, wartet oder spricht. Offen: bessere Stimmen (kosten einen API-Key).
+  - [ ] Live-Gespräch mit Antigravity, sobald ACP Sprache kennt. `/voice live` und `duplex` gibt es nur in
+        der TUI (`PROTOCOLS.md`, Antigravity, „Sprache“); Googles internes Protokoll nachzubauen lohnt bei
+        fast täglichen Updates nicht. Bei neuen Versionen auf `promptCapabilities.audio` oder Methoden für
+        Sprache in `initialize` achten.
 - [x] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude
       `mcp_read_resource`/`mcp_call`, Codex `mcpServer/resource/read`/`mcpServer/tool/call`), in einem
       Frame mit eigener Adresse und CSP. Offen: Vollbild und Bild-im-Bild (`ui/request-display-mode`),

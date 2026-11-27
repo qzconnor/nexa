@@ -54,5 +54,9 @@ export const useScheduledStore = defineStore('scheduled', () => {
     return window.api.scheduled.runNow(id)
   }
 
-  return { tasks, loaded, dialog, activeCount, load, get, save, remove, setEnabled, runNow }
+  async function stopWaiting(id: string): Promise<void> {
+    put(await window.api.scheduled.stopWaiting(id))
+  }
+
+  return { tasks, loaded, dialog, activeCount, load, get, save, remove, setEnabled, runNow, stopWaiting }
 })
