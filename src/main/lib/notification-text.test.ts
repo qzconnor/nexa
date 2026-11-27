@@ -7,7 +7,7 @@ const NOW = new Date(2026, 10, 23, 12, 0).getTime()
 const EVENING = new Date(2026, 10, 23, 19, 40).getTime()
 const FRIDAY = new Date(2026, 10, 27, 9, 5).getTime()
 
-const input = (request: InteractionRequest) => ({ kind: 'input' as const, provider: 'claude' as const, request })
+const input = (request: InteractionRequest) => ({ kind: 'input' as const, provider: 'claude' as const, request, itemId: 'q1' })
 
 describe('attentionText', () => {
   it('tells a finished turn with the beginning of the answer', () => {

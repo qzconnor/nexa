@@ -91,7 +91,22 @@ describe('ServerLinkService', () => {
     expect(server.pushed).toMatchObject([{ to, urgency: 'high', ttl: 3600, payload: { t: 'msg', from, to, kind: 'push.notify' } }])
     // What the push service gets is a sealed message, not the data.
     expect(JSON.stringify(server.pushed[0]!.payload)).not.toContain('"n":2')
+    expect(await first.push(to, 'push.notify', { n: 3 }, { urgency: 'normal', ttl: 60, silent: true })).toBe(true)
+    expect(server.pushed[1]).toMatchObject({ to, silent: true })
     await expect(first.push('unknownxxxxxxxxxxxxxxx', 'push.notify', {}, { urgency: 'normal', ttl: 60 })).rejects.toThrow(/no member/)
+  })
+
+  it('asks the server whether it takes silent pushes, and takes a failure for no', async () => {
+    const { link } = await service()
+    expect(await link.silentPush()).toBe(false)
+    await link.pair({ url: 'https://nexa.test', code: server.invite(), name: 'Desktop' })
+    await until(link, (s) => s.status === 'online')
+    expect(await link.silentPush()).toBe(false)
+    server.info = { name: 'nexa-server', version: '0.2.0', protocol: 1, pwa: true, vapidKey: 'BOr6', silentPush: true }
+    expect(await link.silentPush()).toBe(true)
+    const fetch = server.fetch
+    vi.spyOn(server, 'fetch').mockImplementation((input, init) => (String(input).endsWith('/v1/info') ? Promise.reject(new Error('down')) : fetch(input, init)))
+    expect(await link.silentPush()).toBe(false)
   })
 
   it('links the server’s web app with the pairing code only when the server serves it', async () => {

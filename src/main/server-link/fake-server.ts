@@ -33,7 +33,7 @@ export class FakeServer {
   /** Instances with a push subscription (`push-subscribe`). */
   readonly subscribed = new Set<string>()
   /** Every push the server handed on, with the payload as the push service would get it. */
-  readonly pushed: { to: string; urgency?: PushUrgency; ttl?: number; payload: RelayedMessage }[] = []
+  readonly pushed: { to: string; urgency?: PushUrgency; ttl?: number; silent?: true; payload: RelayedMessage }[] = []
   /** Connections closed for a message over the limit. */
   oversized = 0
   private counter = 0
@@ -144,7 +144,7 @@ export class FakeServer {
       case 'push': {
         if (!this.instances.has(msg.to)) return socket.deliver({ t: 'error', re: msg.id, code: 'unknown-instance', message: 'unknown' })
         if (!this.subscribed.has(msg.to)) return socket.deliver({ t: 'error', re: msg.id, code: 'unsubscribed', message: 'no subscription' })
-        this.pushed.push({ to: msg.to, urgency: msg.urgency, ttl: msg.ttl, payload: { t: 'msg', id: msg.id, from, to: msg.to, kind: msg.kind, body: msg.body } })
+        this.pushed.push({ to: msg.to, urgency: msg.urgency, ttl: msg.ttl, silent: msg.silent, payload: { t: 'msg', id: msg.id, from, to: msg.to, kind: msg.kind, body: msg.body } })
         return socket.deliver({ t: 'ok', re: msg.id })
       }
     }

@@ -145,7 +145,7 @@ describe('NotificationService', () => {
   it('stays quiet for short answers, switched off events and while the window is in front', async () => {
     await start({ onInput: false })
     sessions.fire('attention', 's1', done(5_000))
-    sessions.fire('attention', 's1', { kind: 'input', provider: 'claude', request: { type: 'plan', plan: 'x' } })
+    sessions.fire('attention', 's1', { kind: 'input', provider: 'claude', request: { type: 'plan', plan: 'x' }, itemId: 'q1' })
     win.focused = true
     sessions.fire('attention', 's1', done(60_000))
     expect(created()).toHaveLength(0)

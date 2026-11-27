@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_PUSH_BODY, MAX_PUSH_TITLE, parsePushNotice, pushNotice } from './push'
+import { MAX_PUSH_BODY, MAX_PUSH_TITLE, parsePush, parsePushNotice, pushNotice, pushResolved } from './push'
 
 describe('push notice', () => {
   it('cuts title and text to their limits, counting characters, not UTF-16 units', () => {
@@ -26,5 +26,17 @@ describe('push notice', () => {
     expect(parsePushNotice({ ...notice, title: 3 })).toBeNull()
     expect(parsePushNotice(null)).toBeNull()
     expect(parsePushNotice([notice])).toBeNull()
+  })
+
+  it('reads notices and resolves alike, and a resolve as nothing more', () => {
+    const notice = pushNotice('input', 'c1', 'Claude hat eine Frage', 'Chat')
+    expect(parsePush(JSON.parse(JSON.stringify(notice)))).toEqual(notice)
+    expect(parsePush(JSON.parse(JSON.stringify(pushResolved('c1'))))).toEqual({ v: 1, reason: 'resolved', chat: 'c1' })
+    expect(parsePush({ v: 1, reason: 'resolved', chat: 'c1', title: 'Mehr' })).toEqual(pushResolved('c1'))
+    expect(parsePush({ v: 2, reason: 'resolved', chat: 'c1' })).toBeNull()
+    expect(parsePush({ v: 1, reason: 'resolved', chat: '../x' })).toBeNull()
+    expect(parsePush(null)).toBeNull()
+    // Not a notice: a web app older than it can't show it as one.
+    expect(parsePushNotice(pushResolved('c1'))).toBeNull()
   })
 })

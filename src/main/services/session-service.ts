@@ -158,7 +158,8 @@ export type Attention =
       error?: string
     }
   | { kind: 'limit'; provider: ProviderId; accountId: string; message: string | null }
-  | { kind: 'input'; provider: ProviderId; request: InteractionRequest }
+  /** `itemId`: the question's item, whose `state` says when it is answered or void. */
+  | { kind: 'input'; provider: ProviderId; request: InteractionRequest; itemId: string }
 
 /** Where one deletion or size count looks for conversation files; Codex's folders are read once each. */
 interface ConversationLookup {
@@ -1499,7 +1500,7 @@ export class SessionService extends TypedEmitter<Events> {
         this.put(s, item)
         if (item.kind === 'tool') this.emit('tool', meta.id, item, cwd)
         if (item.kind === 'interaction' && item.state === 'pending' && fresh && current()) {
-          this.emit('attention', meta.id, { kind: 'input', provider, request: item.request })
+          this.emit('attention', meta.id, { kind: 'input', provider, request: item.request, itemId: item.id })
         }
         if (item.kind === 'turn') {
           this.emit('turnEnded', meta.id)
@@ -1878,7 +1879,7 @@ export class SessionService extends TypedEmitter<Events> {
     const provider = s.runProvider ?? s.meta.provider
     const item: InteractionItem = { kind: 'interaction', id: `ask:${randomUUID()}`, ts: Date.now(), provider, request, state: 'pending' }
     this.put(s, item)
-    this.emit('attention', id, { kind: 'input', provider, request })
+    this.emit('attention', id, { kind: 'input', provider, request, itemId: item.id })
     if (s.runtime.status === 'running') this.setRuntime(s, { ...s.runtime, status: 'waiting' })
     return new Promise((resolve) => {
       const settle = (response: InteractionResponse | null): void => {
