@@ -11,6 +11,7 @@ import { antigravitySignedIn, ensureApiKeySettings, refreshAntigravityKeyring } 
 import { antigravityPaths, defaultAntigravityDir } from '../../accounts/cli-files'
 import { AcpConnection } from '../acp/acp-connection'
 import { CliBinary, cliEnv } from '../cli-binary'
+import { cachedForFile, keepForFile } from '../cli-cache'
 import type { AccountContext, AgentProvider, AgentRun, CliSessionInfo, McpServerState, RunOptions, RunSink, RunUsage } from '../provider'
 import { AntigravityConfig, antigravityMcpServers, setAntigravityMcpEnabled } from './antigravity-config'
 import { conversationFile, conversationMtime, promptTimes, readSteps } from './antigravity-conversations'
@@ -75,6 +76,7 @@ export class AntigravityProvider implements AgentProvider {
   private commands_: CommandOption[] | null = null
   /** The plan of each account's login, from its last session (by account id). */
   private readonly tiers = new Map<string, string>()
+  private tiersRestored = false
   private readonly runs = new Map<string, Set<AntigravityRun>>()
   /** When the quota of an account was last read. */
   private readonly usageReadAt = new Map<string, number>()
@@ -107,18 +109,59 @@ export class AntigravityProvider implements AgentProvider {
       ...base,
       version: version ?? undefined,
       loggedIn,
-      account: loggedIn ? { authMode: apiKey ? 'gemini-api-key' : 'oauth-personal', plan: apiKey ? undefined : this.tiers.get(account.accountId) } : undefined,
+      account: loggedIn ? { authMode: apiKey ? 'gemini-api-key' : 'oauth-personal', plan: apiKey ? undefined : this.planOf(account.accountId) } : undefined,
     }
   }
 
-  /** The models of the last session (they depend on the login); before one, a session started to ask. */
+  /**
+   * The models of the last session (they depend on the login); before one, those an earlier start of
+   * the same CLI file learned, else a session started to ask.
+   */
   async models(account: AccountContext): Promise<ModelOption[]> {
     if (this.models_) return this.models_
+    const kept = this.kept<ModelOption[]>('models')
+    if (kept?.length) return (this.models_ = kept)
     this.modelsLoading ??= this.probe(account)
-      .then((models) => (this.models_ ??= models.length ? models : null) ?? FALLBACK_MODELS)
+      .then((models) => {
+        if (!this.models_ && models.length) this.takeModels(models)
+        return this.models_ ?? FALLBACK_MODELS
+      })
       .catch(() => FALLBACK_MODELS)
       .finally(() => (this.modelsLoading = null))
     return this.modelsLoading
+  }
+
+  private takeModels(list: ModelOption[]): void {
+    this.models_ = list
+    this.keep('models', list)
+  }
+
+  /**
+   * What an earlier start learned from this file of the CLI (cli-cache.ts): asking again means a
+   * process of `agy.exe`, whose start alone holds up the main process for a moment.
+   */
+  private kept<T>(key: string): T | undefined {
+    const file = this.binary.updatedFile()
+    return file ? cachedForFile<T>(`antigravity.${key}`, file) : undefined
+  }
+
+  private keep(key: string, value: unknown): void {
+    const file = this.binary.updatedFile()
+    if (file) keepForFile(`antigravity.${key}`, file, value)
+  }
+
+  /** The plans from the last sessions, once: without a probe at the start no session tells them. */
+  private restoreTiers(): void {
+    if (this.tiersRestored) return
+    this.tiersRestored = true
+    for (const [accountId, tier] of Object.entries(this.kept<Record<string, string>>('tiers') ?? {})) {
+      if (!this.tiers.has(accountId)) this.tiers.set(accountId, tier)
+    }
+  }
+
+  private planOf(accountId: string): string | undefined {
+    this.restoreTiers()
+    return this.tiers.get(accountId)
   }
 
   /**
@@ -165,15 +208,22 @@ export class AntigravityProvider implements AgentProvider {
   }
 
   async commands(): Promise<CommandOption[]> {
+    this.commands_ ??= this.kept<CommandOption[]>('commands') ?? null
     return this.commands_ ?? []
   }
 
   private takeTier(accountId: string, tier: string | undefined): void {
-    if (tier) this.tiers.set(accountId, tier)
+    if (!tier) return
+    this.restoreTiers()
+    if (this.tiers.get(accountId) === tier) return
+    this.tiers.set(accountId, tier)
+    this.keep('tiers', Object.fromEntries(this.tiers))
   }
 
   private takeCommands(list: { name: string; description?: string }[]): void {
-    if (list.length) this.commands_ = list.map(asCommand)
+    if (!list.length) return
+    this.commands_ = list.map(asCommand)
+    this.keep('commands', this.commands_)
   }
 
   /**
@@ -230,9 +280,7 @@ export class AntigravityProvider implements AgentProvider {
     const logDir = antigravityPaths(this.dirOf(account)).logDir
     run = new AntigravityRun(conn, options, sink, {
       commands: (list) => this.takeCommands(list),
-      models: (list) => {
-        this.models_ = list
-      },
+      models: (list) => this.takeModels(list),
       turnEnded: (limit) => this.afterTurn(account, sink, limit),
       server: new AgyLocalServer(() => agyLogOf(logDir, conn.pid), token),
     })
@@ -291,7 +339,7 @@ export class AntigravityProvider implements AgentProvider {
       // Below as no quota.
     }
     const quota = usageOfQuota(parsed)
-    const base = { provider: 'antigravity' as const, plan: this.tiers.get(account.accountId), updatedAt: Date.now(), source: 'api' as const }
+    const base = { provider: 'antigravity' as const, plan: this.planOf(account.accountId), updatedAt: Date.now(), source: 'api' as const }
     if (quota) return { ...base, ...quota }
     const reason = result.stderr.trim().split(/\r?\n/).pop() || 'keine Angaben'
     return { ...base, windows: [], message: `Antigravity CLI nennt keine Kontingente (${reason}).` }
@@ -415,7 +463,8 @@ export class AntigravityProvider implements AgentProvider {
     } finally {
       await conn.stop(1000).catch(() => undefined)
     }
-    this.tiers.delete(account.accountId)
+    this.restoreTiers()
+    if (this.tiers.delete(account.accountId)) this.keep('tiers', Object.fromEntries(this.tiers))
     await refreshAntigravityKeyring()
   }
 

@@ -6,6 +6,7 @@ import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import type { ModelDefaults } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useProvidersStore } from '@/stores/providers'
@@ -70,7 +71,12 @@ function pickModel(id: string): void {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" class="max-h-96 w-72 overflow-y-auto">
           <DropdownMenuLabel>Modell</DropdownMenuLabel>
-          <DropdownMenuItem v-if="!models.length" disabled>Wird geladen …</DropdownMenuItem>
+          <div v-if="!models.length" role="status" aria-label="Modelle werden geladen" class="flex flex-col gap-3 px-2 py-1.5">
+            <div v-for="i in 3" :key="i" class="flex flex-col gap-1.5">
+              <Skeleton :class="cn('h-3.5', i === 2 ? 'w-1/3' : 'w-2/5')" />
+              <Skeleton class="h-3 w-4/5" />
+            </div>
+          </div>
           <DropdownMenuItem v-for="m in models" :key="m.id || 'default'" class="items-start gap-2" @select="pickModel(m.id)">
             <span class="flex min-w-0 flex-col">
               <span>{{ m.label }}</span>

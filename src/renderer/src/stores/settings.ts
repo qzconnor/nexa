@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defaultSettings } from '@shared/defaults'
-import type { AppSettings, DeepPartial } from '@shared/types'
+import type { AppearanceSettings, AppSettings, DeepPartial } from '@shared/types'
 import { apiOf, scopedStore } from './device'
 import { useKeptHereStore } from './kept-here'
 
@@ -10,12 +10,17 @@ export const useSettingsStore = scopedStore('settings', (device) => {
   /** As the device has them. */
   const own = ref<AppSettings>(defaultSettings())
   let listening = false
+  /** Appearance values shown before they are saved (`previewAppearance`), by key. */
+  const preview = ref<Partial<AppearanceSettings>>({})
 
   /**
    * As they count here: another device's with this one's look, and with what this one doesn't share
-   * with it (`useKeptHereStore`).
+   * with it (`useKeptHereStore`), with the appearance being previewed.
    */
-  const settings = computed(() => (device ? useKeptHereStore(device).settingsView(own.value) : own.value))
+  const settings = computed(() => {
+    const base = device ? useKeptHereStore(device).settingsView(own.value) : own.value
+    return Object.keys(preview.value).length ? { ...base, appearance: { ...base.appearance, ...preview.value } } : base
+  })
 
   /** Again after another device lost track (Remote Control): its events start once. */
   async function load(): Promise<void> {
@@ -32,5 +37,20 @@ export const useSettingsStore = scopedStore('settings', (device) => {
     own.value = await api.settings.update(JSON.parse(JSON.stringify(patch)) as DeepPartial<AppSettings>)
   }
 
-  return { settings, load, update }
+  /**
+   * Shows appearance values at once without saving them: a slider applies every step while it is
+   * dragged, and saves (`update`) once it rests. Saving each step wrote `settings.json` and told every
+   * window, and the slider only moved on once that was done.
+   */
+  function previewAppearance(patch: Partial<AppearanceSettings>): void {
+    preview.value = { ...preview.value, ...patch }
+  }
+
+  /** Ends the preview of these values once they are saved; a newer one stays. */
+  function endPreview(saved: Partial<AppearanceSettings>): void {
+    const left = Object.entries(preview.value).filter(([key, value]) => saved[key as keyof AppearanceSettings] !== value)
+    preview.value = Object.fromEntries(left) as Partial<AppearanceSettings>
+  }
+
+  return { settings, load, update, previewAppearance, endPreview }
 })

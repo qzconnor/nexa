@@ -39,6 +39,7 @@ import { AskTool } from './mcp/ask-tool'
 import { LimitsTool } from './mcp/limits-tool'
 import { grantFor, nexaServerSpec } from './mcp/nexa-tools'
 import { NotifyTool } from './mcp/notify-tool'
+import { keepCliCacheIn } from './providers/cli-cache'
 import { registerScheduledIpc } from './scheduled/scheduled-ipc'
 import { ScheduledTasks } from './scheduled/scheduled-tasks'
 import { AutoSwitch } from './services/auto-switch'
@@ -107,6 +108,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   // The accounts first: every CLI starts with the folder and login of one.
   const accounts = new AccountService(userDataDir)
   await accounts.init()
+  keepCliCacheIn(join(userDataDir, 'cli-cache.json'))
   const providers = new ProviderService(() => settings.get(), accounts, new UsageSamples(join(userDataDir, 'usage-samples.json')))
   const projects = new ProjectService(userDataDir)
 

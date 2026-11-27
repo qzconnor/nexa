@@ -1,5 +1,9 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AgentItem, ToolItem, TurnItem } from '@shared/chat'
+import { readTranscriptSince } from '../../import/claude-sessions'
 import { claudeTranscriptItems, forkPoint, promptOf, summarizeClaudeTranscript, transcriptSince } from './claude-transcript'
 
 const at = (s: number) => new Date(Date.UTC(2026, 10, 1, 10, 0, s)).toISOString()
@@ -203,6 +207,29 @@ describe('transcriptSince', () => {
 
   it('has nothing when no turn came after the mark', () => {
     expect(transcriptSince(lines(user('u1', 1, 'Frage'), end('m1', 2, 'Antwort')), Date.parse(at(2)))).toBeNull()
+  })
+
+  it('asks for more of the file when its end starts after the mark', () => {
+    const tail = text.slice(text.indexOf('{"type":"user","uuid":"u3"'))
+    expect(transcriptSince(tail, Date.parse(at(5)), false)).toBeUndefined()
+    // The mark lies inside the end: the same answer as from the whole text.
+    expect(transcriptSince(tail, Date.parse(at(12)), false)).toEqual(transcriptSince(text, Date.parse(at(12))))
+  })
+
+  it('reads only the end of the file, more of it where the end is not enough', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'nexa-transcript-'))
+    try {
+      const file = join(dir, 't.jsonl')
+      // Long turns before the mark, so a small tail cuts lines in the middle.
+      const before = Array.from({ length: 40 }, (_, i) => end(`old${i}`, 0, `Ä${'x'.repeat(200)}`))
+      const whole = lines(...before) + text
+      await writeFile(file, whole, 'utf8')
+      for (const since of [5, 12, 13].map((s) => Date.parse(at(s)))) {
+        expect(await readTranscriptSince(file, since, 300)).toEqual(transcriptSince(whole, since))
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 

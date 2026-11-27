@@ -10,8 +10,10 @@ import UsageResetLine from '@/components/common/UsageResetLine.vue'
 import RenderBlock from '@/components/render/RenderBlock.vue'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { useClock } from '@/composables/useClock'
+import { useSlowLoad } from '@/composables/useSlowLoad'
 import { attempt } from '@/lib/errors'
 import { formatRelative, formatTokens } from '@/lib/format'
 import { clampPercent, usageFillClass, usageLevel, usageTextClass } from '@/lib/usage'
@@ -26,16 +28,22 @@ const accounts = useAccountsStore()
 const now = useClock(30_000)
 const stats = ref<UsageStats | null>(null)
 const loading = ref(false)
+const slow = useSlowLoad(() => !stats.value)
 
-async function load(): Promise<void> {
+/**
+ * Nexa's own counts; with `everything` (the button) also the CLIs looked for again and their limits
+ * read now. Not on every showing of the page: that started every CLI (and Antigravity's 245 MB
+ * executable holds up the main process for a moment), and the limits come with the polling anyway.
+ */
+async function load(everything = false): Promise<void> {
   loading.value = true
   await attempt(async () => {
-    const [next] = await Promise.all([window.api.usage.stats(30), providers.refresh()])
+    const [next] = await Promise.all([window.api.usage.stats(30), everything ? providers.refresh() : undefined])
     stats.value = next
   }, 'Verbrauch ließ sich nicht laden')
   loading.value = false
 }
-onMounted(load)
+onMounted(() => load())
 
 const CARDS = {
   claude: { anchor: 'usage.claude', description: 'Limits je Account und was Nexas Chats in 30 Tagen verbraucht haben.' },
@@ -77,7 +85,7 @@ const chart = computed(() => {
       :description="describe(id)"
     >
       <template v-if="index === 0" #actions>
-        <Button variant="ghost" size="sm" :disabled="loading" @click="load">
+        <Button variant="ghost" size="sm" :disabled="loading" @click="load(true)">
           <Spinner v-if="loading" data-icon="inline-start" />
           <RefreshCwIcon v-else data-icon="inline-start" />
           Aktualisieren
@@ -119,12 +127,18 @@ const chart = computed(() => {
           <div class="text-xs text-muted-foreground">Tokens</div>
         </div>
       </div>
+      <div v-else-if="!stats && providers.enabled.includes(id)" :class="cn('grid grid-cols-2 gap-2 border-t pt-4', !slow && 'invisible')">
+        <div v-for="i in 2" :key="i" class="flex flex-col items-center gap-1.5">
+          <Skeleton class="h-6 w-12" />
+          <Skeleton class="h-3 w-16" />
+        </div>
+      </div>
     </SettingsSection>
 
     <SettingsSection anchor="usage.days" title="Tokens pro Tag" description="Ein- und Ausgabe aller Chats in Nexa, letzte 30 Tage.">
       <RenderBlock v-if="chart" :spec="chart" />
       <p v-else-if="stats" class="text-sm text-muted-foreground">Noch keine Chats in den letzten 30 Tagen.</p>
-      <Spinner v-else class="size-4 text-muted-foreground" />
+      <Skeleton v-else :class="cn('h-64 w-full', !slow && 'invisible')" />
     </SettingsSection>
   </div>
 </template>
