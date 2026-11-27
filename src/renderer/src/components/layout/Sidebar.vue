@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
 import { useListKeys } from '@/composables/useListKeys'
+import { chatCounts } from '@/lib/chat-state'
 import { cn } from '@/lib/utils'
 import { useShownDeviceStore } from '@/stores/device'
 import { useDevicesStore } from '@/stores/devices'
 import { useInboxStore } from '@/stores/inbox'
+import { useProjectsStore } from '@/stores/projects'
 import { useScheduledStore } from '@/stores/scheduled'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
@@ -64,6 +66,25 @@ const FILTERS: { value: SidebarFilter; label: string }[] = [
   { value: 'all', label: 'Alle' },
   { value: 'live', label: 'Aktiv' },
 ]
+
+/**
+ * On the switch, what each side shows: the chats in the projects (not archived, as the tree has them)
+ * and how many of them run, of this device and every other one whose chats are loaded below.
+ */
+const counts = computed<Record<SidebarFilter, number>>(() => {
+  const total = { all: 0, live: 0 }
+  for (const id of [null, ...devices.devices.filter((d) => d.state === 'ready').map((d) => d.id)]) {
+    const projectIds = new Set(useProjectsStore(id).projects.map((p) => p.id))
+    const chats = useSessionsStore(id)
+    const { all, live } = chatCounts(
+      chats.metas.filter((m) => !m.archived && projectIds.has(m.projectId)),
+      chats.runtime,
+    )
+    total.all += all
+    total.live += live
+  }
+  return total
+})
 
 const nav = ref<HTMLElement | null>(null)
 // The arrows from row to row, open and close what has rows in it (useListKeys), across the devices.
@@ -131,7 +152,12 @@ useListKeys(nav)
         class="mt-2"
         aria-label="Welche Chats die Projekte zeigen"
         @mousedown.prevent
-      />
+      >
+        <template #option="{ option }">
+          {{ option.label }}
+          <span class="text-[0.7rem] tabular-nums opacity-60">{{ counts[option.value] }}</span>
+        </template>
+      </SegmentedControl>
       <SidebarTree :now="now" />
       <DeviceScope v-for="d in devices.devices" :key="d.id" :device="d.id">
         <SidebarDevice :device="d" :now="now" />

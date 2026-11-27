@@ -1,4 +1,5 @@
 import type { SessionRuntime } from '@shared/chat'
+import type { SessionMeta } from '@shared/types'
 
 /** What a chat shows at a glance: its CLI works, waits for the user, finished while elsewhere, or failed. */
 export type ChatState = 'running' | 'waiting' | 'unread' | 'error' | null
@@ -10,6 +11,20 @@ export type ChatState = 'running' | 'waiting' | 'unread' | 'error' | null
  */
 export function isLive(runtime: SessionRuntime): boolean {
   return runtime.connected || runtime.status === 'starting' || runtime.status === 'running' || runtime.status === 'waiting'
+}
+
+/**
+ * How many chats there are and how many of them run, for the sidebar's switch „Alle“/„Aktiv“: each
+ * segment says how many chats the projects show with it.
+ */
+export function chatCounts(chats: Iterable<SessionMeta>, runtime: (id: string) => SessionRuntime): { all: number; live: number } {
+  let all = 0
+  let live = 0
+  for (const chat of chats) {
+    all++
+    if (isLive(runtime(chat.id))) live++
+  }
+  return { all, live }
 }
 
 /** What the chats of a folded project, folder or separator show as one. */
