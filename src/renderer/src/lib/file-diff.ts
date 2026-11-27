@@ -1,3 +1,5 @@
+// The PWA of nexa-server copies this file byte for byte: imports only from `@shared/…` and `./word-diff`,
+// no Node APIs (main/server-link/pwa-copies.test.ts).
 import type { FileDiff, GitFileStatus } from '@shared/files'
 import { changedRanges, type Range } from './word-diff'
 

@@ -840,8 +840,10 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
 - `stores/sessions.ts`: Metadaten aller Sessions, geöffnete Chats (`chats`), Laufzustand. Events, die
   ankommen, während eine Session lädt, stecken schon im Snapshot und werden ignoriert.
 - `lib/tools.ts`: `chatBlocks()` gruppiert Items zu Blöcken (Werkzeuggruppen, Agents, Rückfragen). Die PWA
-  von nexa-server übernimmt die Datei Byte für Byte: Importe nur aus `@shared/…`, `@lucide/vue` und Typen
-  aus `vue`, keine neuen `--tool-*`-Farben ohne Bescheid (`main/server-link/pwa-copies.test.ts`).
+  von nexa-server übernimmt die Datei Byte für Byte: Importe nur aus `@shared/…`, `@lucide/vue` und
+  `vue`, keine neuen `--tool-*`-Farben ohne Bescheid (`main/server-link/pwa-copies.test.ts`). Ebenso die
+  Diffs (`lib/diff.ts`, `file-diff.ts`, `word-diff.ts`, `syntax.ts`, `hljs-vue.ts`), `useProjectPath` und
+  `lib/pull-requests.ts`; welche Importe sie haben dürfen, steht im Test (NEXA-SERVER.md, „PWA“).
 - `components/chat/ChatView.vue` stellt den Projektordner bereit (`useProjectPath`), damit Pfade relativ
   erscheinen.
 - **Dateien und Aktivität** (`components/files/*`, aus dem Claude Manager): `FileTreePanel` links im Chat,

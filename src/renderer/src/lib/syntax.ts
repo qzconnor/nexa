@@ -1,3 +1,6 @@
+// The PWA of nexa-server copies this file byte for byte: imports only from `@shared/…`, `highlight.js`
+// and `./file-diff`, languages only by `import()` of `highlight.js/lib/languages/…` and `./hljs-vue`, no
+// Node APIs (main/server-link/pwa-copies.test.ts). It has its own copy of the `.syntax` rules of main.css.
 import hljs from 'highlight.js/lib/core'
 import type { LanguageFn } from 'highlight.js'
 import type { DiffLine } from './file-diff'
