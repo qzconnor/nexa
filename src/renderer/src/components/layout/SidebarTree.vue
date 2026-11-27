@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatActions } from '@/composables/useChatActions'
 import { provideSessionDrag } from '@/composables/useSessionDrag'
+import { useSidebarFold } from '@/composables/useSidebarFold'
 import { isLive } from '@/lib/chat-state'
 import { attempt } from '@/lib/errors'
 import { chatsIn, foldersOf, projectTree, type ProjectEntry } from '@/lib/session-tree'
@@ -49,6 +50,11 @@ interface SectionGroup {
 
 /** Only the chats that run (the switch above the projects): the same tree without the others. */
 const liveOnly = computed(() => ui.sidebarFilter === 'live')
+
+const fold = useSidebarFold()
+const sectionOpen = (section: ProjectSection) => fold.isOpen('section', section.id, !section.collapsed)
+const toggleSection = (section: ProjectSection) =>
+  fold.toggle('section', section.id, () => void attempt(() => projects.updateSection(section.id, { collapsed: !section.collapsed })))
 
 /** Every separator with its projects and their chats, in the folders they work in (lib/session-tree.ts). */
 const groups = computed<SectionGroup[]>(() => {
@@ -284,10 +290,10 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
             <button
               type="button"
               data-list-row
-              :aria-expanded="!group.section.collapsed"
+              :aria-expanded="sectionOpen(group.section)"
               class="flex min-w-0 flex-1 items-center gap-1.5 text-left"
               :title="group.section.path"
-              @click="attempt(() => projects.updateSection(group.section.id, { collapsed: !group.section.collapsed }))"
+              @click="toggleSection(group.section)"
             >
               <span class="shrink-0 truncate text-[0.72rem] font-medium tracking-wide text-muted-foreground uppercase">{{ group.section.name }}</span>
               <!-- Cut at the start: the end of a path tells it apart. -->
@@ -298,12 +304,12 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
                 :class="
                   cn(
                     'size-3 shrink-0 text-muted-foreground transition-[transform,opacity]',
-                    !group.section.collapsed && 'rotate-90 opacity-0 group-hover/section:opacity-100',
+                    sectionOpen(group.section) && 'rotate-90 opacity-0 group-hover/section:opacity-100',
                   )
                 "
               />
             </button>
-            <SidebarGroupState v-if="group.section.collapsed" :chats="group.chats" class="mr-1" />
+            <SidebarGroupState v-if="!sectionOpen(group.section)" :chats="group.chats" class="mr-1" />
             <span v-if="group.count" class="text-[0.7rem] text-muted-foreground/70 tabular-nums">{{ group.count }}</span>
             <Button
               v-if="!device"
@@ -341,7 +347,7 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
         </ContextMenuContent>
       </ContextMenu>
 
-      <div v-if="!group.section.collapsed" class="flex flex-col gap-px">
+      <div v-if="sectionOpen(group.section)" class="flex flex-col gap-px">
         <div v-if="group.root" @dragover="overTop($event, group)">
           <SidebarProject :entry="group.root" :now="now" bare />
         </div>

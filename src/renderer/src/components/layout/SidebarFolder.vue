@@ -5,6 +5,7 @@ import type { Project } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useSessionDrag } from '@/composables/useSessionDrag'
+import { useSidebarFold } from '@/composables/useSidebarFold'
 import { attempt } from '@/lib/errors'
 import { chatsIn, type FolderNode } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
@@ -22,7 +23,9 @@ const drag = useSessionDrag()
 /** A folder of another device: Explorer and the worktree dialog work on this device's folders. */
 const device = useDevice()
 
-const open = computed(() => ui.openFolders.has(props.node.id))
+const fold = useSidebarFold()
+const open = computed(() => fold.isOpen('folder', props.node.id, ui.openFolders.has(props.node.id)))
+const toggle = () => fold.toggle('folder', props.node.id, () => ui.toggleFolder(props.node.id))
 const showAll = ref(false)
 const shown = computed(() => (showAll.value ? props.node.sessions : props.node.sessions.slice(0, props.limit)))
 
@@ -49,7 +52,7 @@ async function newChat(): Promise<void> {
             class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-[0.85rem] text-muted-foreground hover:text-foreground"
             :title="node.worktree ? `Worktree · ${node.path}` : node.path"
             :aria-expanded="open"
-            @click="ui.toggleFolder(node.id)"
+            @click="toggle"
           >
             <ChevronRightIcon :class="cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')" />
             <component :is="node.worktree ? FolderGit2Icon : open ? FolderOpenIcon : FolderIcon" class="size-3.5 shrink-0" />

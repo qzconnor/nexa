@@ -109,7 +109,20 @@ export const useUiStore = defineStore('ui', () => {
   watch(pinnedOpen, (open) => remember('nexa.pinned', open ? 'open' : 'folded'))
   /** Which chats the projects in the sidebar show: all, or those that run (`live`, lib/chat-state.ts). */
   const sidebarFilter = ref<SidebarFilter>(stored<SidebarFilter>('nexa.sidebarFilter', 'all') === 'live' ? 'live' : 'all')
-  watch(sidebarFilter, (filter) => remember('nexa.sidebarFilter', filter))
+  /**
+   * Under „Aktiv“ every separator, project and folder shows open, so the running chats are in sight.
+   * What the user folds there (keys of useSidebarFold) stays folded only until the filter changes.
+   */
+  const liveFolded = ref(new Set<string>())
+  function toggleLiveFold(key: string): void {
+    const next = new Set(liveFolded.value)
+    if (!next.delete(key)) next.add(key)
+    liveFolded.value = next
+  }
+  watch(sidebarFilter, (filter) => {
+    remember('nexa.sidebarFilter', filter)
+    liveFolded.value = new Set()
+  })
   /**
    * The order the user dragged the pinned chats on top into, by `chatKey` (lib/session-tree.ts). It
    * mixes the chats of several devices, so it stays on this one. Shared by the windows of the app.
@@ -264,6 +277,8 @@ export const useUiStore = defineStore('ui', () => {
     toggleFolder,
     pinnedOpen,
     sidebarFilter,
+    liveFolded,
+    toggleLiveFold,
     pinnedOrder,
     arrangePinned,
     forgetPinned,
