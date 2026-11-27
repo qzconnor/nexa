@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { BellRingIcon } from '@lucide/vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { SETTING_RANGES } from '@shared/defaults'
-import type { NotificationSettings, NotifyWhen } from '@shared/types'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { PUSH_AWAY_MINUTES, SETTING_RANGES } from '@shared/defaults'
+import { pushPhones } from '@shared/server-link'
+import type { NotificationSettings, NotifyWhen, PushWhen } from '@shared/types'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { attempt } from '@/lib/errors'
 import { isWindows } from '@/lib/platform'
+import { useServerLinkStore } from '@/stores/server-link'
 import { useSettingsStore } from '@/stores/settings'
 import SettingField from './SettingField.vue'
 import SettingsSection from './SettingsSection.vue'
@@ -61,6 +63,7 @@ const when = bind('when')
 const preview = bind('preview')
 const sound = bind('sound')
 const flashTaskbar = bind('flashTaskbar')
+const push = bind('push')
 
 const off = computed(() => !enabled.value)
 const notificationName = isWindows ? 'Windows-Benachrichtigung' : 'Systembenachrichtigung'
@@ -74,6 +77,37 @@ const whenDescription = computed(() =>
     ? 'Nur, solange du in einem anderen Programm bist oder Nexa minimiert ist.'
     : 'Auch, wenn Nexa vorne ist, aber gerade einen anderen Chat oder die Startseite zeigt.',
 )
+
+const PUSH: { value: PushWhen; label: string }[] = [
+  { value: 'off', label: 'Aus' },
+  { value: 'away', label: 'Wenn du weg bist' },
+  { value: 'always', label: 'Immer' },
+]
+const pushDescription = computed(
+  () =>
+    ({
+      off: 'Benachrichtigungen nur auf diesem Rechner.',
+      away: `Wenn der Bildschirm gesperrt ist oder du seit ${PUSH_AWAY_MINUTES} Minuten nichts eingegeben hast.`,
+      always: 'Bei jedem Ereignis, auch wenn du am Rechner sitzt.',
+    })[push.value],
+)
+
+const link = useServerLinkStore()
+onMounted(() => void link.load())
+/** Whether pushes reach a phone, and if not, what is missing for it. */
+const phoneStatus = computed(() => {
+  const state = link.state
+  if (!state || state.status === 'unpaired') {
+    return 'Dafür koppelst du Nexa unter Einstellungen › Geräte mit einem nexa-server und dort dein Handy mit der Web-App.'
+  }
+  if (!state.devices.some((d) => d.role === 'controller' && !d.self)) {
+    return 'Noch kein Handy gekoppelt. Unter Einstellungen › Geräte › „Gerät hinzufügen“ geht das per QR-Code.'
+  }
+  if (!state.remoteEnabled) return 'Die Fernsteuerung ist aus (Einstellungen › Geräte). Ohne sie bekommen die Handys nichts.'
+  const phones = pushPhones(state)
+  if (!phones.length) return 'Deine Handys dürfen auf diesem Rechner nichts sehen (Stufe „Aus“ unter Einstellungen › Geräte).'
+  return `Geht an ${phones.map((d) => `„${d.name}“`).join(', ')}, sobald dort in der Web-App Benachrichtigungen an sind.`
+})
 
 const testing = ref(false)
 async function sendTest(): Promise<void> {
@@ -199,6 +233,17 @@ async function sendTest(): Promise<void> {
       >
         <Switch id="notify-flash" v-model="flashTaskbar" :disabled="off" />
       </SettingField>
+    </SettingsSection>
+
+    <SettingsSection
+      anchor="notifications.phone"
+      title="Aufs Handy"
+      description="Dieselben Benachrichtigungen über deinen nexa-server an die Web-App auf dem Handy, Ende-zu-Ende verschlüsselt. Die Ereignisse und die Vorschau oben gelten auch hier; ein Tipp öffnet den Chat."
+    >
+      <SettingField anchor="notifications.push" label="Aufs Handy schicken" :description="pushDescription">
+        <SegmentedControl v-model="push" :options="PUSH" :disabled="off" aria-label="Aufs Handy schicken" />
+      </SettingField>
+      <p class="text-xs text-muted-foreground">{{ phoneStatus }}</p>
     </SettingsSection>
   </div>
 </template>

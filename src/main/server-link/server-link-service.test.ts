@@ -76,6 +76,24 @@ describe('ServerLinkService', () => {
     await until(first, (s) => trustedNames(s).join() === 'Desktop,Laptop')
   })
 
+  it('pushes sealed for one member by the server; a member without a subscription gets nothing', async () => {
+    const { link: first } = await service()
+    await first.pair({ url: 'https://nexa.test', code: server.invite(), name: 'Desktop' })
+    await until(first, (s) => s.status === 'online')
+    const { link: second } = await service()
+    await second.pair({ url: '', code: (await first.invite()).code, name: 'Laptop' })
+    await until(first, (s) => trustedNames(s).join() === 'Desktop,Laptop')
+    const [from, to] = [first.getState().instance!, second.getState().instance!]
+
+    expect(await first.push(to, 'push.notify', { n: 1 }, { urgency: 'normal', ttl: 60 })).toBe(false)
+    server.subscribed.add(to)
+    expect(await first.push(to, 'push.notify', { n: 2 }, { urgency: 'high', ttl: 3600 })).toBe(true)
+    expect(server.pushed).toMatchObject([{ to, urgency: 'high', ttl: 3600, payload: { t: 'msg', from, to, kind: 'push.notify' } }])
+    // What the push service gets is a sealed message, not the data.
+    expect(JSON.stringify(server.pushed[0]!.payload)).not.toContain('"n":2')
+    await expect(first.push('unknownxxxxxxxxxxxxxxx', 'push.notify', {}, { urgency: 'normal', ttl: 60 })).rejects.toThrow(/no member/)
+  })
+
   it('links the server’s web app with the pairing code only when the server serves it', async () => {
     const { link } = await service()
     await link.pair({ url: 'https://nexa.test', code: server.invite(), name: 'Desktop' })

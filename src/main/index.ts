@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme, powerMonitor, shell, type MessageBoxOptions } from 'electron'
 import { ChatWindowsEvent, type MainWindowRequest } from '@shared/chat-windows'
+import { PUSH_AWAY_MINUTES } from '@shared/defaults'
 import { IpcEvent, IpcInvoke } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { hasChats } from '@shared/server-link'
@@ -59,6 +60,7 @@ import { registerUpdatesIpc } from './services/updates-ipc'
 import { shellLaunch } from './services/user-shells'
 import { registerRemote } from './remote/remote-ipc'
 import { DeviceChats, RemoteChatsHost } from './remote/remote-chats'
+import { PushNotifier } from './server-link/push-notifier'
 import { registerServerLinkIpc } from './server-link/server-link-ipc'
 import { ServerLinkService } from './server-link/server-link-service'
 import { registerVoiceIpc, voiceAccounts } from './voice/voice-ipc'
@@ -375,6 +377,16 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
       projectOf: (from) => sessions.peerChats().find((chat) => chat.id === from)?.project ?? null,
     }),
   )
+  // The notifications of chats also to the phones with the web app, while one isn't at this computer.
+  const pushes = new PushNotifier({
+    sessions,
+    providers,
+    settings,
+    link: serverLink,
+    away: () => powerMonitor.getSystemIdleState(PUSH_AWAY_MINUTES * 60) !== 'active',
+    log: (message) => console.info('[push]', message),
+  })
+  pushes.init()
   void serverLink.init().catch((error: unknown) => console.warn('[nexa-server] init failed', error))
   powerMonitor.on('resume', () => serverLink.retryNow())
 
@@ -632,6 +644,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     cleanedUp = true
     tray.dispose()
     updates.dispose()
+    pushes.dispose()
     remote.dispose()
     const serverLinkSaved = serverLink.dispose()
     // Before the runs end: nothing goes on after a limit while Nexa quits.

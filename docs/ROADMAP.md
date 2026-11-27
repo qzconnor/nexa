@@ -401,7 +401,7 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
           Einladung, Kopplungscode, Geräteliste, Umbenennen, Entfernen mit Schlüsselwechsel, Abmelden.
           Mit zwei Rechnern gegen einen echten Server mit HTTPS/WSS geprüft. Ungeprüft: hinter einem Proxy
           des Systems.
-    - [ ] Phase 2: Remote Control von Desktop zu Desktop.
+    - [x] Phase 2: Remote Control von Desktop zu Desktop.
       - [x] Chats eines anderen Geräts lesen und live mitverfolgen, Prompts senden, abbrechen, Rückfragen
             und Freigaben beantworten; je Gerät eine Stufe (Einstellungen › Geräte › Fernsteuerung, aus bis
             eingeschaltet, Vorgabe „Nur mitlesen“), „Trennen“ auf dem gesteuerten Gerät.
@@ -432,10 +432,15 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
             Stufe, die es dem Absender gibt. Die Grenze von zehn Nachrichten ohne den Nutzer gilt auch über
             Geräte hinweg. Ist das Gerät nicht verbunden, sagt das Werkzeug es dem Agent.
     - [ ] Phase 3: PWA als Steuerung, mit Web Push und QR-Code zum Koppeln (`NEXA-SERVER.md`, „PWA“).
-      - [ ] PWA im Repo `nexa-server`, unter `/app`, schaltbar mit `NEXA_PWA`: Koppeln, Inbox, Chats, Prompts.
+      - [x] PWA im Repo `nexa-server`, unter `/app`, schaltbar mit `NEXA_PWA`: Koppeln, Inbox mit direkt
+            beantwortbaren Rückfragen, Chats, Prompts.
       - [x] App als Host: Geräte mit der Rolle `controller` nicht als Rechner, Lesestand je Chat auf dem
             Host (`sessions:seen`, „ungelesen“ auf allen Geräten gleich), Stand für die Inbox in einer
             Antwort (`sessions:inbox`).
       - [x] QR-Code zum Koppeln unter „Gerät hinzufügen“, wenn der Server die PWA ausliefert.
       - [ ] Web Push für Rückfragen, Freigaben, fertige Antworten und Limits.
+        - [x] App: dieselben Benachrichtigungen wie auf dem Desktop, je Handy versiegelt, Einstellung
+              „Aufs Handy“ (aus, wenn du weg bist, immer).
+        - [ ] Server und PWA (Repo `nexa-server`): VAPID, Anmeldung des Handys, `push`, Service Worker.
+        - [ ] Mit einem echten Handy prüfen (iOS nur vom Home-Bildschirm).
     - [ ] Phase 4: Settings-Sync, mit Wiederherstellungscode.
