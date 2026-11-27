@@ -67,13 +67,20 @@ watch(
   { immediate: true },
 )
 const frame = computed(() => (inUse.value ? (paused.value ?? undefined) : latest.value))
-/** Its proportions, but no taller than a landscape picture: a narrow page shows its top. */
+/** The page's own proportions: a phone's stay upright, a desktop's wide. */
 const ratio = computed(() => {
   const shown = frame.value ?? latest.value
-  return shown ? Math.max(shown.width / shown.height, 1.45) : 16 / 10
+  return shown && shown.height > 0 ? shown.width / shown.height : 16 / 10
 })
 /** The preview's size: a picture's, and the same while the page is open elsewhere, picture or not. */
 const sized = computed(() => !!frame.value || inUse.value)
+/**
+ * As wide as the page's proportions allow at the picture's highest, between a width the caption and the
+ * steps still fit in and one that leaves the chat its column. A phone (down to 9 : 20) fits whole; a
+ * page narrower still keeps the picture's height and shows its top.
+ */
+const PICTURE_MAX_HEIGHT = '34rem'
+const cardWidth = computed(() => `min(100%, max(15rem, min(38rem, calc(${PICTURE_MAX_HEIGHT} * ${ratio.value.toFixed(4)}))))`)
 
 const address = computed(() => {
   const url = tab.value?.url
@@ -110,7 +117,8 @@ function closeUse(): void {
 </script>
 
 <template>
-  <figure class="my-2 overflow-hidden rounded-xl border bg-card/60">
+  <!-- Only as wide as the page's picture, flush with the chat's right edge. -->
+  <figure class="my-2 ml-auto overflow-hidden rounded-xl border bg-card/60" :style="{ width: cardWidth }">
     <figcaption class="flex h-10 items-center gap-2 border-b pr-1.5 pl-3">
       <span class="flex size-4 shrink-0 items-center justify-center">
         <BrowserFavicon v-if="tab" :tab-id="tab.id" class="size-4" />
@@ -143,7 +151,7 @@ function closeUse(): void {
     <!-- The picture only looks on: a click opens the page beside the chat, to use it there. -->
     <div
       :class="cn('group/frame relative w-full overflow-hidden bg-background/40', !sized && 'h-32')"
-      :style="sized ? { aspectRatio: ratio } : undefined"
+      :style="sized ? { aspectRatio: ratio, maxHeight: PICTURE_MAX_HEIGHT } : undefined"
     >
       <img
         v-if="frame"
@@ -160,8 +168,8 @@ function closeUse(): void {
       </span>
 
       <!-- Open beside the chat: the picture pauses until the user is through with it. -->
-      <div v-if="inUse" class="absolute inset-0 flex items-center justify-center p-4">
-        <div class="flex flex-col items-center gap-1.5 rounded-xl border bg-popover/90 px-5 py-3.5 text-center shadow-lg backdrop-blur-md">
+      <div v-if="inUse" class="absolute inset-0 flex items-center justify-center p-3">
+        <div class="flex flex-col items-center gap-1.5 rounded-xl border bg-popover/90 px-4 py-3.5 text-center text-balance shadow-lg backdrop-blur-md">
           <span class="flex items-center gap-2 text-[0.88rem] font-medium">
             <MousePointerClickIcon class="size-4 text-primary" />
             Wird gerade bedient
@@ -209,7 +217,7 @@ function closeUse(): void {
     >
       <ChevronRightIcon :class="cn('size-3.5 transition-transform', showSteps && 'rotate-90')" />
       <span>{{ tools.length }} {{ tools.length === 1 ? 'Schritt' : 'Schritte' }}</span>
-      <span v-if="failed" class="text-destructive">· {{ failed }} fehlgeschlagen</span>
+      <span v-if="failed" class="min-w-0 truncate text-destructive">· {{ failed }} fehlgeschlagen</span>
       <span v-if="!showSteps && running" class="min-w-0 truncate">· {{ steps[steps.length - 1]?.title }}</span>
       <span class="ml-auto flex shrink-0 items-center gap-1.5 tabular-nums">
         {{ duration }}
