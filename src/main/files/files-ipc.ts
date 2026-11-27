@@ -6,6 +6,7 @@ import { broadcast, handle, remoteCaller } from '../ipc'
 import { perWindow, remoteSender, type WindowSender } from '../lib/per-window'
 import { isCommitHash, isTreePath, type FileTreeService } from './file-tree-service'
 import type { GitService } from './git-service'
+import { PullRequests } from './pull-requests'
 import { inFolders } from './remote-roots'
 
 /** Longer paths exist on no file system the app runs on. */
@@ -96,6 +97,9 @@ export function registerFilesIpc(
   handle(FilesInvoke.gitWebUrl, (e, cwd: unknown) => git.webUrl(repoDir(e, cwd, 'cwd')))
   handle(FilesInvoke.gitMainWorktree, (e, cwd: unknown) => git.mainWorktree(repoDir(e, cwd, 'cwd')))
   handle(FilesInvoke.gitWorktreeCheck, (e, cwd: unknown) => git.worktreeCheck(pathOf(e, cwd, 'cwd')))
+  // The open pull requests under the composer, with the GitHub CLI's login of this device.
+  const pullRequests = new PullRequests({ webUrl: (cwd) => git.webUrl(cwd) })
+  handle(FilesInvoke.gitPullRequests, (e, cwd: unknown, fresh: unknown) => pullRequests.list(repoDir(e, cwd, 'cwd'), fresh === true))
   git.on('changed', (cwd, branch) => broadcast(FilesEvent.gitBranchChanged, cwd, branch))
 
   handle(FilesInvoke.list, (e, dir: unknown) => files.list(pathOf(e, dir, 'dir')))

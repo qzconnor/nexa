@@ -14,5 +14,6 @@ export function registerScheduledIpc(tasks: ScheduledTasks): void {
   handle(ScheduledInvoke.remove, (_e, id: unknown) => tasks.remove(str(id, 'Die Aufgabe')))
   handle(ScheduledInvoke.setEnabled, (_e, id: unknown, enabled: unknown) => tasks.setEnabled(str(id, 'Die Aufgabe'), enabled === true))
   handle(ScheduledInvoke.runNow, (_e, id: unknown) => tasks.runNow(str(id, 'Die Aufgabe')))
+  handle(ScheduledInvoke.stopWaiting, (_e, id: unknown) => tasks.stopWaiting(str(id, 'Die Aufgabe')))
   tasks.on('changed', (list) => broadcast(ScheduledEvent.changed, list))
 }

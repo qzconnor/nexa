@@ -1,6 +1,16 @@
 import type { PermissionMode, ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
-import type { ScheduledTask, TaskRun, TaskScheduleKind } from '@shared/scheduled-tasks'
+import {
+  USAGE_WINDOW_KINDS,
+  waitUntil,
+  type ScheduledTask,
+  type TaskRun,
+  type TaskScheduleKind,
+  type TaskUsageGuard,
+  type TaskWait,
+  type UsageWindowKind,
+} from '@shared/scheduled-tasks'
+import { formatSpan } from './format'
 
 /** What the page „Geplant“ says of tasks and their runs, apart from Vue so it can be tested. */
 
@@ -35,10 +45,52 @@ export function runLabel(run: TaskRun): string {
   }
 }
 
-/** Why a run didn't happen as planned, for its tooltip. */
+/** Why a run didn't happen as planned, and how long it waited for its limits, for its tooltip. */
 export function runDetail(run: TaskRun): string | null {
   if (run.outcome === 'missed') return 'Nexa lief nicht oder der Computer schlief, und die Aufgabe holt nichts nach.'
-  return run.error ?? null
+  const waited = run.waited ? (run.outcome === 'skipped' ? `Wartete ${formatSpan(run.waited)} auf die Limits.` : `Wartete ${formatSpan(run.waited)}, bis die Limits passten.`) : null
+  return [run.error, waited].filter(Boolean).join(' ') || null
+}
+
+/** What a run waiting for its limits waits for and until when, for its tooltip. */
+export function waitDetail(task: ScheduledTask, wait: TaskWait, now = Date.now()): string {
+  return `${wait.reason}. Läuft, sobald die Limits passen; wartet höchstens bis ${formatWhen(waitUntil(task, wait), now)}.`
+}
+
+/** The limits as the dialog edits them: each kind of window with both ends, also when they hold nothing back. */
+export interface LimitsDraft {
+  on: boolean
+  ranges: Record<UsageWindowKind, [min: number, max: number]>
+  otherwise: TaskUsageGuard['otherwise']
+  runWithoutNumbers: boolean
+}
+
+/** Where the limits start when switched on: room for other work in both windows. */
+const DEFAULT_MAX = 80
+
+/** The dialog's limits for a task's; switched off without any. */
+export function limitsDraft(guard: TaskUsageGuard | undefined): LimitsDraft {
+  const range = (kind: UsageWindowKind): [number, number] => {
+    const r = guard ? guard.ranges[kind] : { min: 0, max: DEFAULT_MAX }
+    return r ? [r.min, r.max] : [0, 100]
+  }
+  return {
+    on: !!guard,
+    ranges: { session: range('session'), week: range('week') },
+    otherwise: guard?.otherwise ?? 'skip',
+    runWithoutNumbers: guard?.runWithoutNumbers ?? false,
+  }
+}
+
+/** The task's limits from the dialog's; none when off or no range holds anything back. */
+export function guardOfDraft(draft: LimitsDraft): TaskUsageGuard | undefined {
+  if (!draft.on) return undefined
+  const ranges: TaskUsageGuard['ranges'] = {}
+  for (const kind of USAGE_WINDOW_KINDS) {
+    const [min, max] = draft.ranges[kind]
+    if (min > 0 || max < 100) ranges[kind] = { min, max }
+  }
+  return Object.keys(ranges).length ? { ranges, otherwise: draft.otherwise, runWithoutNumbers: draft.runWithoutNumbers } : undefined
 }
 
 /** The schedules the dialog offers, in its order. */

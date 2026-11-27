@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { describeSchedule, localDateTime, nextRunAfter, parseLocalDateTime, parseSchedule, parseTaskInput, runTitle, type TaskSchedule } from './scheduled-tasks'
+import {
+  MAX_WAIT_MS,
+  checkUsage,
+  describeRange,
+  describeSchedule,
+  describeUsageGuard,
+  localDateTime,
+  nextRunAfter,
+  parseLocalDateTime,
+  parseSchedule,
+  parseTaskInput,
+  parseUsageGuard,
+  runTitle,
+  usageByKind,
+  waitUntil,
+  windowKind,
+  type TaskSchedule,
+  type TaskUsageGuard,
+} from './scheduled-tasks'
+import type { UsageWindow } from './types'
 
 /** Local time (the tests run in Europe/Berlin). */
 const at = (text: string) => new Date(text).getTime()
@@ -132,5 +151,66 @@ describe('parseTaskInput', () => {
 describe('runTitle', () => {
   it('names a run after its task and time', () => {
     expect(runTitle('Briefing', at('2026-11-25T07:05'))).toBe('Briefing · 25.11. 7:05')
+  })
+})
+
+describe('limits', () => {
+  const now = at('2026-11-25T10:00')
+  const window = (key: string, usedPercent: number, windowMinutes?: number, resetsAt?: number): UsageWindow => ({ key, label: key, usedPercent, windowMinutes, resetsAt })
+  const guard = (ranges: TaskUsageGuard['ranges']): TaskUsageGuard => ({ ranges, otherwise: 'skip', runWithoutNumbers: false })
+
+  it('tells the 5 hours from the weeks, also windows without a length', () => {
+    expect(windowKind(window('primary', 0, 300))).toBe('session')
+    expect(windowKind(window('secondary', 0, 10080))).toBe('week')
+    expect(windowKind(window('five_hour', 0))).toBe('session')
+    expect(windowKind(window('weekly_scoped:Opus 4', 0))).toBe('week')
+  })
+
+  it('counts the fullest window of a kind, and one whose reset passed as empty', () => {
+    const usage = { windows: [window('five_hour', 91.6, 300, now - 1), window('seven_day', 40, 10080), window('weekly_scoped:Opus', 72.4)] }
+    expect(usageByKind(usage, now)).toEqual({ session: 0, week: 72 })
+  })
+
+  it('checks below a threshold, above a point and between, both ends included', () => {
+    const usage = { windows: [window('five_hour', 80, 300), window('seven_day', 35, 10080)] }
+    expect(checkUsage(guard({ session: { min: 0, max: 80 } }), usage, now)).toEqual({ fits: true })
+    expect(checkUsage(guard({ session: { min: 0, max: 79 } }), usage, now)).toEqual({ fits: false, reason: '5 Stunden bei 80 % (läuft bis 79 %)' })
+    expect(checkUsage(guard({ week: { min: 50, max: 100 } }), usage, now)).toEqual({ fits: false, reason: 'Woche bei 35 % (läuft ab 50 %)' })
+    expect(checkUsage(guard({ session: { min: 0, max: 50 }, week: { min: 50, max: 100 } }), usage, now)).toEqual({
+      fits: false,
+      reason: '5 Stunden bei 80 % (läuft bis 50 %), Woche bei 35 % (läuft ab 50 %)',
+    })
+  })
+
+  it('lets a limit the account lacks pass, and says when there are no numbers', () => {
+    expect(checkUsage(guard({ week: { min: 0, max: 10 } }), { windows: [window('five_hour', 90, 300)] }, now)).toEqual({ fits: true })
+    expect(checkUsage(guard({ week: { min: 0, max: 10 } }), { windows: [] }, now).fits).toBeNull()
+    expect(checkUsage(guard({ week: { min: 0, max: 10 } }), undefined, now).fits).toBeNull()
+  })
+
+  it('describes limits in words', () => {
+    expect(describeUsageGuard(guard({ session: { min: 0, max: 80 }, week: { min: 50, max: 100 } }))).toBe('5 Stunden bis 80 %, Woche ab 50 %')
+    expect(describeRange({ min: 20, max: 90 })).toBe('20–90 %')
+    expect(describeRange({ min: 40, max: 40 })).toBe('bei 40 %')
+  })
+
+  it('parses limits, without ranges that hold nothing back', () => {
+    expect(parseUsageGuard(undefined)).toBeUndefined()
+    expect(parseUsageGuard({ ranges: { session: { min: 0, max: 100 } }, otherwise: 'wait' })).toBeUndefined()
+    expect(parseUsageGuard({ ranges: { session: { min: 0, max: 100 }, week: { min: 10, max: 90 } }, otherwise: 'wait', runWithoutNumbers: true })).toEqual({
+      ranges: { week: { min: 10, max: 90 } },
+      otherwise: 'wait',
+      runWithoutNumbers: true,
+    })
+    expect(parseUsageGuard({ ranges: { session: { min: 0, max: 80 } }, otherwise: 'later' })).toMatchObject({ otherwise: 'skip', runWithoutNumbers: false })
+    expect(() => parseUsageGuard({ ranges: { session: { min: 90, max: 80 } } })).toThrow('untere Wert')
+    expect(() => parseUsageGuard({ ranges: { week: { min: 0, max: 101 } } })).toThrow('zwischen 0 und 100')
+    expect(() => parseUsageGuard({ ranges: { week: { min: 0.5, max: 80 } } })).toThrow('zwischen 0 und 100')
+  })
+
+  it('waits at most until the next run, else a week', () => {
+    const wait = { since: now, trigger: 'schedule' as const, reason: '' }
+    expect(waitUntil({ nextRunAt: now + 3600_000 }, wait)).toBe(now + 3600_000)
+    expect(waitUntil({ nextRunAt: null }, wait)).toBe(now + MAX_WAIT_MS)
   })
 })

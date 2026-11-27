@@ -28,6 +28,7 @@ import { useProvidersStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
 import ComposerAddMenu from './ComposerAddMenu.vue'
 import ComposerControls from './ComposerControls.vue'
+import ComposerPullRequests from './ComposerPullRequests.vue'
 import ContextCard from './ContextCard.vue'
 import ComposerSettings from './ComposerSettings.vue'
 import ComposerSuggest from './ComposerSuggest.vue'
@@ -735,6 +736,7 @@ defineExpose({
         @update:provider="emit('update:provider', $event)"
         @update:account="emit('update:account', $event)"
       />
+      <ComposerPullRequests :dir="projectRoot" :busy="busy" />
       <!-- The gear sits by the send button: what it sets (model, effort, permissions) goes with the prompt. -->
       <div class="ml-auto flex min-w-0 items-center gap-2">
         <!-- While one speaks, the level takes the place of what only matters to typing. -->

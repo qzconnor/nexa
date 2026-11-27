@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScheduledTask } from '@shared/scheduled-tasks'
-import { formatWhen, permissionNote, sortTasks, taskPermissionMode } from './scheduled'
+import { formatWhen, guardOfDraft, limitsDraft, permissionNote, runDetail, sortTasks, taskPermissionMode } from './scheduled'
 
 const at = (text: string) => new Date(text).getTime()
 
@@ -29,6 +29,34 @@ describe('permissionNote', () => {
     expect(permissionNote('ask').tone).toBe('warning')
     expect(permissionNote('edits').tone).toBe('warning')
     expect(permissionNote('full').tone).toBe('danger')
+  })
+})
+
+describe('limits in the dialog', () => {
+  it('starts switched off, with room below 80 % once switched on', () => {
+    const draft = limitsDraft(undefined)
+    expect(draft).toMatchObject({ on: false, ranges: { session: [0, 80], week: [0, 80] }, otherwise: 'skip' })
+    expect(guardOfDraft(draft)).toBeUndefined()
+    expect(guardOfDraft({ ...draft, on: true })).toEqual({ ranges: { session: { min: 0, max: 80 }, week: { min: 0, max: 80 } }, otherwise: 'skip', runWithoutNumbers: false })
+  })
+
+  it('shows a task’s limits, a window without one as the whole range, and gives them back', () => {
+    const guard = { ranges: { week: { min: 50, max: 100 } }, otherwise: 'wait' as const, runWithoutNumbers: true }
+    const draft = limitsDraft(guard)
+    expect(draft).toEqual({ on: true, ranges: { session: [0, 100], week: [50, 100] }, otherwise: 'wait', runWithoutNumbers: true })
+    expect(guardOfDraft(draft)).toEqual(guard)
+    // Nothing held back: no limits.
+    expect(guardOfDraft({ ...draft, ranges: { session: [0, 100], week: [0, 100] } })).toBeUndefined()
+  })
+})
+
+describe('runDetail', () => {
+  it('says how long a run waited for its limits', () => {
+    expect(runDetail({ at: 0, trigger: 'schedule', outcome: 'started', waited: 90 * 60_000 })).toBe('Wartete 1 Std. 30 Min., bis die Limits passten.')
+    expect(runDetail({ at: 0, trigger: 'schedule', outcome: 'skipped', error: 'Warten abgebrochen.', waited: 5 * 60_000 })).toBe(
+      'Warten abgebrochen. Wartete 5 Min. auf die Limits.',
+    )
+    expect(runDetail({ at: 0, trigger: 'manual', outcome: 'started' })).toBeNull()
   })
 })
 

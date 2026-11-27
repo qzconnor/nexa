@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '@shared/accounts'
 import type { ScheduledTask, ScheduledTaskInput } from '@shared/scheduled-tasks'
-import type { Project, SessionCreateInput, SessionMeta } from '@shared/types'
-import { ScheduledTasks, type ScheduledSessions } from './scheduled-tasks'
+import type { Project, ProviderUsage, SessionCreateInput, SessionMeta } from '@shared/types'
+import { ScheduledTasks, type ScheduledSessions, type ScheduledUsage } from './scheduled-tasks'
 
 const at = (text: string) => new Date(text).getTime()
 
@@ -33,6 +33,35 @@ function fakeSessions() {
   return { sessions, working, created, sent, titles }
 }
 
+/** The limits of the accounts, as ProviderService keeps them; a reading changes nothing unless `onRefresh` does. */
+function fakeUsage() {
+  const numbers: Record<string, ProviderUsage> = {}
+  const refreshed: string[] = []
+  let onRefresh: ((accountId: string) => void) | null = null
+  const usage: ScheduledUsage = {
+    defaultAccount: () => 'acc-claude',
+    get: (id) => numbers[id],
+    refresh: async (id) => {
+      refreshed.push(id)
+      onRefresh?.(id)
+    },
+  }
+  /** Numbers read now: the 5 hours and the week at these percentages. */
+  const set = (accountId: string, session: number, week = 10) => {
+    numbers[accountId] = {
+      provider: 'claude',
+      accountId,
+      windows: [
+        { key: 'five_hour', label: '5 Stunden', usedPercent: session, windowMinutes: 300 },
+        { key: 'seven_day', label: 'Woche', usedPercent: week, windowMinutes: 10080 },
+      ],
+      updatedAt: Date.now(),
+      source: 'api',
+    }
+  }
+  return { usage, numbers, refreshed, set, whenRefreshed: (cb: (accountId: string) => void) => (onRefresh = cb) }
+}
+
 const input = (patch: Partial<ScheduledTaskInput> = {}): ScheduledTaskInput => ({
   name: 'Briefing',
   prompt: 'Fasse den Tag zusammen.',
@@ -52,13 +81,19 @@ describe('ScheduledTasks', () => {
   let dir: string
   let file: string
   let fake: ReturnType<typeof fakeSessions>
-  const accounts: Record<string, Partial<Account>> = { 'acc-claude': { id: 'acc-claude', provider: 'claude' }, 'acc-codex': { id: 'acc-codex', provider: 'codex' } }
+  let limits: ReturnType<typeof fakeUsage>
+  const accounts: Record<string, Partial<Account>> = {
+    'acc-claude': { id: 'acc-claude', provider: 'claude', kind: 'system' },
+    'acc-codex': { id: 'acc-codex', provider: 'codex', kind: 'system' },
+    'acc-key': { id: 'acc-key', provider: 'claude', kind: 'apiKey' },
+  }
   const make = () =>
     new ScheduledTasks({
       file,
       sessions: fake.sessions,
       projects: { get: (id) => (id === 'p1' ? ({ id: 'p1', name: 'nexa', path: 'F:\\nexa' } as Project) : undefined) },
       accounts: { has: (id) => id in accounts, get: (id) => accounts[id] as Account },
+      usage: limits.usage,
     })
 
   beforeEach(() => {
@@ -66,6 +101,7 @@ describe('ScheduledTasks', () => {
     dir = mkdtempSync(join(tmpdir(), 'nexa-scheduled-'))
     file = join(dir, 'scheduled-tasks.json')
     fake = fakeSessions()
+    limits = fakeUsage()
   })
 
   afterEach(() => {
@@ -172,5 +208,160 @@ describe('ScheduledTasks', () => {
     expect(await tasks.runNow(task.id)).toMatchObject({ outcome: 'error', sessionId: 'chat-1' })
     expect(tasks.list()[0]!.runs[0]).toMatchObject({ outcome: 'error', sessionId: 'chat-1', error: 'Claude Code ist nicht installiert.' })
     await tasks.dispose()
+  })
+
+  describe('limits', () => {
+    const below80 = (otherwise: 'skip' | 'wait' = 'skip', runWithoutNumbers = false) =>
+      ({ ranges: { session: { min: 0, max: 80 } }, otherwise, runWithoutNumbers }) as const
+
+    it('leaves a run out while the account is past its threshold, and runs once it is below', async () => {
+      limits.set('acc-claude', 92)
+      const tasks = make()
+      tasks.start()
+      await tasks.save(input({ usageGuard: below80() }))
+
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      expect(fake.created).toHaveLength(0)
+      // Numbers an hour old are read anew first.
+      expect(limits.refreshed).toEqual(['acc-claude'])
+      expect(tasks.list()[0]!.runs[0]).toMatchObject({ trigger: 'schedule', outcome: 'skipped', error: '5 Stunden bei 92 % (läuft bis 80 %)' })
+      expect(tasks.list()[0]!.waiting).toBeUndefined()
+
+      limits.set('acc-claude', 80)
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+      expect(fake.created).toHaveLength(1)
+      expect(tasks.list()[0]!.runs[0]).toMatchObject({ outcome: 'started', sessionId: 'chat-1' })
+      await tasks.dispose()
+    })
+
+    it('runs only above a point, with the fullest window of a kind', async () => {
+      limits.set('acc-claude', 10, 40)
+      limits.numbers['acc-claude']!.windows.push({ key: 'weekly_scoped:Opus', label: 'Opus · Woche', usedPercent: 75 })
+      const tasks = make()
+      tasks.start()
+      await tasks.save(input({ usageGuard: { ranges: { week: { min: 70, max: 100 } }, otherwise: 'skip', runWithoutNumbers: false } }))
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      expect(fake.created).toHaveLength(1)
+
+      limits.numbers['acc-claude']!.windows.pop()
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+      expect(fake.created).toHaveLength(1)
+      expect(tasks.list()[0]!.runs[0]).toMatchObject({ outcome: 'skipped', error: 'Woche bei 40 % (läuft ab 70 %)' })
+      await tasks.dispose()
+    })
+
+    it('waits until the limits fit and notes how long', async () => {
+      limits.set('acc-claude', 92)
+      const tasks = make()
+      tasks.start()
+      await tasks.save(input({ usageGuard: below80('wait') }))
+
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      expect(fake.created).toHaveLength(0)
+      expect(tasks.list()[0]!.waiting).toEqual({ since: at('2026-11-25T09:00'), trigger: 'schedule', reason: '5 Stunden bei 92 % (läuft bis 80 %)' })
+      expect(tasks.list()[0]!.runs).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(30 * 60_000)
+      limits.set('acc-claude', 30)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(fake.created).toHaveLength(1)
+      const [task] = tasks.list()
+      expect(task!.waiting).toBeUndefined()
+      expect(task!.runs[0]).toMatchObject({ trigger: 'schedule', outcome: 'started', sessionId: 'chat-1' })
+      expect(task!.runs[0]!.waited).toBeGreaterThanOrEqual(30 * 60_000)
+      expect(task!.nextRunAt).toBe(at('2026-11-26T09:00'))
+      await tasks.dispose()
+    })
+
+    it('gives a wait up when the next run is due, which checks anew', async () => {
+      limits.set('acc-claude', 92)
+      const tasks = make()
+      tasks.start()
+      await tasks.save(input({ usageGuard: below80('wait') }))
+      await vi.advanceTimersByTimeAsync(25 * 60 * 60_000)
+
+      const [task] = tasks.list()
+      expect(fake.created).toHaveLength(0)
+      expect(task!.runs).toMatchObject([{ at: at('2026-11-25T09:00'), outcome: 'skipped' }])
+      expect(task!.runs[0]!.waited).toBeGreaterThanOrEqual(24 * 60 * 60_000)
+      expect(task!.runs[0]!.error).toContain('bis zum nächsten Lauf nicht')
+      expect(task!.waiting).toMatchObject({ since: at('2026-11-26T09:00') })
+      await tasks.dispose()
+    })
+
+    it('keeps a wait across a restart, and ends it when stopped or switched off', async () => {
+      limits.set('acc-claude', 92)
+      const tasks = make()
+      tasks.start()
+      const task = await tasks.save(input({ usageGuard: below80('wait') }))
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      await tasks.dispose()
+
+      const again = make()
+      expect(again.list()[0]!.waiting).toMatchObject({ since: at('2026-11-25T09:00') })
+      const stopped = await again.stopWaiting(task.id)
+      expect(stopped.waiting).toBeUndefined()
+      expect(stopped.runs[0]).toMatchObject({ outcome: 'skipped' })
+      expect(stopped.runs[0]!.error).toContain('Warten abgebrochen')
+      await again.dispose()
+    })
+
+    it('ends a wait when the task is switched off or no longer waits', async () => {
+      limits.set('acc-claude', 92)
+      const tasks = make()
+      tasks.start()
+      const task = await tasks.save(input({ usageGuard: below80('wait') }))
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      await tasks.setEnabled(task.id, false)
+      expect(tasks.list()[0]!.waiting).toBeUndefined()
+      expect(tasks.list()[0]!.runs).toMatchObject([{ outcome: 'skipped' }])
+
+      await tasks.setEnabled(task.id, true)
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+      expect(tasks.list()[0]!.waiting).toBeDefined()
+      // Waits on under new limits, but not once it leaves runs out instead.
+      await tasks.save(input({ usageGuard: { ...below80('wait'), ranges: { session: { min: 0, max: 70 } } } }), task.id)
+      expect(tasks.list()[0]!.waiting).toBeDefined()
+      await tasks.save(input({ usageGuard: below80('skip') }), task.id)
+      expect(tasks.list()[0]!.waiting).toBeUndefined()
+      expect(tasks.list()[0]!.runs[0]!.error).toContain('Geändert')
+      expect(fake.created).toHaveLength(0)
+      await tasks.dispose()
+    })
+
+    it('holds back without numbers unless the task runs anyway, and reads them first', async () => {
+      const tasks = make()
+      tasks.start()
+      const task = await tasks.save(input({ usageGuard: below80() }))
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      expect(limits.refreshed).toEqual(['acc-claude'])
+      expect(tasks.list()[0]!.runs[0]).toMatchObject({ outcome: 'skipped', error: 'Nexa kennt die Limits des Accounts noch nicht' })
+
+      await tasks.save(input({ usageGuard: below80('skip', true) }), task.id)
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+      expect(fake.created).toHaveLength(1)
+
+      // The reading brings numbers that fit.
+      limits.whenRefreshed((id) => limits.set(id, 20))
+      await tasks.save(input({ usageGuard: below80() }), task.id)
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+      expect(fake.created).toHaveLength(2)
+      await tasks.dispose()
+    })
+
+    it('holds an API key to nothing, nor „Jetzt ausführen“', async () => {
+      limits.set('acc-claude', 99)
+      limits.set('acc-key', 99)
+      const tasks = make()
+      tasks.start()
+      await tasks.save(input({ account: 'acc-key', usageGuard: below80() }))
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      expect(fake.created).toHaveLength(1)
+      expect(limits.refreshed).toEqual([])
+
+      const manual = await tasks.save(input({ schedule: { kind: 'manual' }, usageGuard: below80('wait') }))
+      expect(await tasks.runNow(manual.id)).toMatchObject({ outcome: 'started', trigger: 'manual' })
+      await tasks.dispose()
+    })
   })
 })

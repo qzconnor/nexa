@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { CalendarClockIcon, CopyIcon, EllipsisIcon, MessageSquareIcon, PencilIcon, PlayIcon, PlusIcon, Trash2Icon } from '@lucide/vue'
+import {
+  CalendarClockIcon,
+  CircleSlashIcon,
+  CopyIcon,
+  EllipsisIcon,
+  GaugeIcon,
+  HourglassIcon,
+  MessageSquareIcon,
+  PencilIcon,
+  PlayIcon,
+  PlusIcon,
+  Trash2Icon,
+} from '@lucide/vue'
 import { computed, reactive } from 'vue'
 import { toast } from 'vue-sonner'
 import { PROVIDERS } from '@shared/providers'
-import { describeSchedule, type ScheduledTask } from '@shared/scheduled-tasks'
+import { describeSchedule, describeUsageGuard, type ScheduledTask, type TaskUsageGuard } from '@shared/scheduled-tasks'
 import AccountDot from '@/components/accounts/AccountDot.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { TASK_TEMPLATES, type TaskTemplate } from '@/components/scheduled/task-templates'
@@ -16,7 +28,7 @@ import { Switch } from '@/components/ui/switch'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
 import { attempt, errorMessage } from '@/lib/errors'
-import { formatWhen, runDetail, runLabel, sortTasks } from '@/lib/scheduled'
+import { formatWhen, runDetail, runLabel, sortTasks, waitDetail } from '@/lib/scheduled'
 import { cn } from '@/lib/utils'
 import { useAccountsStore } from '@/stores/accounts'
 import { useProjectsStore } from '@/stores/projects'
@@ -84,6 +96,15 @@ async function runNow(task: ScheduledTask): Promise<void> {
   } finally {
     starting.delete(task.id)
   }
+}
+
+function stopWaiting(task: ScheduledTask): void {
+  void attempt(() => store.stopWaiting(task.id), 'Warten ließ sich nicht abbrechen')
+}
+
+function limitsTooltip(guard: TaskUsageGuard): string {
+  const otherwise = guard.otherwise === 'wait' ? 'Passt es nicht, wartet der Lauf.' : 'Passt es nicht, fällt der Lauf aus.'
+  return `Limits: ${describeUsageGuard(guard)}. ${otherwise}`
 }
 
 function setEnabled(task: ScheduledTask, enabled: boolean): void {
@@ -163,6 +184,13 @@ async function remove(task: ScheduledTask): Promise<void> {
                 <AccountDot :color="accountOf(task)?.color" />
                 <span class="truncate">{{ accountOf(task)?.name ?? (task.account ? 'Account fehlt' : PROVIDERS[task.provider].short) }}</span>
               </span>
+              <!-- Only the symbol: the line is full already, the limits are in its tooltip. -->
+              <template v-if="task.usageGuard">
+                <span aria-hidden="true">·</span>
+                <span class="flex shrink-0 items-center" :aria-label="limitsTooltip(task.usageGuard)" v-tooltip="limitsTooltip(task.usageGuard)">
+                  <GaugeIcon class="size-3" />
+                </span>
+              </template>
             </span>
           </div>
 
@@ -172,7 +200,14 @@ async function remove(task: ScheduledTask): Promise<void> {
           </div>
 
           <div class="hidden w-44 shrink-0 flex-col items-end gap-0.5 text-xs md:flex">
-            <template v-if="task.runs[0]">
+            <template v-if="task.waiting">
+              <span class="text-muted-foreground tabular-nums">{{ formatWhen(task.waiting.since, now) }}</span>
+              <span class="flex items-center gap-1.5 text-warning" v-tooltip="waitDetail(task, task.waiting, now)">
+                <HourglassIcon class="size-3" />
+                wartet auf Limits
+              </span>
+            </template>
+            <template v-else-if="task.runs[0]">
               <span class="text-muted-foreground tabular-nums">{{ formatWhen(task.runs[0].at, now) }}</span>
               <span
                 :class="cn('flex items-center gap-1.5', task.runs[0].outcome === 'error' ? 'text-destructive' : 'text-muted-foreground')"
@@ -216,6 +251,7 @@ async function remove(task: ScheduledTask): Promise<void> {
                 <DropdownMenuItem @select="edit(task)"><PencilIcon />Bearbeiten</DropdownMenuItem>
                 <DropdownMenuItem @select="store.dialog = { kind: 'copy', id: task.id }"><CopyIcon />Duplizieren</DropdownMenuItem>
                 <DropdownMenuItem v-if="lastChat(task)" @select="chat.open(lastChat(task)!)"><MessageSquareIcon />Chat des letzten Laufs</DropdownMenuItem>
+                <DropdownMenuItem v-if="task.waiting" @select="stopWaiting(task)"><CircleSlashIcon />Nicht mehr warten</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" @select="remove(task)"><Trash2Icon />Löschen</DropdownMenuItem>
               </DropdownMenuContent>
