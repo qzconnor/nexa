@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { CalendarClockIcon, SettingsIcon, ShapesIcon, SquarePenIcon } from '@lucide/vue'
+import { CalendarClockIcon, InboxIcon, SettingsIcon, ShapesIcon, SquarePenIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
 import { useListKeys } from '@/composables/useListKeys'
+import { chatCounts } from '@/lib/chat-state'
 import { cn } from '@/lib/utils'
 import { useShownDeviceStore } from '@/stores/device'
 import { useDevicesStore } from '@/stores/devices'
+import { useInboxStore } from '@/stores/inbox'
+import { useProjectsStore } from '@/stores/projects'
 import { useScheduledStore } from '@/stores/scheduled'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
-import { useUiStore, type SidebarFilter } from '@/stores/ui'
+import { PAGE_VIEWS, useUiStore, type SidebarFilter } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
 import DeviceScope from './DeviceScope.vue'
 import SidebarDevice from './SidebarDevice.vue'
@@ -20,16 +23,17 @@ import SidebarPinned from './SidebarPinned.vue'
 import SidebarTree from './SidebarTree.vue'
 
 /**
- * A new chat, the artifacts and scheduled tasks, the pinned chats of all devices (SidebarPinned), and
- * the projects with their chats (SidebarTree): this device's, and below them those of every other
- * device it controls (Remote Control), each the same. A switch between the two narrows the projects to
- * the chats that run.
+ * A new chat, the inbox, the artifacts and scheduled tasks, the pinned chats of all devices
+ * (SidebarPinned), and the projects with their chats (SidebarTree): this device's, and below them those
+ * of every other device it controls (Remote Control), each the same. A switch between the two narrows
+ * the projects to the chats that run.
  */
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const updates = useUpdatesStore()
 const scheduled = useScheduledStore()
+const inbox = useInboxStore()
 const devices = useDevicesStore()
 const shown = useShownDeviceStore()
 const chat = useChatActions()
@@ -52,8 +56,9 @@ const now = useClock(60_000)
 const newChat = () => chat.newChat()
 /** The start page is where a new chat begins: its button shows it as the page on screen, as a chat's row does. */
 const onStartPage = computed(
-  () => !shown.device && !(ui.view === 'chat' && sessions.active) && !['artifacts', 'scheduled'].includes(ui.view) && settings.settings.setup.done,
+  () => !shown.device && !(ui.view === 'chat' && sessions.active) && !PAGE_VIEWS.includes(ui.view) && settings.settings.setup.done,
 )
+const onInbox = computed(() => ui.view === 'inbox')
 const onArtifacts = computed(() => ui.view === 'artifacts')
 const onScheduled = computed(() => ui.view === 'scheduled')
 
@@ -61,6 +66,25 @@ const FILTERS: { value: SidebarFilter; label: string }[] = [
   { value: 'all', label: 'Alle' },
   { value: 'live', label: 'Aktiv' },
 ]
+
+/**
+ * On the switch, what each side shows: the chats in the projects (not archived, as the tree has them)
+ * and how many of them run, of this device and every other one whose chats are loaded below.
+ */
+const counts = computed<Record<SidebarFilter, number>>(() => {
+  const total = { all: 0, live: 0 }
+  for (const id of [null, ...devices.devices.filter((d) => d.state === 'ready').map((d) => d.id)]) {
+    const projectIds = new Set(useProjectsStore(id).projects.map((p) => p.id))
+    const chats = useSessionsStore(id)
+    const { all, live } = chatCounts(
+      chats.metas.filter((m) => !m.archived && projectIds.has(m.projectId)),
+      chats.runtime,
+    )
+    total.all += all
+    total.live += live
+  }
+  return total
+})
 
 const nav = ref<HTMLElement | null>(null)
 // The arrows from row to row, open and close what has rows in it (useListKeys), across the devices.
@@ -78,6 +102,18 @@ useListKeys(nav)
       >
         <SquarePenIcon />
         Neuer Chat
+      </Button>
+      <Button
+        variant="ghost"
+        :class="cn('justify-start gap-2 px-2.5', onInbox && 'bg-sidebar-accent')"
+        :aria-current="onInbox ? 'page' : undefined"
+        @click="ui.view = 'inbox'"
+      >
+        <InboxIcon />
+        <span class="flex-1 text-left">Posteingang</span>
+        <!-- A question waits: with the mark a waiting chat has in its row. -->
+        <span v-if="inbox.waiting" class="pulse-ring size-2 rounded-full bg-warning" aria-label="Ein Chat wartet auf eine Antwort" role="img" />
+        <span v-if="inbox.attention" class="text-[0.7rem] text-muted-foreground tabular-nums">{{ inbox.attention }}</span>
       </Button>
       <Button
         variant="ghost"
@@ -112,10 +148,16 @@ useListKeys(nav)
         v-model="ui.sidebarFilter"
         :options="FILTERS"
         block
+        size="sm"
         class="mt-2"
         aria-label="Welche Chats die Projekte zeigen"
         @mousedown.prevent
-      />
+      >
+        <template #option="{ option }">
+          {{ option.label }}
+          <span class="text-[0.7rem] tabular-nums opacity-60">{{ counts[option.value] }}</span>
+        </template>
+      </SegmentedControl>
       <SidebarTree :now="now" />
       <DeviceScope v-for="d in devices.devices" :key="d.id" :device="d.id">
         <SidebarDevice :device="d" :now="now" />

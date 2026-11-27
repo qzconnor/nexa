@@ -8,7 +8,9 @@ import { isChatWindow } from '@/lib/chat-window'
 import type { SettingsAnchor } from '@/lib/settings-index'
 import { useChatWindowsStore } from './chat-windows'
 
-export type MainView = 'chat' | 'home' | 'artifacts' | 'scheduled'
+export type MainView = 'chat' | 'home' | 'inbox' | 'artifacts' | 'scheduled'
+/** The pages of the sidebar's buttons, in place of a chat or the start page. */
+export const PAGE_VIEWS: readonly MainView[] = ['inbox', 'artifacts', 'scheduled']
 export type SettingsSection =
   | 'general'
   | 'appearance'

@@ -87,8 +87,10 @@ function submit(): void {
         @input="!q.multiSelect && other[q.id].trim() && (picked[q.id] = [])"
       />
     </fieldset>
-    <div>
+    <div class="flex flex-wrap items-center gap-2">
       <Button type="submit" size="sm" :disabled="busy || !complete">Antworten</Button>
+      <!-- What the card adds to the answers (InteractionStop). -->
+      <slot name="actions" />
     </div>
   </form>
 </template>

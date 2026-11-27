@@ -96,6 +96,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `files/checkpoints.ts` | Nexas Checkpoints für alle CLIs: die Ordner eines Chats vor jedem Prompt und am Ende seines Turns in einem Schatten-Repository je Ordner (Datenordner `checkpoints/`), was jeder Prompt geändert hat, Zurückspulen mit Vorschau und Zurücknehmen; siehe „Checkpoints“ und PROTOCOLS.md, „Checkpoints (Nexa)“ |
 | `window/*` | Hauptfenster und Fenster der Chats (`createAppWindow`, Art je Fenster: `windowKind`), Fensterzustand, Material (Mica/Acryl), Datei-Protokoll |
 | `window/chat-windows.ts` | Chats in eigenen Fenstern: welches Fenster welchen Chat zeigt, Übergabe von Entwurf und Panels, Rückfrage beim Schließen, Lage je Chat und die beim Beenden offenen in `chat-windows.json`; Kanäle `chat-windows:*` in `chat-windows-ipc.ts`, siehe „Chats in eigenen Fenstern“ |
+| `window/app-dialogs.ts` | Fragen und Hinweise von Main (Beenden, während Chats arbeiten; `nx` scheitert) im Dialog des Hauptfensters (`ui.confirm`), nie in einem Fenster des Systems: holt das Hauptfenster nach vorn (auch aus dem Infobereich oder minimiert), schickt `event:app-dialog` und wartet auf `app:dialog-answer`. Eine Seite, die erst später zuhört (lädt noch, neu geladen), holt Offenes über `app:dialogs-pending`; geht das Fenster vor der Antwort, gilt die Vorgabe der Frage (Beenden: ja). Datei- und Ordnerwahl bleiben die des Systems |
 | `window/window-place.ts` | Lage eines Fensters: gemerkte Bounds nur, wenn sie auf einem Bildschirm liegen, das Fenster eines Chats sonst versetzt neben dem Hauptfenster |
 | `lib/per-window.ts` | Listen, die jedes Fenster ganz schickt (überwachte Ordner, Git-Ordner): je Fenster gemerkt, zusammen angewandt, beim Schließen eines Fensters ohne dessen Liste |
 | `window/tray.ts` | Symbol im Infobereich (Einstellung `general.runInTray`): Schließen blendet das Fenster dann nur aus, das Menü öffnet und beendet. Unter Windows öffnet ein Rechtsklick Nexas eigenes Menü (`tray-menu.ts`), unter macOS und Linux das des Systems |
@@ -737,7 +738,14 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   (`apiOf(…).sessions.search`, nur online), ein Gerät, das nicht antwortet, kostet nur seine Treffer.
   Projekte eines anderen Geräts für einen neuen Chat nur mit Stufe „Prompts senden“ (`lib/device-chats.ts`).
 - `stores/accounts.ts`: Accounts, laufende Logins, Vorgabe je CLI, Account eines Chats (`sessionAccount`).
-- **Artefakte** (`views/ArtifactsView.vue`, `ui.view = 'artifacts'`, Eintrag unter „Neuer Chat“): Claudes
+- **Posteingang** (`views/InboxView.vue`, `ui.view = 'inbox'`, Eintrag unter „Neuer Chat“ mit der Zahl der
+  Chats, die etwas wollen, und dem Punkt eines wartenden Chats): wie die Inbox der PWA die Chats dieses
+  und jedes geladenen anderen Geräts in „Wartet auf dich“, „Fehler und Limit“, „Fertig, ungelesen“ und
+  „Läuft gerade“ (`shared/inbox.ts`). Rückfragen, Freigaben und Pläne stehen als `InteractionCard` unter
+  ihrem Chat und lassen sich dort beantworten. `stores/inbox.ts` fragt jedes Gerät nach `sessions:inbox`
+  und fragt neu, wenn sich seine Chats, ein Status oder eine Rückfrage ändern; `lib/inbox.ts` lässt weg,
+  was hier archiviert oder gelöscht ist, und „ungelesen“ nur, solange die Seitenleiste es auch zeigt.
+- **Artefakte** (`views/ArtifactsView.vue`, `ui.view = 'artifacts'`, Eintrag unter „Posteingang“): Claudes
   Artefakte des gewählten Accounts als Karten mit Vorschaubild, Suche und Filtern (`lib/artifacts.ts`).
   `stores/artifacts.ts` hält Listen und Bilder, solange die App läuft, und fragt
   `SessionService.artifactChats` nach dem Chat jedes Artefakts (liest jeden gespeicherten Chat einmal, bis

@@ -111,9 +111,11 @@ function submit(): void {
         class="h-8 bg-background/60 text-sm"
       />
     </div>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap items-center gap-2">
       <Button type="submit" size="sm" :disabled="busy || !complete">{{ request.submitLabel || 'Senden' }}</Button>
       <Button type="button" variant="outline" size="sm" :disabled="busy" @click="emit('decline')">Ablehnen</Button>
+      <!-- What the card adds to the answers (InteractionStop). -->
+      <slot name="actions" />
     </div>
   </form>
 </template>

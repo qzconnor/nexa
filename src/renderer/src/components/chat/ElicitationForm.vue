@@ -55,12 +55,14 @@ const complete = computed(() => fields.value.every((f) => !f.required || (values
   <div class="flex flex-col gap-3">
     <p class="text-[0.88rem] whitespace-pre-wrap">{{ request.message }}</p>
     <template v-if="request.url">
-      <div class="flex flex-wrap gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <Button size="sm" @click="openPage">
           <ExternalLinkIcon />
           Öffnen und fortfahren
         </Button>
         <Button variant="outline" size="sm" @click="emit('answer', 'decline')">Ablehnen</Button>
+        <!-- What the card adds to the answers (InteractionStop). -->
+        <slot name="actions" />
       </div>
     </template>
     <form v-else class="flex flex-col gap-3" @submit.prevent="submit">
@@ -76,9 +78,10 @@ const complete = computed(() => fields.value.every((f) => !f.required || (values
         </Select>
         <Input v-else v-model="values[field.key] as string" :type="field.type === 'number' ? 'number' : 'text'" class="h-8 text-sm" />
       </label>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" :disabled="busy || !complete">Senden</Button>
         <Button type="button" variant="outline" size="sm" :disabled="busy" @click="emit('answer', 'decline')">Ablehnen</Button>
+        <slot name="actions" />
       </div>
     </form>
   </div>

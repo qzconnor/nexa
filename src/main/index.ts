@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, nativeTheme, powerMonitor, shell, type MessageBoxOptions } from 'electron'
+import { app, BrowserWindow, nativeTheme, powerMonitor, shell, type IpcMainInvokeEvent } from 'electron'
 import { ChatWindowsEvent, type MainWindowRequest } from '@shared/chat-windows'
 import { PUSH_AWAY_MINUTES } from '@shared/defaults'
 import { IpcEvent, IpcInvoke } from '@shared/ipc'
@@ -24,7 +24,7 @@ import { GitService } from './files/git-service'
 import { ClaudeManagerImport } from './import/claude-manager'
 import { CliSessionImport } from './import/cli-import'
 import { registerImportIpc } from './import/import-ipc'
-import { broadcast, forwardWindowState, registerIpc } from './ipc'
+import { broadcast, forwardWindowState, handle, registerIpc } from './ipc'
 import { isLaunchRequest, readLaunchRequest, resolveLaunch, type LaunchRequest } from './launch'
 import type { AccountEnv } from './accounts/account-env'
 import { AccountService } from './accounts/account-service'
@@ -69,6 +69,7 @@ import { ChatWindows } from './window/chat-windows'
 import { applySpellcheck } from './window/edit-menu'
 import { registerChatWindowsIpc } from './window/chat-windows-ipc'
 import { handleFileProtocol, registerFileScheme, setRemoteImages, type RemoteImage } from './window/file-protocol'
+import { AppDialogs } from './window/app-dialogs'
 import { createChatWindow, createMainWindow, openAppWindows, revealWindow, setWindowZoom } from './window/main-window'
 import { AppTray } from './window/tray'
 import { TrayMenu } from './window/tray-menu'
@@ -184,6 +185,38 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
     revealWindow(win)
     if (channel) sendWhenLoaded(win, channel, ...args)
   }
+  /**
+   * What the main process asks or tells, in the main window's own dialog: never a native box. The
+   * window comes to the front for it, also from the notification area or minimized.
+   */
+  const dialogs = new AppDialogs(() => {
+    const win = liveMainWindow() ?? openWindow()
+    revealWindow(win)
+    return {
+      // Still loading, the page asks for what is open itself once it listens (`pendingDialogs`).
+      show: (request) => {
+        if (!win.webContents.isLoading()) win.webContents.send(IpcEvent.appDialog, request)
+      },
+      onGone: (cb) => {
+        const contents = win.webContents
+        win.on('closed', cb)
+        contents.on('render-process-gone', cb)
+        return () => {
+          win.removeListener('closed', cb)
+          if (!contents.isDestroyed()) contents.removeListener('render-process-gone', cb)
+        }
+      },
+    }
+  })
+  const fromMainWindow = (event: IpcMainInvokeEvent) => event.sender === liveMainWindow()?.webContents
+  handle(
+    IpcInvoke.appDialogAnswer,
+    (_e, id: unknown, ok: unknown) => {
+      if (typeof id === 'number') dialogs.answer(id, ok === true)
+    },
+    fromMainWindow,
+  )
+  handle(IpcInvoke.appDialogsPending, () => dialogs.pending(), fromMainWindow)
   /** The app is quitting: the windows really close instead of going to the notification area or asking. */
   let quitting = false
 
@@ -428,15 +461,7 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
       show(sessionId)
       if (plan.prompt) await sessions.send(sessionId, { text: plan.prompt })
     } catch (error) {
-      const win = mainWindow
-      const options = {
-        type: 'warning' as const,
-        title: APP_NAME,
-        message: '„nx“ konnte keinen Chat öffnen',
-        detail: error instanceof Error ? error.message : String(error),
-      }
-      if (win && !win.isDestroyed()) void dialog.showMessageBox(win, options)
-      else void dialog.showMessageBox(options)
+      dialogs.tell({ title: '„nx“ konnte keinen Chat öffnen', description: error instanceof Error ? error.message : String(error), warning: true })
     }
   }
 
@@ -507,19 +532,18 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
   const askToQuit = (): Promise<boolean> => {
     askingToQuit ??= (async () => {
       const work = runningWork()
-      const options: MessageBoxOptions = {
-        type: 'question',
-        title: APP_NAME,
-        message: 'Nexa beenden?',
-        detail: `${work.join(', ')}. Beim Beenden brechen die Antworten ab und die Befehle enden; die Chats lassen sich danach fortsetzen.`,
-        buttons: ['Beenden', 'Abbrechen'],
-        defaultId: 1,
-        cancelId: 1,
-        noLink: true,
-      }
-      const win = liveMainWindow()
-      const { response } = win?.isVisible() ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
-      if (response === 0) quitConfirmed = true
+      // In the main window, which comes to the front for it (from the tray, the taskbar, minimized).
+      // Should it go before answering, Nexa quits as asked: nothing could answer any more.
+      const quit = await dialogs.ask(
+        {
+          title: 'Nexa beenden?',
+          description: `${work.join(', ')}. Beim Beenden brechen die Antworten ab und die Befehle enden; die Chats lassen sich danach fortsetzen.`,
+          confirmText: 'Beenden',
+          destructive: true,
+        },
+        true,
+      )
+      if (quit) quitConfirmed = true
       return quitConfirmed
     })().finally(() => (askingToQuit = null))
     return askingToQuit

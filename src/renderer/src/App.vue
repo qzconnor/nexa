@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import type { AppDialogRequest } from '@shared/types'
 import BrowserLayer from '@/components/browser/BrowserLayer.vue'
 import ChatView from '@/components/chat/ChatView.vue'
 import AppTooltip from '@/components/common/AppTooltip.vue'
@@ -49,6 +50,7 @@ const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/
 const SettingsImportDialog = defineAsyncComponent(() => import('@/components/settings/SettingsImportDialog.vue'))
 const ThemeEditorDialog = defineAsyncComponent(() => import('@/components/themes/ThemeEditorDialog.vue'))
 const ArtifactsView = defineAsyncComponent(() => import('@/views/ArtifactsView.vue'))
+const InboxView = defineAsyncComponent(() => import('@/views/InboxView.vue'))
 const ScheduledTaskDialog = defineAsyncComponent(() => import('@/components/scheduled/ScheduledTaskDialog.vue'))
 const ScheduledView = defineAsyncComponent(() => import('@/views/ScheduledView.vue'))
 const SetupView = defineAsyncComponent(() => import('@/views/SetupView.vue'))
@@ -112,6 +114,20 @@ if (isChatWindow) {
       if (gone) chatActions.newChat(sessions.active?.projectId ?? null)
     },
   )
+
+  // What the main process asks or tells (quitting while chats work, `nx` failing): in the app's own
+  // dialog, never a native box. Asked before the page listened, it comes with `pendingDialogs`.
+  const shownDialogs = new Set<number>()
+  const showDialog = ({ id, ...options }: AppDialogRequest) => {
+    if (shownDialogs.has(id)) return
+    shownDialogs.add(id)
+    void ui.confirm(options).then((ok) => window.api.app.answerDialog(id, ok))
+  }
+  window.api.app.onDialog(showDialog)
+  void window.api.app
+    .pendingDialogs()
+    .then((list) => list.forEach(showDialog))
+    .catch(() => undefined)
 }
 
 /** A chat's own window: its chat, with what came along from the main window. */
@@ -186,7 +202,8 @@ onMounted(async () => {
           </DeviceScope>
           <!-- A chat's own window shows that chat and nothing else. -->
           <template v-else-if="!isChatWindow">
-            <ArtifactsView v-if="ui.view === 'artifacts'" />
+            <InboxView v-if="ui.view === 'inbox'" />
+            <ArtifactsView v-else-if="ui.view === 'artifacts'" />
             <ScheduledView v-else-if="ui.view === 'scheduled'" />
             <!-- Chats stay reachable; only this device's start page waits for the setup. -->
             <SetupView v-else-if="!shown.device && !settings.settings.setup.done" />

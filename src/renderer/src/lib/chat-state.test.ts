@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { groupState, isLive } from './chat-state'
+import type { SessionRuntime } from '@shared/chat'
+import type { SessionMeta } from '@shared/types'
+import { chatCounts, groupState, isLive } from './chat-state'
 
 describe('isLive', () => {
   it('counts a chat whose CLI is up, also while it waits for the next prompt', () => {
@@ -16,6 +18,24 @@ describe('isLive', () => {
     expect(isLive({ status: 'idle', connected: false })).toBe(false)
     expect(isLive({ status: 'stopped', connected: false })).toBe(false)
     expect(isLive({ status: 'error', connected: false, error: 'Der Prozess endete.' })).toBe(false)
+  })
+})
+
+describe('chatCounts', () => {
+  const chat = (id: string) => ({ id }) as SessionMeta
+  const runtimes: Record<string, SessionRuntime> = {
+    a: { status: 'running', connected: true },
+    b: { status: 'idle', connected: true },
+    c: { status: 'stopped', connected: false },
+  }
+  const runtime = (id: string): SessionRuntime => runtimes[id] ?? { status: 'idle', connected: false }
+
+  it('counts every chat and those that run, idle ones whose CLI is up too', () => {
+    expect(chatCounts([chat('a'), chat('b'), chat('c'), chat('d')], runtime)).toEqual({ all: 4, live: 2 })
+  })
+
+  it('is zero without chats', () => {
+    expect(chatCounts([], runtime)).toEqual({ all: 0, live: 0 })
   })
 })
 

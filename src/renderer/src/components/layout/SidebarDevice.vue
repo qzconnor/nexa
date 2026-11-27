@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { useShownDeviceStore } from '@/stores/device'
 import { useDevicesStore, type RemoteDevice } from '@/stores/devices'
 import { useSessionsStore } from '@/stores/sessions'
-import { useUiStore } from '@/stores/ui'
+import { PAGE_VIEWS, useUiStore } from '@/stores/ui'
 import SidebarTree from './SidebarTree.vue'
 
 /**
@@ -26,7 +26,7 @@ const chat = useChatActions()
 const open = computed(() => !ui.foldedDevices.has(props.device.id))
 /** Its start page is on screen: the button for a new chat shows it, as the one on top does for this device. */
 const onStartPage = computed(
-  () => shown.device === props.device.id && !(ui.view === 'chat' && sessions.active) && !['artifacts', 'scheduled'].includes(ui.view),
+  () => shown.device === props.device.id && !(ui.view === 'chat' && sessions.active) && !PAGE_VIEWS.includes(ui.view),
 )
 const canStart = computed(() => props.device.state === 'ready' && devices.can(props.device.id, 'prompt'))
 
