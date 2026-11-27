@@ -43,7 +43,9 @@ import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -673,23 +675,40 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="w-56">
-              <DropdownMenuItem @select="startRename"><PencilIcon /> Umbenennen</DropdownMenuItem>
-              <DropdownMenuItem :disabled="!!diff" @select="openFind"><SearchIcon /> Im Chat suchen <DropdownMenuShortcut>Strg+F</DropdownMenuShortcut></DropdownMenuItem>
-              <DropdownMenuItem :disabled="busy" @select="chatActions.fork(meta.id)"><GitForkIcon /> Chat abzweigen</DropdownMenuItem>
-              <DropdownMenuItem v-if="project && !device" @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
-              <DropdownMenuItem v-if="project && !device" @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</DropdownMenuItem>
-              <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit {{ syncNames }} abgleichen</DropdownMenuItem>
-              <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
-              <DropdownMenuItem v-if="!device" @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
-              <DropdownMenuItem @select="openChanges()"><RotateCcwIcon /> Änderungen je Prompt …</DropdownMenuItem>
-              <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
-              <DropdownMenuItem :disabled="restarting" @select="restart"><RotateCwIcon /> Chat neu starten</DropdownMenuItem>
-              <DropdownMenuItem v-if="!device" @select="popOut">
-                <SquareArrowDownLeftIcon v-if="isChatWindow" />
-                <SquareArrowOutUpRightIcon v-else />
-                {{ popOutLabel }}
-              </DropdownMenuItem>
-              <DropdownMenuItem @select="chatActions.end(meta)"><PowerIcon /> Chat beenden</DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Chat</DropdownMenuLabel>
+                <DropdownMenuItem @select="startRename"><PencilIcon /> Umbenennen</DropdownMenuItem>
+                <DropdownMenuItem :disabled="busy" @select="chatActions.fork(meta.id)"><GitForkIcon /> Chat abzweigen</DropdownMenuItem>
+                <DropdownMenuItem v-if="!device" @select="popOut">
+                  <SquareArrowDownLeftIcon v-if="isChatWindow" />
+                  <SquareArrowOutUpRightIcon v-else />
+                  {{ popOutLabel }}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Verlauf</DropdownMenuLabel>
+                <DropdownMenuItem :disabled="!!diff" @select="openFind"><SearchIcon /> Im Chat suchen <DropdownMenuShortcut>Strg+F</DropdownMenuShortcut></DropdownMenuItem>
+                <DropdownMenuItem @select="chatActions.copyLastAnswer(meta.id)"><CopyIcon /> Letzte Antwort kopieren</DropdownMenuItem>
+                <DropdownMenuItem v-if="!device" @select="chatActions.exportMarkdown(meta.id)"><FileDownIcon /> Als Markdown speichern …</DropdownMenuItem>
+                <DropdownMenuItem @select="openChanges()"><RotateCcwIcon /> Änderungen je Prompt …</DropdownMenuItem>
+              </DropdownMenuGroup>
+              <template v-if="project && !device">
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Projekt</DropdownMenuLabel>
+                  <DropdownMenuItem @select="openFolder"><FolderOpenIcon /> Projektordner öffnen</DropdownMenuItem>
+                  <DropdownMenuItem @select="ui.startCommandsProject = project.id"><SquareTerminalIcon /> Startbefehle …</DropdownMenuItem>
+                </DropdownMenuGroup>
+              </template>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Sitzung</DropdownMenuLabel>
+                <DropdownMenuItem @select="statusOpen = true"><InfoIcon /> Status</DropdownMenuItem>
+                <DropdownMenuItem v-if="syncable" :disabled="busy" @select="syncNow"><RefreshCwIcon /> Mit {{ syncNames }} abgleichen</DropdownMenuItem>
+                <DropdownMenuItem :disabled="restarting" @select="restart"><RotateCwIcon /> Chat neu starten</DropdownMenuItem>
+                <DropdownMenuItem @select="chatActions.end(meta)"><PowerIcon /> Chat beenden</DropdownMenuItem>
+              </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem class="text-destructive" @select="remove"><Trash2Icon /> Löschen</DropdownMenuItem>
             </DropdownMenuContent>
