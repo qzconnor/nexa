@@ -14,7 +14,7 @@ export class FakeServer {
   readonly sockets: FakeSocket[] = []
   /** Every `send` the server relayed, for tests that look at what went where. */
   readonly relayed: { from: string; to: string; kind: string }[] = []
-  info: unknown = { name: 'nexa-server', version: '0.1.0', protocol: 1 }
+  info: unknown = { name: 'nexa-server', version: '0.1.0', protocol: 1, pwa: false }
   /** The server's clock, for tests of a device whose clock is off. */
   now = (): number => Date.now()
   /** As `ready` tells them (null: it doesn't, like a server from before `limits`); the size is enforced. */

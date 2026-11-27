@@ -436,6 +436,6 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       - [x] App als Host: Geräte mit der Rolle `controller` nicht als Rechner, Lesestand je Chat auf dem
             Host (`sessions:seen`, „ungelesen“ auf allen Geräten gleich), Stand für die Inbox in einer
             Antwort (`sessions:inbox`).
-      - [ ] QR-Code zum Koppeln unter „Gerät hinzufügen“.
+      - [x] QR-Code zum Koppeln unter „Gerät hinzufügen“, wenn der Server die PWA ausliefert.
       - [ ] Web Push für Rückfragen, Freigaben, fertige Antworten und Limits.
     - [ ] Phase 4: Settings-Sync, mit Wiederherstellungscode.

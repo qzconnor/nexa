@@ -62,8 +62,9 @@ Was der Server kennt:
    Schlüssel des Namespace und die eigenen Schlüssel und meldet die Instanz an.
 2. **Jede weitere Instanz**: Auf einer gekoppelten Instanz „Gerät hinzufügen“. Sie holt beim Server eine
    neue Einladung (15 Minuten, einmal) und zeigt einen Kopplungscode (`nexa1:…`) mit URL, Einladung und
-   Schlüssel des Namespace zum Kopieren; fürs Handy später als QR-Code. Die neue Instanz liest ihn und ist
-   drin, sobald sie sich den anderen vorgestellt hat (siehe „Mitglieder und Schlüssel“).
+   Schlüssel des Namespace zum Kopieren; liefert der Server die PWA aus, dazu als QR-Code fürs Handy (siehe
+   „PWA“). Die neue Instanz liest ihn und ist drin, sobald sie sich den anderen vorgestellt hat (siehe
+   „Mitglieder und Schlüssel“).
 3. Der Schlüssel steht nur im Kopplungscode, nie beim Server. Den Code zeigt nur ein Gerät, das schon
    dazugehört.
 
@@ -180,9 +181,13 @@ Entschieden am 26.11.2026:
     dich“ (Rückfrage, Freigabe, Plan, direkt dort beantwortbar), „Fehler und Limit“, „Fertig, ungelesen“,
     „Läuft gerade“.
   - *Chats*: Rechner, Projekte und Chats wie in der Seitenleiste; ein Chat als eigene Seite mit Eingabe.
-- **Koppeln per QR-Code**: Der Code ist ein Link `https://<server>/app#nexa1:…`. Der Kopplungscode steht
-  hinter dem `#`, der nie an den Server geht (er enthält den Schlüssel des Namespace). Die App zeigt ihn
-  unter „Gerät hinzufügen“, wenn der Server die PWA ausliefert (`/v1/info`).
+- **Koppeln per QR-Code**: Der Code ist ein Link `<u>/app/#nexa1:…` (`webAppPairingLink`). `<u>` ist genau
+  die Adresse aus dem Kopplungscode, denn die PWA vergleicht sie mit ihrer eigenen Herkunft und lehnt eine
+  andere Schreibweise ab. Mit Schrägstrich, weil `/app` nur dorthin umleitet. Der Kopplungscode steht
+  unverändert hinter dem `#`, der nie an den Server geht (er enthält den Schlüssel des Namespace). Die App
+  fragt bei jedem „Gerät hinzufügen“ neben der Einladung `/v1/info` und zeigt den QR-Code nur bei
+  `pwa: true`; scheitert die Frage, kommt der Code ohne ihn. Die PWA füllt Code und Gerätenamen vor,
+  gekoppelt wird erst auf Knopfdruck.
 - **Web Push mit VAPID**: Jeder Server erzeugt seine eigenen VAPID-Schlüssel und spricht die Push-Dienste
   von Apple, Google und Mozilla direkt an. Kein Entwicklerkonto, kein zentrales Gateway. Ungeprüft: iOS ab
   16.4, nur wenn die PWA auf dem Home-Bildschirm liegt.
@@ -200,7 +205,8 @@ Was die App als Host dafür hat (`PROTOCOLS.md`, „Remote Control“):
 - Den Lesestand je Chat auf dem Host (`finishedAt`, `seenAt`, `sessions:seen`), an alle Geräte gemeldet,
   damit „Fertig, ungelesen“ überall gleich ist.
 - Den Stand für die Inbox in einer Antwort (`sessions:inbox`), mit den offenen Rückfragen.
-- Noch offen: der QR-Code unter „Gerät hinzufügen“; später die verschlüsselten Benachrichtigungen für Push.
+- Den QR-Code unter „Gerät hinzufügen“ (siehe oben).
+- Noch offen: die verschlüsselten Benachrichtigungen für Push.
 
 ## Settings-Sync
 
