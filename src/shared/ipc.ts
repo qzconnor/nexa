@@ -13,6 +13,7 @@ import type { SettingsImportPreview } from './settings-transfer'
 import type { AppTheme, CustomThemeEntry, ThemeContent, ThemeImportResult } from './themes/types'
 import type {
   ApiStatus,
+  AppDialogRequest,
   AppInfo,
   AppSettings,
   CommandOption,
@@ -65,6 +66,10 @@ export const IpcInvoke = {
   appPickFiles: 'app:pick-files',
   appSaveImage: 'app:save-image',
   appListFonts: 'app:list-fonts',
+  /** The main window's answer to a question of the main process (`IpcEvent.appDialog`). */
+  appDialogAnswer: 'app:dialog-answer',
+  /** The questions still open, for a main window that starts listening. */
+  appDialogsPending: 'app:dialogs-pending',
 
   windowMinimize: 'window:minimize',
   windowToggleMaximize: 'window:toggle-maximize',
@@ -178,6 +183,8 @@ export const IpcInvoke = {
 
 /** Events from main to the window. */
 export const IpcEvent = {
+  /** A question or message of the main process, for the main window's own dialog (`AppDialogRequest`). */
+  appDialog: 'event:app-dialog',
   windowState: 'event:window-state',
   settingsChanged: 'event:settings-changed',
   /** A file in the themes folder came, went or changed (also by hand). */
@@ -276,6 +283,12 @@ export interface NexaApi {
     /** The installed font families, for the font pickers of the settings. */
     listFonts(): Promise<string[]>
     pathForFile(file: File): string
+    /** What the main process asks or tells (quitting while chats work, …): in the app, never a native box. */
+    onDialog(cb: (request: AppDialogRequest) => void): Unsubscribe
+    /** The answer to `onDialog`'s request: true for its button, false when cancelled. */
+    answerDialog(id: number, ok: boolean): Promise<void>
+    /** What was asked before the window listened (it loaded, or reloaded, meanwhile). */
+    pendingDialogs(): Promise<AppDialogRequest[]>
   }
   window: {
     minimize(): Promise<void>

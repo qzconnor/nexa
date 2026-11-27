@@ -209,6 +209,9 @@ const api: NexaApi = {
     saveImage: (data, mime) => invoke(IpcInvoke.appSaveImage, data, mime),
     listFonts: () => invoke(IpcInvoke.appListFonts),
     pathForFile: (file) => webUtils.getPathForFile(file),
+    onDialog: (cb) => subscribe(IpcEvent.appDialog, cb),
+    answerDialog: (id, ok) => invoke(IpcInvoke.appDialogAnswer, id, ok),
+    pendingDialogs: () => invoke(IpcInvoke.appDialogsPending),
   },
   window: {
     minimize: () => invoke(IpcInvoke.windowMinimize),
