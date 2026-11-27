@@ -101,7 +101,9 @@ useListKeys(nav)
       </Button>
     </div>
 
-    <nav ref="nav" class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+    <!-- The scroll bar's gutter always: „Aktiv“ is often short enough to need none, and the switch and rows
+         would grow and shrink by its width with every change. The gutter is the right margin then. -->
+    <nav ref="nav" class="min-h-0 flex-1 overflow-y-auto pb-2 pl-2 [scrollbar-gutter:stable]">
       <SidebarPinned :now="now" />
       <!-- For the projects below, on every device; the pinned above stay as they are. -->
       <SegmentedControl v-model="ui.sidebarFilter" :options="FILTERS" block class="mt-2" aria-label="Welche Chats die Projekte zeigen" />
