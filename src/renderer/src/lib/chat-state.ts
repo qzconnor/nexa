@@ -1,5 +1,16 @@
+import type { SessionRuntime } from '@shared/chat'
+
 /** What a chat shows at a glance: its CLI works, waits for the user, finished while elsewhere, or failed. */
 export type ChatState = 'running' | 'waiting' | 'unread' | 'error' | null
+
+/**
+ * The chat runs: its CLI is up, idle or not, until the chat ends or the app quits. A run comes up with
+ * the first prompt, not when the chat is opened, so this is what the user set going. While it starts
+ * the process may not count as up yet, the chat runs all the same.
+ */
+export function isLive(runtime: SessionRuntime): boolean {
+  return runtime.connected || runtime.status === 'starting' || runtime.status === 'running' || runtime.status === 'waiting'
+}
 
 /** What the chats of a folded project, folder or separator show as one. */
 export interface GroupState {

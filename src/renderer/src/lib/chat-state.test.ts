@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { groupState } from './chat-state'
+import { groupState, isLive } from './chat-state'
+
+describe('isLive', () => {
+  it('counts a chat whose CLI is up, also while it waits for the next prompt', () => {
+    expect(isLive({ status: 'idle', connected: true })).toBe(true)
+    expect(isLive({ status: 'running', connected: true })).toBe(true)
+  })
+
+  it('counts one that starts or works before its process says it is up', () => {
+    expect(isLive({ status: 'starting', connected: false })).toBe(true)
+    expect(isLive({ status: 'waiting', connected: false })).toBe(true)
+  })
+
+  it('leaves out what never started, ended or failed', () => {
+    expect(isLive({ status: 'idle', connected: false })).toBe(false)
+    expect(isLive({ status: 'stopped', connected: false })).toBe(false)
+    expect(isLive({ status: 'error', connected: false, error: 'Der Prozess endete.' })).toBe(false)
+  })
+})
 
 describe('groupState', () => {
   it('is empty without anything going on', () => {

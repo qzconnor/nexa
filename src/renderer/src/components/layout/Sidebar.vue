@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CalendarClockIcon, SettingsIcon, ShapesIcon, SquarePenIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
+import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
@@ -11,7 +12,7 @@ import { useDevicesStore } from '@/stores/devices'
 import { useScheduledStore } from '@/stores/scheduled'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
-import { useUiStore } from '@/stores/ui'
+import { useUiStore, type SidebarFilter } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
 import DeviceScope from './DeviceScope.vue'
 import SidebarDevice from './SidebarDevice.vue'
@@ -21,7 +22,8 @@ import SidebarTree from './SidebarTree.vue'
 /**
  * A new chat, the artifacts and scheduled tasks, the pinned chats of all devices (SidebarPinned), and
  * the projects with their chats (SidebarTree): this device's, and below them those of every other
- * device it controls (Remote Control), each the same.
+ * device it controls (Remote Control), each the same. A switch between the two narrows the projects to
+ * the chats that run.
  */
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
@@ -54,6 +56,11 @@ const onStartPage = computed(
 )
 const onArtifacts = computed(() => ui.view === 'artifacts')
 const onScheduled = computed(() => ui.view === 'scheduled')
+
+const FILTERS: { value: SidebarFilter; label: string }[] = [
+  { value: 'all', label: 'Alle' },
+  { value: 'live', label: 'Aktiv' },
+]
 
 const nav = ref<HTMLElement | null>(null)
 // The arrows from row to row, open and close what has rows in it (useListKeys), across the devices.
@@ -96,6 +103,8 @@ useListKeys(nav)
 
     <nav ref="nav" class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       <SidebarPinned :now="now" />
+      <!-- For the projects below, on every device; the pinned above stay as they are. -->
+      <SegmentedControl v-model="ui.sidebarFilter" :options="FILTERS" block class="mt-2" aria-label="Welche Chats die Projekte zeigen" />
       <SidebarTree :now="now" />
       <DeviceScope v-for="d in devices.devices" :key="d.id" :device="d.id">
         <SidebarDevice :device="d" :now="now" />

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useChatActions } from '@/composables/useChatActions'
 import { provideSessionDrag } from '@/composables/useSessionDrag'
+import { isLive } from '@/lib/chat-state'
 import { attempt } from '@/lib/errors'
 import { chatsIn, foldersOf, projectTree, type ProjectEntry } from '@/lib/session-tree'
 import { cn } from '@/lib/utils'
@@ -46,13 +47,20 @@ interface SectionGroup {
   chats: SessionMeta[]
 }
 
+/** Only the chats that run (the switch above the projects): the same tree without the others. */
+const liveOnly = computed(() => ui.sidebarFilter === 'live')
+
 /** Every separator with its projects and their chats, in the folders they work in (lib/session-tree.ts). */
 const groups = computed<SectionGroup[]>(() => {
-  const entries = projects.projects.map((project): ProjectEntry => {
-    const list = sessions.byProject(project.id)
-    return { project, count: list.length, tree: projectTree(project.id, project.path, list) }
-  })
-  return projects.sections.map((section) => {
+  const entries = projects.projects
+    .map((project): ProjectEntry => {
+      const chats = sessions.byProject(project.id)
+      const list = liveOnly.value ? chats.filter((m) => isLive(sessions.runtime(m.id))) : chats
+      return { project, count: list.length, tree: projectTree(project.id, project.path, list) }
+    })
+    // Filtered, a project without a running chat is left out, as a chat that doesn't run is.
+    .filter((e) => !liveOnly.value || e.count)
+  const all = projects.sections.map((section): SectionGroup => {
     const own = entries.filter((e) => sectionIdOf(e.project, projects.sections) === section.id)
     const root = own.find((e) => isSectionRoot(e.project, section)) ?? null
     return {
@@ -63,6 +71,7 @@ const groups = computed<SectionGroup[]>(() => {
       chats: own.flatMap((e) => chatsIn(e.tree)),
     }
   })
+  return liveOnly.value ? all.filter((g) => g.count) : all
 })
 
 // The folders of the chat on screen open, so it shows where it is (also when opened from elsewhere).
@@ -359,7 +368,13 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
       <div v-if="index === groups.length - 1 && lineBeforeSection(null)" class="pointer-events-none absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-primary" />
     </section>
 
+    <p v-if="liveOnly && !groups.length" class="px-2 py-1.5 text-xs text-muted-foreground">
+      {{ device ? 'Gerade läuft hier kein Chat.' : 'Gerade läuft kein Chat. Einer läuft ab der Nachricht, die du ihm schickst, bis er beendet wird.' }}
+    </p>
+
+    <!-- Filtered, the tree shows what runs, not where projects go. -->
     <button
+      v-if="!liveOnly"
       type="button"
       class="mt-1 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
       @click="newSection()"
