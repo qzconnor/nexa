@@ -49,11 +49,15 @@ export function keepForFile(key: string, path: string, value: unknown): void {
   // Each run tells its models again: only what changed goes to disk.
   if (before && before.size === stamp.size && before.mtimeMs === stamp.mtimeMs && JSON.stringify(before.value) === JSON.stringify(value)) return
   saved[id] = { ...stamp, value }
-  void writeJsonAtomic(file, saved).catch((error: unknown) => console.warn('[cli-cache] could not be saved', error))
+  writing = writeJsonAtomic(file, saved).catch((error: unknown) => console.warn('[cli-cache] could not be saved', error))
 }
 
-/** Forgets the cache, as if nothing were kept (tests). */
-export function resetCliCache(): void {
+/** The last write to the file, settled (failures are only logged). */
+let writing: Promise<void> = Promise.resolve()
+
+/** Forgets the cache, as if nothing were kept, once its writes are done (tests: before their folder goes). */
+export async function resetCliCache(): Promise<void> {
+  await writing
   file = null
   saved = {}
 }

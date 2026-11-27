@@ -17,7 +17,8 @@ describe('cli-cache', () => {
   })
 
   afterEach(async () => {
-    resetCliCache()
+    // The cache writes on its own: the folder goes only once that is done.
+    await resetCliCache()
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -30,8 +31,8 @@ describe('cli-cache', () => {
     keepCliCacheIn(cacheFile)
     keepForFile('version', cli, '1.0.0')
     expect(cachedForFile('version', cli)).toBe('1.0.0')
-    await expect.poll(() => readFile(cacheFile, 'utf8').catch(() => ''), { timeout: 5000 }).toContain('1.0.0')
-    resetCliCache()
+    await resetCliCache()
+    expect(await readFile(cacheFile, 'utf8')).toContain('1.0.0')
     keepCliCacheIn(cacheFile)
     expect(cachedForFile('version', cli)).toBe('1.0.0')
   })
