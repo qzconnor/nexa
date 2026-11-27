@@ -62,7 +62,8 @@ async function draw(): Promise<void> {
 
 onMounted(draw)
 // Mermaid sizes its boxes by the text in its font, so a new font needs a new drawing.
-watch(() => [props.spec.mermaid, settings.settings.appearance.theme, settings.settings.appearance.uiFont], draw)
+// Each source on its own: a getter returning a new array fired on every change of any setting.
+watch([() => props.spec.mermaid, () => settings.settings.appearance.theme, () => settings.settings.appearance.uiFont], draw)
 </script>
 
 <template>

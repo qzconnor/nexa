@@ -3,6 +3,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, extname, join } from 'node:path'
 import { withoutAppImageEnv } from '../lib/linux'
+import { cachedForFile, keepForFile } from './cli-cache'
 
 /** Variables a parent Claude Code session injects: never passed on to the CLIs Nexa starts. */
 const PARENT_SESSION_ENV = [
@@ -153,11 +154,27 @@ export class CliBinary {
     })
   }
 
+  /** Asked once per file of the CLI (cli-cache.ts): starting it can hold up the main process. */
   async version(): Promise<string | null> {
+    const file = this.updatedFile()
+    const kept = file ? cachedForFile<string>('version', file) : undefined
+    if (kept) return kept
     const out = await this.run(['--version'])
     if (out === null) return null
     const match = /(\d+\.\d+\.\d+[^\s]*)/.exec(out)
-    return match ? match[1] : out.trim() || null
+    const version = match ? match[1] : out.trim() || null
+    if (file && version) keepForFile('version', file, version)
+    return version
+  }
+
+  /** The file an update of the CLI replaces: the script an npm shim starts, else the executable. */
+  updatedFile(): string | null {
+    try {
+      const cmd = this.command([])
+      return cmd.args[0] ?? cmd.file
+    } catch {
+      return null
+    }
   }
 }
 

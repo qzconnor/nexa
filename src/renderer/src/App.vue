@@ -5,6 +5,7 @@ import BrowserLayer from '@/components/browser/BrowserLayer.vue'
 import ChatView from '@/components/chat/ChatView.vue'
 import AppTooltip from '@/components/common/AppTooltip.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import AppSkeleton from '@/components/layout/AppSkeleton.vue'
 import DeviceScope from '@/components/layout/DeviceScope.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TitleBar from '@/components/layout/TitleBar.vue'
@@ -217,15 +218,15 @@ onMounted(async () => {
         </main>
       </div>
     </div>
-    <div v-else class="app-drag flex h-full items-center justify-center">
-      <Empty v-if="fatal">
+    <div v-else-if="fatal" class="app-drag flex h-full items-center justify-center">
+      <Empty>
         <EmptyHeader>
           <EmptyTitle>Start fehlgeschlagen</EmptyTitle>
           <EmptyDescription class="selectable">{{ fatal }}</EmptyDescription>
         </EmptyHeader>
       </Empty>
-      <Spinner v-else class="size-6 text-muted-foreground" />
     </div>
+    <AppSkeleton v-else />
     <template v-if="ready">
       <!-- In a chat's own window the main window's quick open comes instead (ui.openPalette). -->
       <CommandPalette v-if="!isChatWindow" />

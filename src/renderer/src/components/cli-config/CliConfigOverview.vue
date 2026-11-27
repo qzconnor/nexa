@@ -26,6 +26,7 @@ import {
 } from '@shared/cli-config'
 import type { ProviderId } from '@shared/chat'
 import { PROVIDERS } from '@shared/providers'
+import ListSkeleton from '@/components/common/ListSkeleton.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -167,7 +168,7 @@ const saveGlobal = (server: McpServerConfig, previousName: string | null) => (pr
       </AlertDescription>
     </Alert>
 
-    <Spinner v-if="!overview && store.overviewLoading" class="mx-auto text-muted-foreground" />
+    <ListSkeleton v-if="!overview && store.overviewLoading" :rows="4" />
     <p v-else-if="overview && !columns.length" class="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
       Keine CLI ist installiert.
     </p>

@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { ChatItem } from '@shared/chat'
 import { isPlainObject } from '@shared/utils'
@@ -63,9 +63,35 @@ export async function readClaudeChat(file: string): Promise<ChatItem[]> {
  * a chat that holds `known`; `last`: the time to read on from next. Null when there is nothing new.
  */
 export async function readClaudeChatSince(file: string, since: number, known: readonly ChatItem[]): Promise<{ items: ChatItem[]; last: number } | null> {
-  const added = transcriptSince(await readFile(file, 'utf8'), since)
+  const added = await readTranscriptSince(file, since)
   if (!added) return null
   return { items: claudeTranscriptItems(added.text, await readSubagents(file, since), known), last: added.last }
+}
+
+/** How much of a transcript's end is read first; four times more each time that isn't enough. */
+export const TAIL_BYTES = 256 * 1024
+
+/**
+ * `transcriptSince` on the transcript's end only: one of a long chat runs to tens of MB, and reading
+ * and splitting it whole held up the main process on every opening of the chat.
+ */
+export async function readTranscriptSince(file: string, since: number, tailBytes = TAIL_BYTES): Promise<{ text: string; last: number } | null> {
+  const handle = await open(file, 'r')
+  try {
+    const { size } = await handle.stat()
+    for (let length = tailBytes; ; length *= 4) {
+      const start = Math.max(0, size - length)
+      const buffer = Buffer.alloc(size - start)
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, start)
+      let text = buffer.toString('utf8', 0, bytesRead)
+      // The first line from the middle of the file is cut off (maybe in a character): left out.
+      if (start > 0) text = text.slice(text.indexOf('\n') + 1)
+      const added = transcriptSince(text, since, start === 0)
+      if (added !== undefined) return added
+    }
+  } finally {
+    await handle.close()
+  }
 }
 
 /** The subagents' transcripts beside a session's; with `since`, only those written to after it. */

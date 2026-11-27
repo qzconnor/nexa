@@ -78,6 +78,7 @@ import { useTerminalsStore } from '@/stores/terminals'
 import { useUiStore } from '@/stores/ui'
 import AgentDock from './AgentDock.vue'
 import AgentThread from './AgentThread.vue'
+import ChatSkeleton from './ChatSkeleton.vue'
 import ChatStatusDialog from './ChatStatusDialog.vue'
 import PromptChangesDialog from './PromptChangesDialog.vue'
 import { provideChatChanges } from '@/composables/useChatChanges'
@@ -723,7 +724,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <!-- The scroll bar's gutter always, so the chat and what floats over it share one centre. -->
         <div ref="viewport" :class="cn('chat-fade h-full overflow-y-auto [scrollbar-gutter:stable]', diff && 'invisible')" :style="fadeStyle">
           <div ref="content" class="mx-auto w-full max-w-(--chat-width) px-6 pt-6" :style="{ paddingBottom: `${dockHeight + 16}px` }">
-            <div v-if="chat && !chat.loaded" class="flex justify-center py-10"><Spinner class="size-5 text-muted-foreground" /></div>
+            <ChatSkeleton v-if="chat && !chat.loaded" />
             <template v-else>
               <AgentThread v-if="viewed" :key="viewed.id" :agent="viewed" :items="items" :session-id="meta.id" />
               <!-- Kept while a subagent's thread shows: back, the same older messages are there to return to. -->

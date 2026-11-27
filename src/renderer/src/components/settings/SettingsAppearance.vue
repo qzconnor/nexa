@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { SETTING_RANGES } from '@shared/defaults'
 import type { AppearanceSettings, WindowMaterial } from '@shared/types'
 import { DEFAULT_ZOOM, normalizeZoom, ZOOM_STEPS } from '@shared/zoom'
@@ -31,15 +31,41 @@ function set(patch: Partial<AppearanceSettings>): void {
 function bind<K extends keyof AppearanceSettings>(key: K) {
   return computed({ get: () => a.value[key], set: (value: AppearanceSettings[K]) => set({ [key]: value } as Partial<AppearanceSettings>) })
 }
+
+/** What the sliders changed and hasn't been saved yet: saved once they rest, or when the page goes. */
+let unsaved: Partial<AppearanceSettings> = {}
+let restTimer: ReturnType<typeof setTimeout> | undefined
+function saveRested(): void {
+  clearTimeout(restTimer)
+  const patch = unsaved
+  unsaved = {}
+  if (!Object.keys(patch).length) return
+  void attempt(() => store.update({ appearance: patch }), 'Speichern fehlgeschlagen').finally(() => store.endPreview(patch))
+}
+onBeforeUnmount(saveRested)
+
+/** A slider's v-model: every step shows at once (`previewAppearance`), saved once the slider rests. */
+function bindSlider<K extends 'surfaceOpacity' | 'uiFontSize' | 'radius'>(key: K) {
+  return computed({
+    get: () => a.value[key],
+    set: (value: AppearanceSettings[K]) => {
+      const patch = { [key]: value } as Partial<AppearanceSettings>
+      store.previewAppearance(patch)
+      unsaved = { ...unsaved, ...patch }
+      clearTimeout(restTimer)
+      restTimer = setTimeout(saveRested, 300)
+    },
+  })
+}
 const theme = bind('theme')
 const material = bind('material')
 const keepMaterialActive = bind('keepMaterialActive')
-const surfaceOpacity = bind('surfaceOpacity')
-const uiFontSize = bind('uiFontSize')
+const surfaceOpacity = bindSlider('surfaceOpacity')
+const uiFontSize = bindSlider('uiFontSize')
 const uiFont = bind('uiFont')
 const codeFont = bind('codeFont')
 const ligatures = bind('ligatures')
-const radius = bind('radius')
+const radius = bindSlider('radius')
 const chatWidth = bind('chatWidth')
 // The select works with strings; the setting is a number.
 const zoom = computed({

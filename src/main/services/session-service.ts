@@ -22,6 +22,7 @@ import {
   type SessionStatus,
   type TodoEntry,
   type ToolItem,
+  type TurnItem,
   type UserItem,
   isUnread,
 } from '@shared/chat'
@@ -239,6 +240,11 @@ export class SessionService extends TypedEmitter<Events> {
   private readonly searchCache = new Map<string, { stamp: string; texts: Promise<ChatText[]> }>()
   /** The artifacts each saved chat names, by session, while `stamp` says it is unchanged. */
   private readonly artifactCache = new Map<string, { stamp: string; mentions: Promise<ArtifactMentions> }>()
+  /**
+   * The turns of each saved chat for the usage (`stats`), while its `updatedAt` is the same: every look
+   * at Settings › Usage read and parsed the transcripts of all chats of the last 30 days again.
+   */
+  private readonly turnsCache = new Map<string, { updatedAt: number; turns: TurnItem[] }>()
   private saveTimer: NodeJS.Timeout | null = null
   /** The save of `sessions.json` under way; one at a time, so that an older one never lands last. */
   private saving: Promise<void> = Promise.resolve()
@@ -2240,11 +2246,11 @@ export class SessionService extends TypedEmitter<Events> {
       byDay.set(date, { date, tokens: {}, costUsd: {}, turns: {} })
     }
     const totals: UsageStats['totals'] = {}
+    for (const id of this.turnsCache.keys()) if (!this.sessions.has(id)) this.turnsCache.delete(id)
     for (const s of this.sessions.values()) {
       if (s.meta.updatedAt < since) continue
-      const items = s.items ?? (await this.store.load(s.meta.id))
-      for (const item of items) {
-        if (item.kind !== 'turn' || item.ts < since) continue
+      for (const item of await this.turnsOf(s)) {
+        if (item.ts < since) continue
         const day = byDay.get(key(item.ts))
         if (!day) continue
         const p = item.provider
@@ -2260,6 +2266,18 @@ export class SessionService extends TypedEmitter<Events> {
       }
     }
     return { days: [...byDay.values()], totals }
+  }
+
+  /** A chat's turns: an open one's as they are now, a saved one's read once until it changes. */
+  private async turnsOf(s: SessionState): Promise<TurnItem[]> {
+    const isTurn = (item: ChatItem): item is TurnItem => item.kind === 'turn'
+    if (s.items) return s.items.filter(isTurn)
+    const cached = this.turnsCache.get(s.meta.id)
+    if (cached?.updatedAt === s.meta.updatedAt) return cached.turns
+    // No rewrite of the file: the session may load and write to it meanwhile.
+    const turns = (await this.store.load(s.meta.id, { compact: false })).filter(isTurn)
+    this.turnsCache.set(s.meta.id, { updatedAt: s.meta.updatedAt, turns })
+    return turns
   }
 
   async removeProject(projectId: string): Promise<SessionRemoveResult> {

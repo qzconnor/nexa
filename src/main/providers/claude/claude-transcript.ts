@@ -550,10 +550,13 @@ export function forkPoint(text: string, upTo?: string): string | null {
  * What a transcript gained after `since` (ms), up to the end of its last finished turn: the turns a
  * CLI outside Nexa added, `last` the time to read on from. A turn still at work waits for its end, as
  * its calls would read as cut off. Null when no turn has finished since. Only the tail is parsed.
+ * `whole` false: `text` is only the end of the transcript (whole lines); undefined when what came
+ * since may begin before it, so the caller reads more.
  */
-export function transcriptSince(text: string, since: number): { text: string; last: number } | null {
+export function transcriptSince(text: string, since: number, whole = true): { text: string; last: number } | null | undefined {
   const lines = text.split('\n')
   const entries: { at: number; entry: Json | null }[] = []
+  let reached = false
   for (let i = lines.length - 1; i >= 0; i--) {
     const raw = lines[i]!
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
@@ -566,9 +569,13 @@ export function transcriptSince(text: string, since: number): { text: string; la
       // A line cut off while it was written.
     }
     const ts = entry ? time(entry.timestamp) : null
-    if (entry && ts !== null && ts <= since && CHAT_TYPES.has(entry.type as string)) break
+    if (entry && ts !== null && ts <= since && CHAT_TYPES.has(entry.type as string)) {
+      reached = true
+      break
+    }
     entries.push({ at: i, entry })
   }
+  if (!reached && !whole) return undefined
   entries.reverse()
   let end = -1
   let last = since

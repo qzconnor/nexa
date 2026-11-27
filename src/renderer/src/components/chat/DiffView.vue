@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect } from 'vue'
+import { useIntersectionObserver } from '@vueuse/core'
+import { computed, ref, useTemplateRef, watchEffect } from 'vue'
 import type { FileChange } from '@shared/chat'
 import { baseName } from '@shared/utils'
 import { changeLines, changeStats, type DiffLine } from '@/lib/diff'
@@ -15,29 +16,52 @@ import { useProjectPath } from '@/composables/useProjectPath'
  */
 const props = defineProps<{ change: FileChange; maxHeight?: string; class?: string; bare?: boolean }>()
 
+/**
+ * Lines shown at first. A file the agent wrote whole is all added lines: thousands of rows (and their
+ * colouring) for each one in the chat, of which the box shows twenty.
+ */
+const FIRST_LINES = 150
+
 const { relative } = useProjectPath()
 const shown = computed(() => relative(props.change.path))
 const lines = computed(() => changeLines(props.change))
 const stats = computed(() => changeStats(lines.value))
 const language = computed(() => languageOf(props.change.path))
 const loaded = ref(0)
+const limit = ref(FIRST_LINES)
+const visibleLines = computed(() => (lines.value.length > limit.value ? lines.value.slice(0, limit.value) : lines.value))
+const more = computed(() => lines.value.length - visibleLines.value.length)
+
+/** Coloured once it comes near the screen: a long chat has many changes nobody scrolls to. */
+const root = useTemplateRef<HTMLElement>('root')
+const seen = ref(false)
+const { stop } = useIntersectionObserver(
+  root,
+  ([entry]) => {
+    if (!entry?.isIntersecting) return
+    seen.value = true
+    stop()
+  },
+  { rootMargin: '400px 0px' },
+)
 
 watchEffect(() => {
   const lang = language.value
-  if (lang && !hasLanguage(lang)) void loadLanguage(lang).then((ok) => ok && loaded.value++)
+  if (seen.value && lang && !hasLanguage(lang)) void loadLanguage(lang).then((ok) => ok && loaded.value++)
 })
 
 /** Old and new side highlighted as wholes, so a line keeps the context of those around it. */
 const html = computed<(string | null)[]>(() => {
   void loaded.value
   const lang = language.value
-  if (!lang || !hasLanguage(lang)) return []
-  const out = new Array<string | null>(lines.value.length).fill(null)
+  if (!seen.value || !lang || !hasLanguage(lang)) return []
+  const rows = visibleLines.value
+  const out = new Array<string | null>(rows.length).fill(null)
   const side = (pick: (l: DiffLine) => boolean) => {
     const idx: number[] = []
-    lines.value.forEach((l, i) => l.kind !== 'hunk' && pick(l) && idx.push(i))
+    rows.forEach((l, i) => l.kind !== 'hunk' && pick(l) && idx.push(i))
     const highlighted = highlightText(
-      idx.map((i) => lines.value[i].text),
+      idx.map((i) => rows[i].text),
       lang,
     )
     if (highlighted) idx.forEach((i, k) => (out[i] = highlighted[k] ?? null))
@@ -51,7 +75,7 @@ const typeLabel = computed(() => ({ add: 'neu', update: '', delete: 'gelöscht' 
 </script>
 
 <template>
-  <div :class="cn('overflow-hidden rounded-md border bg-(--code-bg)/50 text-(--code-fg)', props.class)">
+  <div ref="root" :class="cn('overflow-hidden rounded-md border bg-(--code-bg)/50 text-(--code-fg)', props.class)">
     <div v-if="bare && change.movePath" class="truncate border-b px-3 py-1.5 font-mono text-xs text-muted-foreground" :title="change.movePath">
       → {{ relative(change.movePath) }}
     </div>
@@ -67,7 +91,7 @@ const typeLabel = computed(() => ({ add: 'neu', update: '', delete: 'gelöscht' 
     <div class="syntax overflow-auto font-mono text-[0.78rem] leading-[1.45]" :style="{ maxHeight: maxHeight ?? '22rem' }">
       <table class="w-full border-collapse">
         <tbody>
-          <tr v-for="(line, i) in lines" :key="i" class="diff-line" :data-kind="line.kind">
+          <tr v-for="(line, i) in visibleLines" :key="i" class="diff-line" :data-kind="line.kind">
             <!-- One number per line, as in the diff of the file view: where it is now, a removed one where it was. -->
             <td class="diff-gutter w-[1%] whitespace-nowrap">{{ line.kind === 'hunk' ? '' : (line.new ?? line.old ?? '') }}</td>
             <td class="w-4 select-none text-center text-muted-foreground">{{ line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : '' }}</td>
@@ -76,6 +100,14 @@ const typeLabel = computed(() => ({ add: 'neu', update: '', delete: 'gelöscht' 
           </tr>
         </tbody>
       </table>
+      <button
+        v-if="more"
+        type="button"
+        class="sticky left-0 w-full border-t px-3 py-1.5 text-left font-sans text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+        @click="limit = lines.length"
+      >
+        {{ more === 1 ? '1 weitere Zeile' : `${more} weitere Zeilen` }} anzeigen
+      </button>
     </div>
   </div>
 </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronRightIcon, GlobeIcon, Maximize2Icon, MousePointerClickIcon, PanelRightOpenIcon } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { useIntersectionObserver } from '@vueuse/core'
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { BLANK_PAGE, type BrowserFrame } from '@shared/browser'
 import type { ToolItem } from '@shared/chat'
 import ToolRow from '@/components/chat/ToolRow.vue'
@@ -40,15 +41,28 @@ const activity = computed(() => {
 /** The user has the page open to use it (panel or full screen): the picture pauses meanwhile. */
 const inUse = computed(() => props.live && !!tabId.value && browsers.visibleTab === tabId.value)
 
-// The live card watches its tab's page; every card keeps the last picture it got. While the page is
-// open, the card shows the picture from before and takes the new ones only for when it is closed again.
-watch(
-  () => (props.live ? tabId.value : null),
-  (id, _before, onCleanup) => {
-    if (id) onCleanup(browsers.watchFrames(id))
-  },
-  { immediate: true },
-)
+/** On screen (or close to it): a card scrolled away needs no pictures. */
+const card = useTemplateRef<HTMLElement>('card')
+const onScreen = ref(false)
+useIntersectionObserver(card, ([entry]) => (onScreen.value = !!entry?.isIntersecting), { rootMargin: '200px 0px' })
+
+/**
+ * A few seconds after the agent's last step (the page still loads or moves in) and after the page was
+ * used in the panel: then the picture is taken again and stays.
+ */
+const SETTLE_MS = 3000
+const settling = ref(false)
+let settleTimer: ReturnType<typeof setTimeout> | undefined
+function settle(): void {
+  clearTimeout(settleTimer)
+  settling.value = true
+  settleTimer = setTimeout(() => (settling.value = false), SETTLE_MS)
+}
+watch(acting, (now, before) => {
+  if (!now && before) settle()
+})
+onBeforeUnmount(() => clearTimeout(settleTimer))
+
 const liveFrame = computed(() => (props.live && tabId.value ? browsers.frames.get(tabId.value) : undefined))
 watch(
   liveFrame,
@@ -61,8 +75,21 @@ const latest = computed(() => liveFrame.value ?? browsers.stills.get(props.block
 const paused = ref<BrowserFrame | null>(null)
 watch(
   inUse,
-  (open) => {
+  (open, before) => {
     paused.value = open ? (latest.value ?? null) : null
+    if (!open && before) settle()
+  },
+  { immediate: true },
+)
+
+// The live card watches its tab's page while the agent acts in it and the card is on screen; every card
+// keeps the last picture it got. Main makes a picture of the page every 300 ms while it paints, so not
+// for a page nobody looks at here: not while it is open in the panel (the card shows the picture from
+// before), not long after the agent's last step. A watch begins with a picture of the page as it is.
+watch(
+  () => (props.live && !inUse.value && onScreen.value && (acting.value || settling.value || !latest.value) ? tabId.value : null),
+  (id, _before, onCleanup) => {
+    if (id) onCleanup(browsers.watchFrames(id))
   },
   { immediate: true },
 )
@@ -118,7 +145,7 @@ function closeUse(): void {
 
 <template>
   <!-- Only as wide as the page's picture, flush with the chat's right edge. -->
-  <figure class="my-2 ml-auto overflow-hidden rounded-xl border bg-card/60" :style="{ width: cardWidth }">
+  <figure ref="card" class="my-2 ml-auto overflow-hidden rounded-xl border bg-card/60" :style="{ width: cardWidth }">
     <figcaption class="flex h-10 items-center gap-2 border-b pr-1.5 pl-3">
       <span class="flex size-4 shrink-0 items-center justify-center">
         <BrowserFavicon v-if="tab" :tab-id="tab.id" class="size-4" />

@@ -7,6 +7,7 @@ import CliConfigHooks from '@/components/cli-config/CliConfigHooks.vue'
 import CliConfigMcp from '@/components/cli-config/CliConfigMcp.vue'
 import CliConfigOverview from '@/components/cli-config/CliConfigOverview.vue'
 import CliConfigPermissions from '@/components/cli-config/CliConfigPermissions.vue'
+import ListSkeleton from '@/components/common/ListSkeleton.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -125,7 +126,7 @@ watch(searching, (on) => {
         description="Werkzeuge, die die CLI startet oder über das Netz erreicht. Werte, die nach Schlüsseln aussehen, zeigt Nexa nicht an."
       >
         <CliConfigMcp v-if="store.snapshot" />
-        <Spinner v-else-if="store.loading" class="mx-auto text-muted-foreground" />
+        <ListSkeleton v-else-if="store.loading" />
       </SettingsSection>
 
       <SettingsSection
@@ -135,7 +136,7 @@ watch(searching, (on) => {
         description="Was die CLI ohne Rückfrage darf, was sie fragt und was nie."
       >
         <CliConfigPermissions v-if="store.snapshot" />
-        <Spinner v-else-if="store.loading" class="mx-auto text-muted-foreground" />
+        <ListSkeleton v-else-if="store.loading" />
       </SettingsSection>
 
       <SettingsSection
@@ -145,7 +146,7 @@ watch(searching, (on) => {
         description="Befehle, die die CLI bei Ereignissen ausführt: vor einem Werkzeug, nach einer Antwort, beim Start …"
       >
         <CliConfigHooks v-if="store.snapshot" />
-        <Spinner v-else-if="store.loading" class="mx-auto text-muted-foreground" />
+        <ListSkeleton v-else-if="store.loading" />
       </SettingsSection>
     </template>
   </div>
