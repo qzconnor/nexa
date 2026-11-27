@@ -103,6 +103,7 @@ const api: NexaApi = {
     callTool: (sessionId, itemId, name, args) => invoke(McpAppsInvoke.callTool, sessionId, itemId, name, args),
     readResource: (sessionId, itemId, uri) => invoke(McpAppsInvoke.readResource, sessionId, itemId, uri),
     openRemote: (device, sessionId, itemId) => invoke(McpAppsInvoke.openRemote, device, sessionId, itemId),
+    modelContext: (sessionId, itemId, params) => invoke(McpAppsInvoke.modelContext, sessionId, itemId, params),
   },
   voice: {
     start: (input) => invoke(VoiceInvoke.start, input),

@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { AppWindowIcon, BellIcon, BellOffIcon, PowerIcon, SquarePenIcon } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import type { TrayMenuAction, TrayMenuApi, TrayMenuState } from '@shared/tray-menu'
+import type { TrayLimit, TrayMenuAction, TrayMenuApi, TrayMenuState } from '@shared/tray-menu'
+import AccountDot from '@/components/accounts/AccountDot.vue'
 import AppLogo from '@/components/common/AppLogo.vue'
 import ProviderIcon from '@/components/common/ProviderIcon.vue'
+import UsageRing from '@/components/common/UsageRing.vue'
 import { Spinner } from '@/components/ui/spinner'
+import { formatAhead } from '@/lib/format'
+import { clampPercent, shortWindowLabels, usageTextClass, windowsOfModel } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 import { applyTheme } from '@/themes/apply'
 
@@ -24,6 +28,28 @@ const summary = computed(() => {
   if (s.working) parts.push(s.waiting ? `${s.working} ${s.working === 1 ? 'arbeitet' : 'arbeiten'}` : s.working === 1 ? '1 Chat arbeitet' : `${s.working} Chats arbeiten`)
   return parts.join(' · ')
 })
+
+/**
+ * An account's windows as the title bar shows them: the two that limit the model new chats start with.
+ * Without a model, a CLI with groups of models (Antigravity) has windows of each: those of the group
+ * nearest its limit, so one group's stand side by side.
+ */
+function limitWindows(limit: TrayLimit): { key: string; label: string; percent: number }[] {
+  let windows = windowsOfModel(limit.windows, limit.model ? { id: limit.model } : null)
+  if (windows.some((w) => w.models?.length)) {
+    const fullest = windows.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a))
+    const group = fullest.label.split(' · ')[0]
+    windows = windows.filter((w) => !w.models?.length || w.label.startsWith(`${group} · `))
+  }
+  windows = windows.slice(0, 2)
+  const labels = shortWindowLabels(windows)
+  return windows.map((w, i) => ({ key: w.key, label: labels[i]!, percent: clampPercent(w.usedPercent) }))
+}
+
+/** When an account at its limit is free again: „bis 14:20“, further away with the weekday. */
+function freeText(limit: TrayLimit): string {
+  return `Limit bis ${limit.estimated ? 'ca. ' : ''}${formatAhead(limit.freeAt!)}`
+}
 
 async function show(next: TrayMenuState): Promise<void> {
   applyTheme(next.theme, next.appearance, next.translucent)
@@ -127,6 +153,28 @@ const icon = 'size-4 shrink-0 text-muted-foreground'
         <span class="w-3.5 shrink-0" />
         {{ more === 1 ? '1 weiterer in Nexa' : `${more} weitere in Nexa` }}
       </button>
+    </template>
+
+    <template v-if="state.limits.length">
+      <div class="mx-1 my-1 h-px bg-border" role="separator" />
+      <div role="group" aria-label="Limits" class="flex flex-col px-2.5 py-0.5">
+        <div v-for="limit in state.limits" :key="limit.accountId" class="flex min-w-0 items-center gap-2 py-1 text-xs">
+          <span class="relative shrink-0">
+            <ProviderIcon :provider="limit.provider" class="size-3.5" />
+            <AccountDot v-if="limit.color" :color="limit.color" class="absolute -right-1 -bottom-1 size-1.5 ring-1" />
+          </span>
+          <span class="min-w-16 flex-1 truncate">{{ limit.name }}</span>
+          <span v-if="limit.freeAt" :class="cn('shrink-0 font-medium tabular-nums', usageTextClass.high)">{{ freeText(limit) }}</span>
+          <!-- Long names of groups of models: the second window goes below rather than squeezing the name. -->
+          <span v-else class="flex min-w-0 flex-wrap justify-end gap-x-2.5 gap-y-0.5">
+            <span v-for="w in limitWindows(limit)" :key="w.key" class="flex shrink-0 items-center gap-1">
+              <UsageRing :percent="w.percent" :size="12" />
+              <span class="text-muted-foreground">{{ w.label }}</span>
+              <span :class="cn('font-medium tabular-nums', w.percent >= 85 ? usageTextClass.high : 'text-foreground')">{{ w.percent }}&nbsp;%</span>
+            </span>
+          </span>
+        </div>
+      </div>
     </template>
 
     <div class="mx-1 my-1 h-px bg-border" role="separator" />

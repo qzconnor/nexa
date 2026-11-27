@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolItem } from './chat'
-import { foundFiles, resolvePath, toolTouches } from './file-touches'
+import { foundFiles, resolvePath, toolTouches, writtenFiles } from './file-touches'
 
 function tool(patch: Partial<ToolItem>): ToolItem {
   return { id: 't', ts: 0, provider: 'claude', kind: 'tool', tool: 'read', name: 'Read', title: '', status: 'done', startedAt: 0, ...patch }
@@ -67,5 +67,29 @@ describe('toolTouches', () => {
   it('follows the folder a tool ran in', () => {
     const item = tool({ input: { file_path: 'a.ts', cwd: 'C:\\other' } })
     expect(toolTouches(item, 'C:\\dev', true).touches[0].path).toBe('C:\\other\\a.ts')
+  })
+})
+
+describe('writtenFiles', () => {
+  it('keeps each file a tool wrote, with its last write, by folder key', () => {
+    const items = [
+      tool({ id: 'r', input: { file_path: 'read.ts' }, startedAt: 1 }),
+      tool({ id: 'w1', name: 'Write', tool: 'write', input: { file_path: 'A.ts' }, startedAt: 2, endedAt: 3 }),
+      tool({ id: 'w2', name: 'Edit', tool: 'write', input: { file_path: 'C:\\dev\\a.ts' }, startedAt: 7, endedAt: 9 }),
+      tool({ id: 'p', name: 'apply_patch', tool: 'write', changes: [{ path: 'b.ts', type: 'add' }], startedAt: 5 }),
+    ]
+    expect(writtenFiles(items, 'C:\\dev', true)).toEqual(
+      new Map([
+        ['c:\\dev\\a.ts', 9],
+        ['c:\\dev\\b.ts', 5],
+      ]),
+    )
+  })
+
+  it('leaves out what changed nothing: asked, refused, still running or failed', () => {
+    const write = (patch: Partial<ToolItem>) => tool({ name: 'Write', tool: 'write', input: { file_path: 'a.ts' }, ...patch })
+    const items = [write({ status: 'pending' }), write({ status: 'denied' }), write({ status: 'running' }), write({ status: 'error' })]
+    expect(writtenFiles(items, 'C:\\dev', true).size).toBe(0)
+    expect(writtenFiles([write({ status: 'error', changes: [{ path: 'a.ts', type: 'update' }] })], 'C:\\dev', true).size).toBe(1)
   })
 })

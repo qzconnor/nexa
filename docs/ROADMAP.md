@@ -334,8 +334,10 @@
 Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/src/`).
 
 - [ ] **Übersicht aller Chats nach Zustand** (wartet auf dich, arbeitet, fertig) mit der offenen Frage,
-      dem laufenden Werkzeug, Kontext und Limit je Karte; Strg+Umschalt+J springt zum nächsten wartenden
-      Chat (`OverviewView.vue`, `lib/overview.ts`, `lib/attention.ts`).
+      dem laufenden Werkzeug, Kontext und Limit je Karte (`OverviewView.vue`, `lib/overview.ts`,
+      `lib/attention.ts`).
+  - [x] Strg+Umschalt+J springt zum nächsten Chat, der auf dich wartet, auf allen Geräten in der
+        Reihenfolge des Posteingangs; auch als Befehl in der Schnellsuche.
 
 ## Später
 
@@ -349,7 +351,9 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         mit einem per Code geöffneten Menü (dunkles und helles Theme, Acrylic, Ecken). Ungeprüft: der
         echte Rechtsklick (bekommt das Fenster den Fokus, sonst schließt `blur` es nie), Taskleiste oben
         oder seitlich, Symbol im Überlaufbereich, Bildschirme mit verschiedener Skalierung.
-  - [ ] Limits der Accounts im eigenen Menü.
+  - [x] Limits der Accounts im eigenen Menü: je angemeldetem Account die Fenster des Modells, mit dem neue
+        Chats starten, wie in der Titelleiste (Antigravity: die Gruppe, die ihrem Limit am nächsten ist);
+        am Limit „Limit bis …“.
   - [ ] macOS: eigenes Menü ausprobieren (Electron meldet `right-click` auch dort); bis dahin das des
         Systems. Linux bleibt beim Menü des Systems, Electron meldet dort keinen Rechtsklick.
 
@@ -421,8 +425,11 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
       und ACP kennt es nicht. Zahlen unter dem Turn, Dialog „Änderungen je Prompt“ mit Diffs (auch `/rewind`),
       Zurückspulen von einem Prompt aus mit Vorschau, Hinweis an die CLI und Zurücknehmen; Einstellung
       „Checkpoints der Dateien“.
-- [ ] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager).
-- [ ] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager).
+- [x] „Von Chats geändert“ im Kontextmenü des Dateibaums (`FileSessionsMenu.vue` im Claude Manager), auch
+      für Chats eines anderen Geräts.
+- [x] Schlagwörter für Chats mit Filter (`session-marks.ts` im Claude Manager): Dialog „Schlagwörter …“ im
+      Kontextmenü und in der Schnellsuche, Filter neben „Alle“/„Aktiv“ in der Seitenleiste, die
+      Schnellsuche findet Chats auch über sie.
 - [ ] **Temporäre Chats**: Schalter „Temporär“ im Dock beim neuen Chat. Der Chat verschwindet, sobald man
       ihn schließt (anderer Chat, Tab oder Fenster zu, auch beim Beenden von Nexa), mit den 8 s zum
       Zurückholen. Gelöscht wird über den Weg, den „Löschen“ schon nimmt (Transkript, Subagents,
@@ -448,8 +455,9 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
         Sprache in `initialize` achten.
 - [x] MCP Apps: Oberflächen von MCP-Werkzeugen (`ui://`-Ressourcen) im Chat zeigen (Claude
       `mcp_read_resource`/`mcp_call`, Codex `mcpServer/resource/read`/`mcpServer/tool/call`), in einem
-      Frame mit eigener Adresse und CSP. Offen: Vollbild und Bild-im-Bild (`ui/request-display-mode`),
-      `ui/update-model-context`, mit einem echten Server und einem echten Turn prüfen.
+      Frame mit eigener Adresse und CSP; Vollbild und Bild-im-Bild (`ui/request-display-mode`),
+      `ui/update-model-context` (geht mit dem nächsten Prompt an die CLI). Offen: mit einem echten Server
+      und einem echten Turn prüfen, auch Vollbild und Bild-im-Bild.
 - [ ] Remote Control wie in Claude Desktop (Claude Code `remote-control`, Codex `remoteControl/*`).
   - [ ] Eigene Fernsteuerung über einen selbst gehosteten `nexa-server`, mit PWA fürs Handy und
         Settings-Sync. Konzept in `NEXA-SERVER.md`.

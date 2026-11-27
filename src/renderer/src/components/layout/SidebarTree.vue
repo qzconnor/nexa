@@ -3,6 +3,7 @@ import { ChevronRightIcon, FolderOpenIcon, FolderPlusIcon, PencilIcon, PlusIcon,
 import { computed, ref, watch } from 'vue'
 import { folderKey } from '@shared/folders'
 import { DEFAULT_SECTION_ID, isSectionRoot, layoutOf, moveProject, moveSection, sectionIdOf } from '@shared/sections'
+import { hasTag } from '@shared/session-tags'
 import type { ProjectSection, SessionMeta } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -48,8 +49,13 @@ interface SectionGroup {
   chats: SessionMeta[]
 }
 
-/** Only the chats that run (the switch above the projects): the same tree without the others. */
+/**
+ * Only the chats that run (the switch above the projects) or that have the tag picked beside it: the
+ * same tree without the others.
+ */
 const liveOnly = computed(() => ui.sidebarFilter === 'live')
+const filtered = computed(() => liveOnly.value || ui.sidebarTag !== null)
+const shows = (meta: SessionMeta) => (!liveOnly.value || isLive(sessions.runtime(meta.id))) && (ui.sidebarTag === null || hasTag(meta.tags, ui.sidebarTag))
 
 const fold = useSidebarFold()
 const sectionOpen = (section: ProjectSection) => fold.isOpen('section', section.id, !section.collapsed)
@@ -61,11 +67,11 @@ const groups = computed<SectionGroup[]>(() => {
   const entries = projects.projects
     .map((project): ProjectEntry => {
       const chats = sessions.byProject(project.id)
-      const list = liveOnly.value ? chats.filter((m) => isLive(sessions.runtime(m.id))) : chats
+      const list = filtered.value ? chats.filter(shows) : chats
       return { project, count: list.length, tree: projectTree(project.id, project.path, list) }
     })
-    // Filtered, a project without a running chat is left out, as a chat that doesn't run is.
-    .filter((e) => !liveOnly.value || e.count)
+    // Filtered, a project without a chat the filter leaves is left out, as the other chats are.
+    .filter((e) => !filtered.value || e.count)
   const all = projects.sections.map((section): SectionGroup => {
     const own = entries.filter((e) => sectionIdOf(e.project, projects.sections) === section.id)
     const root = own.find((e) => isSectionRoot(e.project, section)) ?? null
@@ -77,7 +83,7 @@ const groups = computed<SectionGroup[]>(() => {
       chats: own.flatMap((e) => chatsIn(e.tree)),
     }
   })
-  return liveOnly.value ? all.filter((g) => g.count) : all
+  return filtered.value ? all.filter((g) => g.count) : all
 })
 
 // The folders of the chat on screen open, so it shows where it is (also when opened from elsewhere).
@@ -374,13 +380,18 @@ const lineBeforeSection = (id: string | null) => drop.value?.kind === 'section' 
       <div v-if="index === groups.length - 1 && lineBeforeSection(null)" class="pointer-events-none absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-primary" />
     </section>
 
-    <p v-if="liveOnly && !groups.length" class="px-2 py-1.5 text-xs text-muted-foreground">
-      {{ device ? 'Gerade läuft hier kein Chat.' : 'Gerade läuft kein Chat. Einer läuft ab der Nachricht, die du ihm schickst, bis er beendet wird.' }}
+    <p v-if="filtered && !groups.length" class="px-2 py-1.5 text-xs text-muted-foreground">
+      <template v-if="ui.sidebarTag !== null">
+        {{ liveOnly ? `Kein laufender Chat${device ? ' hier' : ''} hat „${ui.sidebarTag}“.` : `Kein Chat${device ? ' hier' : ''} hat „${ui.sidebarTag}“.` }}
+      </template>
+      <template v-else>
+        {{ device ? 'Gerade läuft hier kein Chat.' : 'Gerade läuft kein Chat. Einer läuft ab der Nachricht, die du ihm schickst, bis er beendet wird.' }}
+      </template>
     </p>
 
-    <!-- Filtered, the tree shows what runs, not where projects go. -->
+    <!-- Filtered, the tree shows what the filter leaves, not where projects go. -->
     <button
-      v-if="!liveOnly"
+      v-if="!filtered"
       type="button"
       class="mt-1 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
       @click="newSection()"

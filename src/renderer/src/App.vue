@@ -44,6 +44,7 @@ import HomeView from '@/views/HomeView.vue'
 const AccountFormDialog = defineAsyncComponent(() => import('@/components/accounts/AccountFormDialog.vue'))
 const AccountLoginDialog = defineAsyncComponent(() => import('@/components/accounts/AccountLoginDialog.vue'))
 const ChatCleanupDialog = defineAsyncComponent(() => import('@/components/layout/ChatCleanupDialog.vue'))
+const ChatTagsDialog = defineAsyncComponent(() => import('@/components/layout/ChatTagsDialog.vue'))
 const FolderPromptDialog = defineAsyncComponent(() => import('@/components/layout/FolderPromptDialog.vue'))
 const StartCommandsDialog = defineAsyncComponent(() => import('@/components/layout/StartCommandsDialog.vue'))
 const WorktreeDialog = defineAsyncComponent(() => import('@/components/layout/WorktreeDialog.vue'))
@@ -237,6 +238,7 @@ onMounted(async () => {
       <FolderPromptDialog />
       <StartCommandsDialog />
       <ChatCleanupDialog />
+      <ChatTagsDialog />
       <WorktreeDialog />
       <SettingsImportDialog />
       <ScheduledTaskDialog v-if="!isChatWindow" />

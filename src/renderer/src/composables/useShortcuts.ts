@@ -6,9 +6,11 @@ import { DEFAULT_ZOOM, normalizeZoom, stepZoom } from '@shared/zoom'
 import { isChatWindow } from '@/lib/chat-window'
 import { chatRefs, chatSources, newChatTarget } from '@/lib/device-chats'
 import { attempt } from '@/lib/errors'
+import { nextWaiting } from '@/lib/inbox'
 import { chatKey } from '@/lib/session-tree'
 import { useShownDeviceStore } from '@/stores/device'
 import { useDevicesStore } from '@/stores/devices'
+import { useInboxStore } from '@/stores/inbox'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { useTerminalsStore } from '@/stores/terminals'
@@ -121,6 +123,16 @@ export function useShortcuts(ready: Ref<boolean>): void {
       case 'toggle-terminal': {
         const id = openId()
         if (id) terminals.toggle(id)
+        return
+      }
+      case 'next-waiting': {
+        if (isChatWindow) return
+        // Asked for here: a chat's own window has no inbox to keep up to date.
+        const inbox = useInboxStore()
+        const key = nextWaiting(inbox.rows, openKey())
+        const row = inbox.rows.find((r) => r.key === key)
+        if (!row) return void toast('Kein Chat wartet auf dich')
+        if (key !== openKey()) void useChatActions(row.device).open(row.entry.id)
         return
       }
     }

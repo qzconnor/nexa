@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { appResultOf, boundedJson, claudeServerKey, cspOf, MAX_APP_RESULT_JSON, mcpAppCsp, toolUiOf, uiUri } from './mcp-apps'
+import { appContextText, appResultOf, boundedJson, claudeServerKey, cspOf, MAX_APP_CONTEXT, MAX_APP_RESULT_JSON, mcpAppCsp, toolUiOf, uiUri } from './mcp-apps'
+
+describe('appContextText', () => {
+  it('takes the text blocks, names other blocks and adds the structured content as JSON', () => {
+    const params = {
+      content: [
+        { type: 'text', text: ' Köln ist gewählt ' },
+        { type: 'image', data: 'x', mimeType: 'image/png' },
+        'kein Block',
+      ],
+      structuredContent: { city: 'Köln' },
+    }
+    expect(appContextText(params)).toBe('Köln ist gewählt\n\n[image]\n\n{"city":"Köln"}')
+  })
+
+  it('takes nothing as taking the context back, and cuts what is too long', () => {
+    expect(appContextText({})).toBeNull()
+    expect(appContextText({ content: [], structuredContent: {} })).toBeNull()
+    expect(appContextText(null)).toBeNull()
+    expect(appContextText({ content: [{ type: 'text', text: 'x'.repeat(MAX_APP_CONTEXT + 10) }] })).toHaveLength(MAX_APP_CONTEXT + 1)
+  })
+})
 
 describe('uiUri', () => {
   it('takes ui:// addresses only', () => {

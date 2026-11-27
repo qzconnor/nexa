@@ -557,6 +557,8 @@ export interface SessionMeta {
   updatedAt: number
   pinned?: boolean
   archived?: boolean
+  /** The user's tags (shared/session-tags.ts); missing: none. */
+  tags?: string[]
   /** First words of the last prompt or answer, for the sidebar. */
   preview?: string
   /**
@@ -655,6 +657,8 @@ export interface SessionUpdateInput {
   permissionMode?: PermissionMode
   pinned?: boolean
   archived?: boolean
+  /** The chat's tags (all of them; empty: none). */
+  tags?: string[]
   /** The folders added to the chat (all of them; empty: none). */
   dirs?: string[]
 }
@@ -699,6 +703,13 @@ export interface SessionStorage {
 }
 
 /** A chat whose conversation holds every word searched for (the quick open's search). */
+/** A chat whose agent wrote a file (the file tree's „Von Chats geändert“). */
+export interface FileEditHit {
+  sessionId: string
+  /** When it wrote it last (ms). */
+  at: number
+}
+
 export interface SessionSearchHit {
   sessionId: string
   /** Who wrote the message the snippet is from. */

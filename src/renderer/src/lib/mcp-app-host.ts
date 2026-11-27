@@ -1,4 +1,4 @@
-import { MCP_APP_PROTOCOL, type McpAppToolResult } from '@shared/mcp-apps'
+import { MCP_APP_DISPLAY_MODES, MCP_APP_PROTOCOL, type McpAppDisplayMode, type McpAppToolResult } from '@shared/mcp-apps'
 import type { ThemeColors } from '@shared/themes/types'
 import { isPlainObject } from '@shared/utils'
 import { errorMessage } from './errors'
@@ -18,9 +18,10 @@ const MAX_MESSAGE_TEXT = 20_000
 export interface McpAppHostContext {
   theme: 'light' | 'dark'
   styles: { variables: Record<string, string> }
-  displayMode: 'inline'
-  availableDisplayModes: ['inline']
-  containerDimensions: { maxHeight: number; width?: number }
+  displayMode: McpAppDisplayMode
+  availableDisplayModes: McpAppDisplayMode[]
+  /** Inline the page grows up to `maxHeight`; over the window and in its corner the place is fixed. */
+  containerDimensions: { maxHeight?: number; height?: number; width?: number }
   locale: string
   timeZone: string
   platform: 'desktop'
@@ -40,6 +41,12 @@ export interface McpAppHostDeps {
   message(text: string): void
   /** The height the page needs for its content. */
   resize(height: number): void
+  /** Shows the page in another mode (`ui/request-display-mode`), one `displayModeAllowed`; `context()` tells it after. */
+  setDisplayMode(mode: McpAppDisplayMode): void
+  /** The modes the page says it supports (`appCapabilities.availableDisplayModes`), null when it says none. */
+  declaredModes(modes: McpAppDisplayMode[] | null): void
+  /** What the page wants the agent to know with the next prompt (`ui/update-model-context` params). */
+  modelContext(params: Record<string, unknown>): Promise<void>
   context(): McpAppHostContext
   version: string
 }
@@ -85,6 +92,25 @@ export function messageText(params: unknown): string | null {
   return text ? text.slice(0, MAX_MESSAGE_TEXT) : null
 }
 
+export function isDisplayMode(value: unknown): value is McpAppDisplayMode {
+  return MCP_APP_DISPLAY_MODES.includes(value as McpAppDisplayMode)
+}
+
+/** The modes a page declares at `ui/initialize` (`appCapabilities.availableDisplayModes`); null when it declares none. */
+export function declaredDisplayModes(params: unknown): McpAppDisplayMode[] | null {
+  const capabilities = isPlainObject(params) && isPlainObject(params.appCapabilities) ? params.appCapabilities : {}
+  return Array.isArray(capabilities.availableDisplayModes) ? capabilities.availableDisplayModes.filter(isDisplayMode) : null
+}
+
+/**
+ * Whether a page may be shown in `mode`: the host has it, and the page declared it, if it declared
+ * any (the spec: never a mode the page didn't list). Inline always.
+ */
+export function displayModeAllowed(mode: McpAppDisplayMode, hostModes: readonly McpAppDisplayMode[], pageModes: readonly McpAppDisplayMode[] | null): boolean {
+  if (mode === 'inline') return true
+  return hostModes.includes(mode) && (pageModes === null || pageModes.includes(mode))
+}
+
 /** The height a page asked for, within bounds; rounded up, as a fraction of a pixel too few gives the frame a scroll bar. */
 export function clampHeight(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
@@ -100,8 +126,15 @@ export class McpAppHost {
   private outcomeSent: { method: string; params: unknown } | null = null
   private nextId = 1
   private closed = false
+  /** The modes the page declared at `ui/initialize`; null: none. */
+  private pageModes: McpAppDisplayMode[] | null = null
 
   constructor(private readonly deps: McpAppHostDeps) {}
+
+  /** Whether the page may be shown in `mode` (also for the user's own buttons). */
+  allows(mode: McpAppDisplayMode): boolean {
+    return displayModeAllowed(mode, this.deps.context().availableDisplayModes, this.pageModes)
+  }
 
   /** The tool's arguments, as soon as they are known; the page gets them once. */
   setInput(input: unknown): void {
@@ -177,10 +210,11 @@ export class McpAppHost {
         this.initialized = false
         this.inputSent = false
         this.outcomeSent = null
+        this.pageModes = declaredDisplayModes(params)
+        this.deps.declaredModes(this.pageModes)
         return {
           protocolVersion: MCP_APP_PROTOCOL,
           hostInfo: { name: 'Nexa', version: this.deps.version },
-          // No `updateModelContext`: the CLIs take no context from Nexa between turns.
           hostCapabilities: { openLinks: {}, serverTools: {}, serverResources: {}, logging: {}, message: { text: {} } },
           hostContext: this.deps.context(),
         }
@@ -206,9 +240,16 @@ export class McpAppHost {
         this.deps.message(text)
         return {}
       }
-      case 'ui/request-display-mode':
-        // The chat shows pages inline only; the answer is the mode the page has.
-        return { mode: 'inline' }
+      case 'ui/request-display-mode': {
+        if (!isDisplayMode(params.mode)) throw new RpcError(INVALID_PARAMS, 'Diese Darstellung gibt es nicht.')
+        if (params.mode !== this.deps.context().displayMode && this.allows(params.mode)) this.deps.setDisplayMode(params.mode)
+        // The mode the page has now: the one asked for, or the one it had when that isn't allowed.
+        return { mode: this.deps.context().displayMode }
+      }
+      case 'ui/update-model-context':
+        // Only with the next prompt: the CLIs take no context between turns.
+        await this.deps.modelContext(params)
+        return {}
       default:
         throw new RpcError(METHOD_NOT_FOUND, `Nexa kennt „${method}“ nicht.`)
     }

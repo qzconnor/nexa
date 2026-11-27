@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InboxEntry, InboxSection } from '@shared/inbox'
 import type { SessionMeta } from '@shared/types'
-import { inboxRows, sortInbox } from './inbox'
+import { inboxRows, nextWaiting, sortInbox } from './inbox'
 
 function meta(id: string, more: Partial<SessionMeta> = {}): SessionMeta {
   return { id, projectId: 'p', title: id, titleSource: 'auto', provider: 'claude', model: '', effort: '', permissionMode: 'ask', createdAt: 0, updatedAt: 0, cli: {}, ...more }
@@ -37,5 +37,24 @@ describe('sortInbox', () => {
       (e) => ({ key: e.id, device: null, entry: e }),
     )
     expect(sortInbox(rows).map((r) => r.key)).toEqual(['new-q', 'old-q', 'err', 'new', 'run'])
+  })
+})
+
+describe('nextWaiting', () => {
+  const rows = [entry('w1', 'waiting'), entry('w2', 'waiting'), entry('err', 'trouble'), entry('x', 'unread')].map((e) => ({
+    key: e.id,
+    device: null,
+    entry: e,
+  }))
+
+  it('goes through the chats that wait, from the first when the open one does not', () => {
+    expect(nextWaiting(rows, null)).toBe('w1')
+    expect(nextWaiting(rows, 'x')).toBe('w1')
+    expect(nextWaiting(rows, 'w1')).toBe('w2')
+    expect(nextWaiting(rows, 'w2')).toBe('w1')
+  })
+
+  it('finds none when nothing waits for an answer', () => {
+    expect(nextWaiting(rows.slice(2), null)).toBeNull()
   })
 })

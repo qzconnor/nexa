@@ -307,6 +307,57 @@ describe('SessionService read and unread', () => {
   })
 })
 
+describe('SessionService tags', () => {
+  it('keeps the tags cleaned and each once, and none for an empty list', async () => {
+    const sessions = await start([meta('chat', {})])
+    expect((await sessions.update('chat', { tags: ['#Bug', 'bug', ' ', 'Release'] })).tags).toEqual(['Bug', 'Release'])
+    // Something else changes, the tags stay.
+    expect((await sessions.update('chat', { pinned: true })).tags).toEqual(['Bug', 'Release'])
+    expect(await sessions.update('chat', { tags: [] })).not.toHaveProperty('tags')
+  })
+})
+
+describe('SessionService with the context of an MCP app', () => {
+  it('sends what a page wants the agent to know once, with the next prompt', async () => {
+    const app = { id: 'app', ts: 1, provider: 'claude', kind: 'tool', tool: 'mcp', name: 'map', title: '', status: 'done', startedAt: 1, app: { server: 's', tool: 'map', resourceUri: 'ui://map' } }
+    await put(join(dataDir, 'sessions', 'chat.jsonl'), `${JSON.stringify(app)}\n`)
+    const sent: string[] = []
+    const run = { alive: true, send: async (input: RunInput) => void sent.push(input.text), stop: async () => {} }
+    const sessions = await start([meta('chat', {})], { start: async () => run as unknown as AgentRun })
+
+    await sessions.setMcpAppContext('chat', 'app', 'Vorher-Stand')
+    await sessions.setMcpAppContext('chat', 'app', 'Köln ist gewählt')
+    await sessions.send('chat', { text: 'erste' })
+    await sessions.send('chat', { text: 'zweite' })
+    await sessions.setMcpAppContext('chat', 'app', 'weg')
+    await sessions.setMcpAppContext('chat', 'app', null)
+    await sessions.send('chat', { text: 'dritte' })
+
+    expect(sent[0]).toContain('<nexa-app-context>')
+    expect(sent[0]).toContain('“map”')
+    expect(sent[0]).toContain('Köln ist gewählt')
+    expect(sent[0]).not.toContain('Vorher-Stand')
+    expect(sent[0]).toMatch(/erste$/)
+    expect(sent.map((text) => text.includes('<nexa-app-context>'))).toEqual([true, false, false])
+    await expect(sessions.setMcpAppContext('chat', 'gone', 'x')).rejects.toThrow('keine Oberfläche')
+  })
+})
+
+describe('SessionService.editedBy', () => {
+  it('finds the chats whose tools wrote a file, the latest write first', async () => {
+    const write = (id: string, file: string, at: number) =>
+      JSON.stringify({ id, ts: at, provider: 'claude', kind: 'tool', tool: 'write', name: 'Write', title: '', status: 'done', input: { file_path: file }, startedAt: at })
+    await put(join(dataDir, 'sessions', 'old.jsonl'), `${write('w', 'src/a.ts', 10)}\n`)
+    await put(join(dataDir, 'sessions', 'new.jsonl'), `${write('w1', join(projectPath, 'src', 'a.ts'), 30)}\n${write('w2', 'src/b.ts', 40)}\n`)
+    const sessions = await start([meta('old', {}), meta('new', {}), meta('none', {})])
+    expect(await sessions.editedBy(join(projectPath, 'src', 'a.ts'))).toEqual([
+      { sessionId: 'new', at: 30 },
+      { sessionId: 'old', at: 10 },
+    ])
+    expect(await sessions.editedBy(join(projectPath, 'src', 'c.ts'))).toEqual([])
+  })
+})
+
 describe('SessionService.ask (ask_user)', () => {
   const form = { type: 'form' as const, title: 'Angaben', fields: [{ key: 'name', label: 'Name', type: 'text' as const }] }
 

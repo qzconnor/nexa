@@ -17,6 +17,12 @@ const MAX_URI = 2048
 export const MAX_APP_HTML = 5 * 1024 * 1024
 /** What of a tool's result is kept with the chat for its page (`structuredContent`, `_meta`). */
 export const MAX_APP_RESULT_JSON = 512 * 1024
+/** What of a page's context for the agent (`ui/update-model-context`) goes with the next prompt. */
+export const MAX_APP_CONTEXT = 8000
+
+/** How the chat shows a page (`ui/request-display-mode`): in its place, over the window, or floating in a corner. */
+export type McpAppDisplayMode = 'inline' | 'fullscreen' | 'pip'
+export const MCP_APP_DISPLAY_MODES: readonly McpAppDisplayMode[] = ['inline', 'fullscreen', 'pip']
 
 export const McpAppsInvoke = {
   /** Reads the page of a tool item and gives it an address of the scheme. */
@@ -29,6 +35,8 @@ export const McpAppsInvoke = {
   page: 'mcp-apps:page',
   /** The page of a tool item of another device's chat, fetched from there and served here. */
   openRemote: 'mcp-apps:open-remote',
+  /** What the page wants the agent to know with the next prompt (`ui/update-model-context`); it replaces what it said before. */
+  modelContext: 'mcp-apps:model-context',
 } as const
 
 export type McpAppVisibility = 'model' | 'app'
@@ -83,6 +91,35 @@ export interface McpAppsApi {
   openRemote(device: string, sessionId: string, itemId: string): Promise<McpAppOpened & { result: McpAppToolResult | null }>
   callTool(sessionId: string, itemId: string, name: string, args: Record<string, unknown>): Promise<McpAppToolResult>
   readResource(sessionId: string, itemId: string, uri: string): Promise<unknown>
+  /** The page's context for the agent (`ui/update-model-context` params), for the chat's next prompt; without content it takes it back. */
+  modelContext(sessionId: string, itemId: string, params: unknown): Promise<void>
+}
+
+/**
+ * A page's context for the agent (`ui/update-model-context` params: `content` blocks, `structuredContent`)
+ * as text: the text blocks, then the structured content as JSON, cut at `MAX_APP_CONTEXT`. Null when
+ * it holds nothing, which takes the page's context back. Other blocks (images …) are named only.
+ */
+export function appContextText(params: unknown): string | null {
+  const p = isPlainObject(params) ? params : {}
+  const parts: string[] = []
+  for (const block of Array.isArray(p.content) ? p.content : []) {
+    if (!isPlainObject(block)) continue
+    if (block.type === 'text' && typeof block.text === 'string') {
+      if (block.text.trim()) parts.push(block.text.trim())
+    } else if (typeof block.type === 'string') parts.push(`[${block.type}]`)
+  }
+  if (p.structuredContent !== undefined) {
+    try {
+      const json = JSON.stringify(p.structuredContent)
+      if (json && json !== '{}' && json !== 'null') parts.push(json)
+    } catch {
+      // Not JSON (a cycle): the text stands alone.
+    }
+  }
+  const text = parts.join('\n\n')
+  if (!text) return null
+  return text.length > MAX_APP_CONTEXT ? `${text.slice(0, MAX_APP_CONTEXT)}…` : text
 }
 
 /** A `ui://` address as a page's resource; null for anything else. */

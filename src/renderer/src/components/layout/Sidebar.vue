@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { CalendarClockIcon, InboxIcon, SettingsIcon, ShapesIcon, SquarePenIcon } from '@lucide/vue'
+import { CalendarClockIcon, InboxIcon, SettingsIcon, ShapesIcon, SquarePenIcon, TagIcon, XIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
+import { allTags, hasTag } from '@shared/session-tags'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useChatActions } from '@/composables/useChatActions'
 import { useClock } from '@/composables/useClock'
 import { useListKeys } from '@/composables/useListKeys'
@@ -67,17 +77,21 @@ const FILTERS: { value: SidebarFilter; label: string }[] = [
   { value: 'live', label: 'Aktiv' },
 ]
 
+/** This device and every other one whose chats are loaded below. */
+const loadedDevices = computed(() => [null, ...devices.devices.filter((d) => d.state === 'ready').map((d) => d.id)])
+
 /**
- * On the switch, what each side shows: the chats in the projects (not archived, as the tree has them)
- * and how many of them run, of this device and every other one whose chats are loaded below.
+ * On the switch, what each side shows: the chats in the projects (not archived, as the tree has them,
+ * with the tag picked beside it) and how many of them run, of every device loaded here.
  */
 const counts = computed<Record<SidebarFilter, number>>(() => {
   const total = { all: 0, live: 0 }
-  for (const id of [null, ...devices.devices.filter((d) => d.state === 'ready').map((d) => d.id)]) {
+  const tag = ui.sidebarTag
+  for (const id of loadedDevices.value) {
     const projectIds = new Set(useProjectsStore(id).projects.map((p) => p.id))
     const chats = useSessionsStore(id)
     const { all, live } = chatCounts(
-      chats.metas.filter((m) => !m.archived && projectIds.has(m.projectId)),
+      chats.metas.filter((m) => !m.archived && projectIds.has(m.projectId) && (tag === null || hasTag(m.tags, tag))),
       chats.runtime,
     )
     total.all += all
@@ -85,6 +99,10 @@ const counts = computed<Record<SidebarFilter, number>>(() => {
   }
   return total
 })
+
+/** The tags of the chats in the projects, of every device loaded here, to filter by one. */
+const tags = computed(() => allTags(loadedDevices.value.flatMap((id) => useSessionsStore(id).metas.filter((m) => !m.archived))))
+const pickTag = (value: unknown) => (ui.sidebarTag = typeof value === 'string' && value ? value : null)
 
 const nav = ref<HTMLElement | null>(null)
 // The arrows from row to row, open and close what has rows in it (useListKeys), across the devices.
@@ -144,20 +162,61 @@ useListKeys(nav)
       <!-- For the projects below, on every device; the pinned above stay as they are. -->
       <!-- A click keeps the focus where it was (the composer): held by the switch, the next key press
            would show its focus ring. Tab still reaches it, with the ring. -->
-      <SegmentedControl
-        v-model="ui.sidebarFilter"
-        :options="FILTERS"
-        block
-        size="sm"
-        class="mt-2"
-        aria-label="Welche Chats die Projekte zeigen"
-        @mousedown.prevent
-      >
-        <template #option="{ option }">
-          {{ option.label }}
-          <span class="text-[0.7rem] tabular-nums opacity-60">{{ counts[option.value] }}</span>
-        </template>
-      </SegmentedControl>
+      <div class="mt-2 flex items-center gap-1">
+        <SegmentedControl
+          v-model="ui.sidebarFilter"
+          :options="FILTERS"
+          block
+          size="sm"
+          class="min-w-0 flex-1"
+          aria-label="Welche Chats die Projekte zeigen"
+          @mousedown.prevent
+        >
+          <template #option="{ option }">
+            {{ option.label }}
+            <span class="text-[0.7rem] tabular-nums opacity-60">{{ counts[option.value] }}</span>
+          </template>
+        </SegmentedControl>
+        <!-- Only once a chat has a tag: before, there is nothing to pick. -->
+        <DropdownMenu v-if="tags.length || ui.sidebarTag">
+          <DropdownMenuTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              :class="cn('shrink-0 text-muted-foreground', ui.sidebarTag && 'bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary')"
+              :aria-label="ui.sidebarTag ? `Nach Schlagwort gefiltert: ${ui.sidebarTag}` : 'Nach Schlagwort filtern'"
+              v-tooltip="ui.sidebarTag ? `Nur „${ui.sidebarTag}“` : 'Nach Schlagwort filtern'"
+              @mousedown.prevent
+            >
+              <TagIcon class="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="max-h-80 w-52 overflow-y-auto">
+            <DropdownMenuLabel>Nach Schlagwort filtern</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="ui.sidebarTag ?? ''" @update:model-value="pickTag">
+              <DropdownMenuRadioItem value="">Alle Chats</DropdownMenuRadioItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioItem v-for="tag in tags" :key="tag" :value="tag">
+                <span class="truncate">{{ tag }}</span>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <!-- The filter in sight, so a short tree doesn't look like chats went missing. -->
+      <div v-if="ui.sidebarTag" class="mt-1 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+        <TagIcon class="size-3 shrink-0" />
+        <span class="min-w-0 truncate">Nur „{{ ui.sidebarTag }}“</span>
+        <button
+          type="button"
+          class="ml-auto flex size-5 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent hover:text-foreground"
+          aria-label="Filter aufheben"
+          v-tooltip="'Filter aufheben'"
+          @click="ui.sidebarTag = null"
+        >
+          <XIcon class="size-3" />
+        </button>
+      </div>
       <SidebarTree :now="now" />
       <DeviceScope v-for="d in devices.devices" :key="d.id" :device="d.id">
         <SidebarDevice :device="d" :now="now" />

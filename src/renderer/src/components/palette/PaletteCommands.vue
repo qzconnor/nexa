@@ -16,6 +16,7 @@ import {
   FolderOpenIcon,
   FolderPlusIcon,
   GitForkIcon,
+  HandIcon,
   HistoryIcon,
   InboxIcon,
   MonitorIcon,
@@ -35,6 +36,7 @@ import {
   SquareArrowOutUpRightIcon,
   SquarePenIcon,
   SquareTerminalIcon,
+  TagIcon,
   TerminalIcon,
   Trash2Icon,
 } from '@lucide/vue'
@@ -48,13 +50,17 @@ import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList, CommandS
 import { useChatActions } from '@/composables/useChatActions'
 import { useSettingsTransfer } from '@/composables/useSettingsTransfer'
 import { SETTINGS } from '@/composables/useSettingsSearch'
+import { isChatWindow } from '@/lib/chat-window'
 import { chatSources, startsChats } from '@/lib/device-chats'
 import { attempt } from '@/lib/errors'
+import { nextWaiting, type InboxRow } from '@/lib/inbox'
 import { chatKey } from '@/lib/session-tree'
 import type { SettingsEntry } from '@/lib/settings-index'
 import { startShellId } from '@/lib/shells'
 import { useAccountsStore } from '@/stores/accounts'
+import { useShownDeviceStore } from '@/stores/device'
 import { useDevicesStore } from '@/stores/devices'
+import { useInboxStore } from '@/stores/inbox'
 import { useProjectsStore } from '@/stores/projects'
 import { useProvidersStore } from '@/stores/providers'
 import { useScheduledStore } from '@/stores/scheduled'
@@ -80,6 +86,7 @@ const startCommands = useStartCommandsStore()
 const terminals = useTerminalsStore()
 const scheduled = useScheduledStore()
 const devices = useDevicesStore()
+const shown = useShownDeviceStore()
 const chat = useChatActions()
 const transfer = useSettingsTransfer()
 
@@ -122,6 +129,18 @@ function openSetting(entry: SettingsEntry): void {
 
 /** The chat on screen, for the commands of that chat. */
 const meta = computed(() => (ui.view === 'chat' ? sessions.active : null))
+
+/** Where Ctrl+Shift+J goes: the next chat, of any device, that waits for an answer. A chat's own window has no inbox. */
+const waitingNext = computed(() => {
+  if (isChatWindow) return null
+  const rows = useInboxStore().rows
+  const id = ui.view === 'chat' ? useSessionsStore(shown.device).activeId : null
+  const key = nextWaiting(rows, id ? chatKey(shown.device, id) : null)
+  return rows.find((r) => r.key === key) ?? null
+})
+function openWaiting(row: InboxRow): void {
+  void useChatActions(row.device).open(row.entry.id)
+}
 const runtime = computed(() => (meta.value ? sessions.runtime(meta.value.id) : null))
 const busy = computed(() => runtime.value?.status === 'running' || runtime.value?.status === 'starting' || runtime.value?.status === 'waiting')
 
@@ -214,6 +233,16 @@ const switchChoices = computed(() => {
         <CommandItem value="inbox" filter-text="Posteingang Inbox wartet Rückfragen Fehler ungelesen fertig Aufmerksamkeit" @select="run(() => (ui.view = 'inbox'))">
           <InboxIcon />
           Posteingang
+        </CommandItem>
+        <CommandItem
+          v-if="waitingNext"
+          value="next-waiting"
+          filter-text="Zum Chat, der auf dich wartet springen Rückfrage Freigabe Frage Plan nächster"
+          @select="run(() => openWaiting(waitingNext!))"
+        >
+          <HandIcon />
+          Zum Chat, der auf dich wartet
+          <CommandShortcut>Strg+Umschalt+J</CommandShortcut>
         </CommandItem>
         <CommandItem value="artifacts" filter-text="Artefakte Seiten Dokumente claude.ai veröffentlicht Artifact" @select="run(() => (ui.view = 'artifacts'))">
           <ShapesIcon />
@@ -329,6 +358,14 @@ const switchChoices = computed(() => {
             <PinOffIcon v-if="meta.pinned" />
             <PinIcon v-else />
             {{ meta.pinned ? 'Chat lösen' : 'Chat anheften' }}
+          </CommandItem>
+          <CommandItem
+            value="chat-tags"
+            filter-text="Schlagwörter bearbeiten Tags Etiketten Label markieren Filter"
+            @select="run(() => (ui.tagsRequest = { device: null, id: meta!.id }), true)"
+          >
+            <TagIcon />
+            Schlagwörter bearbeiten…
           </CommandItem>
           <CommandItem value="chat-archive" filter-text="Chat archivieren wiederherstellen Archiv" @select="run(() => update({ archived: !meta!.archived }))">
             <ArchiveRestoreIcon v-if="meta.archived" />

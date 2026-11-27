@@ -447,6 +447,7 @@ export function registerIpc(ctx: AppContext): void {
   handle(IpcInvoke.sessionsRestart, (_e, id: unknown) => sessions.restart(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsResumeAtReset, (_e, id: unknown, on: unknown) => ctx.autoSwitch.resumeAtReset(str(id, 'Die Session'), on === true))
   handle(IpcInvoke.sessionsSearch, (_e, query: unknown) => sessions.search(typeof query === 'string' ? query.slice(0, 200) : ''))
+  handle(IpcInvoke.sessionsEditedBy, (_e, path: unknown) => sessions.editedBy(str(path, 'Der Pfad')))
   handle(IpcInvoke.sessionsMove, (_e, id: unknown, target: unknown) => sessions.move(str(id, 'Die Session'), moveArg(target)))
   handle(IpcInvoke.sessionsCompact, (_e, id: unknown) => sessions.compact(str(id, 'Die Session')))
   handle(IpcInvoke.sessionsFork, (_e, id: unknown) => sessions.fork(str(id, 'Die Session')))

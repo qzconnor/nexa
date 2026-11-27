@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolItem } from '@shared/chat'
-import { chatMessage, handoffContext, sessionInstructions, userShellContext } from './instructions'
+import { chatMessage, handoffContext, mcpAppContext, sessionInstructions, userShellContext } from './instructions'
 
 function command(detail: string, patch: Partial<ToolItem> = {}): ToolItem {
   return { kind: 'tool', id: detail, ts: 1, provider: 'claude', tool: 'bash', name: 'NexaShell', title: 'PowerShell 7', detail, status: 'done', exitCode: 0, byUser: true, startedAt: 1, ...patch }
@@ -90,5 +90,18 @@ describe('messages between chats', () => {
     const base = { renderTools: false, browserTools: false, projectName: 'nexa' }
     expect(sessionInstructions(base)).not.toContain('chat_send')
     expect(sessionInstructions({ ...base, chatTools: true })).toContain('call chat_send with that name')
+  })
+})
+
+describe('mcpAppContext', () => {
+  it('names each page’s tool with what it wants the agent to know', () => {
+    const text = mcpAppContext([
+      { tool: 'map', text: 'Köln ist gewählt' },
+      { tool: 'chart', text: '{"range":"2026"}' },
+    ])
+    expect(text).toMatch(/^<nexa-app-context>/)
+    expect(text).toContain('the tool “map”, as the user sees it in Nexa:\nKöln ist gewählt')
+    expect(text).toContain('“chart”')
+    expect(mcpAppContext([])).toBeNull()
   })
 })
