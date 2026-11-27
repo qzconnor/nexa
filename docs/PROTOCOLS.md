@@ -1083,6 +1083,15 @@ Werkzeug aufrufen darf: `model`, `app` oder beide (ohne Angabe beide). Das `_met
   `ui/notifications/size-changed { width, height }` und `notifications/message`. Der Host muss
   `tools/call` für Werkzeuge ohne `app` in der `visibility` ablehnen und die CSP durchsetzen (ohne
   Angabe keine Verbindungen).
+- **Darstellung**: `mode` ist `inline`, `fullscreen` oder `pip`. Die Seite nennt beim `ui/initialize` in
+  `appCapabilities.availableDisplayModes`, was sie kann, der Host in `hostContext.availableDisplayModes`;
+  in einen Modus, den die Seite nicht nennt, darf der Host nicht wechseln. Die Antwort `{ mode }` ist
+  der Modus danach, auch wenn er der alte bleibt. `containerDimensions` hat je Richtung `height` oder
+  `maxHeight` bzw. `width` oder `maxWidth`.
+- **Kontext fürs Modell**: `ui/update-model-context { content?, structuredContent? }` → `{}`. Jeder Aufruf
+  ersetzt den vorigen derselben Seite; der Host gibt den letzten mit der nächsten Nachricht des Nutzers
+  ans Modell (bei Nexa nimmt ein leerer Aufruf ihn zurück). Eine Fähigkeit in `hostCapabilities` dafür
+  gibt es nicht.
 - **Claude Code** (geprüft mit 2.1.331, ohne Prompt über Steueranfragen): Mit
   `CLAUDE_CODE_MCP_APPS_HOST=1` in der Umgebung meldet es den Servern beim `initialize`
   `extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [...] } }`; Server, die darauf achten,
@@ -1431,7 +1440,11 @@ fragenden Gerät gibt; was die andere Seite glaubt, zählt nicht. Typen, Liste d
   `meta`) und das Ergebnis des Werkzeugs (`result`, das `slimItem` aus dem Item lässt). Das steuernde Gerät
   prüft die Seite wie eine eigene (`appPageOf`) und stellt sie unter seiner eigenen Adresse
   (`nexa-app://<token>/`) mit ihrer CSP bereit. Was die Seite von ihrem Server will, geht an den Host:
-  `mcp-apps:read-resource` (`read`), `mcp-apps:call-tool` (`full`, ein Werkzeug handelt wie der Agent).
+  `mcp-apps:read-resource` (`read`), `mcp-apps:call-tool` (`full`, ein Werkzeug handelt wie der Agent),
+  `mcp-apps:model-context { sessionId, itemId, params }` (`prompt`, der Kontext geht mit dem nächsten
+  Prompt auf dem Host an die CLI).
+- **Von Chats geändert**: `sessions:edited-by { path }` (`read`) → `FileEditHit[]` (`sessionId`, `at`),
+  die Chats des Hosts, deren Agent die Datei geschrieben hat, zuletzt geänderte zuerst.
 - **Checkpoints**: `sessions:changes`, `sessions:change-diff` und `sessions:rewind-preview` mit `read`,
   `sessions:rewind` und `sessions:rewind-undo` (schreiben Dateien des Hosts) mit `full`.
 - **Dateien** (Dateibaum, Änderungen, Branch eines Chats des Hosts): `files:list`, `files:status`,

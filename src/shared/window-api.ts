@@ -15,7 +15,7 @@ export type ChannelSubscribe = <Args extends unknown[]>(channel: string, cb: (..
 /** What a device offers the chat window: its settings, CLIs, accounts, projects and chats. */
 export type DeviceApi = Pick<NexaApi, 'settings' | 'providers' | 'accounts' | 'usage' | 'projects' | 'sessions'> & {
   /** What the page of an MCP tool asks of its server, there (opening it goes through main: `openRemote`). */
-  mcpApps: Pick<McpAppsApi, 'callTool' | 'readResource'>
+  mcpApps: Pick<McpAppsApi, 'callTool' | 'readResource' | 'modelContext'>
   /** The file panel beside a chat: on another device only in the folders of its chats (the host checks). */
   files: FilesApi
   git: Pick<GitApi, 'branch' | 'watch' | 'onBranchChanged' | 'webUrl' | 'mainWorktree' | 'pullRequests'>
@@ -108,6 +108,7 @@ export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): D
       restart: (id) => invoke(IpcInvoke.sessionsRestart, id),
       resumeAtReset: (id, on) => invoke(IpcInvoke.sessionsResumeAtReset, id, on),
       search: (query) => invoke(IpcInvoke.sessionsSearch, query),
+      editedBy: (path) => invoke(IpcInvoke.sessionsEditedBy, path),
       move: (id, target) => invoke(IpcInvoke.sessionsMove, id, target),
       compact: (id) => invoke(IpcInvoke.sessionsCompact, id),
       fork: (id) => invoke(IpcInvoke.sessionsFork, id),
@@ -127,6 +128,7 @@ export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): D
     mcpApps: {
       callTool: (sessionId, itemId, name, args) => invoke(McpAppsInvoke.callTool, sessionId, itemId, name, args),
       readResource: (sessionId, itemId, uri) => invoke(McpAppsInvoke.readResource, sessionId, itemId, uri),
+      modelContext: (sessionId, itemId, params) => invoke(McpAppsInvoke.modelContext, sessionId, itemId, params),
     },
     files: {
       list: (dir) => invoke(FilesInvoke.list, dir),

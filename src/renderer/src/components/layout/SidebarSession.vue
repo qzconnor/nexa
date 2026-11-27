@@ -10,6 +10,7 @@ import {
   PinIcon,
   PinOffIcon,
   SquareArrowOutUpRightIcon,
+  TagIcon,
   Trash2Icon,
 } from '@lucide/vue'
 import { computed } from 'vue'
@@ -123,6 +124,12 @@ function endDrag(): void {
         <span v-if="place" class="max-w-[30%] shrink truncate text-[0.7rem] text-muted-foreground/80" :title="placeTitle">{{ place }}</span>
         <!-- Up there under „Angeheftet“ the pin would say it twice. -->
         <PinIcon v-else-if="meta.pinned" class="size-3 shrink-0 text-muted-foreground" />
+        <TagIcon
+          v-if="meta.tags?.length"
+          v-tooltip="meta.tags.join(', ')"
+          :aria-label="`Schlagwörter: ${meta.tags.join(', ')}`"
+          class="size-3 shrink-0 text-muted-foreground"
+        />
         <CalendarClockIcon
           v-if="meta.scheduledTask"
           v-tooltip="`Geplante Aufgabe: ${meta.scheduledTask.name}`"
@@ -147,6 +154,7 @@ function endDrag(): void {
       <ContextMenuItem @select="update({ pinned: !meta.pinned })">
         <component :is="meta.pinned ? PinOffIcon : PinIcon" /> {{ meta.pinned ? 'Lösen' : 'Anheften' }}
       </ContextMenuItem>
+      <ContextMenuItem @select="ui.tagsRequest = { device, id: meta.id }"><TagIcon /> Schlagwörter …</ContextMenuItem>
       <SessionMoveMenu :meta="meta" />
       <ContextMenuItem :disabled="chat.working(meta.id)" @select="chat.fork(meta.id)"><GitForkIcon /> Abzweigen</ContextMenuItem>
       <ContextMenuItem @select="update({ archived: true })"><ArchiveIcon /> Archivieren</ContextMenuItem>

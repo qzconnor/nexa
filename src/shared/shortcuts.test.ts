@@ -34,6 +34,11 @@ describe('matchAppShortcut', () => {
     expect(matchAppShortcut(key('P', { shiftKey: true }))).toEqual({ action: 'palette', prefix: '>' })
   })
 
+  it('goes to the next chat that waits with Ctrl+Shift+J', () => {
+    expect(matchAppShortcut(key('J', { shiftKey: true }))).toEqual({ action: 'next-waiting' })
+    expect(matchAppShortcut(key('j'))).toBeNull()
+  })
+
   it('shows or hides the terminal with Ctrl+Ö and Ctrl+`, as VS Code does', () => {
     expect(matchAppShortcut(key('ö', {}, 'Semicolon'))).toEqual({ action: 'toggle-terminal' })
     expect(matchAppShortcut(key('Ö', {}, 'Semicolon'))).toEqual({ action: 'toggle-terminal' })

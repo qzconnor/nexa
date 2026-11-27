@@ -19,6 +19,7 @@ import type {
   CommandOption,
   CommandStatus,
   DeepPartial,
+  FileEditHit,
   FolderPromptInfo,
   McpAuthStart,
   McpServerInfo,
@@ -157,6 +158,7 @@ export const IpcInvoke = {
   sessionsRestart: 'sessions:restart',
   sessionsResumeAtReset: 'sessions:resume-at-reset',
   sessionsSearch: 'sessions:search',
+  sessionsEditedBy: 'sessions:edited-by',
   sessionsMove: 'sessions:move',
   sessionsCompact: 'sessions:compact',
   sessionsFork: 'sessions:fork',
@@ -471,6 +473,8 @@ export interface NexaApi {
     resumeAtReset(id: string, on: boolean): Promise<void>
     /** Chats whose prompts and answers hold every word of `query`; empty: reads them ahead for the next search. */
     search(query: string): Promise<SessionSearchHit[]>
+    /** The chats whose agent wrote the file at `path` (absolute), the latest write first. */
+    editedBy(path: string): Promise<FileEditHit[]>
     /** Into another project or folder: the chat goes on there with its conversation (not while its CLI works). */
     move(id: string, target: SessionMoveInput): Promise<SessionMeta>
     /** Has the chat's CLI compact its conversation now (Codex; Claude Code gets `/compact` as a prompt). */

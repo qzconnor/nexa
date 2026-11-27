@@ -111,9 +111,11 @@ export const useUiStore = defineStore('ui', () => {
   watch(pinnedOpen, (open) => remember('nexa.pinned', open ? 'open' : 'folded'))
   /** Which chats the projects in the sidebar show: all, or those that run (`live`, lib/chat-state.ts). */
   const sidebarFilter = ref<SidebarFilter>(stored<SidebarFilter>('nexa.sidebarFilter', 'all') === 'live' ? 'live' : 'all')
+  /** Only the chats with this tag (shared/session-tags.ts) in the projects of the sidebar; null: all. */
+  const sidebarTag = ref<string | null>(stored('nexa.sidebarTag', '') || null)
   /**
-   * Under „Aktiv“ every separator, project and folder shows open, so the running chats are in sight.
-   * What the user folds there (keys of useSidebarFold) stays folded only until the filter changes.
+   * Under „Aktiv“ or a tag every separator, project and folder shows open, so the chats it leaves are in
+   * sight. What the user folds there (keys of useSidebarFold) stays folded only until the filter changes.
    */
   const liveFolded = ref(new Set<string>())
   function toggleLiveFold(key: string): void {
@@ -125,6 +127,12 @@ export const useUiStore = defineStore('ui', () => {
     remember('nexa.sidebarFilter', filter)
     liveFolded.value = new Set()
   })
+  watch(sidebarTag, (tag) => {
+    remember('nexa.sidebarTag', tag ?? '')
+    liveFolded.value = new Set()
+  })
+  /** The chat whose tags the dialog edits, on its device (null: this one); null: closed. */
+  const tagsRequest = ref<{ device: string | null; id: string } | null>(null)
   /**
    * The order the user dragged the pinned chats on top into, by `chatKey` (lib/session-tree.ts). It
    * mixes the chats of several devices, so it stays on this one. Shared by the windows of the app.
@@ -279,6 +287,8 @@ export const useUiStore = defineStore('ui', () => {
     toggleFolder,
     pinnedOpen,
     sidebarFilter,
+    sidebarTag,
+    tagsRequest,
     liveFolded,
     toggleLiveFold,
     pinnedOrder,

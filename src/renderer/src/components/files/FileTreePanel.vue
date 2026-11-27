@@ -92,6 +92,7 @@ import { useDevicesStore } from '@/stores/devices'
 import { DEFAULT_TREE_WIDTH, MAX_TREE_WIDTH, MIN_TREE_WIDTH, useFileTreeStore, type TreeTarget } from '@/stores/file-tree'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import FileChatsMenu from './FileChatsMenu.vue'
 import FileContentResults from './FileContentResults.vue'
 import FileNameDialog from './FileNameDialog.vue'
 import FileTreeFilters from './FileTreeFilters.vue'
@@ -1368,6 +1369,7 @@ const iconButton =
           <GitCompareIcon />
           Änderungen zeigen
         </ContextMenuItem>
+        <FileChatsMenu v-if="!menuTarget.dir && menuTarget.path" :path="abs(menuTarget.path)" />
         <template v-if="local">
           <ContextMenuItem v-if="!menuTarget.dir" @select="openFile(menuTarget.path)">
             <ExternalLinkIcon />

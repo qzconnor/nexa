@@ -101,7 +101,7 @@ Renderer (Vue)  ──IPC──>  Main (Electron)  ──stdio JSON──>  clau
 | `window/window-place.ts` | Lage eines Fensters: gemerkte Bounds nur, wenn sie auf einem Bildschirm liegen, das Fenster eines Chats sonst versetzt neben dem Hauptfenster |
 | `lib/per-window.ts` | Listen, die jedes Fenster ganz schickt (überwachte Ordner, Git-Ordner): je Fenster gemerkt, zusammen angewandt, beim Schließen eines Fensters ohne dessen Liste |
 | `window/tray.ts` | Symbol im Infobereich (Einstellung `general.runInTray`): Schließen blendet das Fenster dann nur aus, das Menü öffnet und beendet. Unter Windows öffnet ein Rechtsklick Nexas eigenes Menü (`tray-menu.ts`), unter macOS und Linux das des Systems |
-| `window/tray-menu.ts` | Eigenes Menü des Symbols (Windows): rahmenloses Fenster mit eigenem Preload (`preload/tray.ts`, nur `window.trayMenu`) und eigener Seite (`renderer/tray.html`, `src/tray/TrayMenu.vue`), Theme und Material der Einstellungen, kleine runde Ecken über DWM (`roundSmallCorners` in `material.ts`). Zeigt die Chats, die warten oder arbeiten (`trayChats` in `shared/tray-menu.ts`), „Neuer Chat“, den Schalter der Benachrichtigungen, Öffnen und Beenden. Startet, sobald der Zeiger über dem Symbol ist, öffnet am Zeiger in der Arbeitsfläche (`trayMenuPlace` in `window-place.ts`), schließt bei `blur`, Esc oder einer Wahl und gibt seinen Renderer nach 5 Minuten zu wieder ab. Kein App-Fenster: Broadcasts und `openAppWindows` sehen es nicht, seine Kanäle `tray-menu:*` prüfen mit `handle(…, from)` nur dieses Fenster |
+| `window/tray-menu.ts` | Eigenes Menü des Symbols (Windows): rahmenloses Fenster mit eigenem Preload (`preload/tray.ts`, nur `window.trayMenu`) und eigener Seite (`renderer/tray.html`, `src/tray/TrayMenu.vue`), Theme und Material der Einstellungen, kleine runde Ecken über DWM (`roundSmallCorners` in `material.ts`). Zeigt die Chats, die warten oder arbeiten (`trayChats` in `shared/tray-menu.ts`), die Limits der angemeldeten Accounts (`trayLimits`: die Fenster des Modells neuer Chats wie in der Titelleiste, am Limit die Zeit bis frei), „Neuer Chat“, den Schalter der Benachrichtigungen, Öffnen und Beenden. Startet, sobald der Zeiger über dem Symbol ist, öffnet am Zeiger in der Arbeitsfläche (`trayMenuPlace` in `window-place.ts`), schließt bei `blur`, Esc oder einer Wahl und gibt seinen Renderer nach 5 Minuten zu wieder ab. Kein App-Fenster: Broadcasts und `openAppWindows` sehen es nicht, seine Kanäle `tray-menu:*` prüfen mit `handle(…, from)` nur dieses Fenster |
 | `lib/fonts.ts` | Installierte Schriften für die Schriftwahl der Einstellungen (Windows über .NET in PowerShell, Linux `fc-list`), einmal pro Sitzung; Kanal `app:list-fonts` |
 | `lib/login-item.ts` | Start mit der Anmeldung (`general.launchAtLogin`, Schalter `--autostart`): Windows über den Run-Schlüssel (der Uninstaller in `build/installer.nsh` entfernt ihn), Linux über `~/.config/autostart/nexa.desktop`; mit Infobereich startet das Fenster versteckt |
 | `window/edit-menu.ts` | Rechtsklick in den App-Fenstern: Vorschläge der Rechtschreibprüfung zum Wort unter der Maus, „Zum Wörterbuch hinzufügen“, dann Rückgängig bis Alles auswählen; außerhalb von Textfeldern nur „Kopieren“ für Markiertes. Seiten mit eigenem Menü (Seitenleiste, Dateibaum) verhindern das Standardmenü, dann kommt keins. `applySpellcheck` schaltet die Prüfung der App-Session (`chat.spellcheck`) und setzt ihre Sprachen (`chat.spellcheckLanguages`, ohne Wahl die des Systems und Englisch, `shared/spellcheck.ts`); macOS prüft in den Sprachen des Systems |
@@ -630,14 +630,24 @@ mit HTML). Nexa zeigt sie im Chat unter der Zeile des Werkzeugs (Protokolle in `
   und das Ergebnis (bzw. `tool-cancelled`), Theme- und Breitenwechsel als `host-context-changed`.
   `tools/call` geht über `SessionService.callMcpAppTool`, das nur Werkzeuge desselben Servers mit `app` in
   ihrer `visibility` zulässt; `resources/read` über dieselbe CLI; `ui/open-link` nur http(s) im
-  Standardbrowser; `ui/message` landet im Composer, abgeschickt wird es vom Nutzer. Anzeige nur
-  `inline`, `ui/update-model-context` kennt Nexa nicht (die CLIs nehmen zwischen den Turns keinen
-  Kontext an).
+  Standardbrowser; `ui/message` landet im Composer, abgeschickt wird es vom Nutzer.
+- **Darstellung** (`ui/request-display-mode`): `inline`, `fullscreen` (über dem Inhalt unter der
+  Titelleiste, Esc zurück) und `pip` (schwebend unten rechts, am Kopf verschiebbar), aber nur Modi, die
+  die Seite in `appCapabilities.availableDisplayModes` nennt (ohne Angabe alle). Der Frame zieht dafür in
+  eine Ebene am `body` (`<Teleport>`), denn die Chat-Spalte ist ein Container mit Maske, in dem `fixed`
+  nicht über den Chat reicht; `moveBefore` verschiebt ihn, ohne die Seite neu zu laden (sonst
+  `appendChild`). Im Chat steht solange ein Platzhalter mit „Zurückholen“, die Größe der Ebene geht als
+  `containerDimensions` an die Seite.
+- **Kontext fürs Modell** (`ui/update-model-context`): Die CLIs nehmen zwischen den Turns keinen Kontext
+  an, also hält main den Text (`appContextText`, höchstens 8000 Zeichen) je Seite im Chat
+  (`SessionService.setMcpAppContext`, jeder Aufruf ersetzt den vorigen derselben Seite) und stellt ihn
+  dem nächsten Prompt als `<nexa-app-context>` voran (`mcpAppContext` in `instructions.ts`). Ist er
+  gesendet, ist er weg. Unter der Seite steht, was mitgeht, mit „Verwerfen“.
 - **Andere Geräte**: Im Chat eines anderen Geräts holt main die Seite von dort (`mcp-apps:open-remote` →
   `mcp-apps:page`, mit dem Ergebnis des Werkzeugs, das der Verlauf von dort nicht mitbringt), prüft sie wie
   eine eigene und stellt sie unter einer eigenen Adresse bereit (`McpAppViews.openRemote`). `tools/call`
   und `resources/read` der Seite gehen an das Gerät (`apiOf(device).mcpApps`), `tools/call` nur mit Stufe
-  „Alles“.
+  „Alles“, der Kontext fürs Modell ab „Prompts senden“.
 
 ## Chats in eigenen Fenstern
 
@@ -756,6 +766,14 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   ihrem Chat und lassen sich dort beantworten. `stores/inbox.ts` fragt jedes Gerät nach `sessions:inbox`
   und fragt neu, wenn sich seine Chats, ein Status oder eine Rückfrage ändern; `lib/inbox.ts` lässt weg,
   was hier archiviert oder gelöscht ist, und „ungelesen“ nur, solange die Seitenleiste es auch zeigt.
+  Strg+Umschalt+J (und der Befehl in der Schnellsuche) öffnet den nächsten Chat unter „Wartet auf dich“
+  nach dem offenen (`nextWaiting`).
+- **Schlagwörter** (`SessionMeta.tags`, `shared/session-tags.ts`, aus dem Claude Manager): höchstens 10 je
+  Chat zu je 30 Zeichen, Groß-/Kleinschreibung egal, gesetzt im `ChatTagsDialog` (`ui.tagsRequest`, aus
+  dem Kontextmenü der Seitenleiste und der Schnellsuche, Vorschläge aus den Chats aller geladenen
+  Geräte). Das Schlagwort-Menü neben „Alle“/„Aktiv“ filtert die Seitenleiste aller Geräte
+  (`ui.sidebarTag`, gemerkt im `localStorage`) und klappt wie „Aktiv“ alles auf; die Schnellsuche findet
+  Chats auch über ihre Schlagwörter.
 - **Artefakte** (`views/ArtifactsView.vue`, `ui.view = 'artifacts'`, Eintrag unter „Posteingang“): Claudes
   Artefakte des gewählten Accounts als Karten mit Vorschaubild, Suche und Filtern (`lib/artifacts.ts`).
   `stores/artifacts.ts` hält Listen und Bilder, solange die App läuft, und fragt
@@ -855,7 +873,10 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   allen Chats des Projekts) und je Session die Aktivität: live über `files.onTouched`, beim ersten
   Anzeigen ergänzt um `files.history(sessionId)`. Main leitet beides aus den `tool`-Items ab
   (`SessionService` meldet `tool` und `turnEnded`, `FileActivityTracker` wertet sie aus,
-  `shared/file-touches.ts` liest Pfade aus Items). Shell-Befehle schreiben, was sich in ihrem Ordner
+  `shared/file-touches.ts` liest Pfade aus Items). „Von Chats geändert“ im Kontextmenü einer Datei
+  (`FileChatsMenu`) fragt `sessions.editedBy`: `SessionService.editedBy` liest die geschriebenen Pfade
+  jedes Chats (`writtenFiles`, gespeicherte Chats einmal, bis sie sich ändern) und nennt die Chats,
+  zuletzt geänderte zuerst. Shell-Befehle schreiben, was sich in ihrem Ordner
   ändert, solange sie laufen. Die Aktivität ist, was gerade geschieht: Jede Art läuft ab, so lange wie
   unter Einstellungen › Allgemein › Aktivität im Dateibaum eingestellt (`general.activitySeconds`, Auswahl
   `ACTIVITY_CHOICES`; Vorgabe Lesen und Suchen 1 Minute, Commit 2, Schreiben 5; der Timer-Knopf in den

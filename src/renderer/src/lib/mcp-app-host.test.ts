@@ -1,5 +1,30 @@
 import { describe, expect, it, vi } from 'vitest'
-import { clampHeight, MAX_APP_HEIGHT, McpAppHost, type McpAppHostContext, type McpAppHostDeps, messageText, openableLink } from './mcp-app-host'
+import {
+  clampHeight,
+  declaredDisplayModes,
+  displayModeAllowed,
+  MAX_APP_HEIGHT,
+  McpAppHost,
+  type McpAppHostContext,
+  type McpAppHostDeps,
+  messageText,
+  openableLink,
+} from './mcp-app-host'
+
+describe('display modes', () => {
+  it('takes the modes a page declares, null when it declares none', () => {
+    expect(declaredDisplayModes({ appCapabilities: { availableDisplayModes: ['pip', 'x', 'inline'] } })).toEqual(['pip', 'inline'])
+    expect(declaredDisplayModes({ appCapabilities: {} })).toBeNull()
+    expect(declaredDisplayModes(undefined)).toBeNull()
+  })
+
+  it('allows a mode the host has, unless the page declared others', () => {
+    expect(displayModeAllowed('fullscreen', ['inline', 'fullscreen'], null)).toBe(true)
+    expect(displayModeAllowed('fullscreen', ['inline', 'fullscreen'], ['inline'])).toBe(false)
+    expect(displayModeAllowed('pip', ['inline', 'fullscreen'], null)).toBe(false)
+    expect(displayModeAllowed('inline', ['inline'], [])).toBe(true)
+  })
+})
 
 const CONTEXT: McpAppHostContext = {
   theme: 'dark',
@@ -23,6 +48,9 @@ function setup(overrides: Partial<McpAppHostDeps> = {}) {
     openLink: vi.fn(),
     message: vi.fn(),
     resize: vi.fn(),
+    setDisplayMode: vi.fn(),
+    declaredModes: vi.fn(),
+    modelContext: vi.fn(async () => {}),
     context: () => CONTEXT,
     version: '1.0.0',
     ...overrides,
@@ -126,17 +154,47 @@ describe('McpAppHost', () => {
     ])
   })
 
-  it('keeps the page inline, answers ping, refuses what it doesn’t know', async () => {
-    const { host, posted } = setup()
+  it('keeps the page inline where the host has no other mode, answers ping, refuses what it doesn’t know', async () => {
+    const { host, deps, posted } = setup()
     host.receive({ jsonrpc: '2.0', id: 1, method: 'ui/request-display-mode', params: { mode: 'fullscreen' } })
     host.receive({ jsonrpc: '2.0', id: 2, method: 'ping' })
-    host.receive({ jsonrpc: '2.0', id: 3, method: 'ui/update-model-context', params: {} })
+    host.receive({ jsonrpc: '2.0', id: 3, method: 'ui/request-display-mode', params: { mode: 'huge' } })
+    host.receive({ jsonrpc: '2.0', id: 4, method: 'ui/unknown' })
     await flush()
+    expect(deps.setDisplayMode).not.toHaveBeenCalled()
     expect(posted).toEqual([
       { jsonrpc: '2.0', id: 1, result: { mode: 'inline' } },
       { jsonrpc: '2.0', id: 2, result: {} },
-      { jsonrpc: '2.0', id: 3, error: { code: -32601, message: 'Nexa kennt „ui/update-model-context“ nicht.' } },
+      { jsonrpc: '2.0', id: 3, error: { code: -32602, message: 'Diese Darstellung gibt es nicht.' } },
+      { jsonrpc: '2.0', id: 4, error: { code: -32601, message: 'Nexa kennt „ui/unknown“ nicht.' } },
     ])
+  })
+
+  it('shows the page in a mode the host has and the page declared, and answers with the mode it has then', async () => {
+    let mode: McpAppHostContext['displayMode'] = 'inline'
+    const context = () => ({ ...CONTEXT, displayMode: mode, availableDisplayModes: ['inline', 'fullscreen', 'pip'] as McpAppHostContext['availableDisplayModes'] })
+    const { host, deps, posted } = setup({ context, setDisplayMode: vi.fn((next) => (mode = next)) })
+    host.receive({ jsonrpc: '2.0', id: 1, method: 'ui/initialize', params: { appCapabilities: { availableDisplayModes: ['inline', 'fullscreen', 'tiny'] } } })
+    await flush()
+    expect(deps.declaredModes).toHaveBeenCalledWith(['inline', 'fullscreen'])
+    expect(host.allows('pip')).toBe(false)
+
+    host.receive({ jsonrpc: '2.0', id: 2, method: 'ui/request-display-mode', params: { mode: 'fullscreen' } })
+    host.receive({ jsonrpc: '2.0', id: 3, method: 'ui/request-display-mode', params: { mode: 'pip' } })
+    await flush()
+    expect(deps.setDisplayMode).toHaveBeenCalledExactlyOnceWith('fullscreen')
+    expect(posted.slice(1)).toEqual([
+      { jsonrpc: '2.0', id: 2, result: { mode: 'fullscreen' } },
+      { jsonrpc: '2.0', id: 3, result: { mode: 'fullscreen' } },
+    ])
+  })
+
+  it('hands what the page wants the agent to know on, for the next prompt', async () => {
+    const { host, deps, posted } = setup()
+    host.receive({ jsonrpc: '2.0', id: 1, method: 'ui/update-model-context', params: { content: [{ type: 'text', text: 'Köln' }] } })
+    await flush()
+    expect(deps.modelContext).toHaveBeenCalledWith({ content: [{ type: 'text', text: 'Köln' }] })
+    expect(posted).toEqual([{ jsonrpc: '2.0', id: 1, result: {} }])
   })
 
   it('takes the page’s height within bounds', () => {

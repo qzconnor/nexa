@@ -1,12 +1,13 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, nativeTheme, powerMonitor, shell, type IpcMainInvokeEvent } from 'electron'
+import { PROVIDER_IDS } from '@shared/chat'
 import { ChatWindowsEvent, type MainWindowRequest } from '@shared/chat-windows'
 import { PUSH_AWAY_MINUTES } from '@shared/defaults'
 import { IpcEvent, IpcInvoke } from '@shared/ipc'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { hasChats } from '@shared/server-link'
 import { findTheme } from '@shared/themes/builtin'
-import { trayChats, type TrayMenuAction } from '@shared/tray-menu'
+import { trayChats, trayLimits, type TrayMenuAction } from '@shared/tray-menu'
 import { ApiServer } from './api/api-server'
 import { registerArtifactsIpc } from './artifacts/artifact-ipc'
 import { ArtifactService, artifactAccounts } from './artifacts/artifact-service'
@@ -498,6 +499,11 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
               appearance: current.appearance,
               translucent: current.appearance.material !== 'none',
               ...trayChats(sessions.list(), (id) => sessions.statusOf(id), (id) => projects.get(id)?.name ?? ''),
+              limits: trayLimits(
+                { accounts: accounts.list(), usage: providers.usage(), blocked: autoSwitch.blockedAccounts(), now: Date.now() },
+                enabledProviders(current),
+                Object.fromEntries(PROVIDER_IDS.map((id) => [id, current[id].model])),
+              ),
               notifications: current.notifications.enabled,
             }
           },
@@ -510,6 +516,8 @@ async function bootstrap(launchRequest: LaunchRequest | null, shellEnv: Promise<
               }),
               settings.on('changed', cb),
               themes.on('changed', cb),
+              providers.on('usage', cb),
+              accounts.on('changed', cb),
             ]
             return () => offs.forEach((off) => off())
           },

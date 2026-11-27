@@ -5,16 +5,16 @@ import { useUiStore } from '@/stores/ui'
 export type FoldKind = 'section' | 'project' | 'folder'
 
 /**
- * Whether a separator, project or folder of the sidebar shows open, and folding it. Under „Aktiv“ all
- * of them show open, so the running chats are in sight without a click; one folded there stays so until
- * the filter changes. The folding under „Alle“ (saved with the separator, the project, `ui.openFolders`)
- * stays as the user left it.
+ * Whether a separator, project or folder of the sidebar shows open, and folding it. Under „Aktiv“ or a
+ * tag all of them show open, so the chats the filter leaves are in sight without a click; one folded
+ * there stays so until the filter changes. The folding under „Alle“ (saved with the separator, the
+ * project, `ui.openFolders`) stays as the user left it.
  */
 export function useSidebarFold() {
   const ui = useUiStore()
   // By device: every device has a separator `default`.
   const device = useDevice()
-  const live = computed(() => ui.sidebarFilter === 'live')
+  const live = computed(() => ui.sidebarFilter === 'live' || ui.sidebarTag !== null)
   const key = (kind: FoldKind, id: string) => `${device ?? ''}\n${kind}\n${id}`
 
   /** `saved`: open under „Alle“. */

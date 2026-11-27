@@ -17,14 +17,17 @@ export type AppShortcut =
   | { action: 'zoom'; step: 1 | -1 | 0 }
   /** The user's terminal beside the open chat, shown or hidden. */
   | { action: 'toggle-terminal' }
+  /** The next chat that waits for the user (a question, a permission, a plan), as the inbox lists them. */
+  | { action: 'next-waiting' }
 
 /**
  * Like a browser's tabs: Ctrl+Tab and Ctrl+Shift+Tab go to the next and the previous chat, Ctrl+1–8
  * to that one, Ctrl+9 to the last; Ctrl+Shift+T opens a new chat (as in Windows Terminal and the
  * Claude Manager). Ctrl+, opens the settings, Ctrl+Shift+A and Ctrl+Shift+P the quick open (as in
  * VS Code). Ctrl+plus/minus/0 scale the window like a browser's zoom. Ctrl+Ö (German layouts) and
- * Ctrl+` show or hide the terminal, as VS Code does. Plain Ctrl+letter combinations stay with the
- * fields (Ctrl+A, Ctrl+Z …).
+ * Ctrl+` show or hide the terminal, as VS Code does. Ctrl+Shift+J goes to the next chat that waits
+ * for the user (as in the Claude Manager). Plain Ctrl+letter combinations stay with the fields
+ * (Ctrl+A, Ctrl+Z …).
  */
 export function matchAppShortcut(e: ShortcutKey): AppShortcut | null {
   if (e.type !== 'keydown' || e.altKey) return null
@@ -37,6 +40,7 @@ export function matchAppShortcut(e: ShortcutKey): AppShortcut | null {
     if (key === 't') return { action: 'new-chat' }
     if (key === 'a') return { action: 'palette', prefix: '' }
     if (key === 'p') return { action: 'palette', prefix: '>' }
+    if (key === 'j') return { action: 'next-waiting' }
     return null
   }
   const digit = chatDigit(e)

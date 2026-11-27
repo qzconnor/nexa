@@ -85,7 +85,7 @@ interface IndexedChat extends ChatEntry {
   deviceName?: string
 }
 
-/** Every chat of every device with the text its title search runs on; a device's name finds its chats too. */
+/** Every chat of every device with the text its title search runs on; a device's name and the chat's tags find it too. */
 const indexed = computed<IndexedChat[]>(() =>
   sources.value.flatMap(({ id, name }) =>
     useSessionsStore(id).metas.map((meta) => ({
@@ -93,7 +93,7 @@ const indexed = computed<IndexedChat[]>(() =>
       device: id,
       deviceName: name,
       meta,
-      text: searchText(meta.title, meta.preview, placeOf(id, meta), meta.cwd, name),
+      text: searchText(meta.title, meta.preview, placeOf(id, meta), meta.cwd, name, ...(meta.tags ?? [])),
     })),
   ),
 )

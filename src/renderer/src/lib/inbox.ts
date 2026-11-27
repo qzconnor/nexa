@@ -35,3 +35,14 @@ export function sortInbox(rows: readonly InboxRow[]): InboxRow[] {
   const order = (row: InboxRow) => INBOX_SECTIONS.indexOf(row.entry.section)
   return [...rows].sort((a, b) => order(a) - order(b) || b.entry.updatedAt - a.entry.updatedAt)
 }
+
+/**
+ * The chat Ctrl+Shift+J goes to (a `chatKey`): of those that wait for an answer, in the inbox's order,
+ * the one after `current`, or the first when `current` doesn't wait. Null when none waits.
+ */
+export function nextWaiting(rows: readonly InboxRow[], current: string | null): string | null {
+  const waiting = rows.filter((r) => r.entry.section === 'waiting')
+  if (waiting.length === 0) return null
+  const at = waiting.findIndex((r) => r.key === current)
+  return waiting[(at + 1) % waiting.length]!.key
+}

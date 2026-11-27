@@ -1,5 +1,6 @@
-import type { ToolItem } from './chat'
+import type { ChatItem, ToolItem } from './chat'
 import type { FileTouch } from './files'
+import { folderKey } from './folders'
 import { isPlainObject } from './utils'
 
 /** The most files of a search that light up. */
@@ -78,4 +79,25 @@ export function toolTouches(item: ToolItem, cwd: string, windows: boolean): { to
   }
   if (item.name === 'commandExecution' && item.tool === 'read' && item.detail) maybe.push({ path: at(item.detail), kind: 'read' })
   return { touches, maybe }
+}
+
+/**
+ * The files a chat's tools wrote (edits, writes, patches; also its subagents'), by `folderKey`, with
+ * when each was written last: what the file tree's „Von Chats geändert“ asks. What shell commands
+ * wrote isn't among them; main only sees that live.
+ */
+export function writtenFiles(items: readonly ChatItem[], cwd: string, windows: boolean): Map<string, number> {
+  const written = new Map<string, number>()
+  for (const item of items) {
+    if (item.kind !== 'tool' || item.status === 'pending' || item.status === 'denied' || item.status === 'running') continue
+    // A failed edit changed nothing, unless it names what it changed.
+    if (item.status === 'error' && !item.changes?.length) continue
+    const at = item.endedAt ?? item.startedAt
+    for (const touch of toolTouches(item, cwd, windows).touches) {
+      if (touch.kind !== 'write') continue
+      const key = folderKey(touch.path)
+      written.set(key, Math.max(written.get(key) ?? 0, at))
+    }
+  }
+  return written
 }

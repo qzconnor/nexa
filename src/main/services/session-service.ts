@@ -28,15 +28,18 @@ import {
 } from '@shared/chat'
 import { chatMarkdown, lastAnswer, markdownFileName, turnAnswer } from '@shared/chat-markdown'
 import type { ChatChanges, RewindPreview, RewindResult } from '@shared/checkpoints'
+import { writtenFiles } from '@shared/file-touches'
 import type { FileDiff, WorktreeBaseChoice } from '@shared/files'
 import { inboxEntries, type InboxEntry } from '@shared/inbox'
 import type { McpAppRef, McpAppToolResult } from '@shared/mcp-apps'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { redactSecrets } from '@shared/redact'
+import { cleanTags } from '@shared/session-tags'
 import { plainOutput } from '@shared/terminal'
 import type {
   AppSettings,
   CliLink,
+  FileEditHit,
   McpAuthStart,
   McpServerInfo,
   PluginInfo,
@@ -76,7 +79,7 @@ import { forkPoint } from '../providers/claude/claude-transcript'
 import { codexTurnsFromOutside } from '../providers/codex/codex-items'
 import type { AgentRun, RunOptions, RunSink } from '../providers/provider'
 import { folderPromptText } from './folder-prompts'
-import { chatMessage, handoffContext, rewindContext, sessionInstructions, userShellContext } from './instructions'
+import { chatMessage, handoffContext, mcpAppContext, rewindContext, sessionInstructions, userShellContext } from './instructions'
 import type { ProjectService } from './project-service'
 import type { ProviderService } from './provider-service'
 import { chatTexts, findInChat, type ChatText } from './session-search'
@@ -116,6 +119,8 @@ interface SessionState {
    * prompt sets it to 0, a message from another chat to one more than that chat's.
    */
   chatChain?: number
+  /** What pages of MCP tools want the agent to know with the next prompt, by their tool item (`setMcpAppContext`). */
+  appContexts?: Map<string, { tool: string; text: string }>
 }
 
 /** A chat as the agents of other chats see it (Nexa's chat tools, mcp/chat-tools.ts). */
@@ -241,6 +246,7 @@ export class SessionService extends TypedEmitter<Events> {
   private readonly searchCache = new Map<string, { stamp: string; texts: Promise<ChatText[]> }>()
   /** The artifacts each saved chat names, by session, while `stamp` says it is unchanged. */
   private readonly artifactCache = new Map<string, { stamp: string; mentions: Promise<ArtifactMentions> }>()
+  private readonly writtenCache = new Map<string, { stamp: string; files: Promise<Map<string, number>> }>()
   /**
    * The turns of each saved chat for the usage (`stats`), while its `updatedAt` is the same: every look
    * at Settings › Usage read and parsed the transcripts of all chats of the last 30 days again.
@@ -1086,6 +1092,34 @@ export class SessionService extends TypedEmitter<Events> {
     return mentions
   }
 
+  /** The chats whose agent wrote the file at `path`, the latest write first (the file tree's „Von Chats geändert“). */
+  async editedBy(path: string): Promise<FileEditHit[]> {
+    const key = folderKey(path)
+    for (const id of this.writtenCache.keys()) if (!this.sessions.has(id)) this.writtenCache.delete(id)
+    const hits: FileEditHit[] = []
+    await pool([...this.sessions.values()], 4, async (s) => {
+      const at = (await this.writtenOf(s).catch(() => null))?.get(key)
+      if (at !== undefined) hits.push({ sessionId: s.meta.id, at })
+    })
+    return hits.sort((a, b) => b.at - a.at)
+  }
+
+  /** The files a chat's tools wrote: an open one as it is now, a saved one read once until it changes. */
+  private writtenOf(s: SessionState): Promise<Map<string, number>> {
+    const project = this.projects.get(s.meta.projectId)
+    const cwd = project ? this.cwdOf(s.meta, project) : (s.meta.cwd ?? '')
+    const windows = process.platform === 'win32'
+    if (s.items) return Promise.resolve(writtenFiles(s.items, cwd, windows))
+    const stamp = `saved:${s.meta.updatedAt}:${cwd}`
+    const cached = this.writtenCache.get(s.meta.id)
+    if (cached?.stamp === stamp) return cached.files
+    const files = this.savedItems(s).then((items) => writtenFiles(items, cwd, windows))
+    const entry = { stamp, files }
+    this.writtenCache.set(s.meta.id, entry)
+    files.catch(() => this.writtenCache.get(s.meta.id) === entry && this.writtenCache.delete(s.meta.id))
+    return files
+  }
+
   /** A Codex thread's chat, read through the app-server of the account whose folder keeps it. */
   private async codexHistory(meta: SessionMeta): Promise<ChatItem[]> {
     const link = meta.cli.codex
@@ -1148,6 +1182,9 @@ export class SessionService extends TypedEmitter<Events> {
     const shellContext = userShellContext(shells)
     // Files the user rewound since: what the CLI remembers having written is gone.
     const rewound = rewindContext(s.items.slice(since).filter((i): i is NoticeItem => i.kind === 'notice' && !!i.rewind))
+    // What pages of MCP tools in the chat want the agent to know: once, with this prompt.
+    const pages = s.appContexts?.size ? [...s.appContexts] : []
+    const appContext = mcpAppContext(pages.map(([, page]) => page))
     // What this CLI hasn't seen of the chat yet (another CLI answered meanwhile); nothing from before a `/clear`.
     const link = meta.cli[provider]
     const unseen = s.items
@@ -1191,7 +1228,9 @@ export class SessionService extends TypedEmitter<Events> {
       const message = from ? chatMessage(from.origin, text) : text
       // Not before the checkpoint: the agent would change files before they are kept.
       await checkpoint
-      await run.send({ id: user.id, text: [context, shellContext, rewound, message].filter(Boolean).join('\n\n'), images: input.images })
+      await run.send({ id: user.id, text: [context, shellContext, rewound, appContext, message].filter(Boolean).join('\n\n'), images: input.images })
+      // Only what went: a page that said something new meanwhile keeps it for the next prompt.
+      for (const [itemId, page] of pages) if (s.appContexts?.get(itemId) === page) s.appContexts.delete(itemId)
     } catch (error) {
       // It never reached the CLI: it stays in the chat as written, as any prompt that failed.
       this.takeQueued(s, user.id)
@@ -1793,6 +1832,19 @@ export class SessionService extends TypedEmitter<Events> {
     return { ...this.cliTarget(id), app: item.app }
   }
 
+  /**
+   * What a page (MCP Apps) wants the agent to know (`ui/update-model-context`, as text): it goes with
+   * the chat's next prompt, replacing what the page said before; null takes it back. Kept until then
+   * only, not over a restart.
+   */
+  async setMcpAppContext(id: string, itemId: string, text: string | null): Promise<void> {
+    const s = await this.loaded(id)
+    const item = s.items.find((i) => i.id === itemId)
+    if (item?.kind !== 'tool' || !item.app) throw new Error('Dieses Werkzeug hat keine Oberfläche.')
+    if (text) (s.appContexts ??= new Map()).set(itemId, { tool: item.app.tool, text })
+    else s.appContexts?.delete(itemId)
+  }
+
   /** What the tool of a page (MCP Apps) returned, as the page gets it; null while it runs or without. */
   async mcpAppResult(id: string, itemId: string): Promise<McpAppToolResult | null> {
     const s = await this.loaded(id)
@@ -1927,6 +1979,11 @@ export class SessionService extends TypedEmitter<Events> {
     }
     if (patch.pinned !== undefined) meta.pinned = patch.pinned
     if (patch.archived !== undefined) meta.archived = patch.archived
+    if (Array.isArray(patch.tags)) {
+      const tags = cleanTags(patch.tags)
+      if (tags.length) meta.tags = tags
+      else delete meta.tags
+    }
     if (Array.isArray(patch.dirs)) {
       const dirs = newDirs
       if (dirs.join('\n') !== (meta.dirs ?? []).join('\n')) {

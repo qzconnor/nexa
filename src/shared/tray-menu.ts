@@ -1,6 +1,9 @@
+import { availability, type ChoiceContext } from './account-choice'
+import { visibleAccounts } from './accounts'
 import type { ProviderId, SessionStatus } from './chat'
+import { PROVIDERS } from './providers'
 import type { AppTheme } from './themes/types'
-import type { AppearanceSettings, SessionMeta } from './types'
+import type { AppearanceSettings, SessionMeta, UsageWindow } from './types'
 
 /*
  * The menu of the icon in the notification area: on Windows a small window of Nexa's own in the
@@ -19,6 +22,22 @@ export interface TrayChat {
   status: 'waiting' | 'working'
 }
 
+/** An account's plan limits in the menu. */
+export interface TrayLimit {
+  accountId: string
+  provider: ProviderId
+  /** The account's name; the CLI's when it is the only account of it the user sees. */
+  name: string
+  /** The account's dot, when the CLI has several. */
+  color?: string
+  /** The model new chats of the CLI start with (empty: the CLI's default): the page shows the windows that limit it, as the title bar does. */
+  model: string
+  windows: UsageWindow[]
+  /** At its limit: when it is free again; `estimated` when no CLI said when. */
+  freeAt?: number
+  estimated?: boolean
+}
+
 export interface TrayMenuState {
   /** Counts the states; the page answers `ready` with it once it drew this one. */
   seq: number
@@ -32,6 +51,8 @@ export interface TrayMenuState {
   waiting: number
   /** How many chats work, also beyond `chats`. */
   working: number
+  /** The limits of the accounts of the CLIs that are on, as far as they are known. */
+  limits: TrayLimit[]
   /** The main switch of the notifications (the bell in the title bar). */
   notifications: boolean
 }
@@ -94,6 +115,39 @@ export function trayChats(
   const waiting = pick('waiting')
   const working = pick('working')
   return { chats: [...waiting, ...working].slice(0, limit), waiting: waiting.length, working: working.length }
+}
+
+/**
+ * The limits the menu shows: every account the user sees of the CLIs that are on (`providers`), in
+ * their order, as far as its windows are known. API keys have no plan limits, signed-out accounts no
+ * readings that still count. `models`: the model new chats of each CLI start with.
+ */
+export function trayLimits(
+  ctx: ChoiceContext,
+  providers: readonly ProviderId[],
+  models: Partial<Record<ProviderId, string>>,
+): TrayLimit[] {
+  return providers.flatMap((provider) => {
+    const shown = visibleAccounts(ctx.accounts, provider)
+    return shown.flatMap((account) => {
+      const windows = ctx.usage.find((u) => u.accountId === account.id)?.windows ?? []
+      const free = availability(account, ctx)
+      if (!free || !windows.length) return []
+      const limit: TrayLimit = {
+        accountId: account.id,
+        provider,
+        name: shown.length > 1 ? account.name : PROVIDERS[provider].short,
+        model: models[provider] ?? '',
+        windows,
+      }
+      if (shown.length > 1) limit.color = account.color
+      if (free.at > ctx.now) {
+        limit.freeAt = free.at
+        if (free.estimated) limit.estimated = true
+      }
+      return [limit]
+    })
+  })
 }
 
 /** What the page asks for, checked: an unknown kind or a missing chat throws. */

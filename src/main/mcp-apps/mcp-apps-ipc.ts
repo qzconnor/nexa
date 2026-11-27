@@ -1,5 +1,5 @@
 import { isPlainObject } from '@shared/utils'
-import { MAX_APP_RESULT_JSON, McpAppsInvoke, type McpAppRemotePage, type McpAppToolResult } from '@shared/mcp-apps'
+import { appContextText, MAX_APP_RESULT_JSON, McpAppsInvoke, type McpAppRemotePage, type McpAppToolResult } from '@shared/mcp-apps'
 import { handle } from '../ipc'
 import type { SessionService } from '../services/session-service'
 import { appPageOf, type McpAppViews } from './mcp-app-views'
@@ -24,6 +24,9 @@ export function registerMcpAppsIpc(views: McpAppViews, sessions: SessionService)
   )
   handle(McpAppsInvoke.readResource, (_e, sessionId: unknown, itemId: unknown, uri: unknown) =>
     sessions.readMcpAppResource(str(sessionId, 'Chat'), str(itemId, 'Werkzeug'), str(uri, 'Adresse', MAX_URI)),
+  )
+  handle(McpAppsInvoke.modelContext, (_e, sessionId: unknown, itemId: unknown, params: unknown) =>
+    sessions.setMcpAppContext(str(sessionId, 'Chat'), str(itemId, 'Werkzeug'), appContextText(params)),
   )
   // For another device's window: its chat leaves the pages' results out (slimItem), the page brings it.
   handle(McpAppsInvoke.page, async (_e, sessionId: unknown, itemId: unknown): Promise<McpAppRemotePage> => {

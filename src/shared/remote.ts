@@ -151,10 +151,13 @@ const CHANNELS: Record<string, ChannelRule> = {
   [McpAppsInvoke.page]: 'read',
   [McpAppsInvoke.readResource]: 'read',
   [McpAppsInvoke.callTool]: 'full',
+  // Goes to the agent with the next prompt, as a prompt does.
+  [McpAppsInvoke.modelContext]: 'prompt',
   [IpcInvoke.sessionsChanges]: 'read',
   [IpcInvoke.sessionsChangeDiff]: 'read',
   [IpcInvoke.sessionsRewindPreview]: 'read',
   [IpcInvoke.sessionsSearch]: 'read',
+  [IpcInvoke.sessionsEditedBy]: 'read',
   [IpcInvoke.sessionsCreate]: (args) => {
     const input = record(args[0]) as Partial<SessionCreateInput>
     return input.cliArgs?.length || !ASKING_MODES.includes(input.permissionMode) ? 'full' : 'prompt'

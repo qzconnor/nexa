@@ -158,6 +158,16 @@ export function rewindContext(notices: readonly NoticeItem[]): string | null {
 }
 
 /**
+ * What the pages of MCP tools in the chat want the agent to know (`ui/update-model-context`), for the
+ * CLI with the next prompt: the CLIs take no context between turns.
+ */
+export function mcpAppContext(pages: readonly { tool: string; text: string }[]): string | null {
+  if (pages.length === 0) return null
+  const parts = pages.map((page) => `From the interface of the tool “${page.tool}”, as the user sees it in Nexa:\n${page.text}`)
+  return ['<nexa-app-context>', ...parts, '</nexa-app-context>'].join('\n\n')
+}
+
+/**
  * The part of the chat a CLI hasn't seen, as context for it: when a session moves from Claude Code to
  * Codex (or back), the other CLI gets what happened meanwhile with the next prompt.
  */
