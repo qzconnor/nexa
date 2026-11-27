@@ -13,13 +13,14 @@ import { useSessionsStore } from '@/stores/sessions'
 import AskForm from './AskForm.vue'
 import DiffView from './DiffView.vue'
 import ElicitationForm from './ElicitationForm.vue'
+import InteractionStop from './InteractionStop.vue'
 import Markdown from './Markdown.vue'
 import QuestionForm from './QuestionForm.vue'
 
 /**
  * A question of the agent, answered right here: a permission for a tool, questions with options,
  * a plan to approve, a form of an MCP server or of the agent itself (`ask_user`). Once answered it
- * shrinks to what was decided.
+ * shrinks to what was decided. Each can also stop the agent instead (InteractionStop).
  */
 const props = defineProps<{ item: InteractionItem; sessionId: string }>()
 const sessions = useSessionsStore()
@@ -179,6 +180,7 @@ const heading = computed(() => {
           >
             {{ showDeny ? 'Ablehnen' : 'Ablehnen …' }}
           </Button>
+          <InteractionStop :session-id="sessionId" :disabled="busy" />
         </div>
       </template>
 
@@ -188,7 +190,9 @@ const heading = computed(() => {
         :questions="request.questions"
         :busy="busy"
         @submit="(answers) => answer({ type: 'question', answers })"
-      />
+      >
+        <template #actions><InteractionStop :session-id="sessionId" :disabled="busy" /></template>
+      </QuestionForm>
 
       <!-- A plan to approve -->
       <template v-else-if="request.type === 'plan'">
@@ -214,6 +218,7 @@ const heading = computed(() => {
           >
             {{ feedback.trim() ? 'Überarbeiten lassen' : 'Ablehnen' }}
           </Button>
+          <InteractionStop :session-id="sessionId" :disabled="busy" />
         </div>
       </template>
 
@@ -223,7 +228,9 @@ const heading = computed(() => {
         :request="request"
         :busy="busy"
         @answer="(action, content) => answer({ type: 'elicitation', action, content })"
-      />
+      >
+        <template #actions><InteractionStop :session-id="sessionId" :disabled="busy" /></template>
+      </ElicitationForm>
 
       <!-- A form of the agent -->
       <AskForm
@@ -232,7 +239,9 @@ const heading = computed(() => {
         :busy="busy"
         @submit="(values) => answer({ type: 'form', action: 'submit', values })"
         @decline="answer({ type: 'form', action: 'decline' })"
-      />
+      >
+        <template #actions><InteractionStop :session-id="sessionId" :disabled="busy" /></template>
+      </AskForm>
     </div>
   </div>
 </template>
