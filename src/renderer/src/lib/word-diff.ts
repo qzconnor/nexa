@@ -1,3 +1,6 @@
+// The PWA of nexa-server copies this file byte for byte: imports only from `@shared/…`, no Node APIs
+// (main/server-link/pwa-copies.test.ts).
+
 /** A changed part of a line: from `start` up to `end` (characters). */
 export type Range = readonly [start: number, end: number]
 

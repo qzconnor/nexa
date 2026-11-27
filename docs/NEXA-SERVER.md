@@ -173,8 +173,12 @@ Entschieden am 26.11.2026:
   `TypedEmitter` ohne `node:events`, `Identity` (nur als Typ; die PWA hält die Schlüssel nicht exportierbar
   in IndexedDB) und den Fehler des Kanals. Ebenso `renderer/src/lib/tools.ts` (Blöcke der Zeitleiste,
   Zusammenfassungen der Werkzeuge), damit die PWA den Verlauf gruppiert wie die App: Importe nur aus
-  `@shared/…`, `@lucide/vue` und Typen aus `vue`, an Farben nur die `--tool-*`, die die PWA in ihrer
-  `main.css` hat. Das prüft `server-link/pwa-copies.test.ts`. Wer eine der Dateien verschiebt, einen
+  `@shared/…`, `@lucide/vue` und `vue`, an Farben nur die `--tool-*`, die die PWA in ihrer
+  `main.css` hat. Für Diffs wie in der App außerdem `lib/diff.ts`, `file-diff.ts`, `word-diff.ts`,
+  `syntax.ts` mit `hljs-vue.ts` (highlight.js, Sprachen per `import()`) und
+  `composables/useProjectPath.ts`; die Regeln für `.syntax`, `.diff-line` und `.diff-gutter` hat die PWA
+  als Kopie in ihrer `main.css`. Für die offenen Pull Requests `lib/pull-requests.ts`. Das alles prüft
+  `server-link/pwa-copies.test.ts`. Wer eine der Dateien verschiebt, einen
   Import oder eine `--tool-*`-Farbe dazunimmt, sagt es vorher im Chat „Nexa-Server“.
 - **Aufbau**: unten eine Leiste mit „Inbox“ und „Chats“.
   - *Inbox* (Startseite): die Chats aller Rechner, die Aufmerksamkeit brauchen, in Abschnitten: „Wartet auf

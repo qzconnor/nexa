@@ -1,3 +1,5 @@
+// The PWA of nexa-server copies this file byte for byte: imports only from `@shared/…` and `highlight.js`,
+// no Node APIs (main/server-link/pwa-copies.test.ts).
 import type { HLJSApi, Language, Mode } from 'highlight.js'
 
 /**

@@ -1,3 +1,5 @@
+// The PWA of nexa-server copies this file byte for byte: imports only from `@shared/…` and `vue`, no Node
+// APIs (main/server-link/pwa-copies.test.ts).
 import { computed, inject, provide, type ComputedRef, type InjectionKey } from 'vue'
 
 const KEY: InjectionKey<ComputedRef<string | null>> = Symbol('project-path')
