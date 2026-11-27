@@ -203,11 +203,21 @@ Entschieden am 26.11.2026:
   Nachricht, die ein `send` weiterreichen würde (`{ t: "msg", id, from, to, kind, body }`). Der Service
   Worker öffnet sie mit demselben Code, prüft aber nicht mit dem `ReplayGuard`, denn Pushes kommen bis
   zu ihrer `ttl` später. Grenze 4 KB je Push (3993 Byte Nutzlast); Titel und Text sind auf 100 und 300
-  Zeichen begrenzt, damit es auch in Zeichen zu drei Byte passt. Ungeprüft: Safari verlangt zu jedem Push
-  eine sichtbare Benachrichtigung, stille Pushes gibt es nicht.
+  Zeichen begrenzt, damit es auch in Zeichen zu drei Byte passt. Browser verlangen zu jedem Push eine
+  sichtbare Benachrichtigung. Chrome und Firefox dulden ein paar Ausnahmen (Chrome zeigt danach „im
+  Hintergrund aktualisiert“), Safari löscht die Anmeldung einer Seite nach wenigen (WebKit, „silent push
+  quota“).
 - **Inhalt** (`shared/push.ts`, die PWA übernimmt die Datei): `kind: "push.notify"`, Daten
   `{ v: 1, reason: "done" | "input" | "limit", chat, title, body }`, `chat` ist die Session-ID auf dem
   Rechner, der den Push geschickt hat (`from`). Ein Tipp öffnet `/app/chats/<from>/<chat>`.
+- **Wegräumen**: Ist eine Rückfrage, die aufs Handy ging, beantwortet (hier, am Handy oder auf einem
+  anderen Gerät) oder verfallen, schickt der `PushNotifier` `{ v: 1, reason: "resolved", chat }`, und der
+  Service Worker schließt die Benachrichtigung der Rückfrage. Dazu zeigt er nichts, darum geht der Push mit
+  `silent: true` (`PROTOCOL.md` des Servers), den der Server nicht an Safari gibt. Nur an Handys, deren
+  Push-Dienst die Rückfrage angenommen hat, und nur an solche, die gerade nicht verbunden sind: Ist die
+  Web-App offen, räumt sie selbst weg, was ihre Inbox nicht mehr zeigt. Nur bei Servern mit
+  `silentPush` in `/v1/info` (vorher gefragt): Ältere gäben ihn auch an Safari, und ihre Web-App kann ihn
+  nicht lesen. Auf dem iPhone bleibt die Benachrichtigung darum stehen, bis die Web-App offen ist.
 - **Wann**: dieselben Anlässe und Texte wie die Benachrichtigungen auf dem Desktop (`NotificationSettings`,
   `chatAlert`): Antwort fertig (mit Mindestdauer), Rückfrage, Freigabe oder Plan, Limit. Dazu die
   Einstellung „Aufs Handy“ (`notifications.push`): aus, „Wenn du weg bist“ (Vorgabe: Bildschirm gesperrt

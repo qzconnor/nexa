@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '@shared/defaults'
+import type { InteractionItem, SessionEvent } from '@shared/chat'
 import { PUSH_KIND, type PushNotice } from '@shared/push'
 import type { AppSettings, NotificationSettings, ProviderUsage, SessionMeta } from '@shared/types'
 import { TypedEmitter } from '../lib/typed-emitter'
 import type { Attention } from '../services/session-service'
 import { PushNotifier } from './push-notifier'
 
-class FakeSessions extends TypedEmitter<{ attention: [string, Attention] }> {
+class FakeSessions extends TypedEmitter<{ attention: [string, Attention]; event: [SessionEvent] }> {
   metas: SessionMeta[] = [{ id: 's1', title: 'Server-Umbau' } as SessionMeta]
   list = () => this.metas
   fire(id: string, attention: Attention): void {
     this.emit('attention', id, attention)
+  }
+  /** The question's item as the chat has it now. */
+  answer(sessionId: string, itemId: string, state: InteractionItem['state'] = 'answered'): void {
+    this.emit('event', { type: 'item', sessionId, item: { kind: 'interaction', id: itemId, ts: 0, state } as InteractionItem })
   }
 }
 
@@ -19,6 +24,7 @@ const question: Attention = {
   kind: 'input',
   provider: 'claude',
   request: { type: 'question', questions: [{ question: 'Welcher Weg?', options: [], multiSelect: false }] },
+  itemId: 'q1',
 } as unknown as Attention
 
 describe('PushNotifier', () => {
@@ -26,7 +32,10 @@ describe('PushNotifier', () => {
   let sessions: FakeSessions
   let away: boolean
   let targets: string[]
-  let push: ReturnType<typeof vi.fn<(to: string, kind: string, data: unknown, options: { urgency: string; ttl: number }) => Promise<boolean>>>
+  /** Phones with the web app open now. */
+  let online: Set<string>
+  let silent: boolean
+  let push: ReturnType<typeof vi.fn<(to: string, kind: string, data: unknown, options: { urgency: string; ttl: number; silent?: true }) => Promise<boolean>>>
   let log: ReturnType<typeof vi.fn<(message: string) => void>>
   let notifier: PushNotifier
 
@@ -37,13 +46,20 @@ describe('PushNotifier', () => {
     sessions = new FakeSessions()
     away = true
     targets = ['phone1', 'phone2']
+    online = new Set()
+    silent = true
     push = vi.fn(async () => true)
     log = vi.fn()
     notifier = new PushNotifier({
       sessions,
       providers: { usage: (): ProviderUsage[] => [] },
       settings: { get: () => settings },
-      link: { push, pushTargets: () => targets },
+      link: {
+        push,
+        pushTargets: () => targets,
+        device: (id) => ({ name: id, online: online.has(id), trusted: true }),
+        silentPush: async () => silent,
+      },
       away: () => away,
       log,
     })
@@ -110,6 +126,34 @@ describe('PushNotifier', () => {
     expect(log).toHaveBeenCalledWith('push to phone1 failed: push: unreachable')
   })
 
+  it('takes an answered question away from the phones it went to, silently, but not from one with the web app open', async () => {
+    await notifier.attention('s1', question)
+    online.add('phone2')
+    away = false
+    notify({ push: 'off' })
+    await notifier.resolved('s1', 'q1')
+    expect(push).toHaveBeenCalledTimes(3)
+    expect(push.mock.calls[2]).toEqual(['phone1', PUSH_KIND, { v: 1, reason: 'resolved', chat: 's1' }, { urgency: 'normal', ttl: 86_400, silent: true }])
+    // Once only.
+    await notifier.resolved('s1', 'q1')
+    expect(push).toHaveBeenCalledTimes(3)
+  })
+
+  it('takes nothing away that it didn’t push, from a phone gone, or past a server without silent pushes', async () => {
+    push.mockImplementation(async (to) => to === 'phone2')
+    await notifier.attention('s1', question)
+    await notifier.resolved('other', 'q1')
+    targets = ['phone1']
+    await notifier.resolved('s1', 'q1')
+    expect(push).toHaveBeenCalledTimes(2)
+
+    targets = ['phone1', 'phone2']
+    await notifier.attention('s1', question)
+    silent = false
+    await notifier.resolved('s1', 'q1')
+    expect(push).toHaveBeenCalledTimes(4)
+  })
+
   it('listens to the chats’ attention once started, and no longer once disposed', async () => {
     notifier.init()
     sessions.fire('s1', done())
@@ -118,5 +162,17 @@ describe('PushNotifier', () => {
     sessions.fire('s1', done())
     await Promise.resolve()
     expect(push).toHaveBeenCalledTimes(2)
+  })
+
+  it('hears of answers once started: a question that leaves `pending`', async () => {
+    notifier.init()
+    await notifier.attention('s1', question)
+    sessions.answer('s1', 'q1', 'pending')
+    await Promise.resolve()
+    expect(push).toHaveBeenCalledTimes(2)
+    sessions.answer('s1', 'q1', 'cancelled')
+    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(4))
+    expect(push.mock.calls[3]![2]).toEqual({ v: 1, reason: 'resolved', chat: 's1' })
+    notifier.dispose()
   })
 })

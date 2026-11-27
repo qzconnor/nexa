@@ -237,12 +237,25 @@ export class ServerLinkService extends TypedEmitter<Events> {
    * may switch it with a restart. Any failure only costs the QR code: the code itself still works.
    */
   private async servesWebApp(url: string): Promise<boolean> {
+    return (await this.info(url))?.pwa === true
+  }
+
+  /**
+   * Whether the server takes silent pushes (`silentPush` of `/v1/info`), asked anew each time like
+   * `servesWebApp`. An older one would hand them to Safari as well, which drops the phone's
+   * subscription after a few, and serves a web app that can't read them. Any failure counts as no.
+   */
+  async silentPush(): Promise<boolean> {
+    const url = this.active?.profile.url
+    return !!url && (await this.info(url))?.silentPush === true
+  }
+
+  private async info(url: string): Promise<{ pwa?: unknown; silentPush?: unknown } | null> {
     try {
       const response = await this.fetch(`${url}/v1/info`, { signal: AbortSignal.timeout(INFO_TIMEOUT_MS) })
-      const info = (await response.json()) as { pwa?: unknown } | null
-      return response.ok && info?.pwa === true
+      return response.ok ? ((await response.json()) as { pwa?: unknown; silentPush?: unknown } | null) : null
     } catch {
-      return false
+      return null
     }
   }
 
@@ -321,9 +334,10 @@ export class ServerLinkService extends TypedEmitter<Events> {
   /**
    * Pushes `data` to `to` by the server's Web Push, sealed for it alone like a message: true once the
    * push service took it, false when `to` has no subscription (notifications are off in its web app).
-   * Throws when this device isn't connected, `to` isn't a member or the server failed.
+   * Throws when this device isn't connected, `to` isn't a member or the server failed. `silent`: the
+   * phone may show nothing for it (only where `silentPush()` says so).
    */
-  async push(to: string, kind: string, data: unknown, options: { urgency: PushUrgency; ttl: number }): Promise<boolean> {
+  async push(to: string, kind: string, data: unknown, options: { urgency: PushUrgency; ttl: number; silent?: true }): Promise<boolean> {
     const active = this.online()
     const sealed = await active.channel.sealed(to, kind, data)
     if (!sealed) throw new Error(`push: ${to} is no member`)
