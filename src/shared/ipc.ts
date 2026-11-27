@@ -4,6 +4,7 @@ import type { ChatWindowsApi } from './chat-windows'
 import type { CliConfigApi, CliConfigTarget } from './cli-config'
 import type { ChatChanges, RewindPreview, RewindResult } from './checkpoints'
 import type { FileDiff } from './files'
+import type { InboxEntry } from './inbox'
 import type { ContextDetail, InteractionResponse, ProviderId, SessionEvent, SessionRuntime } from './chat'
 import type { McpAppsApi } from './mcp-apps'
 import type { AgentNotification, AgentNotificationAnswer } from './notify'
@@ -400,6 +401,8 @@ export interface NexaApi {
     list(): Promise<SessionMeta[]>
     /** What each chat that isn't idle does now (its later changes come as `onEvent`). */
     runtimes(): Promise<Record<string, SessionRuntime>>
+    /** The chats that need the user, with what they wait for: the inbox of the app and of the phone. */
+    inbox(): Promise<InboxEntry[]>
     create(input: SessionCreateInput): Promise<SessionMeta>
     /** The session with its chat; doesn't start the CLI. */
     open(id: string): Promise<SessionDetail>

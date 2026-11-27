@@ -17,6 +17,7 @@ import {
   FolderPlusIcon,
   GitForkIcon,
   HistoryIcon,
+  InboxIcon,
   MonitorIcon,
   PanelLeftIcon,
   PencilIcon,
@@ -209,6 +210,10 @@ const switchChoices = computed(() => {
         >
           <FolderGit2Icon />
           Neuer Chat in Worktree …
+        </CommandItem>
+        <CommandItem value="inbox" filter-text="Posteingang Inbox wartet Rückfragen Fehler ungelesen fertig Aufmerksamkeit" @select="run(() => (ui.view = 'inbox'))">
+          <InboxIcon />
+          Posteingang
         </CommandItem>
         <CommandItem value="artifacts" filter-text="Artefakte Seiten Dokumente claude.ai veröffentlicht Artifact" @select="run(() => (ui.view = 'artifacts'))">
           <ShapesIcon />

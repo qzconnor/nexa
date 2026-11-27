@@ -844,7 +844,7 @@ export class SessionService extends TypedEmitter<Events> {
    * only, and notes where else one is open now. Nexa's own CLI of the chat, idle, holds the
    * conversation as it was: it ends, and the next prompt resumes with what came. The number of items added.
    */
-  /** The chats that need the user, for the phone's inbox (shared/inbox.ts). */
+  /** The chats that need the user, for the inbox of the app and the phone (shared/inbox.ts). */
   inbox(): InboxEntry[] {
     return inboxEntries(
       this.list(),

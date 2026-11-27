@@ -737,7 +737,14 @@ Eine Aufgabe schickt nach Zeitplan einen Prompt an eine CLI, jeder Lauf ist ein 
   (`apiOf(…).sessions.search`, nur online), ein Gerät, das nicht antwortet, kostet nur seine Treffer.
   Projekte eines anderen Geräts für einen neuen Chat nur mit Stufe „Prompts senden“ (`lib/device-chats.ts`).
 - `stores/accounts.ts`: Accounts, laufende Logins, Vorgabe je CLI, Account eines Chats (`sessionAccount`).
-- **Artefakte** (`views/ArtifactsView.vue`, `ui.view = 'artifacts'`, Eintrag unter „Neuer Chat“): Claudes
+- **Posteingang** (`views/InboxView.vue`, `ui.view = 'inbox'`, Eintrag unter „Neuer Chat“ mit der Zahl der
+  Chats, die etwas wollen, und dem Punkt eines wartenden Chats): wie die Inbox der PWA die Chats dieses
+  und jedes geladenen anderen Geräts in „Wartet auf dich“, „Fehler und Limit“, „Fertig, ungelesen“ und
+  „Läuft gerade“ (`shared/inbox.ts`). Rückfragen, Freigaben und Pläne stehen als `InteractionCard` unter
+  ihrem Chat und lassen sich dort beantworten. `stores/inbox.ts` fragt jedes Gerät nach `sessions:inbox`
+  und fragt neu, wenn sich seine Chats, ein Status oder eine Rückfrage ändern; `lib/inbox.ts` lässt weg,
+  was hier archiviert oder gelöscht ist, und „ungelesen“ nur, solange die Seitenleiste es auch zeigt.
+- **Artefakte** (`views/ArtifactsView.vue`, `ui.view = 'artifacts'`, Eintrag unter „Posteingang“): Claudes
   Artefakte des gewählten Accounts als Karten mit Vorschaubild, Suche und Filtern (`lib/artifacts.ts`).
   `stores/artifacts.ts` hält Listen und Bilder, solange die App läuft, und fragt
   `SessionService.artifactChats` nach dem Chat jedes Artefakts (liest jeden gespeicherten Chat einmal, bis

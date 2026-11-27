@@ -49,6 +49,7 @@ const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/
 const SettingsImportDialog = defineAsyncComponent(() => import('@/components/settings/SettingsImportDialog.vue'))
 const ThemeEditorDialog = defineAsyncComponent(() => import('@/components/themes/ThemeEditorDialog.vue'))
 const ArtifactsView = defineAsyncComponent(() => import('@/views/ArtifactsView.vue'))
+const InboxView = defineAsyncComponent(() => import('@/views/InboxView.vue'))
 const ScheduledTaskDialog = defineAsyncComponent(() => import('@/components/scheduled/ScheduledTaskDialog.vue'))
 const ScheduledView = defineAsyncComponent(() => import('@/views/ScheduledView.vue'))
 const SetupView = defineAsyncComponent(() => import('@/views/SetupView.vue'))
@@ -186,7 +187,8 @@ onMounted(async () => {
           </DeviceScope>
           <!-- A chat's own window shows that chat and nothing else. -->
           <template v-else-if="!isChatWindow">
-            <ArtifactsView v-if="ui.view === 'artifacts'" />
+            <InboxView v-if="ui.view === 'inbox'" />
+            <ArtifactsView v-else-if="ui.view === 'artifacts'" />
             <ScheduledView v-else-if="ui.view === 'scheduled'" />
             <!-- Chats stay reachable; only this device's start page waits for the setup. -->
             <SetupView v-else-if="!shown.device && !settings.settings.setup.done" />

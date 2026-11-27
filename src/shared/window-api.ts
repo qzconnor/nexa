@@ -81,6 +81,7 @@ export function deviceApi(invoke: ChannelInvoke, subscribe: ChannelSubscribe): D
     sessions: {
       list: () => invoke(IpcInvoke.sessionsList),
       runtimes: () => invoke(IpcInvoke.sessionsRuntimes),
+      inbox: () => invoke(IpcInvoke.sessionsInbox),
       create: (input) => invoke(IpcInvoke.sessionsCreate, input),
       open: (id) => invoke(IpcInvoke.sessionsOpen, id),
       send: (id, input) => invoke(IpcInvoke.sessionsSend, id, input),

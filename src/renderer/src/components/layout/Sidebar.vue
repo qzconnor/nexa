@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarClockIcon, SettingsIcon, ShapesIcon, SquarePenIcon } from '@lucide/vue'
+import { CalendarClockIcon, InboxIcon, SettingsIcon, ShapesIcon, SquarePenIcon } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import SegmentedControl from '@/components/common/SegmentedControl.vue'
 import { Button } from '@/components/ui/button'
@@ -9,10 +9,11 @@ import { useListKeys } from '@/composables/useListKeys'
 import { cn } from '@/lib/utils'
 import { useShownDeviceStore } from '@/stores/device'
 import { useDevicesStore } from '@/stores/devices'
+import { useInboxStore } from '@/stores/inbox'
 import { useScheduledStore } from '@/stores/scheduled'
 import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
-import { useUiStore, type SidebarFilter } from '@/stores/ui'
+import { PAGE_VIEWS, useUiStore, type SidebarFilter } from '@/stores/ui'
 import { useUpdatesStore } from '@/stores/updates'
 import DeviceScope from './DeviceScope.vue'
 import SidebarDevice from './SidebarDevice.vue'
@@ -20,16 +21,17 @@ import SidebarPinned from './SidebarPinned.vue'
 import SidebarTree from './SidebarTree.vue'
 
 /**
- * A new chat, the artifacts and scheduled tasks, the pinned chats of all devices (SidebarPinned), and
- * the projects with their chats (SidebarTree): this device's, and below them those of every other
- * device it controls (Remote Control), each the same. A switch between the two narrows the projects to
- * the chats that run.
+ * A new chat, the inbox, the artifacts and scheduled tasks, the pinned chats of all devices
+ * (SidebarPinned), and the projects with their chats (SidebarTree): this device's, and below them those
+ * of every other device it controls (Remote Control), each the same. A switch between the two narrows
+ * the projects to the chats that run.
  */
 const sessions = useSessionsStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const updates = useUpdatesStore()
 const scheduled = useScheduledStore()
+const inbox = useInboxStore()
 const devices = useDevicesStore()
 const shown = useShownDeviceStore()
 const chat = useChatActions()
@@ -52,8 +54,9 @@ const now = useClock(60_000)
 const newChat = () => chat.newChat()
 /** The start page is where a new chat begins: its button shows it as the page on screen, as a chat's row does. */
 const onStartPage = computed(
-  () => !shown.device && !(ui.view === 'chat' && sessions.active) && !['artifacts', 'scheduled'].includes(ui.view) && settings.settings.setup.done,
+  () => !shown.device && !(ui.view === 'chat' && sessions.active) && !PAGE_VIEWS.includes(ui.view) && settings.settings.setup.done,
 )
+const onInbox = computed(() => ui.view === 'inbox')
 const onArtifacts = computed(() => ui.view === 'artifacts')
 const onScheduled = computed(() => ui.view === 'scheduled')
 
@@ -78,6 +81,18 @@ useListKeys(nav)
       >
         <SquarePenIcon />
         Neuer Chat
+      </Button>
+      <Button
+        variant="ghost"
+        :class="cn('justify-start gap-2 px-2.5', onInbox && 'bg-sidebar-accent')"
+        :aria-current="onInbox ? 'page' : undefined"
+        @click="ui.view = 'inbox'"
+      >
+        <InboxIcon />
+        <span class="flex-1 text-left">Posteingang</span>
+        <!-- A question waits: with the mark a waiting chat has in its row. -->
+        <span v-if="inbox.waiting" class="pulse-ring size-2 rounded-full bg-warning" aria-label="Ein Chat wartet auf eine Antwort" role="img" />
+        <span v-if="inbox.attention" class="text-[0.7rem] text-muted-foreground tabular-nums">{{ inbox.attention }}</span>
       </Button>
       <Button
         variant="ghost"
@@ -112,6 +127,7 @@ useListKeys(nav)
         v-model="ui.sidebarFilter"
         :options="FILTERS"
         block
+        size="sm"
         class="mt-2"
         aria-label="Welche Chats die Projekte zeigen"
         @mousedown.prevent

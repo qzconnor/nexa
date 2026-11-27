@@ -165,7 +165,7 @@ const CHANNELS: Record<string, ChannelRule> = {
   [IpcInvoke.sessionsSync]: 'prompt',
   // Looking at a chat: whoever may read it may have read it.
   [IpcInvoke.sessionsSeen]: 'read',
-  // The phone's inbox (shared/inbox.ts); no window of the app asks for it.
+  // The inbox (shared/inbox.ts): the phone's, and the app's of another device's chats.
   [IpcInvoke.sessionsInbox]: 'read',
   [IpcInvoke.sessionsCompact]: 'prompt',
   [IpcInvoke.sessionsFork]: 'prompt',

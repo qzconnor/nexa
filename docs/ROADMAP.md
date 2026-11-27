@@ -438,6 +438,8 @@ Was der Claude Manager kann und Nexa noch fehlt (Dateien unter `claude-manager/s
             Host (`sessions:seen`, „ungelesen“ auf allen Geräten gleich), Stand für die Inbox in einer
             Antwort (`sessions:inbox`).
       - [x] QR-Code zum Koppeln unter „Gerät hinzufügen“, wenn der Server die PWA ausliefert.
+      - [x] Posteingang auch in der App, unter „Neuer Chat“: dieselben Abschnitte wie die Inbox der PWA,
+            für dieses und die anderen Geräte, Rückfragen direkt beantwortbar.
       - [ ] Web Push für Rückfragen, Freigaben, fertige Antworten und Limits.
         - [x] App: dieselben Benachrichtigungen wie auf dem Desktop, je Handy versiegelt, Einstellung
               „Aufs Handy“ (aus, wenn du weg bist, immer).
