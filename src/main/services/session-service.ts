@@ -32,6 +32,7 @@ import { writtenFiles } from '@shared/file-touches'
 import type { FileDiff, WorktreeBaseChoice } from '@shared/files'
 import { inboxEntries, type InboxEntry } from '@shared/inbox'
 import type { McpAppRef, McpAppToolResult } from '@shared/mcp-apps'
+import { nexaCategoryOn, nexaToolOn } from '@shared/nexa-tools'
 import { enabledProviders, PROVIDERS } from '@shared/providers'
 import { redactSecrets } from '@shared/redact'
 import { cleanTags } from '@shared/session-tags'
@@ -1619,11 +1620,11 @@ export class SessionService extends TypedEmitter<Events> {
           account: this.accounts.env(accountId),
           instructions: [
             sessionInstructions({
-              renderTools: !!mcp && tools.renderTools,
-              browserTools: !!mcp && tools.browserTools,
-              chatTools: !!mcp && tools.chatTools,
-              askTool: !!mcp,
-              notifyTool: !!mcp,
+              renderTools: !!mcp && nexaCategoryOn(tools, 'render'),
+              browserTools: !!mcp && nexaCategoryOn(tools, 'browser'),
+              chatTools: !!mcp && nexaCategoryOn(tools, 'chat'),
+              askTool: !!mcp && nexaToolOn(tools, 'ask_user'),
+              notifyTool: !!mcp && nexaToolOn(tools, 'notify'),
               scheduledTask: meta.scheduledTask?.name,
               projectName: project.name,
             }),
@@ -1633,7 +1634,7 @@ export class SessionService extends TypedEmitter<Events> {
             .filter(Boolean)
             .join('\n\n'),
           mcp,
-          noChrome: !!mcp && tools.browserTools && tools.noClaudeInChrome,
+          noChrome: !!mcp && nexaCategoryOn(tools, 'browser') && tools.noClaudeInChrome,
           mcpOff: project.mcpOff?.[provider],
           dirs: meta.dirs,
           promptSuggestions: this.settings().chat.promptSuggestions,

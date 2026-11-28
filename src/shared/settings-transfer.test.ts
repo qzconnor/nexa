@@ -132,6 +132,11 @@ describe('validSettings', () => {
     expect(validSettings({ chat: { continuePrompt: 'x'.repeat(2001) } }).invalid).toHaveLength(1)
     expect(validSettings({ claude: { model: 'x'.repeat(5000) } }).invalid).toHaveLength(1)
   })
+
+  it('takes switched off tools by their names, also of a newer Nexa', () => {
+    expect(validSettings({ tools: { disabled: ['browser_evaluate', 'some_new_tool'] } }).settings).toEqual({ tools: { disabled: ['browser_evaluate', 'some_new_tool'] } })
+    expect(validSettings({ tools: { disabled: ['Browser Evaluate'] } }).invalid).toHaveLength(1)
+  })
 })
 
 describe('settingChanges', () => {
@@ -169,6 +174,14 @@ describe('settingChanges', () => {
     const back = settingChanges(next, current)
     expect(back.find((c) => c.path === 'defaults.permissionMode')?.sensitive).toBe(false)
     expect(back.find((c) => c.path === 'api.enabled')?.sensitive).toBe(false)
+  })
+
+  it('marks switching a chat tool back on, not other tools', () => {
+    const sensitive = (from: string[], to: string[]) =>
+      settingChanges(settings({ tools: { disabled: from } }), settings({ tools: { disabled: to } }))[0]?.sensitive
+    expect(sensitive(['chat_send', 'browser_click'], ['browser_click'])).toBe(true)
+    expect(sensitive(['browser_click'], [])).toBe(false)
+    expect(sensitive([], ['chat_send'])).toBe(false)
   })
 
   it('never lists the settings of this installation', () => {

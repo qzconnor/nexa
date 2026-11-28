@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { NEXA_TOOLS } from '@shared/nexa-tools'
 import { SYNC_KEYS } from '@shared/remote-sync'
 import { searchTerms } from '@shared/utils'
 import { matchSettings, settingsIndex } from './settings-index'
@@ -34,6 +35,8 @@ describe('settingsIndex', () => {
       for (const m of source.matchAll(/cliAnchor\(id, '(\w+)'\)/g)) ['claude', 'codex', 'antigravity'].forEach((id) => used.add(`${id}.${m[1]}`))
       // The rows of what is shared with another device, one per key of `SYNC_GROUPS`.
       if (source.includes(':anchor="`devices.sync.${item.key}`"')) SYNC_KEYS.forEach((key) => used.add(`devices.sync.${key}`))
+      // The rows of Nexa's tools, one per tool of the catalog.
+      if (source.includes(':anchor="`tools.tool.${tool.name}`"')) NEXA_TOOLS.forEach((tool) => used.add(`tools.tool.${tool.name}`))
     }
     for (const anchor of used) expect(ids.has(anchor as never), anchor).toBe(true)
     for (const id of ids) expect(used.has(id), id).toBe(true)
@@ -72,5 +75,11 @@ describe('matchSettings', () => {
     expect(found.ids.has('codex.extraArgs')).toBe(true)
     expect(found.ids.has('antigravity.extraArgs')).toBe(true)
     expect(found.tabs.get('providers')).toBe(3)
+  })
+
+  it('finds a tool of Nexa by its words and by its name', () => {
+    expect(match('screenshot')!.ids.has('tools.tool.browser_take_screenshot')).toBe(true)
+    expect(match('browser_evaluate')!.ids.has('tools.tool.browser_evaluate')).toBe(true)
+    expect([...match('skript ausführen')!.tabs.keys()]).toEqual(['tools'])
   })
 })

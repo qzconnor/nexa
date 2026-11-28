@@ -1,5 +1,6 @@
 import { PROVIDER_IDS, type ProviderId } from './chat'
 import { ACTIVITY_CHOICES, defaultSettings, SETTING_RANGES } from './defaults'
+import { nexaToolCategory } from './nexa-tools'
 import { PERMISSION_MODES } from './providers'
 import { isLanguageCode, MAX_SPELLCHECK_LANGUAGES } from './spellcheck'
 import { CUSTOM_THEME_PREFIX } from './themes/file'
@@ -206,6 +207,8 @@ const CHECKS: Record<string, Check> = {
   'notifications.when': oneOf(['background', 'hidden']),
   'notifications.push': oneOf(['off', 'away', 'always']),
   'api.port': inRange(1024, 65535, true),
+  // Names of tools, also of a newer Nexa's that this one doesn't know yet.
+  'tools.disabled': (value) => Array.isArray(value) && value.every((name) => typeof name === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(name)),
 }
 
 /** Checks of the settings every CLI has (`claude.path`, `codex.model` …). */
@@ -298,6 +301,9 @@ function isSensitive(path: string, from: unknown, to: unknown): boolean {
     case 'tools.chatTools':
     case 'api.enabled':
       return to === true
+    // Switching a chat tool back on, as the switch of all of them does.
+    case 'tools.disabled':
+      return Array.isArray(from) && from.some((name) => nexaToolCategory(String(name))?.id === 'chat' && !(Array.isArray(to) && to.includes(name)))
     default:
       return false
   }

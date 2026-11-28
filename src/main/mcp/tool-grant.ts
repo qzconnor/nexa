@@ -1,4 +1,5 @@
 import type { PermissionMode } from '@shared/chat'
+import { nexaCategoryOn } from '@shared/nexa-tools'
 import { RENDER_SERVER } from '@shared/render'
 import type { ToolSettings } from '@shared/types'
 
@@ -12,9 +13,12 @@ export interface NexaToolGrant {
   ask: string[]
 }
 
-/** Whether a CLI gets Nexa's MCP server at all. */
+/**
+ * Whether a CLI gets Nexa's MCP server at all: while a tool of the render, browser or chat tools is
+ * on. The app's own tools (`limits`, `ask_user`, `notify`) come with it, but don't start it alone.
+ */
 export function nexaToolsOn(tools: ToolSettings): boolean {
-  return tools.renderTools || tools.browserTools || tools.chatTools
+  return nexaCategoryOn(tools, 'render') || nexaCategoryOn(tools, 'browser') || nexaCategoryOn(tools, 'chat')
 }
 
 /**
@@ -22,17 +26,18 @@ export function nexaToolsOn(tools: ToolSettings): boolean {
  * chat tools on for this, and each chat keeps its own permissions); the browser tools that reach
  * beyond the page (`sensitive`: uploads, cookies and storage, request contents, scripts, deleting
  * site data) ask first. `app`: the tools that come with the server whenever it is there (`limits`,
- * read-only), also without asking.
+ * read-only), also without asking. Tools the user switched off one by one (`disabled`) are in neither.
  */
 export function nexaToolGrant(
   tools: ToolSettings,
   names: { render: readonly string[]; browser: readonly string[]; chat?: readonly string[]; app?: readonly string[] },
   sensitive: ReadonlySet<string>,
 ): NexaToolGrant {
-  const render = tools.renderTools ? names.render : []
-  const browser = tools.browserTools ? names.browser : []
-  const chat = tools.chatTools ? (names.chat ?? []) : []
-  const app = nexaToolsOn(tools) ? (names.app ?? []) : []
+  const on = (name: string) => !tools.disabled.includes(name)
+  const render = tools.renderTools ? names.render.filter(on) : []
+  const browser = tools.browserTools ? names.browser.filter(on) : []
+  const chat = tools.chatTools ? (names.chat ?? []).filter(on) : []
+  const app = nexaToolsOn(tools) ? (names.app ?? []).filter(on) : []
   return {
     allowed: [...render, ...browser.filter((name) => !sensitive.has(name)), ...chat, ...app],
     ask: browser.filter((name) => sensitive.has(name)),

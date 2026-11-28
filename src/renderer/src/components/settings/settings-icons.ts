@@ -11,6 +11,7 @@ import {
   PlugIcon,
   SlidersHorizontalIcon,
   UsersIcon,
+  WrenchIcon,
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { SettingsSection } from '@/stores/ui'
@@ -24,6 +25,7 @@ export const SETTINGS_ICONS: Record<SettingsSection, Component> = {
   providers: BotIcon,
   cliConfig: SlidersHorizontalIcon,
   chat: MessageSquareIcon,
+  tools: WrenchIcon,
   notifications: BellIcon,
   devices: MonitorSmartphoneIcon,
   api: PlugIcon,

@@ -1,3 +1,4 @@
+import { NEXA_TOOL_CATEGORIES, type NexaToolCategoryId } from '@shared/nexa-tools'
 import { SYNC_GROUPS } from '@shared/remote-sync'
 import type { SettingsSection } from '@/stores/ui'
 import { containsTerms, searchText } from './search'
@@ -49,6 +50,19 @@ function cliFields<P extends string>(p: P) {
 function syncFields() {
   return SYNC_GROUPS.flatMap((group) =>
     group.items.map((item) => ({ id: `devices.sync.${item.key}` as const, label: item.label, keywords: `${group.label} ${item.keywords ?? ''}`.trim() })),
+  )
+}
+
+/** A row per tool of Nexa's MCP server in a category, found by its name too (`browser_click`). */
+function toolFields(category: NexaToolCategoryId) {
+  return NEXA_TOOL_CATEGORIES.filter((c) => c.id === category).flatMap((c) =>
+    c.groups.flatMap((group) =>
+      group.tools.map((tool) => ({
+        id: `tools.tool.${tool.name}` as const,
+        label: tool.label,
+        keywords: `${tool.name} ${tool.name.replace(/_/g, ' ')} ${group.label} ${tool.description}${tool.asks ? ' fragt nach' : ''}`,
+      })),
+    ),
   )
 }
 
@@ -367,17 +381,44 @@ const TREE = [
           { id: 'chat.cleanup', label: 'Chats aufräumen', keywords: 'alte große mehrere löschen Filter Alter Größe Speicherplatz' },
         ],
       },
+    ],
+  },
+  {
+    tab: 'tools',
+    label: 'Nexa-Werkzeuge',
+    sections: [
       {
-        id: 'chat.tools',
-        title: 'Nexa-Werkzeuge',
-        keywords: 'MCP Server Tools Werkzeuge Limits Usage',
+        id: 'tools.server',
+        title: 'Nexas MCP-Server',
+        keywords: 'MCP Server Tools Werkzeuge Agents erlauben verbieten ausschalten einschalten eigene claude mcp add config.toml',
+      },
+      {
+        id: 'tools.render',
+        title: 'Diagramme, Charts und Tabellen',
+        keywords: 'Mermaid Grafik Visualisierung rendern zeichnen MCP',
+        fields: toolFields('render'),
+      },
+      {
+        id: 'tools.browser',
+        title: 'Browser neben dem Chat',
+        keywords: 'Webseite Web testen Playwright Automatisierung MCP',
         fields: [
-          { id: 'chat.renderTools', label: 'Diagramme, Charts und Tabellen', keywords: 'Mermaid Grafik Visualisierung rendern MCP' },
-          { id: 'chat.browserTools', label: 'Browser neben dem Chat', keywords: 'Webseite Web testen Playwright Automatisierung MCP' },
-          { id: 'chat.noClaudeInChrome', label: 'Ohne „Claude in Chrome“', keywords: 'Chrome Erweiterung Extension Browser' },
-          { id: 'chat.chatTools', label: 'Nachrichten zwischen Chats', keywords: 'Session senden weiterleiten durchsuchen Suche frühere Claude Codex Agenten MCP' },
-          { id: 'chat.browserData', label: 'Browserdaten', keywords: 'Cookies Cache abmelden löschen Browser' },
+          { id: 'tools.noClaudeInChrome', label: 'Ohne „Claude in Chrome“', keywords: 'Chrome Erweiterung Extension Browser' },
+          { id: 'tools.browserData', label: 'Browserdaten', keywords: 'Cookies Cache abmelden löschen Browser' },
+          ...toolFields('browser'),
         ],
+      },
+      {
+        id: 'tools.chat',
+        title: 'Nachrichten zwischen Chats',
+        keywords: 'Session senden weiterleiten durchsuchen Suche frühere Claude Codex Agenten MCP',
+        fields: toolFields('chat'),
+      },
+      {
+        id: 'tools.app',
+        title: 'Rückfragen, Benachrichtigungen und Limits',
+        keywords: 'Formular Frage notify Usage Verbrauch MCP',
+        fields: toolFields('app'),
       },
     ],
   },
