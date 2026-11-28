@@ -95,6 +95,7 @@ export function defaultSettings(): AppSettings {
       noClaudeInChrome: true,
       // One chat's agent acting in another reaches past what the user set up for each: they turn it on.
       chatTools: false,
+      disabled: [],
     },
     notifications: {
       enabled: true,

@@ -1254,9 +1254,10 @@ Sperren von `AutoSwitch`). Darunter die anderen sichtbaren Accounts der eingesch
 (API-Keys: ohne Plan-Limits; abgemeldet) und ob der automatische Wechsel am Limit an ist. Zeiten lokal mit
 Zeitzone und Abstand („in 2 h“).
 
-Das Werkzeug hat keinen eigenen Schalter: Es kommt mit dem Server, sobald einer der Schalter unter
-„Nexa-Werkzeuge“ an ist (`nexaToolsOn`), und läuft ohne Rückfrage (`NexaToolGrant`, `app`). Es liest nur, und nur Zahlen des Nutzers, die die
-Titelleiste ohnehin zeigt; es erreicht weder Chats noch Dateien noch das Netz.
+Das Werkzeug kommt mit dem Server, sobald unter „Nexa-Werkzeuge“ ein Werkzeug der Zeichen-, Browser- oder
+Chat-Werkzeuge an ist (`nexaToolsOn`), und läuft ohne Rückfrage (`NexaToolGrant`, `app`); abschalten lässt es
+sich dort einzeln wie jedes Werkzeug des Servers (`tools.disabled`, `shared/nexa-tools.ts`). Es liest nur, und
+nur Zahlen des Nutzers, die die Titelleiste ohnehin zeigt; es erreicht weder Chats noch Dateien noch das Netz.
 
 ### Rückfrage mit Formular (`ask_user`)
 

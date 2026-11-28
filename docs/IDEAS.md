@@ -207,7 +207,7 @@ Schon gut gelöst:
 | | Idee | Aufwand |
 |---|---|---|
 | E1 | Vorgaben je Projekt (CLI, Account, Modell, Aufwand, Freigaben) | M |
-| E3 | Nexa-Werkzeuge einzeln schalten, Freigabestufen für den Browser | S |
+| E3 | Freigabestufen für die Browser-Werkzeuge | S |
 | E4 | Prompt-Vorlagen mit Platzhaltern | M |
 | E5 | Umgebungsvariablen je CLI und Account (Proxy, Telemetrie) | S–M |
 | E6 | Einstellungen fürs Terminal | M |
@@ -225,13 +225,11 @@ Schon gut gelöst:
 - Wo: `shared/types.ts`, `services/project-service.ts`, `SessionService.create`, `mcp/chat-tools.ts`,
   `launch.ts`, Dialog im Kontextmenü des Projekts.
 
-**E3 – Nexa-Werkzeuge einzeln schalten, Freigabestufen für den Browser**
-- Eigene Schalter für „Limits lesen“ und „Frühere Chats durchsuchen“. Für den Browser „ohne Nachfrage
-  bedienen“ und „auch heikle Werkzeuge ohne Nachfrage“.
-- Heute hängt `sessions_search` am Schalter „Nachrichten zwischen Chats“, `limits` ist immer an, und heikle
+**E3 – Freigabestufen für die Browser-Werkzeuge**
+- Für den Browser „ohne Nachfrage bedienen“ und „auch heikle Werkzeuge ohne Nachfrage“. Einzeln an- und
+  abschalten lässt sich jedes Werkzeug schon (Einstellungen › Nexa-Werkzeuge), aber heikle
   Browser-Werkzeuge fragen immer.
-- CM: `limitsTool`, `sessionsTool`, `browserToolsAllowed`, `browserSensitiveAllowed`
-  (`shared/defaults.ts`).
+- CM: `browserToolsAllowed`, `browserSensitiveAllowed` (`shared/defaults.ts`).
 
 **E4 – Prompt-Vorlagen mit Platzhaltern**
 - Textbausteine global oder je Projekt, mit `{{datei}}`, `{{branch}}`, `{{auswahl}}`. Sie stehen in der

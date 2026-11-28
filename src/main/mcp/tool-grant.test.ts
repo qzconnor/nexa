@@ -26,6 +26,19 @@ describe('nexaToolGrant', () => {
     expect(nexaToolsOn(tools({ renderTools: false, browserTools: false, chatTools: true }))).toBe(true)
   })
 
+  it('counts a kind whose tools are all switched off one by one as off', () => {
+    const render = ['render_chart', 'render_diagram', 'render_table', 'render_stats', 'render_callout']
+    expect(nexaToolsOn(tools({ browserTools: false, disabled: render }))).toBe(false)
+    expect(nexaToolsOn(tools({ browserTools: false, disabled: render.slice(1) }))).toBe(true)
+  })
+
+  it('leaves out the tools switched off one by one', () => {
+    expect(nexaToolGrant(tools({ disabled: ['render_table', 'browser_storage'] }), names, sensitive)).toEqual({
+      allowed: ['render_chart', 'browser_navigate', 'browser_click'],
+      ask: ['browser_evaluate'],
+    })
+  })
+
   it('allows the tools that come with the server whenever it is there', () => {
     const withApp = { ...names, app: ['limits'] }
     expect(nexaToolGrant(tools({ browserTools: false }), withApp, sensitive).allowed).toEqual(['render_chart', 'render_table', 'limits'])

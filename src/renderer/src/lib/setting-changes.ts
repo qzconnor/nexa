@@ -1,4 +1,5 @@
 import { PROVIDER_IDS, type ProviderId } from '@shared/chat'
+import { nexaToolLabel } from '@shared/nexa-tools'
 import { PERMISSION_MODES, PROVIDERS } from '@shared/providers'
 import { SYNC_GROUPS } from '@shared/remote-sync'
 import type { SettingChange, SettingsFileTheme, SettingsImportPreview, SkippedSetting } from '@shared/settings-transfer'
@@ -60,10 +61,11 @@ const PLACES: Record<string, { anchor: SettingsAnchor; label?: string }> = {
   'chat.voiceAutoSend': { anchor: 'chat.voiceAutoSend', label: 'Diktat automatisch abschicken' },
   'chat.voiceAccount': { anchor: 'chat.voiceAccount', label: 'Account der Spracheingabe' },
   'chat.deleteCliConversations': { anchor: 'chat.deleteCliConversations' },
-  'tools.renderTools': { anchor: 'chat.renderTools' },
-  'tools.browserTools': { anchor: 'chat.browserTools' },
-  'tools.noClaudeInChrome': { anchor: 'chat.noClaudeInChrome' },
-  'tools.chatTools': { anchor: 'chat.chatTools' },
+  'tools.renderTools': { anchor: 'tools.render' },
+  'tools.browserTools': { anchor: 'tools.browser' },
+  'tools.noClaudeInChrome': { anchor: 'tools.noClaudeInChrome' },
+  'tools.chatTools': { anchor: 'tools.chat' },
+  'tools.disabled': { anchor: 'tools.server', label: 'Einzeln ausgeschaltete Nexa-Werkzeuge' },
   'notifications.enabled': { anchor: 'notifications.enabled' },
   'notifications.onDone': { anchor: 'notifications.onDone' },
   'notifications.minBusySeconds': { anchor: 'notifications.minBusy' },
@@ -197,6 +199,7 @@ const EMPTY: Record<string, string> = {
   'chat.voiceMicrophone': 'Wie das System',
   'chat.voiceAccount': 'Automatisch',
   'chat.continuePrompt': '„Mach weiter“',
+  'tools.disabled': 'keine',
 }
 const PROVIDER_EMPTY: Record<string, string> = {
   path: 'Im PATH suchen',
@@ -246,6 +249,7 @@ export function settingValueText(path: string, value: unknown, names: ValueNames
     }
   }
   if (path === 'chat.spellcheckLanguages' && Array.isArray(value)) return value.map((code) => languageName(String(code))).join(', ')
+  if (path === 'tools.disabled' && Array.isArray(value)) return value.map((name) => nexaToolLabel(String(name))).join(', ')
   if (Array.isArray(value)) return formatArgs(value.map(String))
   if (path === 'chat.continuePrompt' && typeof value === 'string') return `„${value}“`
   return String(value)

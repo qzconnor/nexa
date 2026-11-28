@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { useChatActions } from '@/composables/useChatActions'
 import { attempt } from '@/lib/errors'
 import { microphonesOf, systemMicrophone, type Microphone } from '@/lib/microphones'
 import { isWindows } from '@/lib/platform'
@@ -28,13 +27,6 @@ const s = computed(() => store.settings)
 
 function update(patch: DeepPartial<AppSettings>): void {
   void attempt(() => store.update(patch), 'Speichern fehlgeschlagen')
-}
-
-const chatActions = useChatActions()
-/** Nexa's tools reach a CLI only at its start: the open chat's gets the offer to start anew. */
-async function updateTools(patch: DeepPartial<AppSettings['tools']>): Promise<void> {
-  const saved = await attempt(() => store.update({ tools: patch }).then(() => true), 'Speichern fehlgeschlagen')
-  if (saved) chatActions.offerRestart()
 }
 
 /** Saved once the slider rests, not for every minute passed while dragging. */
@@ -139,16 +131,6 @@ const voiceDescription = computed(() => {
   if (!voiceAvailable(accounts.accounts, s.value.chat.voiceAccount, true)) return `${base} Dafür braucht es einen bei claude.ai angemeldeten Claude-Account; ohne ihn gibt es kein Mikrofon.`
   return base
 })
-
-async function clearBrowserData(): Promise<void> {
-  const confirmed = await ui.confirm({
-    title: 'Browserdaten löschen?',
-    description: 'Der Browser neben dem Chat wird überall abgemeldet: Cookies, gespeicherte Daten der Seiten und Cache gehen verloren.',
-    confirmText: 'Löschen',
-    destructive: true,
-  })
-  if (confirmed) void attempt(() => window.api.browser.clearData(), 'Browserdaten nicht gelöscht')
-}
 
 /** In place of the settings: the list needs the room, and a dialog over a dialog over a dialog (its question) is too much. */
 function cleanUp(): void {
@@ -318,52 +300,6 @@ function cleanUp(): void {
       <SettingField anchor="chat.cleanup" label="Chats aufräumen" description="Alte oder große Chats finden und mehrere auf einmal löschen.">
         <Button variant="outline" size="sm" @click="cleanUp">Aufräumen …</Button>
       </SettingField>
-    </SettingsSection>
-
-    <SettingsSection
-      anchor="chat.tools"
-      title="Nexa-Werkzeuge"
-      description="Nexas eigener MCP-Server: die Agents zeichnen damit direkt im Chat, bedienen den Browser neben ihm und erreichen deine anderen Chats. Solange einer der Schalter an ist, sehen sie darüber auch die Limits deiner Accounts."
-    >
-      <SettingField anchor="chat.renderTools" label="Diagramme, Charts und Tabellen" description="Gilt für neue Chats und nach „Chat neu starten“.">
-        <Switch :model-value="s.tools.renderTools" @update:model-value="(v: boolean) => updateTools({ renderTools: v })" />
-      </SettingField>
-      <SettingField
-        anchor="chat.browserTools"
-        label="Browser neben dem Chat"
-        description="Die Agents öffnen und testen Seiten im Browser rechts vom Chat, du siehst zu. Gilt für neue Chats und nach „Chat neu starten“."
-      >
-        <Switch :model-value="s.tools.browserTools" @update:model-value="(v: boolean) => updateTools({ browserTools: v })" />
-      </SettingField>
-      <SettingField
-        anchor="chat.noClaudeInChrome"
-        label="Ohne „Claude in Chrome“"
-        description="Claude Code startet ohne seine Chrome-Erweiterung, damit Claude den Browser von Nexa nimmt."
-      >
-        <Switch
-          :model-value="s.tools.noClaudeInChrome"
-          :disabled="!s.tools.browserTools"
-          @update:model-value="(v: boolean) => updateTools({ noClaudeInChrome: v })"
-        />
-      </SettingField>
-      <SettingField
-        anchor="chat.chatTools"
-        label="Nachrichten zwischen Chats"
-        description="Die Agents schreiben deinen anderen Chats, auch von Claude zu Codex und zurück, lesen deren Antworten, durchsuchen frühere Chats und legen neue an. Jeder Chat behält seine eigenen Freigaben. Gilt für neue Chats und nach „Chat neu starten“. Auch die Chats gekoppelter Geräte, soweit deren Einstellung und Fernsteuerung es zulassen; Agents anderer Geräte erreichen die Chats hier nur, wenn das hier an ist."
-      >
-        <Switch :model-value="s.tools.chatTools" @update:model-value="(v: boolean) => updateTools({ chatTools: v })" />
-      </SettingField>
-      <SettingField
-        anchor="chat.browserData"
-        label="Browserdaten"
-        description="Meldet den Browser überall ab: Cookies, gespeicherte Daten der Seiten und Cache."
-      >
-        <Button variant="outline" size="sm" @click="clearBrowserData">Löschen …</Button>
-      </SettingField>
-      <p class="text-xs text-muted-foreground">
-        Eigene MCP-Server richtest du wie gewohnt in der jeweiligen CLI ein (<code class="font-mono">claude mcp add</code> bzw.
-        <code class="font-mono">~/.codex/config.toml</code>). Nexa startet die CLIs mit ihrer Konfiguration.
-      </p>
     </SettingsSection>
   </div>
 </template>

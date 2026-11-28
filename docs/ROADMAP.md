@@ -301,6 +301,10 @@
 - [x] Rechtschreibprüfung in der Eingabe und allen Textfeldern: Rechtsklick mit Vorschlägen, „Zum
       Wörterbuch hinzufügen“ und Bearbeiten-Befehlen (`window/edit-menu.ts`). Geprüft wird ab Werk in
       Systemsprache und Englisch, abschaltbar und mit eigenen Sprachen unter Einstellungen › Chat › Eingabe.
+- [x] Nexa-Werkzeuge als eigener Reiter der Einstellungen: je Kategorie ein Schalter, darunter jedes
+      Werkzeug des Nexa-MCP-Servers einzeln (auch `limits`, `ask_user` und `notify`), die Browser-Werkzeuge
+      in aufklappbaren Gruppen mit eigenem Schalter; was aus ist, listet der Server nicht und lehnt Aufrufe ab
+      (`shared/nexa-tools.ts`, `tools.disabled`)
 
 ## Als Nächstes
 

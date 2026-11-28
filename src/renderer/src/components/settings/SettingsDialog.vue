@@ -25,6 +25,7 @@ import SettingsDevices from './SettingsDevices.vue'
 import SettingsGeneral from './SettingsGeneral.vue'
 import SettingsNotifications from './SettingsNotifications.vue'
 import SettingsProviders from './SettingsProviders.vue'
+import SettingsTools from './SettingsTools.vue'
 import SettingsUpdates from './SettingsUpdates.vue'
 import SettingsUsage from './SettingsUsage.vue'
 
@@ -65,7 +66,14 @@ const SECTIONS: Section[] = [
     icon: SETTINGS_ICONS.cliConfig,
     page: SettingsCliConfig,
   },
-  { id: 'chat', label: 'Chat', description: 'Verlauf, Eingabe, Spracheingabe, Löschen und Nexa-Werkzeuge', icon: SETTINGS_ICONS.chat, page: SettingsChat },
+  { id: 'chat', label: 'Chat', description: 'Verlauf, Prozesse, Eingabe, Spracheingabe und Löschen', icon: SETTINGS_ICONS.chat, page: SettingsChat },
+  {
+    id: 'tools',
+    label: 'Nexa-Werkzeuge',
+    description: 'Welche Werkzeuge von Nexas MCP-Server die Agents nutzen dürfen, einzeln oder je Gruppe',
+    icon: SETTINGS_ICONS.tools,
+    page: SettingsTools,
+  },
   {
     id: 'notifications',
     label: 'Benachrichtigungen',

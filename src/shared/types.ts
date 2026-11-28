@@ -150,6 +150,11 @@ export interface ToolSettings {
    * list, search and read them, send them messages, start new ones; also from Claude Code to Codex and back.
    */
   chatTools: boolean
+  /**
+   * Tools of Nexa's MCP server the user switched off one by one (`browser_evaluate`), whatever their
+   * category's switch says (shared/nexa-tools.ts). A list of what is off, so tools a newer Nexa brings are on.
+   */
+  disabled: string[]
 }
 
 export interface GeneralSettings {
